@@ -1,0 +1,41 @@
+<resources>
+    <string name="app_name">Detox</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Welcome to Detox</string>
+    <string name="onboarding_subtitle">Take control of your screen time. We need a few permissions to help you.</string>
+    <string name="onboarding_step_progress">Step %1$d of %2$d</string>
+    <string name="onboarding_next">Continue</string>
+    <string name="onboarding_skip">Skip for now</string>
+
+    <!-- Permissions -->
+    <string name="permission_granted">Permission granted</string>
+    <string name="permission_grant_button">Grant Permission</string>
+
+    <string name="permission_usage_title">Usage Data Access</string>
+    <string name="permission_usage_description">Detox needs to read your app usage to verify which apps you spend the most time on. This is the core of our Proof of Addiction system.</string>
+
+    <string name="permission_overlay_title">Display Over Other Apps</string>
+    <string name="permission_overlay_description">Detox shows a gentle reminder screen before you open tracked apps, helping you pause and decide if you really need to open them.</string>
+
+    <string name="permission_accessibility_title">Accessibility Service</string>
+    <string name="permission_accessibility_description">Detox uses the accessibility service to detect when you switch to a tracked app, so it can show the reminder screen at the right moment.</string>
+
+    <string name="permission_notifications_title">Notifications</string>
+    <string name="permission_notifications_description">Detox sends you daily progress reports and gentle reminders to help you stay on track with your challenges.</string>
+
+    <!-- Accessibility Service -->
+    <string name="accessibility_service_description">Detox uses this service to detect when tracked apps are opened, so it can show a reminder screen to help you manage your screen time.</string>
+
+    <!-- App Selection -->
+    <string name="app_selection_title">Select an App</string>
+    <string name="app_selection_subtitle">Choose an app to start a challenge. Only apps with high usage are eligible.</string>
+    <string name="app_selection_trackable">Trackable</string>
+    <string name="app_selection_not_trackable">Not enough usage in the last 14 days</string>
+    <string name="app_selection_avg_daily_time">%1$d min/day</string>
+    <string name="app_selection_avg_daily_opens">%1$d opens/day</string>
+    <string name="app_selection_loading">Analyzing your app usage…</string>
+    <string name="app_selection_error">Could not load usage data. Please make sure the Usage Data Access permission is granted.</string>
+    <string name="app_selection_no_permission">Usage data permission is required to see your apps.</string>
+    <string name="app_selection_grant_permission">Grant Permission</string>
+</resources>

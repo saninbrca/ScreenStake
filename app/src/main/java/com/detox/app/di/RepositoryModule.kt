@@ -1,6 +1,12 @@
 package com.detox.app.di
 
+import com.detox.app.data.repository.ChallengeRepositoryImpl
+import com.detox.app.data.repository.DailyLogRepositoryImpl
+import com.detox.app.data.repository.PointsRepositoryImpl
 import com.detox.app.data.repository.UsageStatsRepositoryImpl
+import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import dagger.Binds
 import dagger.Module
@@ -17,4 +23,22 @@ abstract class RepositoryModule {
     abstract fun bindUsageStatsRepository(
         impl: UsageStatsRepositoryImpl
     ): UsageStatsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindChallengeRepository(
+        impl: ChallengeRepositoryImpl
+    ): ChallengeRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDailyLogRepository(
+        impl: DailyLogRepositoryImpl
+    ): DailyLogRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPointsRepository(
+        impl: PointsRepositoryImpl
+    ): PointsRepository
 }

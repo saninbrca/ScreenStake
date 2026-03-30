@@ -37,7 +37,7 @@ import com.detox.app.presentation.components.AppUsageCard
 
 @Composable
 fun AppSelectionScreen(
-    onAppSelected: (String) -> Unit,
+    onAppSelected: (String, String) -> Unit,
     viewModel: AppSelectionViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -150,7 +150,7 @@ fun AppSelectionScreen(
                         ) { appInfo ->
                             AppUsageCard(
                                 appUsageInfo = appInfo,
-                                onClick = { onAppSelected(appInfo.packageName) }
+                                onClick = { onAppSelected(appInfo.packageName, appInfo.appName) }
                             )
                         }
                     }

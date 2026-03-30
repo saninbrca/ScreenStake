@@ -34,8 +34,59 @@
     <string name="app_selection_not_trackable">Not enough usage in the last 14 days</string>
     <string name="app_selection_avg_daily_time">%1$d min/day</string>
     <string name="app_selection_avg_daily_opens">%1$d opens/day</string>
-    <string name="app_selection_loading">Analyzing your app usage…</string>
+    <string name="app_selection_loading">Analyzing your app usage\u2026</string>
     <string name="app_selection_error">Could not load usage data. Please make sure the Usage Data Access permission is granted.</string>
     <string name="app_selection_no_permission">Usage data permission is required to see your apps.</string>
     <string name="app_selection_grant_permission">Grant Permission</string>
+
+    <!-- Challenge Setup -->
+    <string name="challenge_setup_title">Set Up Challenge</string>
+    <string name="challenge_setup_app_label">Challenge for %1$s</string>
+    <string name="challenge_setup_limit_type">Limit Type</string>
+    <string name="challenge_setup_time_limit">Time Limit</string>
+    <string name="challenge_setup_session_limit">Session Limit</string>
+    <string name="challenge_setup_daily_limit">Daily limit: %1$d minutes</string>
+    <string name="challenge_setup_max_opens">Max opens per day: %1$d</string>
+    <string name="challenge_setup_session_duration">Minutes per session: %1$d</string>
+    <string name="challenge_setup_duration">Duration</string>
+    <string name="challenge_setup_days">%1$d days</string>
+    <string name="challenge_setup_motivation_label">Motivation (optional)</string>
+    <string name="challenge_setup_motivation_hint">Why are you doing this? Write something to remind yourself\u2026</string>
+    <string name="challenge_setup_mode_soft">Mode: Soft (points at stake)</string>
+    <string name="challenge_setup_start_button">Start Challenge</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Your Challenges</string>
+    <string name="dashboard_empty">No active challenges yet. Start one to take control of your screen time!</string>
+    <string name="dashboard_add_challenge">Add Challenge</string>
+
+    <!-- Points -->
+    <string name="points_badge_format">%1$d pts</string>
+
+    <!-- Challenge Card -->
+    <string name="challenge_card_time_limit">Max %1$d min/day</string>
+    <string name="challenge_card_session_limit">Max %1$d opens/day, %2$d min each</string>
+    <string name="challenge_card_days_remaining">%1$d days left</string>
+    <string name="challenge_card_time_progress">%1$d of %2$d min</string>
+    <string name="challenge_card_session_progress">%1$d of %2$d opens</string>
+    <string name="challenge_card_points_today">+%1$d pts today</string>
+
+    <!-- Blocking Overlay -->
+    <string name="blocking_overlay_title">Stop &amp; Think</string>
+    <string name="blocking_overlay_usage_time">%1$d of %2$d min used today</string>
+    <string name="blocking_overlay_usage_sessions">%1$d of %2$d opens today</string>
+    <string name="blocking_overlay_points_today">Points earned today: %1$d</string>
+    <string name="blocking_overlay_open_anyway">Open app anyway</string>
+    <string name="blocking_overlay_skip">No, I\'ll skip it</string>
+
+    <!-- Limit Exceeded Overlay -->
+    <string name="limit_exceeded_title">Limit Reached</string>
+    <string name="limit_exceeded_message">You\'ve reached your limit. Do you really want to continue and risk your points?</string>
+    <string name="limit_exceeded_continue">Yes, continue</string>
+    <string name="limit_exceeded_stop">No, I\'ll stop</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_name">Usage Tracking</string>
+    <string name="notification_tracking_title">Detox is active</string>
+    <string name="notification_tracking_text">Monitoring your tracked apps</string>
 </resources>

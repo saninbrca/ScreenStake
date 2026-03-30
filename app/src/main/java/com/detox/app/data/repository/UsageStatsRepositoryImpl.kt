@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
+import com.detox.app.domain.model.AppDailyUsage
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.repository.UsageStatsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,7 +26,7 @@ class UsageStatsRepositoryImpl @Inject constructor(
 ) : UsageStatsRepository {
 
     companion object {
-        private const val MIN_DAILY_MINUTES = 10L
+        private const val MIN_DAILY_MINUTES = 0L
         private const val MIN_DAILY_OPENS = 0
     }
 
@@ -115,6 +116,26 @@ class UsageStatsRepositoryImpl @Inject constructor(
             true
         }
     }
+
+    override suspend fun getTodayUsageForApp(packageName: String): AppDailyUsage =
+        withContext(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            val startOfDay = Calendar.getInstance().apply {
+                timeInMillis = now
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            val usageTime = getUsageTimeByPackage(startOfDay, now)
+            val openCount = getOpenCountByPackage(startOfDay, now)
+
+            AppDailyUsage(
+                minutes = (usageTime[packageName] ?: 0L).toInt(),
+                opens = openCount[packageName] ?: 0
+            )
+        }
 
     override fun hasUsageStatsPermission(): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager

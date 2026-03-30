@@ -4,6 +4,10 @@ import Stripe from "stripe";
 
 admin.initializeApp();
 
+// Region must match FirebaseFunctions.getInstance("us-central1") in NetworkModule.kt.
+// To change region: update BOTH this constant AND NetworkModule.kt, then redeploy.
+const REGION = "us-central1";
+
 // Initialize Stripe with the secret key from Firebase environment config.
 // Deploy with: firebase functions:config:set stripe.secret_key="sk_test_..."
 const stripe = new Stripe(functions.config().stripe.secret_key as string, {
@@ -22,7 +26,7 @@ const stripe = new Stripe(functions.config().stripe.secret_key as string, {
  * Expected input:  { amountCents: number, durationDays: number, challengeId: string }
  * Returns:         { paymentIntentId: string, clientSecret: string, isImmediateCapture: boolean }
  */
-export const createPaymentIntent = functions.https.onCall(async (data, context) => {
+export const createPaymentIntent = functions.region(REGION).https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "User must be signed in.");
   }
@@ -84,7 +88,7 @@ export const createPaymentIntent = functions.https.onCall(async (data, context) 
  * Expected input:  { paymentIntentId: string }
  * Returns:         { success: true }
  */
-export const capturePayment = functions.https.onCall(async (data, context) => {
+export const capturePayment = functions.region(REGION).https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "User must be signed in.");
   }
@@ -118,7 +122,7 @@ export const capturePayment = functions.https.onCall(async (data, context) => {
  * Expected input:  { paymentIntentId: string, wasImmediate: boolean }
  * Returns:         { success: true }
  */
-export const cancelOrRefundPayment = functions.https.onCall(async (data, context) => {
+export const cancelOrRefundPayment = functions.region(REGION).https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "User must be signed in.");
   }

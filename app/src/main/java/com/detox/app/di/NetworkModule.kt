@@ -32,7 +32,9 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideFirebaseFunctions(): FirebaseFunctions =
-        FirebaseFunctions.getInstance("europe-west1")
+        // Must match the region the Cloud Functions are deployed to.
+        // Default Firebase region is us-central1 — change this if you deploy to another region.
+        FirebaseFunctions.getInstance("us-central1")
 
     /**
      * A long-lived CoroutineScope backed by a SupervisorJob.

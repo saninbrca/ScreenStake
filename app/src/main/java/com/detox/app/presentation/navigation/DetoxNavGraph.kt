@@ -6,11 +6,11 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.detox.app.presentation.screens.activechallenge.ActiveChallengeScreen
 import com.detox.app.presentation.screens.appselection.AppSelectionScreen
 import com.detox.app.presentation.screens.challengesetup.ChallengeSetupScreen
 import com.detox.app.presentation.screens.dashboard.DashboardScreen
 import com.detox.app.presentation.screens.onboarding.OnboardingScreen
-import java.net.URLDecoder
 import java.net.URLEncoder
 
 sealed class Screen(val route: String) {
@@ -23,7 +23,9 @@ sealed class Screen(val route: String) {
             return "challenge_setup/$packageName/$encodedName"
         }
     }
-    data object ActiveChallenge : Screen("active_challenge")
+    data object ActiveChallenge : Screen("active_challenge/{challengeId}") {
+        fun createRoute(challengeId: String) = "active_challenge/$challengeId"
+    }
     data object PointShop : Screen("point_shop")
     data object Settings : Screen("settings")
 }
@@ -53,7 +55,7 @@ fun DetoxNavGraph(
                     navController.navigate(Screen.AppSelection.route)
                 },
                 onChallengeClick = { challengeId ->
-                    // Will navigate to ActiveChallenge detail in a future phase
+                    navController.navigate(Screen.ActiveChallenge.createRoute(challengeId))
                 }
             )
         }
@@ -74,13 +76,24 @@ fun DetoxNavGraph(
                 navArgument("packageName") { type = NavType.StringType },
                 navArgument("displayName") { type = NavType.StringType }
             )
-        ) { backStackEntry ->
+        ) {
             ChallengeSetupScreen(
                 onChallengeCreated = {
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.AppSelection.route) { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable(
+            route = Screen.ActiveChallenge.route,
+            arguments = listOf(
+                navArgument("challengeId") { type = NavType.StringType }
+            )
+        ) {
+            ActiveChallengeScreen(
+                onBack = { navController.popBackStack() }
             )
         }
     }

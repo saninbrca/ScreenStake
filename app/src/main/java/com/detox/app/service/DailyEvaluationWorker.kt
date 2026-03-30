@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.PointTransaction
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CalculatePointsUseCase
@@ -26,6 +28,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val dailyLogRepository: DailyLogRepository,
     private val pointsRepository: PointsRepository,
     private val usageStatsRepository: UsageStatsRepository,
+    private val paymentRepository: PaymentRepository,
     private val calculatePointsUseCase: CalculatePointsUseCase
 ) : CoroutineWorker(context, workerParams) {
 
@@ -38,7 +41,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
             val now = System.currentTimeMillis()
 
             for (challenge in challenges) {
-                // Check if already evaluated today
+                // Skip if already evaluated today
                 val existingLog = dailyLogRepository.getLogForDate(challenge.id, today)
                 if (existingLog.isSuccess && existingLog.getOrNull() != null) {
                     Timber.d("Already evaluated ${challenge.appDisplayName} for today")
@@ -55,7 +58,39 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     todayOpens = todayUsage.opens
                 )
 
-                // Create daily log
+                // ── Hard Mode: handle Stripe payment ──────────────────────────
+                var moneyLostCents = 0
+                if (challenge.mode == ChallengeMode.HARD &&
+                    challenge.stripePaymentIntentId != null
+                ) {
+                    val durationDays = ((challenge.endDate - challenge.startDate) /
+                            86_400_000L).toInt()
+                    val isImmediateCapture = durationDays > 7
+
+                    if (pointsResult.limitExceeded) {
+                        // User broke their Hard Mode limit today → capture payment
+                        Timber.d("Hard Mode limit exceeded for ${challenge.appDisplayName} — capturing payment")
+                        paymentRepository.capturePayment(challenge.stripePaymentIntentId)
+                            .onSuccess {
+                                moneyLostCents = challenge.amountCents ?: 0
+                                Timber.d("Payment captured: €${moneyLostCents / 100f}")
+                            }
+                            .onFailure { e ->
+                                Timber.e(e, "Failed to capture payment for ${challenge.id}")
+                            }
+                    } else if (now >= challenge.endDate) {
+                        // Challenge completed successfully → cancel pre-auth or issue refund
+                        Timber.d("Hard Mode challenge ${challenge.appDisplayName} completed — refunding/cancelling")
+                        paymentRepository.cancelOrRefundPayment(
+                            paymentIntentId = challenge.stripePaymentIntentId,
+                            wasImmediate = isImmediateCapture
+                        ).onFailure { e ->
+                            Timber.e(e, "Failed to cancel/refund payment for ${challenge.id}")
+                        }
+                    }
+                }
+
+                // ── Create daily log ───────────────────────────────────────────
                 val dailyLog = DailyLog(
                     id = UUID.randomUUID().toString(),
                     challengeId = challenge.id,
@@ -64,18 +99,17 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     openCount = todayUsage.opens,
                     pointsEarned = pointsResult.points,
                     limitExceeded = pointsResult.limitExceeded,
-                    moneyLostCents = 0
+                    moneyLostCents = moneyLostCents
                 )
                 dailyLogRepository.insertDailyLog(dailyLog)
 
-                // Create point transactions
+                // ── Award points ───────────────────────────────────────────────
                 if (pointsResult.points > 0) {
-                    val basePoints = 10
                     pointsRepository.addPointTransaction(
                         PointTransaction(
                             id = UUID.randomUUID().toString(),
                             type = "earned",
-                            amount = basePoints,
+                            amount = 10,
                             reason = "daily_goal_met",
                             challengeId = challenge.id,
                             timestamp = now
@@ -96,7 +130,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     }
                 }
 
-                // Check if challenge ended
+                // ── Update challenge status if end date reached ─────────────────
                 if (now >= challenge.endDate) {
                     val finalStatus = if (pointsResult.limitExceeded) {
                         ChallengeStatus.FAILED
@@ -104,10 +138,16 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         ChallengeStatus.COMPLETED
                     }
                     challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
-                    Timber.d("Challenge ${challenge.appDisplayName} ended with status: $finalStatus")
+                    Timber.d(
+                        "Challenge ${challenge.appDisplayName} ended with status: $finalStatus"
+                    )
                 }
 
-                Timber.d("Evaluated ${challenge.appDisplayName}: ${pointsResult.points} pts, exceeded=${pointsResult.limitExceeded}")
+                Timber.d(
+                    "Evaluated ${challenge.appDisplayName}: ${pointsResult.points} pts, " +
+                            "exceeded=${pointsResult.limitExceeded}, " +
+                            "moneyLost=${moneyLostCents / 100f}€"
+                )
             }
 
             Timber.d("DailyEvaluationWorker completed successfully")

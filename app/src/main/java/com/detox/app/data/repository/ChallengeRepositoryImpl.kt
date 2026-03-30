@@ -2,24 +2,38 @@ package com.detox.app.data.repository
 
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.entity.ChallengeEntity
+import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.data.remote.firebase.FirestoreService
+import com.detox.app.di.ApplicationScope
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class ChallengeRepositoryImpl @Inject constructor(
-    private val challengeDao: ChallengeDao
+    private val challengeDao: ChallengeDao,
+    private val firestoreService: FirestoreService,
+    private val firebaseAuthService: FirebaseAuthService,
+    @ApplicationScope private val appScope: CoroutineScope
 ) : ChallengeRepository {
 
     override suspend fun createChallenge(challenge: Challenge): Result<Unit> {
         return try {
             challengeDao.insertChallenge(challenge.toEntity())
+            // Fire-and-forget Firestore sync
+            appScope.launch {
+                firebaseAuthService.currentUserId()?.let { uid ->
+                    firestoreService.saveChallenge(uid, challenge)
+                }
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -58,7 +72,14 @@ class ChallengeRepositoryImpl @Inject constructor(
 
     override suspend fun updateChallengeStatus(id: String, status: ChallengeStatus): Result<Unit> {
         return try {
-            challengeDao.updateStatus(id, status.name.lowercase())
+            val statusStr = status.name.lowercase()
+            challengeDao.updateStatus(id, statusStr)
+            // Fire-and-forget Firestore sync
+            appScope.launch {
+                firebaseAuthService.currentUserId()?.let { uid ->
+                    firestoreService.updateChallengeStatus(uid, id, statusStr)
+                }
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

@@ -89,4 +89,56 @@
     <string name="notification_channel_name">Usage Tracking</string>
     <string name="notification_tracking_title">Detox is active</string>
     <string name="notification_tracking_text">Monitoring your tracked apps</string>
+
+    <!-- Onboarding — Google Sign-In step -->
+    <string name="onboarding_signin_title">Create Your Account</string>
+    <string name="onboarding_signin_description">Sign in with Google to sync your challenges and unlock Hard Mode. Your data stays private and is never sold.</string>
+    <string name="onboarding_signin_button">Sign in with Google</string>
+    <string name="onboarding_signed_in">Signed in successfully ✓</string>
+
+    <!-- Challenge Setup — Hard Mode -->
+    <string name="challenge_setup_mode_label">Challenge Mode</string>
+    <string name="challenge_setup_mode_soft_label">Soft Mode</string>
+    <string name="challenge_setup_mode_hard_label">Hard Mode</string>
+    <string name="challenge_setup_amount_label">Amount at stake: €%1$d</string>
+    <string name="challenge_setup_hard_warning">Real money will be charged if you break your limit. 50%% goes to charity.</string>
+    <string name="challenge_setup_processing_payment">Processing payment…</string>
+
+    <!-- Emergency Code Dialog -->
+    <string name="emergency_code_dialog_title">Save Your Emergency Code</string>
+    <string name="emergency_code_dialog_message">This 6-digit code lets you unlock the app in an emergency — but you will still lose your money and 50 points. Save it somewhere safe. You will NOT be shown this again.</string>
+    <string name="emergency_code_dialog_confirm">I\'ve saved my code</string>
+
+    <!-- Active Challenge Screen -->
+    <string name="active_challenge_title">Challenge Details</string>
+    <string name="active_challenge_mode_soft">SOFT MODE</string>
+    <string name="active_challenge_mode_hard">HARD MODE</string>
+    <string name="active_challenge_amount_at_stake">€%.2f at stake</string>
+    <string name="active_challenge_emergency_code_label">Emergency Code</string>
+    <string name="active_challenge_emergency_code_hint">Tap to reveal</string>
+    <string name="active_challenge_end_date">Ends: %1$s</string>
+    <string name="active_challenge_abandon">Abandon Challenge</string>
+    <string name="active_challenge_abandon_confirm_title">Abandon Challenge?</string>
+    <string name="active_challenge_abandon_confirm_message">This will end the challenge without awarding points. You cannot undo this.</string>
+    <string name="active_challenge_abandon_confirm_yes">Yes, abandon</string>
+    <string name="active_challenge_abandon_confirm_no">Keep going</string>
+
+    <!-- Blocking Overlay — Hard Mode addition -->
+    <string name="blocking_overlay_amount_stake">⚠ €%.2f at stake</string>
+
+    <!-- Limit Exceeded Overlay — Hard Mode -->
+    <string name="limit_exceeded_hard_title">You\'ll lose €%.2f!</string>
+    <string name="limit_exceeded_hard_message">Your daily limit is up. If you continue, your money will be charged immediately and the app will be locked for the rest of the day.</string>
+    <string name="limit_exceeded_hard_continue">Yes, lose my money</string>
+    <string name="limit_exceeded_emergency_code_button">🔑 Use emergency code</string>
+
+    <!-- Hard Mode Lockout Overlay -->
+    <string name="lockout_title">🔒 Locked for Today</string>
+    <string name="lockout_subtitle">You exceeded your limit for %1$s. The app is locked until midnight.</string>
+    <string name="lockout_money_lost">€%.2f has been charged.</string>
+    <string name="lockout_exit_home">Exit to Home</string>
+    <string name="lockout_emergency_button">🔑 Emergency Unlock</string>
+    <string name="lockout_emergency_hint">Enter your 6-digit code</string>
+    <string name="lockout_emergency_wrong">Wrong code. Try again.</string>
+    <string name="lockout_emergency_unlock">Unlock (costs 50 pts)</string>
 </resources>

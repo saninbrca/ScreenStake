@@ -3,7 +3,8 @@ package com.detox.app.service
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
@@ -16,10 +17,14 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.detox.app.domain.model.ChallengeMode
+import com.detox.app.domain.model.PointTransaction
+import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.presentation.components.BlockingScreenOverlay
+import com.detox.app.presentation.components.HardModeLockoutOverlay
 import com.detox.app.presentation.components.LimitExceededOverlay
 import com.detox.app.ui.theme.DetoxTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -29,6 +34,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.Calendar
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,14 +43,25 @@ import javax.inject.Singleton
 class OverlayManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val checkDailyLimitUseCase: CheckDailyLimitUseCase,
-    private val pointsRepository: PointsRepository
+    private val pointsRepository: PointsRepository,
+    private val paymentRepository: PaymentRepository
 ) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var currentOverlayView: View? = null
     private var listeningJob: Job? = null
     private val exceededAppsToday = mutableSetOf<String>()
+
+    /**
+     * Packages permanently locked until midnight in Hard Mode.
+     * Mapped packageName → ChallengeStatus snapshot (to access the emergency code).
+     */
+    private val hardLockedPackages = mutableMapOf<String, LockedAppInfo>()
+
     private var limitReachedTimerJob: Job? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ── Public API ─────────────────────────────────────────────────────────────
 
     fun startListening(scope: CoroutineScope) {
         listeningJob = scope.launch {
@@ -51,6 +69,7 @@ class OverlayManager @Inject constructor(
                 handleAppOpen(packageName, scope)
             }
         }
+        scheduleMidnightReset()
     }
 
     fun stopListening() {
@@ -61,8 +80,16 @@ class OverlayManager @Inject constructor(
         dismissOverlay()
     }
 
+    // ── Core dispatch ──────────────────────────────────────────────────────────
+
     private suspend fun handleAppOpen(packageName: String, scope: CoroutineScope) {
         if (currentOverlayView != null) return
+
+        // Hard Mode permanent lockout takes priority
+        hardLockedPackages[packageName]?.let { info ->
+            showHardModeLockout(info, scope)
+            return
+        }
 
         val result = checkDailyLimitUseCase(packageName)
         if (result.isFailure) {
@@ -72,12 +99,15 @@ class OverlayManager @Inject constructor(
 
         val status = result.getOrThrow()
 
-        if (status.limitExceeded || exceededAppsToday.contains(packageName)) {
-            showLimitExceededOverlay(status, scope)
-        } else {
-            showBlockingOverlay(status, scope)
+        when {
+            status.limitExceeded || exceededAppsToday.contains(packageName) ->
+                showLimitExceededOverlay(status, scope)
+            else ->
+                showBlockingOverlay(status, scope)
         }
     }
+
+    // ── Blocking overlay (shown before every tracked-app open) ────────────────
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val totalPoints = pointsRepository.getTotalPointsBalance().first()
@@ -98,17 +128,111 @@ class OverlayManager @Inject constructor(
         showOverlay(composeView)
     }
 
+    // ── Limit-exceeded overlay ─────────────────────────────────────────────────
+
     private fun showLimitExceededOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
+        val challenge = status.challenge
+        val isHard = challenge.mode == ChallengeMode.HARD
+
         val composeView = createComposeView {
             DetoxTheme {
                 LimitExceededOverlay(
-                    appName = status.challenge.appDisplayName,
+                    appName = challenge.appDisplayName,
+                    challengeMode = challenge.mode,
+                    amountCents = challenge.amountCents,
                     onContinue = {
-                        exceededAppsToday.add(status.challenge.appPackageName)
-                        dismissOverlay()
-                        startLimitReachedTimer(status.challenge.appPackageName, scope)
+                        if (isHard && challenge.stripePaymentIntentId != null) {
+                            // Hard Mode: capture payment and lock the app
+                            scope.launch {
+                                captureAndLock(status, scope)
+                            }
+                        } else {
+                            // Soft Mode: mark exceeded, restart 5-min timer
+                            exceededAppsToday.add(challenge.appPackageName)
+                            dismissOverlay()
+                            startLimitReachedTimer(challenge.appPackageName, scope)
+                        }
                     },
                     onStop = {
+                        dismissOverlay()
+                        goHome()
+                    },
+                    onEmergencyCode = if (isHard) {
+                        {
+                            // Dismiss and show lockout with code input immediately
+                            val info = LockedAppInfo(
+                                appName = challenge.appDisplayName,
+                                amountCents = challenge.amountCents ?: 0,
+                                emergencyCode = challenge.emergencyCode ?: ""
+                            )
+                            dismissOverlay()
+                            showHardModeLockoutDirect(info, scope)
+                        }
+                    } else null
+                )
+            }
+        }
+        showOverlay(composeView)
+    }
+
+    // ── Hard Mode: capture payment → lock app ──────────────────────────────────
+
+    private suspend fun captureAndLock(status: DailyLimitStatus, scope: CoroutineScope) {
+        val challenge = status.challenge
+        val paymentIntentId = challenge.stripePaymentIntentId ?: return
+
+        dismissOverlay()
+
+        // Capture the payment (fire-and-forget — show lockout regardless of result)
+        scope.launch {
+            paymentRepository.capturePayment(paymentIntentId)
+                .onSuccess { Timber.d("Payment captured for ${challenge.appDisplayName}") }
+                .onFailure { e -> Timber.e(e, "Failed to capture payment") }
+        }
+
+        val info = LockedAppInfo(
+            appName = challenge.appDisplayName,
+            amountCents = challenge.amountCents ?: 0,
+            emergencyCode = challenge.emergencyCode ?: ""
+        )
+        hardLockedPackages[challenge.appPackageName] = info
+        showHardModeLockoutDirect(info, scope)
+    }
+
+    // ── Hard Mode lockout overlay ──────────────────────────────────────────────
+
+    private fun showHardModeLockout(info: LockedAppInfo, scope: CoroutineScope) {
+        showHardModeLockoutDirect(info, scope)
+    }
+
+    private fun showHardModeLockoutDirect(info: LockedAppInfo, scope: CoroutineScope) {
+        val composeView = createComposeView {
+            DetoxTheme {
+                HardModeLockoutOverlay(
+                    appName = info.appName,
+                    amountCents = info.amountCents,
+                    correctCode = info.emergencyCode,
+                    onEmergencyUnlock = {
+                        // Deduct 50 points as penalty
+                        scope.launch {
+                            pointsRepository.addPointTransaction(
+                                PointTransaction(
+                                    id = UUID.randomUUID().toString(),
+                                    type = "penalty",
+                                    amount = 50,
+                                    reason = "emergency_unlock",
+                                    challengeId = null,
+                                    timestamp = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                        // Remove from locked set so the app can be opened again today
+                        hardLockedPackages.entries
+                            .filter { it.value == info }
+                            .forEach { hardLockedPackages.remove(it.key) }
+                        dismissOverlay()
+                    },
+                    onExitHome = {
                         dismissOverlay()
                         goHome()
                     }
@@ -117,6 +241,8 @@ class OverlayManager @Inject constructor(
         }
         showOverlay(composeView)
     }
+
+    // ── 5-minute re-trigger timer (Soft Mode) ─────────────────────────────────
 
     private fun startLimitReachedTimer(packageName: String, scope: CoroutineScope) {
         limitReachedTimerJob?.cancel()
@@ -131,6 +257,29 @@ class OverlayManager @Inject constructor(
             }
         }
     }
+
+    // ── Midnight reset ─────────────────────────────────────────────────────────
+
+    private fun scheduleMidnightReset() {
+        val now = System.currentTimeMillis()
+        val midnight = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val delay = midnight - now
+        mainHandler.postDelayed({
+            Timber.d("Midnight reset — clearing exceeded/locked apps")
+            exceededAppsToday.clear()
+            hardLockedPackages.clear()
+            scheduleMidnightReset() // reschedule for next midnight
+        }, delay)
+    }
+
+    // ── WindowManager helpers ──────────────────────────────────────────────────
 
     private fun createComposeView(content: @Composable () -> Unit): ComposeView {
         val composeView = ComposeView(context)
@@ -183,6 +332,16 @@ class OverlayManager @Inject constructor(
         }
         context.startActivity(homeIntent)
     }
+
+    // ── Data class ─────────────────────────────────────────────────────────────
+
+    private data class LockedAppInfo(
+        val appName: String,
+        val amountCents: Int,
+        val emergencyCode: String
+    )
+
+    // ── LifecycleOwner for overlays ────────────────────────────────────────────
 
     private class OverlayLifecycleOwner : LifecycleOwner, SavedStateRegistryOwner {
         private val lifecycleRegistry = LifecycleRegistry(this)

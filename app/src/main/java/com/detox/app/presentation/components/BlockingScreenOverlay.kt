@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.detox.app.R
+import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.DailyLimitStatus
 
@@ -72,6 +74,30 @@ fun BlockingScreenOverlay(
                         color = MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Center
                     )
+                }
+
+                // Hard Mode: amount at stake banner
+                val amountCents = status.challenge.amountCents
+                if (status.challenge.mode == ChallengeMode.HARD && amountCents != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.blocking_overlay_amount_stake,
+                                amountCents / 100f
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -125,7 +151,6 @@ fun BlockingScreenOverlay(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Buttons
                 Button(
                     onClick = onSkip,
                     modifier = Modifier.fillMaxWidth()

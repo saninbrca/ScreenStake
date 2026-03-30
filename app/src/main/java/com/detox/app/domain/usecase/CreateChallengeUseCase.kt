@@ -8,6 +8,12 @@ import com.detox.app.domain.repository.ChallengeRepository
 import java.util.UUID
 import javax.inject.Inject
 
+data class ChallengeCreationResult(
+    val challengeId: String,
+    /** Non-null only for Hard Mode challenges. */
+    val emergencyCode: String?
+)
+
 class CreateChallengeUseCase @Inject constructor(
     private val challengeRepository: ChallengeRepository
 ) {
@@ -18,8 +24,11 @@ class CreateChallengeUseCase @Inject constructor(
         limitValueMinutes: Int,
         limitValueSessions: Int?,
         durationDays: Int,
-        customMotivation: String?
-    ): Result<String> {
+        customMotivation: String?,
+        mode: ChallengeMode = ChallengeMode.SOFT,
+        amountCents: Int? = null,
+        stripePaymentIntentId: String? = null
+    ): Result<ChallengeCreationResult> {
         if (limitValueMinutes <= 0) {
             return Result.failure(IllegalArgumentException("Limit minutes must be greater than 0"))
         }
@@ -28,6 +37,9 @@ class CreateChallengeUseCase @Inject constructor(
         }
         if (limitType == LimitType.SESSIONS && (limitValueSessions == null || limitValueSessions <= 0)) {
             return Result.failure(IllegalArgumentException("Session limit must be greater than 0"))
+        }
+        if (mode == ChallengeMode.HARD && (amountCents == null || amountCents <= 0)) {
+            return Result.failure(IllegalArgumentException("Hard Mode requires a positive amount"))
         }
 
         val existingChallenge = challengeRepository.getActiveChallengeForApp(appPackageName)
@@ -39,24 +51,31 @@ class CreateChallengeUseCase @Inject constructor(
         val now = System.currentTimeMillis()
         val endDate = now + durationDays * 86_400_000L
 
+        // Generate a 6-digit emergency code only for Hard Mode
+        val emergencyCode = if (mode == ChallengeMode.HARD) {
+            (100_000..999_999).random().toString()
+        } else null
+
         val challenge = Challenge(
             id = id,
             appPackageName = appPackageName,
             appDisplayName = appDisplayName,
-            mode = ChallengeMode.SOFT,
+            mode = mode,
             limitType = limitType,
             limitValueMinutes = limitValueMinutes,
             limitValueSessions = limitValueSessions,
             startDate = now,
             endDate = endDate,
-            amountCents = null,
-            stripePaymentIntentId = null,
-            emergencyCode = null,
+            amountCents = if (mode == ChallengeMode.HARD) amountCents else null,
+            stripePaymentIntentId = if (mode == ChallengeMode.HARD) stripePaymentIntentId else null,
+            emergencyCode = emergencyCode,
             customMotivation = customMotivation,
             status = ChallengeStatus.ACTIVE,
             createdAt = now
         )
 
-        return challengeRepository.createChallenge(challenge).map { id }
+        return challengeRepository.createChallenge(challenge).map {
+            ChallengeCreationResult(challengeId = id, emergencyCode = emergencyCode)
+        }
     }
 }

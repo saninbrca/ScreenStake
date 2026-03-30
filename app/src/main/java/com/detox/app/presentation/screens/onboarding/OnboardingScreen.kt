@@ -40,6 +40,7 @@ import com.detox.app.R
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import timber.log.Timber
 
 @Composable
 fun OnboardingScreen(
@@ -64,11 +65,26 @@ fun OnboardingScreen(
         try {
             val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(ApiException::class.java)
-            account.idToken?.let { token ->
-                viewModel.signInWithGoogle(token)
+
+            val idToken = account.idToken
+            Timber.d("GoogleSignIn: account=%s idToken=%s",
+                account.email, if (idToken != null) "present (${idToken.length} chars)" else "NULL")
+
+            if (idToken == null) {
+                // idToken is null when GOOGLE_WEB_CLIENT_ID is wrong or missing.
+                // Without it we cannot call Firebase Auth — surface this as a real error.
+                Timber.e("GoogleSignIn: idToken is NULL — check that GOOGLE_WEB_CLIENT_ID " +
+                        "in build.gradle.kts matches the OAuth 2.0 Web Client ID in Firebase Console " +
+                        "(not the Android client ID). Current value: %s", BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                viewModel.onGoogleSignInNullToken()
+            } else {
+                viewModel.signInWithGoogle(idToken)
             }
         } catch (e: ApiException) {
-            // Sign-in was cancelled or failed — viewModel will show error
+            // Cancelled (code 12501) or network error — log the status code so it is
+            // visible in Logcat instead of being silently swallowed.
+            Timber.w("GoogleSignIn: ApiException statusCode=%d message=%s", e.statusCode, e.message)
+            viewModel.onGoogleSignInApiError(e.statusCode)
         }
     }
 

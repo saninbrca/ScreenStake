@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,7 +31,12 @@ class ChallengeRepositoryImpl @Inject constructor(
             challengeDao.insertChallenge(challenge.toEntity())
             // Fire-and-forget Firestore sync
             appScope.launch {
-                firebaseAuthService.currentUserId()?.let { uid ->
+                firebaseAuthService.logAuthState("ChallengeRepo.createChallenge")
+                val uid = firebaseAuthService.currentUserId()
+                if (uid == null) {
+                    Timber.w("createChallenge: skipping Firestore sync — user not signed in")
+                } else {
+                    Timber.d("createChallenge: syncing challenge %s for uid=%s", challenge.id, uid)
                     firestoreService.saveChallenge(uid, challenge)
                 }
             }
@@ -76,7 +82,12 @@ class ChallengeRepositoryImpl @Inject constructor(
             challengeDao.updateStatus(id, statusStr)
             // Fire-and-forget Firestore sync
             appScope.launch {
-                firebaseAuthService.currentUserId()?.let { uid ->
+                firebaseAuthService.logAuthState("ChallengeRepo.updateChallengeStatus")
+                val uid = firebaseAuthService.currentUserId()
+                if (uid == null) {
+                    Timber.w("updateChallengeStatus: skipping Firestore sync — user not signed in")
+                } else {
+                    Timber.d("updateChallengeStatus: challenge=%s status=%s uid=%s", id, statusStr, uid)
                     firestoreService.updateChallengeStatus(uid, id, statusStr)
                 }
             }

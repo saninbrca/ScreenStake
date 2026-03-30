@@ -8,20 +8,26 @@ admin.initializeApp();
 // To change region: update BOTH this constant AND NetworkModule.kt, then redeploy.
 const REGION = "us-central1";
 
-// Read the Stripe secret key from the environment.
+// Stripe is initialised lazily on the first function call so that a missing
+// STRIPE_SECRET_KEY does NOT crash the module at deploy / cold-start time.
 // Locally: set STRIPE_SECRET_KEY in functions/.env
 // Deployed: Firebase CLI automatically uploads functions/.env to Secret Manager.
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-if (!stripeSecretKey) {
-  throw new Error(
-    "STRIPE_SECRET_KEY is not set. Add it to functions/.env (local) " +
-    "or ensure it is included in your Firebase deployment environment."
-  );
-}
+let _stripe: Stripe | null = null;
 
-const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: "2024-04-10",
-});
+function getStripe(): Stripe {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "STRIPE_SECRET_KEY is not configured. Add it to functions/.env (local) " +
+        "or set it in your Firebase deployment environment."
+      );
+    }
+    _stripe = new Stripe(key, { apiVersion: "2023-10-16" });
+  }
+  return _stripe;
+}
 
 // ── createPaymentIntent ────────────────────────────────────────────────────────
 
@@ -59,7 +65,7 @@ export const createPaymentIntent = functions.region(REGION).https.onCall(async (
   // Get or create a Stripe customer for this user
   const customerId = await getOrCreateStripeCustomer(userId);
 
-  const paymentIntent = await stripe.paymentIntents.create({
+  const paymentIntent = await getStripe().paymentIntents.create({
     amount: amountCents,
     currency: "eur",
     customer: customerId,
@@ -107,7 +113,7 @@ export const capturePayment = functions.region(REGION).https.onCall(async (data,
     throw new functions.https.HttpsError("invalid-argument", "paymentIntentId is required.");
   }
 
-  const paymentIntent = await stripe.paymentIntents.capture(paymentIntentId);
+  const paymentIntent = await getStripe().paymentIntents.capture(paymentIntentId);
 
   // Record the loss in Firestore for audit trail
   const userId = context.auth.uid;
@@ -147,10 +153,10 @@ export const cancelOrRefundPayment = functions.region(REGION).https.onCall(async
 
   if (wasImmediate) {
     // Issue a full refund for immediately-captured payments
-    await stripe.refunds.create({ payment_intent: paymentIntentId });
+    await getStripe().refunds.create({ payment_intent: paymentIntentId });
   } else {
     // Cancel the pre-auth (no charge was made)
-    await stripe.paymentIntents.cancel(paymentIntentId);
+    await getStripe().paymentIntents.cancel(paymentIntentId);
   }
 
   return { success: true };
@@ -168,7 +174,7 @@ async function getOrCreateStripeCustomer(userId: string): Promise<string> {
 
   // Create a new Stripe customer linked to the Firebase user
   const firebaseUser = await admin.auth().getUser(userId);
-  const customer = await stripe.customers.create({
+  const customer = await getStripe().customers.create({
     email: firebaseUser.email,
     name: firebaseUser.displayName,
     metadata: { firebaseUid: userId },

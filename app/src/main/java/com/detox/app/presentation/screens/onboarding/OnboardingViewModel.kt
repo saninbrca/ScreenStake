@@ -92,6 +92,37 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Called when the Google Sign-In flow returns an account but idToken is null.
+     * This always means GOOGLE_WEB_CLIENT_ID in build.gradle.kts is wrong — it must be
+     * the OAuth 2.0 *Web* client ID from Firebase Console, not the Android client ID.
+     */
+    fun onGoogleSignInNullToken() {
+        _state.update {
+            it.copy(
+                isSigningIn = false,
+                signInError = "Sign-in failed: could not retrieve ID token. " +
+                        "Check that GOOGLE_WEB_CLIENT_ID is set to the Web client ID " +
+                        "from Firebase Console (Project settings → Your apps → Web app)."
+            )
+        }
+    }
+
+    /**
+     * Called when the Google Sign-In flow throws an [ApiException].
+     * Status code 12501 = user cancelled; other codes indicate real errors.
+     */
+    fun onGoogleSignInApiError(statusCode: Int) {
+        _state.update {
+            it.copy(
+                isSigningIn = false,
+                signInError = if (statusCode == 12501) null  // cancelled — no error message needed
+                else "Google Sign-In failed (code $statusCode). Check your SHA-1 fingerprint " +
+                        "is registered in Firebase Console and google-services.json is up to date."
+            )
+        }
+    }
+
     fun clearSignInError() {
         _state.update { it.copy(signInError = null) }
     }

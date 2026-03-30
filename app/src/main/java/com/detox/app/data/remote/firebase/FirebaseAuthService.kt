@@ -44,4 +44,24 @@ class FirebaseAuthService @Inject constructor(
 
     /** Returns the current FirebaseUser, or null if not signed in. */
     fun currentUser(): FirebaseUser? = firebaseAuth.currentUser
+
+    /**
+     * Logs the current auth state at DEBUG level.
+     * Call this at any point where a Firestore/Cloud Function operation is about to run
+     * to verify the session is active before the SDK attaches an auth token.
+     */
+    fun logAuthState(tag: String = "AuthState") {
+        val user = firebaseAuth.currentUser
+        if (user == null) {
+            Timber.tag(tag).w("NOT signed in — no Firebase user session")
+        } else {
+            Timber.tag(tag).d("Signed in: uid=%s email=%s tokenExpired=%s",
+                user.uid,
+                user.email,
+                // getIdToken(false) is non-null only after the first token fetch; null here just
+                // means it has not been cached yet, not that it is expired.
+                "unknown (call forceRefresh to check)"
+            )
+        }
+    }
 }

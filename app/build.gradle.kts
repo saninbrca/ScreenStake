@@ -31,12 +31,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_live_YOUR_KEY_HERE\"")
-            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"YOUR_WEB_CLIENT_ID.apps.googleusercontent.com\"")
+            buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_test_51TGc6D2WIP9KOc5VfDH5lPiXMIWGZP4tKFLgmYhAKr4xssAGImfyUJBX20gzbLJDRK8EWnh9mpntZ4xUMAKDo7KM00r22YWuSO\"")
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"71504894920-kqf65vcehl823st306g1ppats413u8l1.apps.googleusercontent.com\"")
         }
         debug {
-            buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_test_51RFakeTestKeyForDetoxApp000\"")
-            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"YOUR_WEB_CLIENT_ID.apps.googleusercontent.com\"")
+            buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_test_51TGc6D2WIP9KOc5VfDH5lPiXMIWGZP4tKFLgmYhAKr4xssAGImfyUJBX20gzbLJDRK8EWnh9mpntZ4xUMAKDo7KM00r22YWuSO\"")
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"Y71504894920-kqf65vcehl823st306g1ppats413u8l1.apps.googleusercontent.com\"")
         }
     }
     compileOptions {

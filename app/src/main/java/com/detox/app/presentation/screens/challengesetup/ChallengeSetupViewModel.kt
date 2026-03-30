@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.CreateChallengeUseCase
 import com.detox.app.domain.usecase.ProcessPaymentUseCase
 import com.detox.app.service.UsageTrackingService
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 data class ChallengeSetupFormState(
@@ -53,6 +56,7 @@ class ChallengeSetupViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val createChallengeUseCase: CreateChallengeUseCase,
     private val processPaymentUseCase: ProcessPaymentUseCase,
+    private val firebaseAuthService: FirebaseAuthService,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -66,6 +70,13 @@ class ChallengeSetupViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<ChallengeSetupUiState>(ChallengeSetupUiState.Idle)
     val uiState: StateFlow<ChallengeSetupUiState> = _uiState.asStateFlow()
+
+    /**
+     * The email of the currently signed-in Firebase user, or null if not signed in.
+     * Exposed so the screen can show a diagnostic auth-state banner.
+     */
+    val currentUserEmail: String?
+        get() = FirebaseAuth.getInstance().currentUser?.email
 
     /** Holds the paymentIntentId after payment sheet confirms, until challenge is saved. */
     private var confirmedPaymentIntentId: String? = null
@@ -86,6 +97,21 @@ class ChallengeSetupViewModel @Inject constructor(
 
     fun createChallenge() {
         val form = _formState.value
+
+        // ── Auth diagnostic log ────────────────────────────────────────────────
+        // Uses both FirebaseAuth.getInstance() (direct SDK check) and the service
+        // wrapper so we can confirm they agree and spot any DI misconfiguration.
+        val rawUser = FirebaseAuth.getInstance().currentUser
+        if (rawUser == null) {
+            Timber.w("createChallenge: FirebaseAuth.getInstance().currentUser = NULL — " +
+                    "Cloud Function will reject with UNAUTHENTICATED")
+        } else {
+            Timber.d("createChallenge: FirebaseAuth.getInstance().currentUser — " +
+                    "uid=%s email=%s emailVerified=%s",
+                rawUser.uid, rawUser.email, rawUser.isEmailVerified)
+        }
+        firebaseAuthService.logAuthState("ChallengeSetupViewModel.createChallenge")
+        // ──────────────────────────────────────────────────────────────────────
 
         if (form.mode == ChallengeMode.HARD) {
             initiateHardModePayment(form)

@@ -1,6 +1,7 @@
 package com.detox.app.data.remote.firebase
 
 import com.detox.app.domain.model.PaymentIntentData
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
@@ -9,7 +10,8 @@ import javax.inject.Singleton
 
 @Singleton
 class CloudFunctionsService @Inject constructor(
-    private val functions: FirebaseFunctions
+    private val functions: FirebaseFunctions,
+    private val firebaseAuth: FirebaseAuth
 ) {
 
     /**
@@ -21,6 +23,15 @@ class CloudFunctionsService @Inject constructor(
         durationDays: Int,
         challengeId: String
     ): Result<PaymentIntentData> {
+        // Log auth state before calling the function — the Cloud Function rejects the call
+        // with UNAUTHENTICATED if no valid Firebase ID token is attached to the request.
+        val currentUser = firebaseAuth.currentUser
+        if (currentUser == null) {
+            Timber.w("createPaymentIntent: FirebaseAuth.currentUser is NULL — call will be rejected as UNAUTHENTICATED")
+        } else {
+            Timber.d("createPaymentIntent: auth OK — uid=%s email=%s", currentUser.uid, currentUser.email)
+        }
+
         return try {
             val data = mapOf(
                 "amountCents" to amountCents,

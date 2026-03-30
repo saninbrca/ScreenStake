@@ -8,9 +8,18 @@ admin.initializeApp();
 // To change region: update BOTH this constant AND NetworkModule.kt, then redeploy.
 const REGION = "us-central1";
 
-// Initialize Stripe with the secret key from Firebase environment config.
-// Deploy with: firebase functions:config:set stripe.secret_key="sk_test_..."
-const stripe = new Stripe(functions.config().stripe.secret_key as string, {
+// Read the Stripe secret key from the environment.
+// Locally: set STRIPE_SECRET_KEY in functions/.env
+// Deployed: Firebase CLI automatically uploads functions/.env to Secret Manager.
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+if (!stripeSecretKey) {
+  throw new Error(
+    "STRIPE_SECRET_KEY is not set. Add it to functions/.env (local) " +
+    "or ensure it is included in your Firebase deployment environment."
+  );
+}
+
+const stripe = new Stripe(stripeSecretKey, {
   apiVersion: "2024-04-10",
 });
 

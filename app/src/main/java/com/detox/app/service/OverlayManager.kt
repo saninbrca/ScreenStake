@@ -17,6 +17,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.PointTransaction
 import com.detox.app.domain.repository.PaymentRepository
@@ -44,7 +45,8 @@ class OverlayManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val checkDailyLimitUseCase: CheckDailyLimitUseCase,
     private val pointsRepository: PointsRepository,
-    private val paymentRepository: PaymentRepository
+    private val paymentRepository: PaymentRepository,
+    private val analyticsService: AnalyticsService
 ) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -117,8 +119,12 @@ class OverlayManager @Inject constructor(
                 BlockingScreenOverlay(
                     status = status,
                     totalPoints = totalPoints,
-                    onOpenAnyway = { dismissOverlay() },
+                    onOpenAnyway = {
+                        analyticsService.logBlockingScreenAction("opened_anyway")
+                        dismissOverlay()
+                    },
                     onSkip = {
+                        analyticsService.logBlockingScreenAction("skipped")
                         dismissOverlay()
                         goHome()
                     }
@@ -148,6 +154,7 @@ class OverlayManager @Inject constructor(
                             }
                         } else {
                             // Soft Mode: mark exceeded, restart 5-min timer
+                            analyticsService.logLimitExceeded("soft", challenge.appPackageName)
                             exceededAppsToday.add(challenge.appPackageName)
                             dismissOverlay()
                             startLimitReachedTimer(challenge.appPackageName, scope)
@@ -179,8 +186,12 @@ class OverlayManager @Inject constructor(
 
     private suspend fun captureAndLock(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
-        val paymentIntentId = challenge.stripePaymentIntentId ?: return
+        val paymentIntentId = challenge.stripePaymentIntentId ?: run {
+            Timber.w("captureAndLock called but stripePaymentIntentId is null for ${challenge.appPackageName}")
+            return
+        }
 
+        analyticsService.logLimitExceeded("hard", challenge.appPackageName)
         dismissOverlay()
 
         // Capture the payment (fire-and-forget — show lockout regardless of result)

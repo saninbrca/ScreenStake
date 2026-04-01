@@ -90,11 +90,33 @@
     <string name="notification_tracking_title">Detox is active</string>
     <string name="notification_tracking_text">Monitoring your tracked apps</string>
 
-    <!-- Onboarding — Google Sign-In step -->
-    <string name="onboarding_signin_title">Create Your Account</string>
-    <string name="onboarding_signin_description">Sign in with Google to sync your challenges and unlock Hard Mode. Your data stays private and is never sold.</string>
-    <string name="onboarding_signin_button">Sign in with Google</string>
-    <string name="onboarding_signed_in">Signed in successfully ✓</string>
+    <string name="notif_channel_daily_report_name">Daily Report</string>
+    <string name="notif_channel_daily_report_desc">Your daily detox summary and points</string>
+    <string name="notif_channel_milestones_name">Milestones</string>
+    <string name="notif_channel_milestones_desc">Notifications for completed or failed challenges</string>
+
+    <string name="notif_daily_report_title">Your Daily Report</string>
+    <string name="notif_daily_report_body">You earned %1$d points today! %2$d/%3$d challenges successful.</string>
+
+    <string name="notif_challenge_completed_title">Challenge Completed!</string>
+    <string name="notif_challenge_completed_body">You successfully finished the %1$s challenge.</string>
+    <string name="notif_challenge_failed_title">Challenge Failed</string>
+    <string name="notif_challenge_failed_body">You exceeded the limit for %1$s (Hard Mode).</string>
+
+
+    <!-- Auth screen (Login / Register) -->
+    <string name="auth_tagline">Take control of your screen time</string>
+    <string name="auth_tab_login">Log In</string>
+    <string name="auth_tab_register">Register</string>
+    <string name="auth_email_label">Email</string>
+    <string name="auth_email_placeholder">you@example.com</string>
+    <string name="auth_password_label">Password</string>
+    <string name="auth_confirm_password_label">Confirm Password</string>
+    <string name="auth_passwords_mismatch">Passwords do not match</string>
+    <string name="auth_login_button">Log In</string>
+    <string name="auth_register_button">Create Account</string>
+    <string name="auth_or">or</string>
+    <string name="auth_google_button">Continue with Google</string>
 
     <!-- Challenge Setup — Hard Mode -->
     <string name="challenge_setup_mode_label">Challenge Mode</string>
@@ -141,4 +163,57 @@
     <string name="lockout_emergency_hint">Enter your 6-digit code</string>
     <string name="lockout_emergency_wrong">Wrong code. Try again.</string>
     <string name="lockout_emergency_unlock">Unlock (costs 50 pts)</string>
+
+    <!-- Navigation -->
+    <string name="nav_back">Back</string>
+
+    <!-- Points Shop -->
+    <string name="shop_title">Points Shop</string>
+    <string name="shop_subtitle">Spend your points on rewards</string>
+    <string name="shop_balance_label">Your Balance</string>
+    <string name="shop_balance_value">%1$d pts</string>
+    <string name="shop_redeem_button">Redeem for %1$d pts</string>
+    <string name="shop_not_enough_points">Not enough points</string>
+    <string name="shop_redeemed_success">%1$s redeemed!</string>
+    <string name="shop_error_generic">Could not redeem reward. Try again.</string>
+
+    <!-- Shop items -->
+    <string name="shop_item_dark_neon_name">Dark Neon Theme</string>
+    <string name="shop_item_dark_neon_desc">Switch the app to a vivid dark neon look</string>
+    <string name="shop_item_retro_name">Retro Theme</string>
+    <string name="shop_item_retro_desc">A nostalgic retro-pixel visual style</string>
+    <string name="shop_item_joker_name">Joker Card</string>
+    <string name="shop_item_joker_desc">Get +15 minutes extra today without losing points</string>
+    <string name="shop_item_icon_name">Custom App Icon</string>
+    <string name="shop_item_icon_desc">Change the Detox app icon on your home screen</string>
+    <string name="shop_item_badge_name">Premium Profile Badge</string>
+    <string name="shop_item_badge_desc">Show off a special badge on your profile</string>
+
+    <!-- Notifications — daily report channel -->
+    <string name="notification_channel_daily_report_name">Daily Report</string>
+    <string name="notification_channel_daily_report_desc">Your end-of-day summary of points and challenges</string>
+    <string name="notification_daily_report_title">Daily Summary</string>
+    <string name="notification_daily_report_text">You earned %1$d pts today. %2$d/%3$d challenges on track 🎯</string>
+
+    <!-- Notifications — milestones channel -->
+    <string name="notification_channel_milestones_name">Milestones</string>
+    <string name="notification_channel_milestones_desc">Alerts when a challenge is completed or failed</string>
+    <string name="notification_challenge_completed_title">Challenge Completed! 🎉</string>
+    <string name="notification_challenge_completed_text">You successfully completed your %1$s challenge. Well done!</string>
+    <string name="notification_challenge_failed_title">Challenge Failed</string>
+    <string name="notification_challenge_failed_text">Your %1$s challenge has ended. Don\'t give up — start a new one!</string>
+
+    <!-- Statistics screen -->
+    <string name="stats_title">Statistics</string>
+    <string name="stats_overview_title">Overview</string>
+    <string name="stats_total_points">Total pts</string>
+    <string name="stats_weekly_points">This week</string>
+    <string name="stats_completed">Completed</string>
+    <string name="stats_failed">Failed</string>
+    <string name="stats_no_challenges">No challenges yet. Start one from the dashboard!</string>
+    <string name="stats_per_app_header">Per-App Breakdown</string>
+    <string name="stats_success_rate">Success rate: %1$d%%</string>
+    <string name="stats_current_streak">🔥 %1$d day streak</string>
+    <string name="stats_best_streak">Best: %1$d days</string>
+    <string name="stats_last_7_days">Last 7 days</string>
 </resources>

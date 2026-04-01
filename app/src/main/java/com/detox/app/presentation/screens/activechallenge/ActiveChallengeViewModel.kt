@@ -3,6 +3,7 @@ package com.detox.app.presentation.screens.activechallenge
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
@@ -29,7 +30,8 @@ sealed interface ActiveChallengeUiState {
 class ActiveChallengeViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val challengeRepository: ChallengeRepository,
-    private val checkDailyLimitUseCase: CheckDailyLimitUseCase
+    private val checkDailyLimitUseCase: CheckDailyLimitUseCase,
+    private val analyticsService: AnalyticsService
 ) : ViewModel() {
 
     private val challengeId: String = savedStateHandle.get<String>("challengeId") ?: ""
@@ -72,9 +74,12 @@ class ActiveChallengeViewModel @Inject constructor(
 
     fun abandonChallenge() {
         viewModelScope.launch {
+            val mode = (uiState.value as? ActiveChallengeUiState.Success)
+                ?.challenge?.mode?.name?.lowercase() ?: "unknown"
             challengeRepository.updateChallengeStatus(challengeId, ChallengeStatus.FAILED)
                 .onSuccess {
                     Timber.d("Challenge $challengeId abandoned")
+                    analyticsService.logChallengeAbandoned(mode)
                     _abandonState.value = true
                 }
                 .onFailure { e ->

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -8,25 +10,45 @@ plugins {
     alias(libs.plugins.firebase.crashlytics)
 }
 
+// Read signing credentials from local.properties (not committed to source control)
+val localProperties = Properties().also { props ->
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use(props::load)
+}
+
 android {
     namespace = "com.detox.app"
     compileSdk {
         version = release(36)
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = localProperties.getProperty("KEYSTORE_PATH")
+            if (keystorePath != null) {
+                storeFile = file(keystorePath)
+                storePassword = localProperties.getProperty("KEYSTORE_PASSWORD", "")
+                keyAlias = localProperties.getProperty("KEY_ALIAS", "")
+                keyPassword = localProperties.getProperty("KEY_PASSWORD", "")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.detox.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -36,7 +58,7 @@ android {
         }
         debug {
             buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_test_51TGc6D2WIP9KOc5VfDH5lPiXMIWGZP4tKFLgmYhAKr4xssAGImfyUJBX20gzbLJDRK8EWnh9mpntZ4xUMAKDo7KM00r22YWuSO\"")
-            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"Y71504894920-kqf65vcehl823st306g1ppats413u8l1.apps.googleusercontent.com\"")
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"71504894920-kqf65vcehl823st306g1ppats413u8l1.apps.googleusercontent.com\"")
         }
     }
     compileOptions {

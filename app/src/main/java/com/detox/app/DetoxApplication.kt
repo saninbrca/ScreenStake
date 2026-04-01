@@ -7,6 +7,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.service.DailyEvaluationWorker
+import com.stripe.android.PaymentConfiguration
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import java.util.Calendar
@@ -26,6 +27,10 @@ class DetoxApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Must run before any Stripe PaymentSheet is created anywhere in the app.
+        PaymentConfiguration.init(applicationContext, BuildConfig.STRIPE_PUBLISHABLE_KEY)
+
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }

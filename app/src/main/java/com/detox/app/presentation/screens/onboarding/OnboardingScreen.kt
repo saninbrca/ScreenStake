@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -35,12 +34,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import com.detox.app.BuildConfig
 import com.detox.app.R
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
-import timber.log.Timber
 
 @Composable
 fun OnboardingScreen(
@@ -51,44 +45,14 @@ fun OnboardingScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Refresh permissions/sign-in state whenever the screen resumes
+    // Re-check permissions every time the screen resumes (user returns from Settings)
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.refreshPermissions()
         }
     }
 
-    // Google Sign-In launcher
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                .getResult(ApiException::class.java)
-
-            val idToken = account.idToken
-            Timber.d("GoogleSignIn: account=%s idToken=%s",
-                account.email, if (idToken != null) "present (${idToken.length} chars)" else "NULL")
-
-            if (idToken == null) {
-                // idToken is null when GOOGLE_WEB_CLIENT_ID is wrong or missing.
-                // Without it we cannot call Firebase Auth — surface this as a real error.
-                Timber.e("GoogleSignIn: idToken is NULL — check that GOOGLE_WEB_CLIENT_ID " +
-                        "in build.gradle.kts matches the OAuth 2.0 Web Client ID in Firebase Console " +
-                        "(not the Android client ID). Current value: %s", BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                viewModel.onGoogleSignInNullToken()
-            } else {
-                viewModel.signInWithGoogle(idToken)
-            }
-        } catch (e: ApiException) {
-            // Cancelled (code 12501) or network error — log the status code so it is
-            // visible in Logcat instead of being silently swallowed.
-            Timber.w("GoogleSignIn: ApiException statusCode=%d message=%s", e.statusCode, e.message)
-            viewModel.onGoogleSignInApiError(e.statusCode)
-        }
-    }
-
-    // Notification permission launcher
+    // Notification permission launcher (Android 13+)
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) {
@@ -146,24 +110,8 @@ fun OnboardingScreen(
             Spacer(modifier = Modifier.height(48.dp))
 
             when (state.currentStep) {
-                // ── Step 0: Google Sign-In ──────────────────────────────────────
-                0 -> GoogleSignInStep(
-                    isSignedIn = state.isSignedIn,
-                    isSigningIn = state.isSigningIn,
-                    error = state.signInError,
-                    onSignIn = {
-                        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                            .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                            .requestEmail()
-                            .build()
-                        val client = GoogleSignIn.getClient(context, gso)
-                        googleSignInLauncher.launch(client.signInIntent)
-                    },
-                    onNext = { viewModel.advanceStep() }
-                )
-
-                // ── Step 1: Usage Stats ─────────────────────────────────────────
-                1 -> PermissionStep(
+                // ── Step 0: Usage Stats ─────────────────────────────────────────
+                0 -> PermissionStep(
                     title = stringResource(R.string.permission_usage_title),
                     description = stringResource(R.string.permission_usage_description),
                     isGranted = state.usageStatsGranted,
@@ -173,8 +121,8 @@ fun OnboardingScreen(
                     onNext = { viewModel.advanceStep() }
                 )
 
-                // ── Step 2: Overlay ─────────────────────────────────────────────
-                2 -> PermissionStep(
+                // ── Step 1: Overlay ─────────────────────────────────────────────
+                1 -> PermissionStep(
                     title = stringResource(R.string.permission_overlay_title),
                     description = stringResource(R.string.permission_overlay_description),
                     isGranted = state.overlayGranted,
@@ -189,8 +137,8 @@ fun OnboardingScreen(
                     onNext = { viewModel.advanceStep() }
                 )
 
-                // ── Step 3: Accessibility ───────────────────────────────────────
-                3 -> PermissionStep(
+                // ── Step 2: Accessibility ───────────────────────────────────────
+                2 -> PermissionStep(
                     title = stringResource(R.string.permission_accessibility_title),
                     description = stringResource(R.string.permission_accessibility_description),
                     isGranted = state.accessibilityGranted,
@@ -200,8 +148,8 @@ fun OnboardingScreen(
                     onNext = { viewModel.advanceStep() }
                 )
 
-                // ── Step 4: Notifications (Android 13+) ────────────────────────
-                4 -> {
+                // ── Step 3: Notifications (Android 13+) ────────────────────────
+                3 -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         PermissionStep(
                             title = stringResource(R.string.permission_notifications_title),
@@ -225,77 +173,7 @@ fun OnboardingScreen(
     }
 }
 
-// ── Step 0 composable ──────────────────────────────────────────────────────────
-
-@Composable
-private fun GoogleSignInStep(
-    isSignedIn: Boolean,
-    isSigningIn: Boolean,
-    error: String?,
-    onSignIn: () -> Unit,
-    onNext: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.onboarding_signin_title),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center
-        )
-
-        Text(
-            text = stringResource(R.string.onboarding_signin_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (isSignedIn) {
-            Text(
-                text = stringResource(R.string.onboarding_signed_in),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.secondary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onNext,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = stringResource(R.string.onboarding_next))
-            }
-        } else {
-            error?.let { err ->
-                Text(
-                    text = err,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center
-                )
-            }
-            Button(
-                onClick = onSignIn,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isSigningIn
-            ) {
-                if (isSigningIn) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.height(20.dp)
-                    )
-                } else {
-                    Text(text = stringResource(R.string.onboarding_signin_button))
-                }
-            }
-        }
-    }
-}
-
-// ── Permission step composable (steps 1–4) ────────────────────────────────────
+// ── Permission step composable ─────────────────────────────────────────────────
 
 @Composable
 private fun PermissionStep(

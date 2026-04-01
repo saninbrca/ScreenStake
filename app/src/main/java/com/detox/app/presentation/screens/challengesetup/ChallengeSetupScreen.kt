@@ -26,7 +26,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -49,10 +48,6 @@ fun ChallengeSetupScreen(
 ) {
     val formState by viewModel.formState.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    // Snapshot auth state once when the screen is first composed. This is a diagnostic
-    // helper — read directly from the ViewModel property (not a Flow) so it does not
-    // recompose on every frame.
-    val authEmail = remember { viewModel.currentUserEmail }
 
     // Stripe PaymentSheet
     val paymentSheet = rememberPaymentSheet { result ->
@@ -116,24 +111,6 @@ fun ChallengeSetupScreen(
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // ── Temporary auth state banner ─────────────────────────────────────
-            // Shows which Firebase user is active when this screen is composed.
-            // Remove this block once the PERMISSION_DENIED issue is resolved.
-            Spacer(modifier = Modifier.height(8.dp))
-            if (authEmail != null) {
-                Text(
-                    text = "Auth: $authEmail",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-            } else {
-                Text(
-                    text = "Auth: Not signed in — Hard Mode will fail",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            // ───────────────────────────────────────────────────────────────────
 
             Spacer(modifier = Modifier.height(24.dp))
 

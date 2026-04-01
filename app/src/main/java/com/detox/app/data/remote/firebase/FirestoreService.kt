@@ -19,6 +19,54 @@ class FirestoreService @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
 
+    // ── User document ──────────────────────────────────────────────────────────
+
+    /**
+     * Creates (or merges) the top-level user document at users/{userId}.
+     * Called immediately after registration or first Google Sign-In.
+     * Uses merge so it is safe to call again for returning users.
+     */
+    suspend fun createUserDocument(userId: String, email: String, displayName: String? = null) {
+        try {
+            val data = mutableMapOf<String, Any>(
+                "email" to email,
+                "totalPoints" to 0,
+                "createdAt" to com.google.firebase.Timestamp.now()
+            )
+            displayName?.let { data["displayName"] = it }
+            firestore
+                .collection("users").document(userId)
+                .set(data, com.google.firebase.firestore.SetOptions.merge())
+                .await()
+            Timber.d("User document created/merged for uid=$userId")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to create user document for uid=$userId")
+        }
+    }
+
+    /**
+     * Saves (or updates) the FCM registration token for the given user.
+     * Called by [DetoxFirebaseMessagingService.onNewToken] whenever the token changes.
+     */
+    suspend fun saveFcmToken(userId: String, token: String) {
+        try {
+            firestore.collection("users").document(userId)
+                .update("fcmToken", token)
+                .await()
+            Timber.d("FCM token saved for uid=$userId")
+        } catch (e: Exception) {
+            // update() fails if the document doesn't exist yet — fall back to set(merge)
+            try {
+                firestore.collection("users").document(userId)
+                    .set(mapOf("fcmToken" to token), com.google.firebase.firestore.SetOptions.merge())
+                    .await()
+                Timber.d("FCM token saved (via merge) for uid=$userId")
+            } catch (e2: Exception) {
+                Timber.e(e2, "Failed to save FCM token for uid=$userId")
+            }
+        }
+    }
+
     // ── Challenges ─────────────────────────────────────────────────────────────
 
     suspend fun saveChallenge(userId: String, challenge: Challenge) {

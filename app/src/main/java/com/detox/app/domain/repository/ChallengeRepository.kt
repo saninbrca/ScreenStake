@@ -11,4 +11,6 @@ interface ChallengeRepository {
     suspend fun getActiveChallengesList(): Result<List<Challenge>>
     suspend fun getActiveChallengeForApp(packageName: String): Result<Challenge?>
     suspend fun updateChallengeStatus(id: String, status: ChallengeStatus): Result<Unit>
+    /** Returns all challenges (active + completed + failed) ordered by createdAt DESC. */
+    fun getAllChallenges(): Flow<List<Challenge>>
 }

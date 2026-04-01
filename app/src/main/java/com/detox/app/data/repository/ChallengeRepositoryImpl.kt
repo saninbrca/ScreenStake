@@ -76,6 +76,12 @@ class ChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun getAllChallenges(): Flow<List<Challenge>> {
+        return challengeDao.getAllChallenges().map { entities ->
+            entities.map { it.toDomain() }
+        }
+    }
+
     override suspend fun updateChallengeStatus(id: String, status: ChallengeStatus): Result<Unit> {
         return try {
             val statusStr = status.name.lowercase()

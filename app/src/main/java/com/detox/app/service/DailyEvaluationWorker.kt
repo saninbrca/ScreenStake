@@ -13,7 +13,9 @@ import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.repository.UsageStatsRepository
+import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.usecase.CalculatePointsUseCase
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import timber.log.Timber
@@ -29,7 +31,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val pointsRepository: PointsRepository,
     private val usageStatsRepository: UsageStatsRepository,
     private val paymentRepository: PaymentRepository,
-    private val calculatePointsUseCase: CalculatePointsUseCase
+    private val calculatePointsUseCase: CalculatePointsUseCase,
+    private val analyticsService: AnalyticsService
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -138,9 +141,32 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         ChallengeStatus.COMPLETED
                     }
                     challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                    val durationDays = ((challenge.endDate - challenge.startDate) /
+                            86_400_000L).toInt()
+                    val mode = challenge.mode.name.lowercase()
+                    if (finalStatus == ChallengeStatus.COMPLETED) {
+                        analyticsService.logChallengeCompleted(
+                            mode = mode,
+                            durationDays = durationDays,
+                            totalPoints = pointsResult.points
+                        )
+                    } else {
+                        analyticsService.logChallengeFailed(mode)
+                    }
                     Timber.d(
                         "Challenge ${challenge.appDisplayName} ended with status: $finalStatus"
                     )
+                    // Milestone notification
+                    NotificationHelper.createChannels(applicationContext)
+                    if (finalStatus == ChallengeStatus.COMPLETED) {
+                        NotificationHelper.sendChallengeCompleted(
+                            applicationContext, challenge.appDisplayName
+                        )
+                    } else {
+                        NotificationHelper.sendChallengeFailed(
+                            applicationContext, challenge.appDisplayName
+                        )
+                    }
                 }
 
                 Timber.d(
@@ -150,10 +176,29 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 )
             }
 
+            // ── Post daily summary notification ────────────────────────────────
+            val totalPointsEarned = challenges.sumOf { challenge ->
+                // Re-read today's log to sum points (already written above)
+                dailyLogRepository.getLogForDate(challenge.id, today)
+                    .getOrNull()?.pointsEarned ?: 0
+            }
+            val onTrackCount = challenges.count { challenge ->
+                dailyLogRepository.getLogForDate(challenge.id, today)
+                    .getOrNull()?.limitExceeded == false
+            }
+            NotificationHelper.createChannels(applicationContext)
+            NotificationHelper.sendDailyReport(
+                context = applicationContext,
+                pointsEarned = totalPointsEarned,
+                onTrackCount = onTrackCount,
+                totalCount = challenges.size
+            )
+
             Timber.d("DailyEvaluationWorker completed successfully")
             Result.success()
         } catch (e: Exception) {
             Timber.e(e, "DailyEvaluationWorker failed")
+            FirebaseCrashlytics.getInstance().recordException(e)
             Result.retry()
         }
     }

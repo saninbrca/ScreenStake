@@ -4,13 +4,14 @@ import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.usecase.CreateChallengeUseCase
 import com.detox.app.domain.usecase.ProcessPaymentUseCase
 import com.detox.app.service.UsageTrackingService
-import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +57,9 @@ class ChallengeSetupViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val createChallengeUseCase: CreateChallengeUseCase,
     private val processPaymentUseCase: ProcessPaymentUseCase,
+    private val challengeRepository: ChallengeRepository,
     private val firebaseAuthService: FirebaseAuthService,
+    private val analyticsService: AnalyticsService,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -71,16 +74,26 @@ class ChallengeSetupViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<ChallengeSetupUiState>(ChallengeSetupUiState.Idle)
     val uiState: StateFlow<ChallengeSetupUiState> = _uiState.asStateFlow()
 
-    /**
-     * The email of the currently signed-in Firebase user, or null if not signed in.
-     * Exposed so the screen can show a diagnostic auth-state banner.
-     */
-    val currentUserEmail: String?
-        get() = FirebaseAuth.getInstance().currentUser?.email
-
     /** Holds the paymentIntentId after payment sheet confirms, until challenge is saved. */
     private var confirmedPaymentIntentId: String? = null
     private var isImmediateCapture: Boolean = false
+
+    init {
+        // Block challenge creation if the app is already being tracked
+        val packageName = savedStateHandle.get<String>("packageName")
+
+        if (packageName != null) {
+            viewModelScope.launch {
+                val existing = challengeRepository.getActiveChallengeForApp(packageName)
+                if (existing.getOrNull() != null) {
+                    val displayName = savedStateHandle.get<String>("displayName") ?: packageName
+                    _uiState.value = ChallengeSetupUiState.Error(
+                        "You're already tracking $displayName. Abandon the existing challenge first."
+                    )
+                }
+            }
+        }
+    }
 
     // ── Form updates ────────────────────────────────────────────────────────────
 
@@ -97,21 +110,7 @@ class ChallengeSetupViewModel @Inject constructor(
 
     fun createChallenge() {
         val form = _formState.value
-
-        // ── Auth diagnostic log ────────────────────────────────────────────────
-        // Uses both FirebaseAuth.getInstance() (direct SDK check) and the service
-        // wrapper so we can confirm they agree and spot any DI misconfiguration.
-        val rawUser = FirebaseAuth.getInstance().currentUser
-        if (rawUser == null) {
-            Timber.w("createChallenge: FirebaseAuth.getInstance().currentUser = NULL — " +
-                    "Cloud Function will reject with UNAUTHENTICATED")
-        } else {
-            Timber.d("createChallenge: FirebaseAuth.getInstance().currentUser — " +
-                    "uid=%s email=%s emailVerified=%s",
-                rawUser.uid, rawUser.email, rawUser.isEmailVerified)
-        }
         firebaseAuthService.logAuthState("ChallengeSetupViewModel.createChallenge")
-        // ──────────────────────────────────────────────────────────────────────
 
         if (form.mode == ChallengeMode.HARD) {
             initiateHardModePayment(form)
@@ -135,6 +134,11 @@ class ChallengeSetupViewModel @Inject constructor(
                 mode = ChallengeMode.SOFT
             ).fold(
                 onSuccess = { result ->
+                    analyticsService.logChallengeCreated(
+                        mode = "soft",
+                        limitType = form.limitType.name.lowercase(),
+                        durationDays = form.durationDays
+                    )
                     UsageTrackingService.start(context)
                     _uiState.value = ChallengeSetupUiState.Success(result.challengeId)
                 },
@@ -202,6 +206,11 @@ class ChallengeSetupViewModel @Inject constructor(
                 stripePaymentIntentId = paymentIntentId
             ).fold(
                 onSuccess = { result ->
+                    analyticsService.logChallengeCreated(
+                        mode = "hard",
+                        limitType = form.limitType.name.lowercase(),
+                        durationDays = form.durationDays
+                    )
                     UsageTrackingService.start(context)
                     val code = result.emergencyCode
                     if (code != null) {

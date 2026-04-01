@@ -1,6 +1,10 @@
 package com.detox.app
 
+import android.app.AppOpsManager
+import android.content.Context
 import android.os.Bundle
+import android.os.Process
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,24 +17,25 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.detox.app.domain.repository.ChallengeRepository
-import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.presentation.navigation.DetoxNavGraph
 import com.detox.app.presentation.navigation.Screen
 import com.detox.app.service.UsageTrackingService
 import com.detox.app.ui.theme.DetoxTheme
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject
-    lateinit var usageStatsRepository: UsageStatsRepository
+    lateinit var challengeRepository: ChallengeRepository
 
     @Inject
-    lateinit var challengeRepository: ChallengeRepository
+    lateinit var firebaseAuth: FirebaseAuth
 
     private var startDestination by mutableStateOf<String?>(null)
 
@@ -64,15 +69,41 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun determineStartDestination(): String {
-        if (!usageStatsRepository.hasUsageStatsPermission()) {
+        val currentUser = firebaseAuth.currentUser
+        Timber.d("determineStartDestination: FirebaseAuth.currentUser isNull=%s uid=%s",
+            currentUser == null, currentUser?.uid)
+
+        // Gate 1: must be authenticated
+        if (currentUser == null) {
+            Timber.d("No authenticated user → Auth screen")
+            return Screen.Auth.route
+        }
+
+        // Gate 2: must have permissions granted
+        if (!hasUsageStatsPermission()) {
+            Timber.d("User authenticated but permissions missing → Onboarding")
             return Screen.Onboarding.route
         }
 
+        // Gate 3: route based on existing challenges
         val activeChallenges = challengeRepository.getActiveChallenges().first()
         return if (activeChallenges.isNotEmpty()) {
+            Timber.d("Authenticated + permissions + challenges → Dashboard")
             Screen.Dashboard.route
         } else {
+            Timber.d("Authenticated + permissions + no challenges → AppSelection")
             Screen.AppSelection.route
         }
+    }
+
+    private fun hasUsageStatsPermission(): Boolean {
+        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        @Suppress("DEPRECATION")
+        val mode = appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            packageName
+        )
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 }

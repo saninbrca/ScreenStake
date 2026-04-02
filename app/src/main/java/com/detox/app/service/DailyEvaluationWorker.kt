@@ -36,29 +36,59 @@ class DailyEvaluationWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
-        Timber.d("DailyEvaluationWorker starting")
+        Timber.d("DailyEvaluationWorker: ▶ starting (runAttemptCount=$runAttemptCount)")
 
         return try {
             val challenges = challengeRepository.getActiveChallengesList().getOrThrow()
             val today = getStartOfDay()
             val now = System.currentTimeMillis()
+            Timber.d(
+                "DailyEvaluationWorker: found ${challenges.size} active challenge(s), " +
+                        "today=$today"
+            )
 
             for (challenge in challenges) {
+                Timber.d(
+                    "DailyEvaluationWorker: evaluating '${challenge.appDisplayName}' " +
+                            "(id=${challenge.id}, mode=${challenge.mode}, " +
+                            "limitType=${challenge.limitType})"
+                )
+
                 // Skip if already evaluated today
                 val existingLog = dailyLogRepository.getLogForDate(challenge.id, today)
                 if (existingLog.isSuccess && existingLog.getOrNull() != null) {
-                    Timber.d("Already evaluated ${challenge.appDisplayName} for today")
+                    Timber.d(
+                        "DailyEvaluationWorker: '${challenge.appDisplayName}' already " +
+                                "evaluated today — skipping"
+                    )
                     continue
                 }
 
                 val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
+                Timber.d(
+                    "DailyEvaluationWorker: usage for '${challenge.appDisplayName}': " +
+                            "${todayUsage.minutes} min, ${todayUsage.opens} opens"
+                )
 
+                Timber.d(
+                    "DailyEvaluationWorker: CalculatePointsUseCase inputs — " +
+                            "limitType=${challenge.limitType}, " +
+                            "limitValueMinutes=${challenge.limitValueMinutes}, " +
+                            "limitValueSessions=${challenge.limitValueSessions}, " +
+                            "todayMinutes=${todayUsage.minutes}, " +
+                            "todayOpens=${todayUsage.opens}"
+                )
                 val pointsResult = calculatePointsUseCase(
                     limitType = challenge.limitType,
                     limitValueMinutes = challenge.limitValueMinutes,
                     limitValueSessions = challenge.limitValueSessions,
                     todayMinutes = todayUsage.minutes,
                     todayOpens = todayUsage.opens
+                )
+                Timber.d(
+                    "DailyEvaluationWorker: CalculatePointsUseCase result — " +
+                            "points=${pointsResult.points}, bonus=${pointsResult.bonusPoints}, " +
+                            "limitExceeded=${pointsResult.limitExceeded}"
                 )
 
                 // ── Hard Mode: handle Stripe payment ──────────────────────────
@@ -105,32 +135,55 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     moneyLostCents = moneyLostCents
                 )
                 dailyLogRepository.insertDailyLog(dailyLog)
+                Timber.d(
+                    "DailyEvaluationWorker: DailyLog saved — id=${dailyLog.id}, " +
+                            "pointsEarned=${dailyLog.pointsEarned}, " +
+                            "limitExceeded=${dailyLog.limitExceeded}"
+                )
 
                 // ── Award points ───────────────────────────────────────────────
                 if (pointsResult.points > 0) {
-                    pointsRepository.addPointTransaction(
-                        PointTransaction(
-                            id = UUID.randomUUID().toString(),
-                            type = "earned",
-                            amount = 10,
-                            reason = "daily_goal_met",
-                            challengeId = challenge.id,
-                            timestamp = now
-                        )
+                    val baseTransaction = PointTransaction(
+                        id = UUID.randomUUID().toString(),
+                        type = "earned",
+                        amount = 10,
+                        reason = "daily_goal_met",
+                        challengeId = challenge.id,
+                        timestamp = now
+                    )
+                    pointsRepository.addPointTransaction(baseTransaction)
+                    Timber.d(
+                        "DailyEvaluationWorker: wrote base transaction — " +
+                                "+10 pts (daily_goal_met) for '${challenge.appDisplayName}'"
                     )
 
                     if (pointsResult.bonusPoints > 0) {
-                        pointsRepository.addPointTransaction(
-                            PointTransaction(
-                                id = UUID.randomUUID().toString(),
-                                type = "earned",
-                                amount = pointsResult.bonusPoints,
-                                reason = "bonus_under_limit",
-                                challengeId = challenge.id,
-                                timestamp = now
-                            )
+                        val bonusTransaction = PointTransaction(
+                            id = UUID.randomUUID().toString(),
+                            type = "earned",
+                            amount = pointsResult.bonusPoints,
+                            reason = "bonus_under_limit",
+                            challengeId = challenge.id,
+                            timestamp = now
+                        )
+                        pointsRepository.addPointTransaction(bonusTransaction)
+                        Timber.d(
+                            "DailyEvaluationWorker: wrote bonus transaction — " +
+                                    "+${pointsResult.bonusPoints} pts (bonus_under_limit) " +
+                                    "for '${challenge.appDisplayName}'"
                         )
                     }
+                    // ── Congratulations notification for a successful day ───────
+                    NotificationHelper.createChannels(applicationContext)
+                    NotificationHelper.sendDayCongratulations(
+                        applicationContext,
+                        challenge.appDisplayName
+                    )
+                } else {
+                    Timber.d(
+                        "DailyEvaluationWorker: no points awarded for '${challenge.appDisplayName}' " +
+                                "(limitExceeded=${pointsResult.limitExceeded})"
+                    )
                 }
 
                 // ── Update challenge status if end date reached ─────────────────
@@ -170,8 +223,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 }
 
                 Timber.d(
-                    "Evaluated ${challenge.appDisplayName}: ${pointsResult.points} pts, " +
-                            "exceeded=${pointsResult.limitExceeded}, " +
+                    "DailyEvaluationWorker: ✓ '${challenge.appDisplayName}' done — " +
+                            "pts=${pointsResult.points}, exceeded=${pointsResult.limitExceeded}, " +
                             "moneyLost=${moneyLostCents / 100f}€"
                 )
             }
@@ -194,7 +247,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 totalCount = challenges.size
             )
 
-            Timber.d("DailyEvaluationWorker completed successfully")
+            Timber.d(
+                "DailyEvaluationWorker: ■ completed successfully — " +
+                        "processed ${challenges.size} challenge(s)"
+            )
             Result.success()
         } catch (e: Exception) {
             Timber.e(e, "DailyEvaluationWorker failed")

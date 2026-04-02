@@ -9,13 +9,17 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.detox.app.service.AppDetectionAccessibilityService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 data class OnboardingState(
@@ -46,13 +50,30 @@ class OnboardingViewModel @Inject constructor(
 
     /** Re-check all permission states. Call from LaunchedEffect(Lifecycle.State.RESUMED). */
     fun refreshPermissions() {
+        Timber.d("Onboarding: refreshPermissions called (app resumed)")
+        val overlayGranted = Settings.canDrawOverlays(context)
+        Timber.d("Onboarding: canDrawOverlays = $overlayGranted")
         _state.update {
             it.copy(
                 usageStatsGranted = checkUsageStatsPermission(),
-                overlayGranted = Settings.canDrawOverlays(context),
+                overlayGranted = overlayGranted,
                 accessibilityGranted = checkAccessibilityServiceEnabled(),
                 notificationsGranted = checkNotificationPermission()
             )
+        }
+
+        // Android 10+ may have a brief delay before canDrawOverlays() returns true
+        // immediately after the user grants the permission and returns to the app.
+        // Retry once after 500 ms to catch this race condition.
+        if (!overlayGranted) {
+            viewModelScope.launch {
+                delay(500L)
+                val retryResult = Settings.canDrawOverlays(context)
+                Timber.d("Onboarding: canDrawOverlays retry (500 ms) = $retryResult")
+                if (retryResult) {
+                    _state.update { it.copy(overlayGranted = true) }
+                }
+            }
         }
     }
 

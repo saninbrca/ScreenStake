@@ -153,8 +153,14 @@ class OverlayManager @Inject constructor(
                                 captureAndLock(status, scope)
                             }
                         } else {
-                            // Soft Mode: mark exceeded, restart 5-min timer
+                            // Soft Mode: mark exceeded (day's points will be 0 at evaluation),
+                            // dismiss overlay and restart the 5-min warning timer
                             analyticsService.logLimitExceeded("soft", challenge.appPackageName)
+                            Timber.d(
+                                "OverlayManager: Soft Mode limit exceeded — " +
+                                        "${challenge.appDisplayName} marked exceeded for today, " +
+                                        "5-min re-show timer started"
+                            )
                             exceededAppsToday.add(challenge.appPackageName)
                             dismissOverlay()
                             startLimitReachedTimer(challenge.appPackageName, scope)
@@ -166,12 +172,60 @@ class OverlayManager @Inject constructor(
                     },
                     onEmergencyCode = if (isHard) {
                         {
-                            // Dismiss and show lockout with code input immediately
+                            // Per spec: "money still lost + 50 points deducted".
+                            // Payment MUST be captured here — the emergency code button is an
+                            // alternative entry into the lockout flow, not a way to avoid the
+                            // charge. We also add the package to hardLockedPackages immediately so
+                            // that if the user exits home before entering the code, the lockout
+                            // is still shown on the next app-open (not the normal blocking screen).
+                            val code = challenge.emergencyCode
+                            if (code.isNullOrEmpty()) {
+                                // Should never happen for Hard Mode challenges — log and fall back
+                                // to the standard capture-and-lock path so the app is still locked.
+                                Timber.e(
+                                    "OverlayManager: Hard Mode challenge ${challenge.id} " +
+                                            "has null/empty emergencyCode — falling back to captureAndLock"
+                                )
+                                scope.launch { captureAndLock(status, scope) }
+                                return@LimitExceededOverlay
+                            }
+
                             val info = LockedAppInfo(
                                 appName = challenge.appDisplayName,
                                 amountCents = challenge.amountCents ?: 0,
-                                emergencyCode = challenge.emergencyCode ?: ""
+                                emergencyCode = code
                             )
+
+                            // Lock the package NOW so subsequent opens show the lockout even
+                            // if the user exits home without entering the code.
+                            hardLockedPackages[challenge.appPackageName] = info
+
+                            scope.launch {
+                                // Capture payment (fire-and-forget — show lockout regardless).
+                                // Per spec the money is lost when the emergency path is chosen.
+                                challenge.stripePaymentIntentId?.let { piId ->
+                                    Timber.d(
+                                        "OverlayManager: emergency code path — capturing payment " +
+                                                "for ${challenge.appDisplayName}"
+                                    )
+                                    paymentRepository.capturePayment(piId)
+                                        .onSuccess {
+                                            Timber.d(
+                                                "OverlayManager: payment captured via emergency " +
+                                                        "path for ${challenge.appDisplayName}"
+                                            )
+                                        }
+                                        .onFailure { e ->
+                                            Timber.e(
+                                                e,
+                                                "OverlayManager: payment capture failed on " +
+                                                        "emergency path for ${challenge.id}"
+                                            )
+                                        }
+                                }
+                            }
+
+                            analyticsService.logLimitExceeded("hard_emergency", challenge.appPackageName)
                             dismissOverlay()
                             showHardModeLockoutDirect(info, scope)
                         }
@@ -201,12 +255,25 @@ class OverlayManager @Inject constructor(
                 .onFailure { e -> Timber.e(e, "Failed to capture payment") }
         }
 
+        val code = challenge.emergencyCode
+        if (code.isNullOrEmpty()) {
+            // Should never happen — Hard Mode challenges always get a code in CreateChallengeUseCase.
+            // Log so it shows up in Crashlytics breadcrumbs.
+            Timber.e(
+                "OverlayManager: captureAndLock — challenge ${challenge.id} has " +
+                        "null/empty emergencyCode; lockout will show but code input won't work"
+            )
+        }
         val info = LockedAppInfo(
             appName = challenge.appDisplayName,
             amountCents = challenge.amountCents ?: 0,
-            emergencyCode = challenge.emergencyCode ?: ""
+            emergencyCode = code ?: ""
         )
         hardLockedPackages[challenge.appPackageName] = info
+        Timber.d(
+            "OverlayManager: Hard Mode lockout active for '${challenge.appDisplayName}' " +
+                    "(€${(challenge.amountCents ?: 0) / 100f} captured)"
+        )
         showHardModeLockoutDirect(info, scope)
     }
 
@@ -224,7 +291,11 @@ class OverlayManager @Inject constructor(
                     amountCents = info.amountCents,
                     correctCode = info.emergencyCode,
                     onEmergencyUnlock = {
-                        // Deduct 50 points as penalty
+                        Timber.d(
+                            "OverlayManager: emergency unlock used for '${info.appName}' — " +
+                                    "deducting 50 pts, removing lockout"
+                        )
+                        // Deduct 50 points as penalty per spec
                         scope.launch {
                             pointsRepository.addPointTransaction(
                                 PointTransaction(

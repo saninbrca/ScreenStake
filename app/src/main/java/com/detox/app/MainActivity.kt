@@ -4,7 +4,6 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.os.Bundle
 import android.os.Process
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -85,15 +84,8 @@ class MainActivity : ComponentActivity() {
             return Screen.Onboarding.route
         }
 
-        // Gate 3: route based on existing challenges
-        val activeChallenges = challengeRepository.getActiveChallenges().first()
-        return if (activeChallenges.isNotEmpty()) {
-            Timber.d("Authenticated + permissions + challenges → Dashboard")
-            Screen.Dashboard.route
-        } else {
-            Timber.d("Authenticated + permissions + no challenges → AppSelection")
-            Screen.AppSelection.route
-        }
+        Timber.d("Authenticated + permissions → Main")
+        return Screen.Main.route
     }
 
     private fun hasUsageStatsPermission(): Boolean {

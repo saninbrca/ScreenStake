@@ -98,9 +98,10 @@ dependencies {
 
     // Hilt
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)                  // com.google.dagger:hilt-compiler — processes @HiltViewModel, @Inject, etc.
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)         // androidx.hilt:hilt-compiler — processes @HiltWorker and generates HiltWorkerFactory bindings
 
     // Firebase
     implementation(platform(libs.firebase.bom))

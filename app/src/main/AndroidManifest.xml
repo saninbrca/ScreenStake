@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:androidx="http://schemas.android.com/apk/res-auto">
 
     <!-- Read usage data (14-day history) -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -72,6 +73,28 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!--
+            Disable WorkManager's default Jetpack Startup auto-initializer.
+            Without this override the default WorkManagerInitializer runs before
+            DetoxApplication.workManagerConfiguration is consulted, meaning
+            WorkManager uses the plain reflection factory instead of HiltWorkerFactory.
+            Any @HiltWorker then fails at runtime with NoSuchMethodException because
+            no matching no-arg constructor exists.
+
+            DetoxApplication implements Configuration.Provider and provides the
+            HiltWorkerFactory there, so manual initialization is safe.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <service
             android:name=".service.DetoxFirebaseMessagingService"

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import timber.log.Timber
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ fun OnboardingScreen(
     // Re-check permissions every time the screen resumes (user returns from Settings)
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            Timber.d("Onboarding: screen RESUMED — checking permissions")
             viewModel.refreshPermissions()
         }
     }
@@ -127,6 +129,7 @@ fun OnboardingScreen(
                     description = stringResource(R.string.permission_overlay_description),
                     isGranted = state.overlayGranted,
                     onRequest = {
+                        Timber.d("Onboarding: launching ACTION_MANAGE_OVERLAY_PERMISSION for ${context.packageName}")
                         context.startActivity(
                             Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,

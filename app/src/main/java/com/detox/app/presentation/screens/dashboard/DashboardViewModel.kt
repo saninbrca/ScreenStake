@@ -7,8 +7,10 @@ import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,9 +33,17 @@ class DashboardViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
+    // Always-current points cache. Using SharingStarted.Eagerly so .value is
+    // populated immediately — this fixes the race where loadStats() fires while
+    // the state is Loading and reads 0 from the (Loading) UI state.
+    private val _totalPoints: StateFlow<Int> = pointsRepository.getTotalPointsBalance()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
     init {
+        // Keep the Success state in sync whenever points change in the DB
+        // (e.g. after DailyEvaluationWorker runs or a points shop purchase).
         viewModelScope.launch {
-            pointsRepository.getTotalPointsBalance().collect { points ->
+            _totalPoints.collect { points ->
                 val currentState = _uiState.value
                 if (currentState is DashboardUiState.Success) {
                     _uiState.value = currentState.copy(totalPoints = points)
@@ -50,9 +60,11 @@ class DashboardViewModel @Inject constructor(
                     if (stats.isEmpty()) {
                         _uiState.value = DashboardUiState.Empty
                     } else {
+                        // _totalPoints.value is always current because the
+                        // StateFlow uses SharingStarted.Eagerly — no race condition.
                         _uiState.value = DashboardUiState.Success(
                             activeChallenges = stats,
-                            totalPoints = (_uiState.value as? DashboardUiState.Success)?.totalPoints ?: 0
+                            totalPoints = _totalPoints.value
                         )
                     }
                 },

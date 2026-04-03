@@ -14,5 +14,7 @@ data class Challenge(
     val stripePaymentIntentId: String?,
     val customMotivation: String?,
     val status: ChallengeStatus,
-    val createdAt: Long
+    val createdAt: Long,
+    /** Total minutes the user may spend per day on this app (TIME_BUDGET challenges only). */
+    val dailyBudgetMinutes: Int? = null
 )

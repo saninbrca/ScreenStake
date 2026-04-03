@@ -25,10 +25,14 @@ class CreateChallengeUseCase @Inject constructor(
         customMotivation: String?,
         mode: ChallengeMode = ChallengeMode.SOFT,
         amountCents: Int? = null,
-        stripePaymentIntentId: String? = null
+        stripePaymentIntentId: String? = null,
+        dailyBudgetMinutes: Int? = null
     ): Result<ChallengeCreationResult> {
-        if (limitValueMinutes <= 0) {
+        if (limitType != LimitType.TIME_BUDGET && limitValueMinutes <= 0) {
             return Result.failure(IllegalArgumentException("Limit minutes must be greater than 0"))
+        }
+        if (limitType == LimitType.TIME_BUDGET && (dailyBudgetMinutes == null || dailyBudgetMinutes <= 0)) {
+            return Result.failure(IllegalArgumentException("Daily budget must be greater than 0"))
         }
         if (durationDays !in 1..365) {
             return Result.failure(IllegalArgumentException("Duration must be between 1 and 365 days"))
@@ -63,7 +67,8 @@ class CreateChallengeUseCase @Inject constructor(
             stripePaymentIntentId = if (mode == ChallengeMode.HARD) stripePaymentIntentId else null,
             customMotivation = customMotivation,
             status = ChallengeStatus.ACTIVE,
-            createdAt = now
+            createdAt = now,
+            dailyBudgetMinutes = if (limitType == LimitType.TIME_BUDGET) dailyBudgetMinutes else null
         )
 
         return challengeRepository.createChallenge(challenge).map {

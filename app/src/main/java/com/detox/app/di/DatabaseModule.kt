@@ -30,7 +30,8 @@ object DatabaseModule {
             .addMigrations(
                 DetoxDatabase.MIGRATION_1_2,
                 DetoxDatabase.MIGRATION_2_3,
-                DetoxDatabase.MIGRATION_3_4
+                DetoxDatabase.MIGRATION_3_4,
+                DetoxDatabase.MIGRATION_4_5
             )
             .build()
     }

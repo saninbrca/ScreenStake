@@ -147,6 +147,11 @@ class UsageTrackingService : Service() {
                     val maxSessions = challenge.limitValueSessions ?: 0
                     if (maxSessions > 0) usage.opens.toFloat() / maxSessions else 0f
                 }
+                // TIME_BUDGET: UsageStats minutes approximate budget consumption for 80% warning
+                LimitType.TIME_BUDGET -> {
+                    val budget = challenge.dailyBudgetMinutes ?: 0
+                    if (budget > 0) usage.minutes.toFloat() / budget else 0f
+                }
             }
 
             Timber.d(

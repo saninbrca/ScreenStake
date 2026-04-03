@@ -28,6 +28,51 @@ class GetDailyStatsUseCase @Inject constructor(
             }.timeInMillis
 
             val stats = challenges.map { challenge ->
+                val daysRemaining = maxOf(0, ((challenge.endDate - now) / 86_400_000L).toInt())
+                val todayLog = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
+
+                // TIME_BUDGET: use budget columns from Room, not raw UsageStats.
+                if (challenge.limitType == LimitType.TIME_BUDGET) {
+                    val totalBudget = challenge.dailyBudgetMinutes ?: 0
+                    val hasRealBudgetActivity = todayLog != null &&
+                            (todayLog.budgetUsedMinutes > 0 || todayLog.budgetRemainingMinutes > 0)
+                    val budgetUsed = todayLog?.budgetUsedMinutes ?: 0
+                    val budgetRemaining = if (hasRealBudgetActivity) {
+                        todayLog!!.budgetRemainingMinutes
+                    } else {
+                        totalBudget  // no deductions yet → full budget available
+                    }
+                    val moneyLostCents = todayLog?.moneyLostCents ?: 0
+                    val limitExceeded = todayLog?.limitExceeded ?: false
+
+                    val pointsResult = calculatePointsUseCase(
+                        limitType = LimitType.TIME_BUDGET,
+                        limitValueMinutes = totalBudget,
+                        limitValueSessions = null,
+                        todayMinutes = budgetUsed,
+                        todayOpens = 0
+                    )
+
+                    return@map DailyStats(
+                        challengeId = challenge.id,
+                        appDisplayName = challenge.appDisplayName,
+                        appPackageName = challenge.appPackageName,
+                        limitType = LimitType.TIME_BUDGET,
+                        limitValueMinutes = totalBudget,
+                        limitValueSessions = null,
+                        todayMinutes = budgetUsed,
+                        todayOpens = 0,
+                        pointsEarnedToday = pointsResult.points,
+                        limitExceeded = limitExceeded,
+                        customMotivation = challenge.customMotivation,
+                        daysRemaining = daysRemaining,
+                        moneyLostCents = moneyLostCents,
+                        dailyBudgetMinutes = totalBudget,
+                        budgetRemainingMinutes = budgetRemaining
+                    )
+                }
+
+                // TIME / SESSIONS: existing UsageStats-based flow.
                 val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
 
                 // Subtract overlay-visible time so it doesn't count against the user's limit.
@@ -43,7 +88,7 @@ class GetDailyStatsUseCase @Inject constructor(
                     LimitType.SESSIONS -> dailyLogRepository
                         .getConsciousOpens(challenge.id, today)
                         .getOrElse { todayUsage.opens }
-                    LimitType.TIME -> todayUsage.opens
+                    else -> todayUsage.opens
                 }
 
                 val pointsResult = calculatePointsUseCase(
@@ -54,11 +99,7 @@ class GetDailyStatsUseCase @Inject constructor(
                     todayOpens = todayOpens
                 )
 
-                // Read today's DailyLog to surface any intra-day Hard Mode payment capture
-                val todayLog = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
                 val moneyLostCents = todayLog?.moneyLostCents ?: 0
-
-                val daysRemaining = maxOf(0, ((challenge.endDate - now) / 86_400_000L).toInt())
 
                 DailyStats(
                     challengeId = challenge.id,

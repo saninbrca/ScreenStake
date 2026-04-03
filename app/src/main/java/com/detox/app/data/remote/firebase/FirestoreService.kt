@@ -167,7 +167,8 @@ class FirestoreService @Inject constructor(
                         status = ChallengeStatus.valueOf(
                             (d["status"] as? String ?: "active").uppercase()
                         ),
-                        createdAt = d["createdAt"] as? Long ?: 0L
+                        createdAt = d["createdAt"] as? Long ?: 0L,
+                        dailyBudgetMinutes = (d["dailyBudgetMinutes"] as? Long)?.toInt()
                     )
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to parse challenge document ${doc.id}")
@@ -266,6 +267,7 @@ class FirestoreService @Inject constructor(
         "customMotivation" to customMotivation,
         "status" to status.name.lowercase(),
         "createdAt" to createdAt,
+        "dailyBudgetMinutes" to dailyBudgetMinutes,
         "syncedAt" to com.google.firebase.Timestamp.now()
     )
 
@@ -277,6 +279,8 @@ class FirestoreService @Inject constructor(
         "openCount" to openCount,
         "consciousOpens" to consciousOpens,
         "overlayPausedMs" to overlayPausedMs,
+        "budgetUsedMinutes" to budgetUsedMinutes,
+        "budgetRemainingMinutes" to budgetRemainingMinutes,
         "pointsEarned" to pointsEarned,
         "limitExceeded" to limitExceeded,
         "moneyLostCents" to moneyLostCents

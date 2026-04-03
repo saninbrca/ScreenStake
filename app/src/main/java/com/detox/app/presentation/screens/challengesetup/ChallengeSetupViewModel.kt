@@ -31,17 +31,20 @@ data class ChallengeSetupFormState(
     val limitMinutes: Int = 60,
     val limitSessions: Int = 5,
     val sessionMinutes: Int = 5,
+    /** Daily time budget in minutes for TIME_BUDGET challenges. */
+    val dailyBudgetMinutes: Int = 39,
     val durationDays: Int = 7,
     val motivationText: String = "",
     val mode: ChallengeMode = ChallengeMode.SOFT,
     /** Amount in whole Euros (€5–€50). Converted to cents when creating challenge. */
     val amountEuros: Int = 10,
-    /** Average daily minutes over the last 14 days — used as the upper bound for TIME limit. */
+    /** Average daily minutes over the last 14 days — used as the upper bound for limits. */
     val avgDailyMinutes: Int = 0,
     /** Per-field validation errors; null = valid. */
     val limitMinutesError: String? = null,
     val limitSessionsError: String? = null,
-    val sessionMinutesError: String? = null
+    val sessionMinutesError: String? = null,
+    val dailyBudgetMinutesError: String? = null
 )
 
 sealed interface ChallengeSetupUiState {
@@ -114,7 +117,20 @@ class ChallengeSetupViewModel @Inject constructor(
 
     // ── Form updates ────────────────────────────────────────────────────────────
 
-    fun updateLimitType(limitType: LimitType) = _formState.update { it.copy(limitType = limitType) }
+    fun updateLimitType(limitType: LimitType) =
+        _formState.update { it.copy(limitType = limitType) }
+
+    fun updateDailyBudgetMinutes(minutes: Int) {
+        val avg = _formState.value.avgDailyMinutes
+        val error = when {
+            minutes < 1 ->
+                context.getString(R.string.challenge_setup_error_min_budget)
+            avg > 0 && minutes >= avg ->
+                context.getString(R.string.challenge_setup_error_max_minutes, avg)
+            else -> null
+        }
+        _formState.update { it.copy(dailyBudgetMinutes = minutes, dailyBudgetMinutesError = error) }
+    }
 
     fun updateLimitMinutes(minutes: Int) {
         val avg = _formState.value.avgDailyMinutes
@@ -173,7 +189,6 @@ class ChallengeSetupViewModel @Inject constructor(
     private fun validateLimitFields(form: ChallengeSetupFormState): Boolean {
         return when (form.limitType) {
             LimitType.TIME -> {
-                // Re-run the update to ensure error state is set
                 updateLimitMinutes(form.limitMinutes)
                 _formState.value.limitMinutesError == null
             }
@@ -182,6 +197,10 @@ class ChallengeSetupViewModel @Inject constructor(
                 updateSessionMinutes(form.sessionMinutes)
                 _formState.value.limitSessionsError == null &&
                         _formState.value.sessionMinutesError == null
+            }
+            LimitType.TIME_BUDGET -> {
+                updateDailyBudgetMinutes(form.dailyBudgetMinutes)
+                _formState.value.dailyBudgetMinutesError == null
             }
         }
     }
@@ -198,7 +217,9 @@ class ChallengeSetupViewModel @Inject constructor(
                 limitValueSessions = limitSessions,
                 durationDays = form.durationDays,
                 customMotivation = form.motivationText.ifBlank { null },
-                mode = ChallengeMode.SOFT
+                mode = ChallengeMode.SOFT,
+                dailyBudgetMinutes = if (form.limitType == LimitType.TIME_BUDGET)
+                    form.dailyBudgetMinutes else null
             ).fold(
                 onSuccess = { result ->
                     analyticsService.logChallengeCreated(
@@ -268,7 +289,9 @@ class ChallengeSetupViewModel @Inject constructor(
                 customMotivation = form.motivationText.ifBlank { null },
                 mode = ChallengeMode.HARD,
                 amountCents = form.amountEuros * 100,
-                stripePaymentIntentId = paymentIntentId
+                stripePaymentIntentId = paymentIntentId,
+                dailyBudgetMinutes = if (form.limitType == LimitType.TIME_BUDGET)
+                    form.dailyBudgetMinutes else null
             ).fold(
                 onSuccess = { result ->
                     analyticsService.logChallengeCreated(
@@ -296,10 +319,13 @@ class ChallengeSetupViewModel @Inject constructor(
         val limitMinutes = when (form.limitType) {
             LimitType.TIME -> form.limitMinutes
             LimitType.SESSIONS -> form.sessionMinutes
+            // TIME_BUDGET: limitValueMinutes is unused; 0 is a safe placeholder
+            LimitType.TIME_BUDGET -> 0
         }
         val limitSessions = when (form.limitType) {
             LimitType.TIME -> null
             LimitType.SESSIONS -> form.limitSessions
+            LimitType.TIME_BUDGET -> null
         }
         return limitMinutes to limitSessions
     }

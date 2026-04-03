@@ -117,7 +117,8 @@ class ChallengeRepositoryImpl @Inject constructor(
         stripePaymentIntentId = stripePaymentIntentId,
         customMotivation = customMotivation,
         status = ChallengeStatus.valueOf(status.uppercase()),
-        createdAt = createdAt
+        createdAt = createdAt,
+        dailyBudgetMinutes = dailyBudgetMinutes
     )
 
     private fun Challenge.toEntity(): ChallengeEntity = ChallengeEntity(
@@ -134,6 +135,7 @@ class ChallengeRepositoryImpl @Inject constructor(
         stripePaymentIntentId = stripePaymentIntentId,
         customMotivation = customMotivation,
         status = status.name.lowercase(),
-        createdAt = createdAt
+        createdAt = createdAt,
+        dailyBudgetMinutes = dailyBudgetMinutes
     )
 }

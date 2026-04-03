@@ -43,6 +43,10 @@ fun ChallengeCard(
                 dailyStats.todayOpens.toFloat() / maxSessions
             } else 0f
         }
+        LimitType.TIME_BUDGET -> {
+            val budget = dailyStats.dailyBudgetMinutes ?: dailyStats.limitValueMinutes
+            if (budget > 0) dailyStats.todayMinutes.toFloat() / budget else 0f
+        }
     }.coerceIn(0f, 1f)
 
     val progressColor = if (dailyStats.limitExceeded) DetoxTertiary else DetoxTrackableGreen
@@ -82,6 +86,10 @@ fun ChallengeCard(
                                 dailyStats.limitValueSessions ?: 0,
                                 dailyStats.limitValueMinutes
                             )
+                            LimitType.TIME_BUDGET -> stringResource(
+                                R.string.challenge_card_budget_limit,
+                                dailyStats.dailyBudgetMinutes ?: dailyStats.limitValueMinutes
+                            )
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -119,6 +127,13 @@ fun ChallengeCard(
                             R.string.challenge_card_session_progress,
                             dailyStats.todayOpens,
                             dailyStats.limitValueSessions ?: 0
+                        )
+                        LimitType.TIME_BUDGET -> stringResource(
+                            R.string.challenge_card_budget_progress,
+                            dailyStats.todayMinutes,
+                            dailyStats.dailyBudgetMinutes ?: dailyStats.limitValueMinutes,
+                            dailyStats.budgetRemainingMinutes
+                                ?: ((dailyStats.dailyBudgetMinutes ?: 0) - dailyStats.todayMinutes)
                         )
                     },
                     style = MaterialTheme.typography.bodySmall,

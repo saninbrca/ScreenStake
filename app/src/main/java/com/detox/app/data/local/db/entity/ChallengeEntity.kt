@@ -18,5 +18,7 @@ data class ChallengeEntity(
     val stripePaymentIntentId: String?,
     val customMotivation: String?,
     val status: String,
-    val createdAt: Long
+    val createdAt: Long,
+    /** Total daily budget in minutes (TIME_BUDGET challenges only). */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val dailyBudgetMinutes: Int? = null
 )

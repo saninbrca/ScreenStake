@@ -45,6 +45,7 @@
     <string name="challenge_setup_limit_type">Limit Type</string>
     <string name="challenge_setup_time_limit">Time Limit</string>
     <string name="challenge_setup_session_limit">Session Limit</string>
+    <string name="challenge_setup_budget_limit">Daily Budget</string>
     <string name="challenge_setup_daily_limit">Daily limit: %1$d minutes</string>
     <string name="challenge_setup_max_opens">Max opens per day: %1$d</string>
     <string name="challenge_setup_session_duration">Minutes per session: %1$d</string>
@@ -60,6 +61,9 @@
     <string name="challenge_setup_error_min_sessions">Minimum 1 session</string>
     <string name="challenge_setup_error_min_session_mins">Minimum 1 minute per session</string>
     <string name="challenge_setup_error_fix_limits">Please fix the highlighted fields before starting</string>
+    <string name="challenge_setup_error_min_budget">Budget must be at least 1 minute</string>
+    <string name="challenge_setup_budget_field_label">Daily budget (minutes)</string>
+    <string name="challenge_setup_budget_summary">%1$s: choose your session duration each time, up to %2$d min/day total</string>
     <string name="challenge_setup_duration">Duration</string>
     <string name="challenge_setup_days">%1$d days</string>
     <string name="challenge_setup_motivation_label">Motivation (optional)</string>
@@ -275,4 +279,18 @@
     <string name="stats_current_streak">🔥 %1$d day streak</string>
     <string name="stats_best_streak">Best: %1$d days</string>
     <string name="stats_last_7_days">Last 7 days</string>
+
+    <!-- Challenge Card — TIME_BUDGET -->
+    <string name="challenge_card_budget_limit">Budget: %1$d min/day</string>
+    <string name="challenge_card_budget_progress">%1$d of %2$d min used · %3$d min left</string>
+
+    <!-- Budget Selection Overlay (TIME_BUDGET Stage 1) -->
+    <string name="budget_overlay_title">Opening %1$s</string>
+    <string name="budget_overlay_remaining">%1$d min remaining today</string>
+    <string name="budget_overlay_pick_label">How long do you need?</string>
+    <string name="budget_overlay_minutes_value">%1$d min</string>
+    <string name="budget_overlay_decrease">Decrease minutes</string>
+    <string name="budget_overlay_increase">Increase minutes</string>
+    <string name="budget_overlay_start">Start session</string>
+    <string name="budget_overlay_go_back">No, go back</string>
 </resources>

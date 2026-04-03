@@ -30,4 +30,10 @@ interface DailyLogDao {
 
     @Query("UPDATE daily_logs SET overlayPausedMs = overlayPausedMs + :additionalMs WHERE challengeId = :challengeId AND date = :date")
     suspend fun addOverlayPausedMs(challengeId: String, date: Long, additionalMs: Long)
+
+    @Query("SELECT COALESCE(budgetRemainingMinutes, 0) FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
+    suspend fun getBudgetRemainingMinutes(challengeId: String, date: Long): Int
+
+    @Query("UPDATE daily_logs SET budgetUsedMinutes = :used, budgetRemainingMinutes = :remaining WHERE challengeId = :challengeId AND date = :date")
+    suspend fun updateBudgetState(challengeId: String, date: Long, used: Int, remaining: Int)
 }

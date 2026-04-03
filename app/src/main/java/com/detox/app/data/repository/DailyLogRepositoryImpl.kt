@@ -134,6 +134,47 @@ class DailyLogRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getBudgetRemainingMinutes(challengeId: String, date: Long): Result<Int> {
+        return try {
+            Result.success(dailyLogDao.getBudgetRemainingMinutes(challengeId, date))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateBudgetState(
+        challengeId: String,
+        date: Long,
+        used: Int,
+        remaining: Int
+    ): Result<Unit> {
+        return try {
+            val existing = dailyLogDao.getLogForDate(challengeId, date)
+            if (existing != null) {
+                dailyLogDao.updateBudgetState(challengeId, date, used, remaining)
+            } else {
+                // No row yet — create a placeholder carrying only the budget state.
+                dailyLogDao.insertDailyLog(
+                    DailyLogEntity(
+                        id = UUID.randomUUID().toString(),
+                        challengeId = challengeId,
+                        date = date,
+                        totalMinutes = 0,
+                        openCount = 0,
+                        budgetUsedMinutes = used,
+                        budgetRemainingMinutes = remaining,
+                        pointsEarned = 0,
+                        limitExceeded = false,
+                        moneyLostCents = 0
+                    )
+                )
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun DailyLogEntity.toDomain(): DailyLog = DailyLog(
         id = id,
         challengeId = challengeId,
@@ -142,6 +183,8 @@ class DailyLogRepositoryImpl @Inject constructor(
         openCount = openCount,
         consciousOpens = consciousOpens,
         overlayPausedMs = overlayPausedMs,
+        budgetUsedMinutes = budgetUsedMinutes,
+        budgetRemainingMinutes = budgetRemainingMinutes,
         pointsEarned = pointsEarned,
         limitExceeded = limitExceeded,
         moneyLostCents = moneyLostCents
@@ -155,6 +198,8 @@ class DailyLogRepositoryImpl @Inject constructor(
         openCount = openCount,
         consciousOpens = consciousOpens,
         overlayPausedMs = overlayPausedMs,
+        budgetUsedMinutes = budgetUsedMinutes,
+        budgetRemainingMinutes = budgetRemainingMinutes,
         pointsEarned = pointsEarned,
         limitExceeded = limitExceeded,
         moneyLostCents = moneyLostCents

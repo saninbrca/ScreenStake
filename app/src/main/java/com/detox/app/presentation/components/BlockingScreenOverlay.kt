@@ -115,6 +115,13 @@ fun BlockingScreenOverlay(
                         status.todayOpens,
                         status.challenge.limitValueSessions ?: 0
                     )
+                    // TIME_BUDGET is handled by BudgetSelectionOverlay; this fallback is
+                    // defensive only (should never be reached for budget challenges).
+                    LimitType.TIME_BUDGET -> stringResource(
+                        R.string.blocking_overlay_usage_time,
+                        status.todayMinutes,
+                        status.challenge.dailyBudgetMinutes ?: 0
+                    )
                 }
                 Text(
                     text = progressText,
@@ -131,6 +138,10 @@ fun BlockingScreenOverlay(
                     LimitType.SESSIONS -> {
                         val max = status.challenge.limitValueSessions ?: 1
                         if (max > 0) status.todayOpens.toFloat() / max else 0f
+                    }
+                    LimitType.TIME_BUDGET -> {
+                        val budget = status.challenge.dailyBudgetMinutes ?: 1
+                        if (budget > 0) status.todayMinutes.toFloat() / budget else 0f
                     }
                 }.coerceIn(0f, 1f)
 

@@ -182,6 +182,11 @@ fun ChallengeSetupScreen(
                     onClick = { viewModel.updateLimitType(LimitType.SESSIONS) },
                     label = { Text(stringResource(R.string.challenge_setup_session_limit)) }
                 )
+                FilterChip(
+                    selected = formState.limitType == LimitType.TIME_BUDGET,
+                    onClick = { viewModel.updateLimitType(LimitType.TIME_BUDGET) },
+                    label = { Text(stringResource(R.string.challenge_setup_budget_limit)) }
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -206,6 +211,15 @@ fun ChallengeSetupScreen(
                         displayName = formState.displayName,
                         onSessionsChange = { viewModel.updateLimitSessions(it) },
                         onSessionMinsChange = { viewModel.updateSessionMinutes(it) }
+                    )
+                }
+
+                LimitType.TIME_BUDGET -> {
+                    BudgetLimitInput(
+                        budgetMinutes = formState.dailyBudgetMinutes,
+                        error = formState.dailyBudgetMinutesError,
+                        displayName = formState.displayName,
+                        onValueChange = { viewModel.updateDailyBudgetMinutes(it) }
                     )
                 }
             }
@@ -425,3 +439,41 @@ private fun SessionLimitInput(
     }
 }
 
+// ── Daily Time Budget input ────────────────────────────────────────────────────
+
+@Composable
+private fun BudgetLimitInput(
+    budgetMinutes: Int,
+    error: String?,
+    displayName: String,
+    onValueChange: (Int) -> Unit
+) {
+    var text by remember { mutableStateOf(budgetMinutes.toString()) }
+
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            val digits = raw.filter { it.isDigit() }.take(4)
+            text = digits
+            onValueChange(digits.toIntOrNull() ?: 0)
+        },
+        label = { Text(stringResource(R.string.challenge_setup_budget_field_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = error != null,
+        supportingText = if (error != null) {
+            { Text(error) }
+        } else null,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    val budgetVal = text.toIntOrNull() ?: 0
+    if (error == null && budgetVal >= 1) {
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.challenge_setup_budget_summary, displayName, budgetVal),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}

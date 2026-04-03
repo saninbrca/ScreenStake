@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.PointTransaction
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
@@ -103,6 +104,131 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     continue
                 }
 
+                // ── TIME_BUDGET: use explicit budget columns, not UsageStats ──────────
+                if (challenge.limitType == LimitType.TIME_BUDGET) {
+                    val totalBudget = challenge.dailyBudgetMinutes ?: 0
+                    val budgetUsed = existingLog.getOrNull()?.budgetUsedMinutes ?: 0
+                    val overlayPausedMs = existingLog.getOrNull()?.overlayPausedMs ?: 0L
+
+                    Timber.d(
+                        "DailyEvaluationWorker: TIME_BUDGET '${challenge.appDisplayName}' — " +
+                                "budgetUsed=${budgetUsed}min, totalBudget=${totalBudget}min"
+                    )
+
+                    val pointsResult = calculatePointsUseCase(
+                        limitType = LimitType.TIME_BUDGET,
+                        limitValueMinutes = totalBudget,
+                        limitValueSessions = null,
+                        todayMinutes = budgetUsed,
+                        todayOpens = 0
+                    )
+
+                    var moneyLostCents = 0
+                    if (challenge.mode == ChallengeMode.HARD &&
+                        challenge.stripePaymentIntentId != null
+                    ) {
+                        val durationDays = ((challenge.endDate - challenge.startDate) /
+                                86_400_000L).toInt()
+                        val isImmediateCapture = durationDays > 7
+                        if (pointsResult.limitExceeded) {
+                            paymentRepository.capturePayment(challenge.stripePaymentIntentId)
+                                .onSuccess { moneyLostCents = challenge.amountCents ?: 0 }
+                                .onFailure { e ->
+                                    Timber.e(e, "Failed to capture payment for ${challenge.id}")
+                                }
+                        } else if (now >= challenge.endDate) {
+                            paymentRepository.cancelOrRefundPayment(
+                                paymentIntentId = challenge.stripePaymentIntentId,
+                                wasImmediate = isImmediateCapture
+                            ).onFailure { e ->
+                                Timber.e(e, "Failed to cancel/refund payment for ${challenge.id}")
+                            }
+                        }
+                    }
+
+                    val dailyLog = DailyLog(
+                        id = UUID.randomUUID().toString(),
+                        challengeId = challenge.id,
+                        date = today,
+                        totalMinutes = budgetUsed,
+                        openCount = 0,
+                        overlayPausedMs = overlayPausedMs,
+                        budgetUsedMinutes = budgetUsed,
+                        budgetRemainingMinutes = maxOf(0, totalBudget - budgetUsed),
+                        pointsEarned = pointsResult.points,
+                        limitExceeded = pointsResult.limitExceeded,
+                        moneyLostCents = moneyLostCents
+                    )
+                    dailyLogRepository.insertDailyLog(dailyLog)
+                    Timber.d(
+                        "DailyEvaluationWorker: TIME_BUDGET DailyLog saved — " +
+                                "budgetUsed=${budgetUsed}min, pts=${pointsResult.points}, " +
+                                "limitExceeded=${pointsResult.limitExceeded}"
+                    )
+
+                    if (pointsResult.points > 0) {
+                        pointsRepository.addPointTransaction(
+                            PointTransaction(
+                                id = UUID.randomUUID().toString(),
+                                type = "earned",
+                                amount = 10,
+                                reason = "daily_goal_met",
+                                challengeId = challenge.id,
+                                timestamp = now
+                            )
+                        )
+                        if (pointsResult.bonusPoints > 0) {
+                            pointsRepository.addPointTransaction(
+                                PointTransaction(
+                                    id = UUID.randomUUID().toString(),
+                                    type = "earned",
+                                    amount = pointsResult.bonusPoints,
+                                    reason = "bonus_under_limit",
+                                    challengeId = challenge.id,
+                                    timestamp = now
+                                )
+                            )
+                        }
+                        NotificationHelper.createChannels(applicationContext)
+                        NotificationHelper.sendDayCongratulations(
+                            applicationContext, challenge.appDisplayName
+                        )
+                    }
+
+                    if (now >= challenge.endDate) {
+                        val finalStatus = if (pointsResult.limitExceeded) {
+                            ChallengeStatus.FAILED
+                        } else {
+                            ChallengeStatus.COMPLETED
+                        }
+                        challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                        val durationDays = ((challenge.endDate - challenge.startDate) /
+                                86_400_000L).toInt()
+                        val mode = challenge.mode.name.lowercase()
+                        NotificationHelper.createChannels(applicationContext)
+                        if (finalStatus == ChallengeStatus.COMPLETED) {
+                            analyticsService.logChallengeCompleted(
+                                mode = mode, durationDays = durationDays,
+                                totalPoints = pointsResult.points
+                            )
+                            NotificationHelper.sendChallengeCompleted(
+                                applicationContext, challenge.appDisplayName
+                            )
+                        } else {
+                            analyticsService.logChallengeFailed(mode)
+                            NotificationHelper.sendChallengeFailed(
+                                applicationContext, challenge.appDisplayName
+                            )
+                        }
+                        Timber.d(
+                            "DailyEvaluationWorker: TIME_BUDGET '${challenge.appDisplayName}' " +
+                                    "ended with status: $finalStatus"
+                        )
+                    }
+                    continue
+                }
+
+                // ── TIME / SESSIONS: use UsageStats + overlay adjustment ───────────────
                 val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
 
                 // Subtract time when our overlay was covering the app so that overlay wait-time
@@ -178,6 +304,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     totalMinutes = adjustedMinutes,
                     openCount = todayUsage.opens,
                     overlayPausedMs = overlayPausedMs,
+                    // budgetUsedMinutes / budgetRemainingMinutes are 0 for TIME/SESSIONS
                     pointsEarned = pointsResult.points,
                     limitExceeded = pointsResult.limitExceeded,
                     moneyLostCents = moneyLostCents

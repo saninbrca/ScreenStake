@@ -79,7 +79,8 @@ class SyncRepositoryImpl @Inject constructor(
         stripePaymentIntentId = stripePaymentIntentId,
         customMotivation = customMotivation,
         status = status.name.lowercase(),
-        createdAt = createdAt
+        createdAt = createdAt,
+        dailyBudgetMinutes = dailyBudgetMinutes
     )
 
     private fun DailyLog.toEntity() = DailyLogEntity(
@@ -90,6 +91,8 @@ class SyncRepositoryImpl @Inject constructor(
         openCount = openCount,
         consciousOpens = consciousOpens,
         overlayPausedMs = overlayPausedMs,
+        budgetUsedMinutes = budgetUsedMinutes,
+        budgetRemainingMinutes = budgetRemainingMinutes,
         pointsEarned = pointsEarned,
         limitExceeded = limitExceeded,
         moneyLostCents = moneyLostCents

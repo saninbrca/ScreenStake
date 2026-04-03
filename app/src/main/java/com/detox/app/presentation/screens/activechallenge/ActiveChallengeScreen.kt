@@ -206,6 +206,10 @@ private fun ActiveChallengeContent(
                 challenge.limitValueSessions ?: 0,
                 challenge.limitValueMinutes
             )
+            LimitType.TIME_BUDGET -> stringResource(
+                R.string.challenge_card_budget_limit,
+                challenge.dailyBudgetMinutes ?: 0
+            )
         }
         Text(
             text = limitText,
@@ -232,6 +236,15 @@ private fun ActiveChallengeContent(
                         R.string.challenge_card_session_progress,
                         s.todayOpens,
                         max
+                    )
+                }
+                LimitType.TIME_BUDGET -> {
+                    val budget = challenge.dailyBudgetMinutes ?: 1
+                    val p = if (budget > 0) s.todayMinutes.toFloat() / budget else 0f
+                    val remaining = maxOf(0, budget - s.todayMinutes)
+                    p to stringResource(
+                        R.string.challenge_card_budget_progress,
+                        s.todayMinutes, budget, remaining
                     )
                 }
             }

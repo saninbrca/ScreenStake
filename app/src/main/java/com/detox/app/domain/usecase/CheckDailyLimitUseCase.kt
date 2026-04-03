@@ -59,6 +59,13 @@ class CheckDailyLimitUseCase @Inject constructor(
                     limitExceeded = consciousOpens >= maxSessions
                     remainingOpens = maxOf(0, maxSessions - consciousOpens)
                 }
+                LimitType.TIME_BUDGET -> {
+                    // Budget state is tracked in-memory by OverlayManager; we just provide
+                    // the challenge object. The overlay handles exhaustion detection itself.
+                    todayOpens = todayUsage.opens
+                    limitExceeded = false
+                    remainingOpens = null
+                }
             }
 
             val remainingMinutes = when (challenge.limitType) {
@@ -67,6 +74,7 @@ class CheckDailyLimitUseCase @Inject constructor(
                     val maxSessionMinutes = challenge.limitValueMinutes * (challenge.limitValueSessions ?: 1)
                     maxOf(0, maxSessionMinutes - adjustedMinutes)
                 }
+                LimitType.TIME_BUDGET -> challenge.dailyBudgetMinutes ?: 0
             }
 
             Result.success(

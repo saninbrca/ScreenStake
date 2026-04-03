@@ -30,6 +30,7 @@ import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.presentation.components.BlockingScreenOverlay
+import com.detox.app.presentation.components.BudgetSelectionOverlay
 import com.detox.app.presentation.components.HardModeLockoutOverlay
 import com.detox.app.presentation.components.LimitExceededOverlay
 import com.detox.app.presentation.components.SessionIntentionOverlay
@@ -103,6 +104,21 @@ class OverlayManager @Inject constructor(
 
     private var limitReachedTimerJob: Job? = null
     private var foregroundListenerJob: Job? = null
+
+    // ── Daily Time Budget tracking ─────────────────────────────────────────────
+
+    /**
+     * In-memory remaining budget per package for TIME_BUDGET challenges.
+     * Loaded lazily from Room on first access; updated in-memory on each session start.
+     * Reset at midnight.
+     */
+    private val budgetRemainingToday = mutableMapOf<String, Int>()
+
+    /** Coroutine job for the active budget countdown timer. */
+    private var budgetTimerJob: Job? = null
+
+    /** Package currently being counted down for a budget session. */
+    private var budgetTimerPackage: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // ── Overlay time tracking (screen-time attribution) ────────────────────────
@@ -126,7 +142,7 @@ class OverlayManager @Inject constructor(
             }
         }
 
-        // Cancel the session timer if the user navigates away from the tracked app
+        // Cancel session and budget timers if the user navigates away from the tracked app
         foregroundListenerJob = scope.launch {
             TrackedAppEventBus.currentForegroundPackage.collect { current ->
                 val timed = sessionTimerPackage
@@ -137,6 +153,16 @@ class OverlayManager @Inject constructor(
                     )
                     lastSessionEndedAt[timed] = System.currentTimeMillis()
                     cancelSessionTimer()
+                }
+                val budgetTimed = budgetTimerPackage
+                if (budgetTimed != null && current != budgetTimed) {
+                    Timber.d(
+                        "OverlayManager: $budgetTimed left foreground (now: $current) " +
+                                "— cancelling budget timer (budget already deducted)"
+                    )
+                    budgetTimerJob?.cancel()
+                    budgetTimerJob = null
+                    budgetTimerPackage = null
                 }
             }
         }
@@ -152,6 +178,9 @@ class OverlayManager @Inject constructor(
         sessionTimerJob?.cancel()
         sessionTimerJob = null
         sessionTimerPackage = null
+        budgetTimerJob?.cancel()
+        budgetTimerJob = null
+        budgetTimerPackage = null
         foregroundListenerJob?.cancel()
         foregroundListenerJob = null
         serviceScope = null
@@ -186,6 +215,12 @@ class OverlayManager @Inject constructor(
         // Session-limit challenges use the two-stage conscious-open flow
         if (status.challenge.limitType == LimitType.SESSIONS) {
             handleSessionLimitApp(status, scope)
+            return
+        }
+
+        // Daily budget challenges use the budget-selection flow
+        if (status.challenge.limitType == LimitType.TIME_BUDGET) {
+            handleTimeBudgetApp(status, scope)
             return
         }
 
@@ -531,6 +566,276 @@ class OverlayManager @Inject constructor(
             }
     }
 
+    // ── Daily Time Budget flow ─────────────────────────────────────────────────
+
+    /**
+     * Entry point for TIME_BUDGET challenges.
+     * Lazy-loads the remaining budget from Room on first access, then shows either the
+     * budget selection screen (budget > 0) or the exhausted overlay (budget == 0).
+     */
+    private suspend fun handleTimeBudgetApp(status: DailyLimitStatus, scope: CoroutineScope) {
+        val challenge = status.challenge
+        val packageName = challenge.appPackageName
+
+        if (failedSessionAppsToday.contains(packageName)) {
+            Timber.d("OverlayManager: budget already exhausted for $packageName today — no overlay")
+            return
+        }
+
+        // Lazy-load remaining budget from Room on first access today
+        if (!budgetRemainingToday.containsKey(packageName)) {
+            val today = todayMidnightMs()
+            val log = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
+            val hasRealBudgetActivity = log != null &&
+                    (log.budgetUsedMinutes > 0 || log.budgetRemainingMinutes > 0)
+            val remaining = if (hasRealBudgetActivity) {
+                log!!.budgetRemainingMinutes
+            } else {
+                challenge.dailyBudgetMinutes ?: 0
+            }
+            budgetRemainingToday[packageName] = remaining
+            Timber.d(
+                "OverlayManager: loaded budgetRemaining=${remaining}min for $packageName from Room"
+            )
+        }
+
+        val remaining = budgetRemainingToday.getOrDefault(packageName, 0)
+
+        if (remaining <= 0) {
+            showBudgetExhaustedOverlay(status, scope)
+        } else {
+            showBudgetSelectionOverlay(status, remaining, scope)
+        }
+    }
+
+    /** Shows the budget selection screen. User picks how many minutes to spend. */
+    private fun showBudgetSelectionOverlay(
+        status: DailyLimitStatus,
+        remainingMinutes: Int,
+        scope: CoroutineScope
+    ) {
+        val challenge = status.challenge
+        val packageName = challenge.appPackageName
+        Timber.d(
+            "OverlayManager: showing BudgetSelectionOverlay for ${challenge.appDisplayName} " +
+                    "(remaining=${remainingMinutes}min)"
+        )
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                Timber.d(
+                    "OverlayManager: budget overlay back — going home for ${challenge.appDisplayName}"
+                )
+                dismissOverlay()
+                goHome()
+            }
+        ) {
+            DetoxTheme {
+                BudgetSelectionOverlay(
+                    appName = challenge.appDisplayName,
+                    remainingMinutes = remainingMinutes,
+                    onStart = { selectedMinutes ->
+                        val newRemaining = maxOf(0, remainingMinutes - selectedMinutes)
+                        budgetRemainingToday[packageName] = newRemaining
+                        val totalBudget = challenge.dailyBudgetMinutes ?: 0
+                        val usedSoFar = totalBudget - newRemaining
+                        Timber.d(
+                            "OverlayManager: Budget selected: ${selectedMinutes}min, " +
+                                    "remaining: ${newRemaining}min, timer started " +
+                                    "for ${challenge.appDisplayName}"
+                        )
+                        scope.launch {
+                            val today = todayMidnightMs()
+                            dailyLogRepository.updateBudgetState(
+                                challengeId = challenge.id,
+                                date = today,
+                                used = usedSoFar,
+                                remaining = newRemaining
+                            ).onFailure { e ->
+                                Timber.e(
+                                    e, "OverlayManager: failed to persist budget state " +
+                                            "for ${challenge.id}"
+                                )
+                            }
+                        }
+                        dismissOverlay()
+                        startBudgetTimer(packageName, selectedMinutes, challenge, scope)
+                    },
+                    onGoBack = {
+                        Timber.d(
+                            "OverlayManager: budget overlay 'No, go back' " +
+                                    "for ${challenge.appDisplayName}"
+                        )
+                        dismissOverlay()
+                        goHome()
+                    }
+                )
+            }
+        }
+        showSessionOverlay(composeView, challenge.id)
+    }
+
+    /**
+     * Shows the budget-exhausted overlay (Stage 2) — reuses [SessionLimitReachedOverlay].
+     * Soft Mode: lose today's points. Hard Mode: capture Stripe payment.
+     * After acceptance the app is freed for the rest of the day.
+     */
+    private fun showBudgetExhaustedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
+        val challenge = status.challenge
+        val isHard = challenge.mode == ChallengeMode.HARD
+        Timber.d(
+            "OverlayManager: BudgetExhausted overlay for ${challenge.appDisplayName} " +
+                    "(mode=${challenge.mode})"
+        )
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                dismissOverlay()
+                goHome()
+            }
+        ) {
+            DetoxTheme {
+                SessionLimitReachedOverlay(
+                    packageName = challenge.appPackageName,
+                    appName = challenge.appDisplayName,
+                    challengeMode = challenge.mode,
+                    amountCents = challenge.amountCents,
+                    onYesLose = {
+                        failedSessionAppsToday.add(challenge.appPackageName)
+                        TrackedAppEventBus.markPackageFreeForToday(challenge.appPackageName)
+
+                        if (isHard && challenge.stripePaymentIntentId != null) {
+                            analyticsService.logLimitExceeded("hard_budget", challenge.appPackageName)
+                            scope.launch {
+                                paymentRepository.capturePayment(challenge.stripePaymentIntentId)
+                                    .onSuccess {
+                                        Timber.d(
+                                            "OverlayManager: payment captured for Hard budget " +
+                                                    "exhausted: ${challenge.appDisplayName}"
+                                        )
+                                    }
+                                    .onFailure { e ->
+                                        Timber.e(
+                                            e,
+                                            "OverlayManager: payment capture failed for ${challenge.id}"
+                                        )
+                                    }
+                                writeDailyLogForBudgetExhausted(challenge)
+                            }
+                            dismissOverlay()
+                        } else {
+                            analyticsService.logLimitExceeded("soft_budget", challenge.appPackageName)
+                            scope.launch { writeDailyLogForBudgetExhausted(challenge) }
+                            dismissOverlay()
+                        }
+                    },
+                    onNo = {
+                        dismissOverlay()
+                        goHome()
+                    }
+                )
+            }
+        }
+        showSessionOverlay(composeView, challenge.id)
+    }
+
+    /**
+     * Starts a countdown for the selected budget session duration.
+     * On expiry re-shows the appropriate overlay based on remaining budget.
+     */
+    private fun startBudgetTimer(
+        packageName: String,
+        durationMinutes: Int,
+        challenge: com.detox.app.domain.model.Challenge,
+        scope: CoroutineScope
+    ) {
+        budgetTimerJob?.cancel()
+        budgetTimerPackage = packageName
+        val durationMs = durationMinutes * 60_000L
+        Timber.d("OverlayManager: budget timer started for $packageName ($durationMinutes min)")
+
+        budgetTimerJob = scope.launch {
+            delay(durationMs)
+            Timber.d("OverlayManager: budget timer expired for $packageName")
+            budgetTimerPackage = null
+
+            if (currentOverlayView != null) {
+                Timber.d("OverlayManager: overlay already showing on budget timer expiry — skipping")
+                return@launch
+            }
+
+            val currentForeground = TrackedAppEventBus.currentForegroundPackage.value
+            if (currentForeground != packageName) {
+                Timber.d(
+                    "OverlayManager: $packageName not in foreground on budget timer expiry — no re-show"
+                )
+                return@launch
+            }
+
+            val remaining = budgetRemainingToday.getOrDefault(packageName, 0)
+            val result = checkDailyLimitUseCase(packageName)
+            if (result.isFailure) {
+                Timber.w(
+                    "OverlayManager: failed to re-check limit on budget expiry for $packageName"
+                )
+                return@launch
+            }
+            val updatedStatus = result.getOrThrow()
+
+            if (remaining <= 0) {
+                Timber.d("OverlayManager: budget exhausted for $packageName — showing Stage 2")
+                showBudgetExhaustedOverlay(updatedStatus, scope)
+            } else {
+                Timber.d(
+                    "OverlayManager: budget remaining=${remaining}min for $packageName " +
+                            "— re-showing budget selection"
+                )
+                showBudgetSelectionOverlay(updatedStatus, remaining, scope)
+            }
+        }
+    }
+
+    /** Writes a final DailyLog when the budget is exhausted and the user accepts consequences. */
+    private suspend fun writeDailyLogForBudgetExhausted(
+        challenge: com.detox.app.domain.model.Challenge
+    ) {
+        val today = todayMidnightMs()
+        val existing = dailyLogRepository.getLogForDate(challenge.id, today)
+        if (existing.isSuccess && existing.getOrNull()?.limitExceeded == true) {
+            Timber.d(
+                "OverlayManager: budget exhausted log already exists for ${challenge.id} — skipping"
+            )
+            return
+        }
+        val totalBudget = challenge.dailyBudgetMinutes ?: 0
+        val remaining = budgetRemainingToday.getOrDefault(challenge.appPackageName, 0)
+        val used = totalBudget - remaining
+        val amountCents = if (challenge.mode == ChallengeMode.HARD) challenge.amountCents ?: 0 else 0
+
+        val log = DailyLog(
+            id = UUID.randomUUID().toString(),
+            challengeId = challenge.id,
+            date = today,
+            totalMinutes = used,
+            openCount = 0,
+            budgetUsedMinutes = used,
+            budgetRemainingMinutes = remaining,
+            pointsEarned = 0,
+            limitExceeded = true,
+            moneyLostCents = amountCents
+        )
+        dailyLogRepository.insertDailyLog(log)
+            .onSuccess {
+                Timber.d(
+                    "OverlayManager: budget exhausted DailyLog written for ${challenge.id} " +
+                            "(used=${used}min, amountCents=$amountCents)"
+                )
+            }
+            .onFailure { e ->
+                Timber.e(e, "OverlayManager: failed to write budget exhausted DailyLog for ${challenge.id}")
+            }
+    }
+
     // ── Blocking overlay (time-limit challenges only) ──────────────────────────
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
@@ -726,10 +1031,14 @@ class OverlayManager @Inject constructor(
             consciousOpensToday.clear()
             lastSessionEndedAt.clear()
             failedSessionAppsToday.clear()
+            budgetRemainingToday.clear()
             TrackedAppEventBus.clearFreePackages()
             sessionTimerJob?.cancel()
             sessionTimerJob = null
             sessionTimerPackage = null
+            budgetTimerJob?.cancel()
+            budgetTimerJob = null
+            budgetTimerPackage = null
             scheduleMidnightReset()
         }, delay)
     }

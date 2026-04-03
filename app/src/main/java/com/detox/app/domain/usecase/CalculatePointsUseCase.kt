@@ -27,6 +27,8 @@ class CalculatePointsUseCase @Inject constructor() {
 
         val limitExceeded = when (limitType) {
             LimitType.TIME -> todayMinutes >= limitValueMinutes
+            // TIME_BUDGET: todayMinutes = budget consumed, limitValueMinutes = total budget
+            LimitType.TIME_BUDGET -> todayMinutes >= limitValueMinutes
             LimitType.SESSIONS -> {
                 val maxSessions = limitValueSessions ?: run {
                     Timber.w("CalculatePoints: limitValueSessions is null for SESSIONS limit — marking exceeded")
@@ -44,6 +46,8 @@ class CalculatePointsUseCase @Inject constructor() {
         val basePoints = 10
         val remainingMinutes = when (limitType) {
             LimitType.TIME -> limitValueMinutes - todayMinutes
+            // TIME_BUDGET: remaining = unconsumed budget
+            LimitType.TIME_BUDGET -> limitValueMinutes - todayMinutes
             LimitType.SESSIONS -> {
                 val maxSessionMinutes = limitValueMinutes * (limitValueSessions ?: 1)
                 maxSessionMinutes - todayMinutes

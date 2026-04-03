@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p app/src/main/java/com/detox/app/ui/theme)",
+      "Bash(mkdir -p app/src/test/java/com/detox/app)",
+      "Bash(mkdir -p app/src/androidTest/java/com/detox/app)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(./gradlew testDebugUnitTest)",
+      "Bash(./gradlew test:*)",
+      "Bash(\"C:\\\\Users\\\\sanin\\\\AndroidStudioProjects\\\\ScreenSTake\\\\functions\\\\.env\")",
+      "Bash(\"C:\\\\Users\\\\sanin\\\\AndroidStudioProjects\\\\ScreenSTake\\\\functions\\\\.env.example\")",
+      "Bash(printf \".env\\\\nlib/\\\\nnode_modules/\\\\n\")",
+      "Bash(\"C:\\\\Users\\\\sanin\\\\AndroidStudioProjects\\\\ScreenSTake\\\\functions\\\\.gitignore\")",
+      "Bash(grep -E \"\\\\.\\(kt|java\\)$\")",
+      "Bash(xargs grep:*)",
+      "Bash(grep \"\\\\.kt$\")",
+      "Bash(grep -E \"src/main.*\\\\.kt$\")",
+      "Bash(grep -r class.*Worker.*: C:UserssaninAndroidStudioProjectsScreenSTake/app/src/main/java)"
+    ]
+  }
+}

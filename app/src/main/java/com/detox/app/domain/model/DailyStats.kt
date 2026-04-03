@@ -12,5 +12,6 @@ data class DailyStats(
     val pointsEarnedToday: Int,
     val limitExceeded: Boolean,
     val customMotivation: String?,
-    val daysRemaining: Int
+    val daysRemaining: Int,
+    val moneyLostCents: Int = 0
 )

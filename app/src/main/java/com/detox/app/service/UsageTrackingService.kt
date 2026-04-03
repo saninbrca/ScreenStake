@@ -131,10 +131,11 @@ class UsageTrackingService : Service() {
 
             val usage = runCatching {
                 usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
-            }.getOrElse { e ->
+            }.onFailure { e ->
                 Timber.w(e, "UsageTrackingService: could not get usage for ${challenge.appPackageName}")
-                continue
-            }
+            }.getOrNull()
+
+            if (usage == null) continue
 
             val usedFraction = when (challenge.limitType) {
                 LimitType.TIME -> {

@@ -4,11 +4,13 @@ import com.detox.app.data.repository.ChallengeRepositoryImpl
 import com.detox.app.data.repository.DailyLogRepositoryImpl
 import com.detox.app.data.repository.PaymentRepositoryImpl
 import com.detox.app.data.repository.PointsRepositoryImpl
+import com.detox.app.data.repository.SyncRepositoryImpl
 import com.detox.app.data.repository.UsageStatsRepositoryImpl
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.PointsRepository
+import com.detox.app.domain.repository.SyncRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import dagger.Binds
 import dagger.Module
@@ -49,4 +51,10 @@ abstract class RepositoryModule {
     abstract fun bindPaymentRepository(
         impl: PaymentRepositoryImpl
     ): PaymentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSyncRepository(
+        impl: SyncRepositoryImpl
+    ): SyncRepository
 }

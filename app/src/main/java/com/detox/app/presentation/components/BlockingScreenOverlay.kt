@@ -40,7 +40,7 @@ fun BlockingScreenOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.85f)),
+            .background(Color(0xFF0D0D0D)), // fully opaque — nothing bleeds through from app
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -66,15 +66,16 @@ fun BlockingScreenOverlay(
                     textAlign = TextAlign.Center
                 )
 
-                // Custom motivation
-                status.challenge.customMotivation?.let { motivation ->
-                    Text(
-                        text = motivation,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                // Custom motivation (fallback to default if null or blank)
+                val motivationText = status.challenge.customMotivation
+                    ?.takeIf { it.isNotBlank() }
+                    ?: stringResource(R.string.default_motivation_text)
+                Text(
+                    text = motivationText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
 
                 // Hard Mode: amount at stake banner
                 val amountCents = status.challenge.amountCents

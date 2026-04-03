@@ -26,7 +26,13 @@ object DatabaseModule {
             context,
             DetoxDatabase::class.java,
             "detox_database"
-        ).build()
+        )
+            .addMigrations(
+                DetoxDatabase.MIGRATION_1_2,
+                DetoxDatabase.MIGRATION_2_3,
+                DetoxDatabase.MIGRATION_3_4
+            )
+            .build()
     }
 
     @Provides

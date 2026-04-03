@@ -12,7 +12,6 @@ data class Challenge(
     val endDate: Long,
     val amountCents: Int?,
     val stripePaymentIntentId: String?,
-    val emergencyCode: String?,
     val customMotivation: String?,
     val status: ChallengeStatus,
     val createdAt: Long

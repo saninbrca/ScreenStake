@@ -3,7 +3,9 @@ package com.detox.app.domain.usecase
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.UsageStatsRepository
+import java.util.Calendar
 import javax.inject.Inject
 
 data class DailyLimitStatus(
@@ -17,7 +19,8 @@ data class DailyLimitStatus(
 
 class CheckDailyLimitUseCase @Inject constructor(
     private val challengeRepository: ChallengeRepository,
-    private val usageStatsRepository: UsageStatsRepository
+    private val usageStatsRepository: UsageStatsRepository,
+    private val dailyLogRepository: DailyLogRepository
 ) {
     suspend operator fun invoke(packageName: String): Result<DailyLimitStatus> {
         return try {
@@ -25,33 +28,52 @@ class CheckDailyLimitUseCase @Inject constructor(
                 ?: return Result.failure(IllegalStateException("No active challenge for $packageName"))
 
             val todayUsage = usageStatsRepository.getTodayUsageForApp(packageName)
+            val today = todayMidnightMs()
 
-            val limitExceeded = when (challenge.limitType) {
-                LimitType.TIME -> todayUsage.minutes >= challenge.limitValueMinutes
+            // Subtract time when our own overlay was covering this app — that time should
+            // not count against the user's limit since the app was in the background.
+            val overlayPausedMs = dailyLogRepository
+                .getOverlayPausedMs(challenge.id, today)
+                .getOrElse { 0L }
+            val overlayPausedMinutes = (overlayPausedMs / 60_000L).toInt()
+            val adjustedMinutes = maxOf(0, todayUsage.minutes - overlayPausedMinutes)
+
+            // For session-limit challenges use the Room-persisted conscious opens counter
+            // so only deliberate "Yes, open it" taps count towards the limit.
+            val todayOpens: Int
+            val limitExceeded: Boolean
+            val remainingOpens: Int?
+
+            when (challenge.limitType) {
+                LimitType.TIME -> {
+                    todayOpens = todayUsage.opens
+                    limitExceeded = adjustedMinutes >= challenge.limitValueMinutes
+                    remainingOpens = null
+                }
                 LimitType.SESSIONS -> {
+                    val consciousOpens = dailyLogRepository
+                        .getConsciousOpens(challenge.id, today)
+                        .getOrElse { todayUsage.opens }
+                    todayOpens = consciousOpens
                     val maxSessions = challenge.limitValueSessions ?: 0
-                    todayUsage.opens >= maxSessions
+                    limitExceeded = consciousOpens >= maxSessions
+                    remainingOpens = maxOf(0, maxSessions - consciousOpens)
                 }
             }
 
             val remainingMinutes = when (challenge.limitType) {
-                LimitType.TIME -> maxOf(0, challenge.limitValueMinutes - todayUsage.minutes)
+                LimitType.TIME -> maxOf(0, challenge.limitValueMinutes - adjustedMinutes)
                 LimitType.SESSIONS -> {
                     val maxSessionMinutes = challenge.limitValueMinutes * (challenge.limitValueSessions ?: 1)
-                    maxOf(0, maxSessionMinutes - todayUsage.minutes)
+                    maxOf(0, maxSessionMinutes - adjustedMinutes)
                 }
-            }
-
-            val remainingOpens = when (challenge.limitType) {
-                LimitType.TIME -> null
-                LimitType.SESSIONS -> maxOf(0, (challenge.limitValueSessions ?: 0) - todayUsage.opens)
             }
 
             Result.success(
                 DailyLimitStatus(
                     challenge = challenge,
-                    todayMinutes = todayUsage.minutes,
-                    todayOpens = todayUsage.opens,
+                    todayMinutes = adjustedMinutes,
+                    todayOpens = todayOpens,
                     limitExceeded = limitExceeded,
                     remainingMinutes = remainingMinutes,
                     remainingOpens = remainingOpens
@@ -60,5 +82,14 @@ class CheckDailyLimitUseCase @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun todayMidnightMs(): Long {
+        return Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
     }
 }

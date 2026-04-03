@@ -54,20 +54,67 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             "limitType=${challenge.limitType})"
                 )
 
-                // Skip if already evaluated today
+                // Skip full evaluation if already evaluated today (e.g. OverlayManager wrote
+                // the log intra-day after a Hard Mode capture), but STILL check whether the
+                // challenge reached its end date so status is updated correctly.
+                // NOTE: A placeholder row (overlayPausedMs only, all other fields zero) is
+                // NOT considered a full evaluation — real evaluations have limitExceeded=true
+                // OR pointsEarned > 0.
                 val existingLog = dailyLogRepository.getLogForDate(challenge.id, today)
-                if (existingLog.isSuccess && existingLog.getOrNull() != null) {
+                val existingRealLog = existingLog.getOrNull()
+                    ?.takeIf { it.limitExceeded || it.pointsEarned > 0 }
+                if (existingRealLog != null) {
                     Timber.d(
                         "DailyEvaluationWorker: '${challenge.appDisplayName}' already " +
-                                "evaluated today — skipping"
+                                "evaluated today — skipping point/payment logic"
                     )
+                    if (now >= challenge.endDate) {
+                        val log = existingRealLog
+                        val finalStatus = if (log.limitExceeded) {
+                            ChallengeStatus.FAILED
+                        } else {
+                            ChallengeStatus.COMPLETED
+                        }
+                        challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                        val durationDays = ((challenge.endDate - challenge.startDate) /
+                                86_400_000L).toInt()
+                        val mode = challenge.mode.name.lowercase()
+                        NotificationHelper.createChannels(applicationContext)
+                        if (finalStatus == ChallengeStatus.COMPLETED) {
+                            analyticsService.logChallengeCompleted(
+                                mode = mode,
+                                durationDays = durationDays,
+                                totalPoints = log.pointsEarned
+                            )
+                            NotificationHelper.sendChallengeCompleted(
+                                applicationContext, challenge.appDisplayName
+                            )
+                        } else {
+                            analyticsService.logChallengeFailed(mode)
+                            NotificationHelper.sendChallengeFailed(
+                                applicationContext, challenge.appDisplayName
+                            )
+                        }
+                        Timber.d(
+                            "DailyEvaluationWorker: '${challenge.appDisplayName}' end-of-challenge " +
+                                    "status set to $finalStatus (log already existed)"
+                        )
+                    }
                     continue
                 }
 
                 val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
+
+                // Subtract time when our overlay was covering the app so that overlay wait-time
+                // doesn't count against the user's limit. Carry the value into the DailyLog.
+                val overlayPausedMs = existingLog.getOrNull()?.overlayPausedMs ?: 0L
+                val overlayPausedMinutes = (overlayPausedMs / 60_000L).toInt()
+                val adjustedMinutes = maxOf(0, todayUsage.minutes - overlayPausedMinutes)
+
                 Timber.d(
                     "DailyEvaluationWorker: usage for '${challenge.appDisplayName}': " +
-                            "${todayUsage.minutes} min, ${todayUsage.opens} opens"
+                            "${todayUsage.minutes} raw min, -${overlayPausedMinutes} overlay min " +
+                            "= $adjustedMinutes adjusted min, ${todayUsage.opens} opens"
                 )
 
                 Timber.d(
@@ -75,14 +122,14 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             "limitType=${challenge.limitType}, " +
                             "limitValueMinutes=${challenge.limitValueMinutes}, " +
                             "limitValueSessions=${challenge.limitValueSessions}, " +
-                            "todayMinutes=${todayUsage.minutes}, " +
+                            "todayMinutes=$adjustedMinutes (adjusted), " +
                             "todayOpens=${todayUsage.opens}"
                 )
                 val pointsResult = calculatePointsUseCase(
                     limitType = challenge.limitType,
                     limitValueMinutes = challenge.limitValueMinutes,
                     limitValueSessions = challenge.limitValueSessions,
-                    todayMinutes = todayUsage.minutes,
+                    todayMinutes = adjustedMinutes,
                     todayOpens = todayUsage.opens
                 )
                 Timber.d(
@@ -128,8 +175,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     id = UUID.randomUUID().toString(),
                     challengeId = challenge.id,
                     date = today,
-                    totalMinutes = todayUsage.minutes,
+                    totalMinutes = adjustedMinutes,
                     openCount = todayUsage.opens,
+                    overlayPausedMs = overlayPausedMs,
                     pointsEarned = pointsResult.points,
                     limitExceeded = pointsResult.limitExceeded,
                     moneyLostCents = moneyLostCents

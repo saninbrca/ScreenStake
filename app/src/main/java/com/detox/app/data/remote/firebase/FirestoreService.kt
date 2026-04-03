@@ -1,7 +1,10 @@
 package com.detox.app.data.remote.firebase
 
 import com.detox.app.domain.model.Challenge
+import com.detox.app.domain.model.ChallengeMode
+import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.PointTransaction
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -127,6 +130,125 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    // ── Read / sync-down methods ───────────────────────────────────────────────
+
+    /**
+     * Fetches all challenges with status "active" for the given user.
+     * Returns an empty list on any network failure so the caller can degrade gracefully.
+     */
+    suspend fun fetchActiveChallenges(userId: String): List<Challenge> {
+        return try {
+            val snapshot = firestore
+                .collection("users").document(userId)
+                .collection("challenges")
+                .whereEqualTo("status", "active")
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { doc ->
+                val d = doc.data ?: return@mapNotNull null
+                try {
+                    Challenge(
+                        id = d["id"] as? String ?: doc.id,
+                        appPackageName = d["appPackageName"] as? String ?: return@mapNotNull null,
+                        appDisplayName = d["appDisplayName"] as? String ?: return@mapNotNull null,
+                        mode = ChallengeMode.valueOf(
+                            (d["mode"] as? String ?: "soft").uppercase()
+                        ),
+                        limitType = LimitType.valueOf(
+                            (d["limitType"] as? String ?: "time").uppercase()
+                        ),
+                        limitValueMinutes = (d["limitValueMinutes"] as? Long)?.toInt() ?: 0,
+                        limitValueSessions = (d["limitValueSessions"] as? Long)?.toInt(),
+                        startDate = d["startDate"] as? Long ?: 0L,
+                        endDate = d["endDate"] as? Long ?: 0L,
+                        amountCents = (d["amountCents"] as? Long)?.toInt(),
+                        stripePaymentIntentId = d["stripePaymentIntentId"] as? String,
+                        customMotivation = d["customMotivation"] as? String,
+                        status = ChallengeStatus.valueOf(
+                            (d["status"] as? String ?: "active").uppercase()
+                        ),
+                        createdAt = d["createdAt"] as? Long ?: 0L
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to parse challenge document ${doc.id}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to fetch active challenges for uid=$userId")
+            emptyList()
+        }
+    }
+
+    /**
+     * Fetches all daily log entries for the given challenge.
+     */
+    suspend fun fetchDailyLogs(userId: String, challengeId: String): List<DailyLog> {
+        return try {
+            val snapshot = firestore
+                .collection("users").document(userId)
+                .collection("challenges").document(challengeId)
+                .collection("dailyLogs")
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { doc ->
+                val d = doc.data ?: return@mapNotNull null
+                try {
+                    DailyLog(
+                        id = d["id"] as? String ?: doc.id,
+                        challengeId = d["challengeId"] as? String ?: challengeId,
+                        date = d["date"] as? Long ?: 0L,
+                        totalMinutes = (d["totalMinutes"] as? Long)?.toInt() ?: 0,
+                        openCount = (d["openCount"] as? Long)?.toInt() ?: 0,
+                        consciousOpens = (d["consciousOpens"] as? Long)?.toInt() ?: 0,
+                        overlayPausedMs = d["overlayPausedMs"] as? Long ?: 0L,
+                        pointsEarned = (d["pointsEarned"] as? Long)?.toInt() ?: 0,
+                        limitExceeded = d["limitExceeded"] as? Boolean ?: false,
+                        moneyLostCents = (d["moneyLostCents"] as? Long)?.toInt() ?: 0
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to parse daily log document ${doc.id}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to fetch daily logs for challengeId=$challengeId")
+            emptyList()
+        }
+    }
+
+    /**
+     * Fetches all point transactions for the given user.
+     */
+    suspend fun fetchPointTransactions(userId: String): List<PointTransaction> {
+        return try {
+            val snapshot = firestore
+                .collection("users").document(userId)
+                .collection("pointTransactions")
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { doc ->
+                val d = doc.data ?: return@mapNotNull null
+                try {
+                    PointTransaction(
+                        id = d["id"] as? String ?: doc.id,
+                        type = d["type"] as? String ?: return@mapNotNull null,
+                        amount = (d["amount"] as? Long)?.toInt() ?: 0,
+                        reason = d["reason"] as? String ?: "",
+                        challengeId = d["challengeId"] as? String,
+                        timestamp = d["timestamp"] as? Long ?: 0L
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to parse point transaction document ${doc.id}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to fetch point transactions for uid=$userId")
+            emptyList()
+        }
+    }
+
     // ── Mapping helpers ────────────────────────────────────────────────────────
 
     private fun Challenge.toMap(): Map<String, Any?> = mapOf(
@@ -153,6 +275,8 @@ class FirestoreService @Inject constructor(
         "date" to date,
         "totalMinutes" to totalMinutes,
         "openCount" to openCount,
+        "consciousOpens" to consciousOpens,
+        "overlayPausedMs" to overlayPausedMs,
         "pointsEarned" to pointsEarned,
         "limitExceeded" to limitExceeded,
         "moneyLostCents" to moneyLostCents

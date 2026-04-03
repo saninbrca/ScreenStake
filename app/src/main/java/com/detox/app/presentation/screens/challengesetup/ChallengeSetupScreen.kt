@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,10 +26,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -78,15 +81,6 @@ fun ChallengeSetupScreen(
         }
     }
 
-    // Emergency code dialog — shown once after Hard Mode challenge is saved
-    if (uiState is ChallengeSetupUiState.ShowEmergencyCode) {
-        val code = (uiState as ChallengeSetupUiState.ShowEmergencyCode).code
-        EmergencyCodeDialog(
-            code = code,
-            onConfirm = { viewModel.onEmergencyCodeConfirmed() }
-        )
-    }
-
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -110,7 +104,6 @@ fun ChallengeSetupScreen(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
-
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -191,52 +184,28 @@ fun ChallengeSetupScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // ── Limit Value ─────────────────────────────────────────────────────
+            // ── Limit Value — text inputs ───────────────────────────────────────
             when (formState.limitType) {
                 LimitType.TIME -> {
-                    Text(
-                        text = stringResource(R.string.challenge_setup_daily_limit, formState.limitMinutes),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Slider(
-                        value = formState.limitMinutes.toFloat(),
-                        onValueChange = { viewModel.updateLimitMinutes(it.toInt()) },
-                        valueRange = 10f..180f,
-                        steps = 33,
-                        modifier = Modifier.fillMaxWidth()
+                    TimeLimitInput(
+                        limitMinutes = formState.limitMinutes,
+                        error = formState.limitMinutesError,
+                        displayName = formState.displayName,
+                        onValueChange = { viewModel.updateLimitMinutes(it) }
                     )
                 }
 
                 LimitType.SESSIONS -> {
-                    Text(
-                        text = stringResource(R.string.challenge_setup_max_opens, formState.limitSessions),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Slider(
-                        value = formState.limitSessions.toFloat(),
-                        onValueChange = { viewModel.updateLimitSessions(it.toInt()) },
-                        valueRange = 1f..20f,
-                        steps = 18,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = stringResource(R.string.challenge_setup_session_duration, formState.sessionMinutes),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Slider(
-                        value = formState.sessionMinutes.toFloat(),
-                        onValueChange = { viewModel.updateSessionMinutes(it.toInt()) },
-                        valueRange = 1f..30f,
-                        steps = 28,
-                        modifier = Modifier.fillMaxWidth()
+                    SessionLimitInput(
+                        limitSessions = formState.limitSessions,
+                        sessionMinutes = formState.sessionMinutes,
+                        sessionsError = formState.limitSessionsError,
+                        sessionMinsError = formState.sessionMinutesError,
+                        displayName = formState.displayName,
+                        onSessionsChange = { viewModel.updateLimitSessions(it) },
+                        onSessionMinsChange = { viewModel.updateSessionMinutes(it) }
                     )
                 }
             }
@@ -344,33 +313,115 @@ fun ChallengeSetupScreen(
     }
 }
 
-// ── Emergency Code Dialog ──────────────────────────────────────────────────────
+// ── Time limit input ───────────────────────────────────────────────────────────
 
 @Composable
-private fun EmergencyCodeDialog(code: String, onConfirm: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = { /* User must explicitly confirm they've saved the code */ },
-        title = { Text(stringResource(R.string.emergency_code_dialog_title)) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = stringResource(R.string.emergency_code_dialog_message),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = code,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.primary,
-                    textAlign = TextAlign.Center
-                )
-            }
+private fun TimeLimitInput(
+    limitMinutes: Int,
+    error: String?,
+    displayName: String,
+    onValueChange: (Int) -> Unit
+) {
+    // Local string state — decoupled from the Int in formState so the user can
+    // type freely (e.g. clear the field) without the ViewModel resetting it.
+    var text by remember { mutableStateOf(limitMinutes.toString()) }
+
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            val digits = raw.filter { it.isDigit() }.take(4)
+            text = digits
+            onValueChange(digits.toIntOrNull() ?: 0)
         },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text(stringResource(R.string.emergency_code_dialog_confirm))
-            }
-        }
+        label = { Text(stringResource(R.string.challenge_setup_minutes_field_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = error != null,
+        supportingText = if (error != null) {
+            { Text(error) }
+        } else null,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
     )
+
+    if (error == null && (text.toIntOrNull() ?: 0) >= 5) {
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = stringResource(
+                R.string.challenge_setup_time_summary,
+                displayName,
+                text.toIntOrNull() ?: limitMinutes
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
 }
+
+// ── Session limit input ────────────────────────────────────────────────────────
+
+@Composable
+private fun SessionLimitInput(
+    limitSessions: Int,
+    sessionMinutes: Int,
+    sessionsError: String?,
+    sessionMinsError: String?,
+    displayName: String,
+    onSessionsChange: (Int) -> Unit,
+    onSessionMinsChange: (Int) -> Unit
+) {
+    var sessionsText by remember { mutableStateOf(limitSessions.toString()) }
+    var sessionMinsText by remember { mutableStateOf(sessionMinutes.toString()) }
+
+    OutlinedTextField(
+        value = sessionsText,
+        onValueChange = { raw ->
+            val digits = raw.filter { it.isDigit() }.take(3)
+            sessionsText = digits
+            onSessionsChange(digits.toIntOrNull() ?: 0)
+        },
+        label = { Text(stringResource(R.string.challenge_setup_sessions_count_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = sessionsError != null,
+        supportingText = if (sessionsError != null) {
+            { Text(sessionsError) }
+        } else null,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    OutlinedTextField(
+        value = sessionMinsText,
+        onValueChange = { raw ->
+            val digits = raw.filter { it.isDigit() }.take(3)
+            sessionMinsText = digits
+            onSessionMinsChange(digits.toIntOrNull() ?: 0)
+        },
+        label = { Text(stringResource(R.string.challenge_setup_session_mins_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = sessionMinsError != null,
+        supportingText = if (sessionMinsError != null) {
+            { Text(sessionMinsError) }
+        } else null,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    val sessionsVal = sessionsText.toIntOrNull() ?: 0
+    val minsVal = sessionMinsText.toIntOrNull() ?: 0
+    if (sessionsError == null && sessionMinsError == null && sessionsVal >= 1 && minsVal >= 1) {
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = stringResource(
+                R.string.challenge_setup_session_summary,
+                displayName,
+                sessionsVal,
+                minsVal
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+

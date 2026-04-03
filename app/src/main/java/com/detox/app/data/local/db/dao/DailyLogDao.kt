@@ -21,4 +21,13 @@ interface DailyLogDao {
 
     @Query("SELECT COALESCE(SUM(pointsEarned), 0) FROM daily_logs WHERE challengeId = :challengeId")
     suspend fun getTotalPointsForChallenge(challengeId: String): Int
+
+    @Query("SELECT COALESCE(consciousOpens, 0) FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
+    suspend fun getConsciousOpens(challengeId: String, date: Long): Int
+
+    @Query("SELECT COALESCE(overlayPausedMs, 0) FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
+    suspend fun getOverlayPausedMs(challengeId: String, date: Long): Long
+
+    @Query("UPDATE daily_logs SET overlayPausedMs = overlayPausedMs + :additionalMs WHERE challengeId = :challengeId AND date = :date")
+    suspend fun addOverlayPausedMs(challengeId: String, date: Long, additionalMs: Long)
 }

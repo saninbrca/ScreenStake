@@ -144,6 +144,19 @@ fun ChallengeCard(
                 color = progressColor,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
+
+            // Hard Mode: show payment-captured banner if money was charged today
+            if (dailyStats.moneyLostCents > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(
+                        R.string.challenge_card_payment_captured,
+                        dailyStats.moneyLostCents / 100f
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = DetoxTertiary
+                )
+            }
         }
     }
 }

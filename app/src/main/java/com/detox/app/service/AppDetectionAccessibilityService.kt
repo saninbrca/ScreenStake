@@ -26,6 +26,16 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         if (packageName == lastDetectedPackage) return
         lastDetectedPackage = packageName
 
+        // Always update the foreground package so OverlayManager can cancel the
+        // session timer as soon as the user navigates away from a tracked app.
+        TrackedAppEventBus.updateForegroundPackage(packageName)
+
+        // Skip packages the user has already accepted the consequence for today
+        if (TrackedAppEventBus.freedPackagesToday.value.contains(packageName)) {
+            Timber.d("AppDetectionService: $packageName is freed for today — skipping overlay")
+            return
+        }
+
         val trackedPackages = TrackedAppEventBus.trackedPackages.value
         if (trackedPackages.contains(packageName)) {
             Timber.d("Tracked app detected: $packageName")

@@ -9,9 +9,7 @@ import java.util.UUID
 import javax.inject.Inject
 
 data class ChallengeCreationResult(
-    val challengeId: String,
-    /** Non-null only for Hard Mode challenges. */
-    val emergencyCode: String?
+    val challengeId: String
 )
 
 class CreateChallengeUseCase @Inject constructor(
@@ -51,11 +49,6 @@ class CreateChallengeUseCase @Inject constructor(
         val now = System.currentTimeMillis()
         val endDate = now + durationDays * 86_400_000L
 
-        // Generate a 6-digit emergency code only for Hard Mode
-        val emergencyCode = if (mode == ChallengeMode.HARD) {
-            (100_000..999_999).random().toString()
-        } else null
-
         val challenge = Challenge(
             id = id,
             appPackageName = appPackageName,
@@ -68,14 +61,13 @@ class CreateChallengeUseCase @Inject constructor(
             endDate = endDate,
             amountCents = if (mode == ChallengeMode.HARD) amountCents else null,
             stripePaymentIntentId = if (mode == ChallengeMode.HARD) stripePaymentIntentId else null,
-            emergencyCode = emergencyCode,
             customMotivation = customMotivation,
             status = ChallengeStatus.ACTIVE,
             createdAt = now
         )
 
         return challengeRepository.createChallenge(challenge).map {
-            ChallengeCreationResult(challengeId = id, emergencyCode = emergencyCode)
+            ChallengeCreationResult(challengeId = id)
         }
     }
 }

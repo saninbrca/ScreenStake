@@ -16,7 +16,6 @@ data class ChallengeEntity(
     val endDate: Long,
     val amountCents: Int?,
     val stripePaymentIntentId: String?,
-    val emergencyCode: String?,
     val customMotivation: String?,
     val status: String,
     val createdAt: Long

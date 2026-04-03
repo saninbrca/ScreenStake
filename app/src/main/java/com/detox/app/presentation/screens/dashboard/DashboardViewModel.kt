@@ -5,13 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
+import com.detox.app.domain.usecase.SyncUserDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 sealed interface DashboardUiState {
@@ -27,7 +30,8 @@ sealed interface DashboardUiState {
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val getDailyStatsUseCase: GetDailyStatsUseCase,
-    private val pointsRepository: PointsRepository
+    private val pointsRepository: PointsRepository,
+    private val syncUserDataUseCase: SyncUserDataUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
@@ -38,6 +42,16 @@ class DashboardViewModel @Inject constructor(
     // the state is Loading and reads 0 from the (Loading) UI state.
     private val _totalPoints: StateFlow<Int> = pointsRepository.getTotalPointsBalance()
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    // Kicked off immediately on ViewModel creation. loadStats() awaits this before
+    // reading Room, ensuring re-login always sees up-to-date data. On subsequent
+    // loadStats() calls (tab switches, etc.) join() returns instantly.
+    private val syncJob: Job = viewModelScope.launch {
+        Timber.d("Dashboard: starting Firestore sync")
+        syncUserDataUseCase()
+            .onSuccess { Timber.d("Dashboard: sync completed") }
+            .onFailure { e -> Timber.w(e, "Dashboard: sync failed (offline?)") }
+    }
 
     init {
         // Keep the Success state in sync whenever points change in the DB
@@ -55,6 +69,9 @@ class DashboardViewModel @Inject constructor(
     fun loadStats() {
         viewModelScope.launch {
             _uiState.value = DashboardUiState.Loading
+            // Wait for the one-shot sync to finish before reading Room.
+            // If it already completed this is a no-op.
+            syncJob.join()
             getDailyStatsUseCase().fold(
                 onSuccess = { stats ->
                     if (stats.isEmpty()) {

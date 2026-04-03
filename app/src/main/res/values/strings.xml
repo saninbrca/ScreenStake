@@ -48,6 +48,18 @@
     <string name="challenge_setup_daily_limit">Daily limit: %1$d minutes</string>
     <string name="challenge_setup_max_opens">Max opens per day: %1$d</string>
     <string name="challenge_setup_session_duration">Minutes per session: %1$d</string>
+
+    <!-- Challenge Setup — text field limit inputs (replaces sliders) -->
+    <string name="challenge_setup_minutes_field_label">Time limit (minutes)</string>
+    <string name="challenge_setup_sessions_count_label">Sessions per day</string>
+    <string name="challenge_setup_session_mins_label">Minutes per session</string>
+    <string name="challenge_setup_time_summary">%1$s: max %2$d min/day</string>
+    <string name="challenge_setup_session_summary">%1$s: max %2$dx per day, %3$d min each</string>
+    <string name="challenge_setup_error_min_minutes">Minimum 5 minutes</string>
+    <string name="challenge_setup_error_max_minutes">Must be below your average (%1$d min/day)</string>
+    <string name="challenge_setup_error_min_sessions">Minimum 1 session</string>
+    <string name="challenge_setup_error_min_session_mins">Minimum 1 minute per session</string>
+    <string name="challenge_setup_error_fix_limits">Please fix the highlighted fields before starting</string>
     <string name="challenge_setup_duration">Duration</string>
     <string name="challenge_setup_days">%1$d days</string>
     <string name="challenge_setup_motivation_label">Motivation (optional)</string>
@@ -142,18 +154,11 @@
     <string name="challenge_setup_hard_warning">Real money will be charged if you break your limit. 50%% goes to charity.</string>
     <string name="challenge_setup_processing_payment">Processing payment…</string>
 
-    <!-- Emergency Code Dialog -->
-    <string name="emergency_code_dialog_title">Save Your Emergency Code</string>
-    <string name="emergency_code_dialog_message">This 6-digit code lets you unlock the app in an emergency — but you will still lose your money and 50 points. Save it somewhere safe. You will NOT be shown this again.</string>
-    <string name="emergency_code_dialog_confirm">I\'ve saved my code</string>
-
     <!-- Active Challenge Screen -->
     <string name="active_challenge_title">Challenge Details</string>
     <string name="active_challenge_mode_soft">SOFT MODE</string>
     <string name="active_challenge_mode_hard">HARD MODE</string>
     <string name="active_challenge_amount_at_stake">€%.2f at stake</string>
-    <string name="active_challenge_emergency_code_label">Emergency Code</string>
-    <string name="active_challenge_emergency_code_hint">Tap to reveal</string>
     <string name="active_challenge_end_date">Ends: %1$s</string>
     <string name="active_challenge_abandon">Abandon Challenge</string>
     <string name="active_challenge_abandon_confirm_title">Abandon Challenge?</string>
@@ -168,17 +173,11 @@
     <string name="limit_exceeded_hard_title">You\'ll lose €%.2f!</string>
     <string name="limit_exceeded_hard_message">Your daily limit is up. If you continue, your money will be charged immediately and the app will be locked for the rest of the day.</string>
     <string name="limit_exceeded_hard_continue">Yes, lose my money</string>
-    <string name="limit_exceeded_emergency_code_button">🔑 Use emergency code</string>
-
     <!-- Hard Mode Lockout Overlay -->
     <string name="lockout_title">🔒 Locked for Today</string>
     <string name="lockout_subtitle">You exceeded your limit for %1$s. The app is locked until midnight.</string>
     <string name="lockout_money_lost">€%.2f has been charged.</string>
     <string name="lockout_exit_home">Exit to Home</string>
-    <string name="lockout_emergency_button">🔑 Emergency Unlock</string>
-    <string name="lockout_emergency_hint">Enter your 6-digit code</string>
-    <string name="lockout_emergency_wrong">Wrong code. Try again.</string>
-    <string name="lockout_emergency_unlock">Unlock (costs 50 pts)</string>
 
     <!-- Navigation -->
     <string name="nav_back">Back</string>
@@ -240,6 +239,28 @@
     <string name="notification_challenge_completed_text">You successfully completed your %1$s challenge. Well done!</string>
     <string name="notification_challenge_failed_title">Challenge Failed</string>
     <string name="notification_challenge_failed_text">Your %1$s challenge has ended. Don\'t give up — start a new one!</string>
+
+    <!-- Challenge card — Hard Mode payment captured -->
+    <string name="challenge_card_payment_captured">Payment captured — €%.2f lost today</string>
+
+    <!-- Default motivation text when none is set by the user -->
+    <string name="default_motivation_text">Stay strong!</string>
+
+    <!-- Session Intention Overlay (Stage 1 — session-limit challenges) -->
+    <string name="session_intention_title">Do you really want to open this app?</string>
+    <string name="session_intention_opens_used">Conscious opens today: %1$d of %2$d</string>
+    <string name="session_intention_last_session">Last session ended %1$dm %2$ds ago</string>
+    <string name="session_intention_yes">Yes, open it</string>
+    <string name="session_intention_no">No, go back</string>
+
+    <!-- Session Limit Reached Overlay (Stage 2 — session-limit challenges) -->
+    <string name="session_limit_reached_title">You have reached your limit for today.</string>
+    <string name="session_limit_reached_message">Do you still want to continue?</string>
+    <string name="session_limit_reached_consequence_soft">You will lose all points for today.</string>
+    <string name="session_limit_reached_consequence_hard">€%.2f will be captured from your card.</string>
+    <string name="session_limit_reached_yes_soft">Yes, I accept — lose points</string>
+    <string name="session_limit_reached_yes_hard">Yes, I accept — charge my card</string>
+    <string name="session_limit_reached_no">No, stop</string>
 
     <!-- Statistics screen -->
     <string name="stats_title">Statistics</string>

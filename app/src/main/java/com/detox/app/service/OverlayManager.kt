@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
@@ -17,16 +18,22 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.detox.app.R
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.domain.model.PointTransaction
+import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.PointsRepository
+import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.presentation.components.BlockingScreenOverlay
 import com.detox.app.presentation.components.HardModeLockoutOverlay
 import com.detox.app.presentation.components.LimitExceededOverlay
+import com.detox.app.presentation.components.SessionIntentionOverlay
+import com.detox.app.presentation.components.SessionLimitReachedOverlay
 import com.detox.app.ui.theme.DetoxTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -46,7 +53,9 @@ class OverlayManager @Inject constructor(
     private val checkDailyLimitUseCase: CheckDailyLimitUseCase,
     private val pointsRepository: PointsRepository,
     private val paymentRepository: PaymentRepository,
-    private val analyticsService: AnalyticsService
+    private val analyticsService: AnalyticsService,
+    private val dailyLogRepository: DailyLogRepository,
+    private val usageStatsRepository: UsageStatsRepository
 ) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -56,21 +65,82 @@ class OverlayManager @Inject constructor(
 
     /**
      * Packages permanently locked until midnight in Hard Mode.
-     * Mapped packageName → ChallengeStatus snapshot (to access the emergency code).
+     * Mapped packageName → LockedAppInfo (to access the emergency code).
      */
     private val hardLockedPackages = mutableMapOf<String, LockedAppInfo>()
 
+    /**
+     * Conscious-open count per package for session-limit challenges.
+     * Incremented ONLY when the user deliberately taps "Yes, open it" in Stage 1.
+     * Loaded lazily from Room on first access; persisted back after every increment.
+     * Reset at midnight.
+     */
+    private val consciousOpensToday = mutableMapOf<String, Int>()
+
+    /**
+     * Epoch-ms timestamp of when the session countdown timer last ended for a package,
+     * whether it expired naturally or was cancelled because the app left the foreground.
+     * Passed into Stage 1 so the user can see "Last session ended Xm Ys ago".
+     */
+    private val lastSessionEndedAt = mutableMapOf<String, Long>()
+
+    /**
+     * Coroutine job for the active session countdown timer.
+     * Only one timer can run at a time.
+     */
+    private var sessionTimerJob: Job? = null
+
+    /** Package currently being counted down. Null when no timer is running. */
+    private var sessionTimerPackage: String? = null
+
+    /**
+     * Packages whose session-limit challenge has been marked FAILED today (Soft Mode).
+     * After failure the app opens freely for the rest of the day — no overlay is shown.
+     * Hard Mode uses [hardLockedPackages] instead.
+     * Reset at midnight.
+     */
+    private val failedSessionAppsToday = mutableSetOf<String>()
+
     private var limitReachedTimerJob: Job? = null
+    private var foregroundListenerJob: Job? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ── Overlay time tracking (screen-time attribution) ────────────────────────
+
+    /** Retained from [startListening] so [dismissOverlay] can launch persistence coroutines. */
+    private var serviceScope: CoroutineScope? = null
+
+    /** The challengeId of the challenge whose app is currently obscured by an overlay. */
+    private var currentOverlayChallengeId: String? = null
+
+    /** Epoch-ms when the current overlay was added to the WindowManager. */
+    private var currentOverlayShownAt: Long? = null
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
     fun startListening(scope: CoroutineScope) {
+        serviceScope = scope
         listeningJob = scope.launch {
             TrackedAppEventBus.appOpenEvents.collect { packageName ->
                 handleAppOpen(packageName, scope)
             }
         }
+
+        // Cancel the session timer if the user navigates away from the tracked app
+        foregroundListenerJob = scope.launch {
+            TrackedAppEventBus.currentForegroundPackage.collect { current ->
+                val timed = sessionTimerPackage
+                if (timed != null && current != timed) {
+                    Timber.d(
+                        "OverlayManager: $timed left foreground (now: $current) " +
+                                "— cancelling session timer"
+                    )
+                    lastSessionEndedAt[timed] = System.currentTimeMillis()
+                    cancelSessionTimer()
+                }
+            }
+        }
+
         scheduleMidnightReset()
     }
 
@@ -79,6 +149,12 @@ class OverlayManager @Inject constructor(
         listeningJob = null
         limitReachedTimerJob?.cancel()
         limitReachedTimerJob = null
+        sessionTimerJob?.cancel()
+        sessionTimerJob = null
+        sessionTimerPackage = null
+        foregroundListenerJob?.cancel()
+        foregroundListenerJob = null
+        serviceScope = null
         dismissOverlay()
     }
 
@@ -86,6 +162,12 @@ class OverlayManager @Inject constructor(
 
     private suspend fun handleAppOpen(packageName: String, scope: CoroutineScope) {
         if (currentOverlayView != null) return
+
+        // App freed for the rest of the day — user already accepted the consequence
+        if (TrackedAppEventBus.freedPackagesToday.value.contains(packageName)) {
+            Timber.d("OverlayManager: $packageName is freed for today — skipping overlay")
+            return
+        }
 
         // Hard Mode permanent lockout takes priority
         hardLockedPackages[packageName]?.let { info ->
@@ -101,6 +183,13 @@ class OverlayManager @Inject constructor(
 
         val status = result.getOrThrow()
 
+        // Session-limit challenges use the two-stage conscious-open flow
+        if (status.challenge.limitType == LimitType.SESSIONS) {
+            handleSessionLimitApp(status, scope)
+            return
+        }
+
+        // Time-limit challenges keep the existing blocking + limit-exceeded flow
         when {
             status.limitExceeded || exceededAppsToday.contains(packageName) ->
                 showLimitExceededOverlay(status, scope)
@@ -109,7 +198,340 @@ class OverlayManager @Inject constructor(
         }
     }
 
-    // ── Blocking overlay (shown before every tracked-app open) ────────────────
+    // ── Session-limit two-stage flow ───────────────────────────────────────────
+
+    /**
+     * Entry point for session-limit challenges.
+     *
+     * On first call today the conscious-open count is loaded from Room so the
+     * counter survives service restarts within the same calendar day.
+     * Dispatches to Stage 1 (intention check) or Stage 2 (limit reached) based on
+     * how many conscious opens have been confirmed so far today.
+     */
+    private suspend fun handleSessionLimitApp(status: DailyLimitStatus, scope: CoroutineScope) {
+        val challenge = status.challenge
+        val packageName = challenge.appPackageName
+
+        // After a Soft Mode failure the app opens freely for the rest of the day
+        if (failedSessionAppsToday.contains(packageName)) {
+            Timber.d("OverlayManager: session already failed for $packageName today — no overlay")
+            return
+        }
+
+        // Lazy-load persisted count from Room on first access per day
+        if (!consciousOpensToday.containsKey(packageName)) {
+            val today = todayMidnightMs()
+            val persisted = dailyLogRepository.getConsciousOpens(challenge.id, today).getOrElse { 0 }
+            consciousOpensToday[packageName] = persisted
+            Timber.d(
+                "OverlayManager: loaded consciousOpens=$persisted for $packageName from Room"
+            )
+        }
+
+        val confirmedOpens = consciousOpensToday.getOrDefault(packageName, 0)
+        val maxOpens = challenge.limitValueSessions ?: 0
+
+        val stage = if (confirmedOpens >= maxOpens) 2 else 1
+        Timber.d(
+            "OverlayManager: consciousOpens=$confirmedOpens limit=$maxOpens → stage=$stage " +
+                    "for ${challenge.appDisplayName}"
+        )
+        if (stage == 2) {
+            showSessionLimitReachedOverlay(status, scope)
+        } else {
+            showSessionIntentionOverlay(status, confirmedOpens, scope)
+        }
+    }
+
+    /** Stage 1 — Intention Check: shown on every conscious open while limit not yet reached. */
+    private fun showSessionIntentionOverlay(
+        status: DailyLimitStatus,
+        confirmedOpens: Int,
+        scope: CoroutineScope
+    ) {
+        val challenge = status.challenge
+        val maxOpens = challenge.limitValueSessions ?: 0
+        Timber.d(
+            "OverlayManager: Stage 1 shown for ${challenge.appDisplayName} " +
+                    "— $confirmedOpens/$maxOpens conscious opens used"
+        )
+
+        val motivationText = challenge.customMotivation
+            ?.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.default_motivation_text)
+        Timber.d(
+            "OverlayManager: Stage 1 motivation text for ${challenge.appDisplayName}: " +
+                    "\"$motivationText\" (custom=${challenge.customMotivation})"
+        )
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                Timber.d(
+                    "OverlayManager: Stage 1 back button — going home " +
+                            "for ${challenge.appDisplayName}"
+                )
+                dismissOverlay()
+                goHome()
+            }
+        ) {
+            DetoxTheme {
+                SessionIntentionOverlay(
+                    packageName = challenge.appPackageName,
+                    appName = challenge.appDisplayName,
+                    opensUsed = confirmedOpens,
+                    maxOpens = maxOpens,
+                    lastSessionEndedAt = lastSessionEndedAt[challenge.appPackageName],
+                    motivationText = motivationText,
+                    onYes = {
+                        val newCount =
+                            consciousOpensToday.getOrDefault(challenge.appPackageName, 0) + 1
+                        consciousOpensToday[challenge.appPackageName] = newCount
+                        Timber.d(
+                            "OverlayManager: Stage 1 'Yes, open it' — " +
+                                    "consciousOpens=$newCount/$maxOpens for ${challenge.appDisplayName}"
+                        )
+
+                        // Persist the updated count so it survives a service restart
+                        scope.launch {
+                            val today = todayMidnightMs()
+                            dailyLogRepository.upsertConsciousOpens(challenge.id, today, newCount)
+                                .onFailure { e ->
+                                    Timber.e(
+                                        e,
+                                        "OverlayManager: failed to persist consciousOpens for ${challenge.id}"
+                                    )
+                                }
+                        }
+
+                        dismissOverlay()
+
+                        // Always start the session timer — Stage 2 is shown on the NEXT open
+                        // attempt once handleSessionLimitApp sees consciousOpens >= maxOpens.
+                        // This way reaching the limit (e.g. open 5 of 5) still lets the user
+                        // complete that session; Stage 2 appears only when they try to open again.
+                        Timber.d(
+                            "OverlayManager: consciousOpens=$newCount limit=$maxOpens " +
+                                    "→ stage=${if (newCount >= maxOpens) "next_open_is_stage2" else "timer_started"} " +
+                                    "for ${challenge.appDisplayName}"
+                        )
+                        startSessionTimer(
+                            packageName = challenge.appPackageName,
+                            durationMinutes = challenge.limitValueMinutes,
+                            challengeId = challenge.id,
+                            scope = scope
+                        )
+                    },
+                    onNo = {
+                        Timber.d(
+                            "OverlayManager: Stage 1 'No, go back' — going home " +
+                                    "for ${challenge.appDisplayName}"
+                        )
+                        dismissOverlay()
+                        goHome()
+                    }
+                )
+            }
+        }
+        showSessionOverlay(composeView, challenge.id)
+    }
+
+    /** Stage 2 — Limit Reached: shown when conscious opens have reached the daily limit. */
+    private fun showSessionLimitReachedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
+        val challenge = status.challenge
+        val isHard = challenge.mode == ChallengeMode.HARD
+        val confirmedOpens = consciousOpensToday.getOrDefault(challenge.appPackageName, 0)
+        Timber.d(
+            "OverlayManager: Stage 2 shown for ${challenge.appDisplayName} " +
+                    "— $confirmedOpens/${challenge.limitValueSessions} conscious opens, " +
+                    "mode=${challenge.mode}"
+        )
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                Timber.d(
+                    "OverlayManager: Stage 2 back button — going home " +
+                            "for ${challenge.appDisplayName}"
+                )
+                dismissOverlay()
+                goHome()
+            }
+        ) {
+            DetoxTheme {
+                SessionLimitReachedOverlay(
+                    packageName = challenge.appPackageName,
+                    appName = challenge.appDisplayName,
+                    challengeMode = challenge.mode,
+                    amountCents = challenge.amountCents,
+                    onYesLose = {
+                        Timber.d(
+                            "OverlayManager: Stage 2 'Yes, I accept' tapped " +
+                                    "for ${challenge.appDisplayName} (mode=${challenge.mode})"
+                        )
+                        // Mark package as free immediately — no more overlays for the rest of the day
+                        failedSessionAppsToday.add(challenge.appPackageName)
+                        TrackedAppEventBus.markPackageFreeForToday(challenge.appPackageName)
+
+                        if (isHard && challenge.stripePaymentIntentId != null) {
+                            // Hard Mode: capture payment only — app opens freely (no lockout)
+                            analyticsService.logLimitExceeded("hard_session", challenge.appPackageName)
+                            Timber.d(
+                                "OverlayManager: Hard session FAILED — payment captured, " +
+                                        "${challenge.appDisplayName} opens freely for rest of day"
+                            )
+                            scope.launch {
+                                paymentRepository.capturePayment(challenge.stripePaymentIntentId)
+                                    .onSuccess {
+                                        Timber.d(
+                                            "OverlayManager: payment captured for Hard session fail: " +
+                                                    "${challenge.appDisplayName}"
+                                        )
+                                    }
+                                    .onFailure { e ->
+                                        Timber.e(
+                                            e,
+                                            "OverlayManager: payment capture failed for Hard session fail: " +
+                                                    "${challenge.id}"
+                                        )
+                                    }
+                                writeDailyLogForHardCapture(
+                                    challengeId = challenge.id,
+                                    packageName = challenge.appPackageName,
+                                    amountCents = challenge.amountCents ?: 0
+                                )
+                            }
+                            dismissOverlay()
+                        } else {
+                            // Soft Mode: write DailyLog (points = 0), app opens freely rest of day
+                            analyticsService.logLimitExceeded("soft_session", challenge.appPackageName)
+                            Timber.d(
+                                "OverlayManager: Soft session FAILED — " +
+                                        "${challenge.appDisplayName} opens freely for rest of day"
+                            )
+                            scope.launch {
+                                writeDailyLogForSessionFailed(challenge.id, challenge.appPackageName)
+                            }
+                            dismissOverlay()
+                        }
+                    },
+                    onNo = {
+                        Timber.d(
+                            "OverlayManager: Stage 2 'No, stop' tapped " +
+                                    "— going home for ${challenge.appDisplayName}"
+                        )
+                        dismissOverlay()
+                        goHome()
+                    }
+                )
+            }
+        }
+        showSessionOverlay(composeView, challenge.id)
+    }
+
+    // ── Session countdown timer ────────────────────────────────────────────────
+
+    /**
+     * Starts a per-session countdown for [packageName] lasting [durationMinutes].
+     *
+     * When the timer expires and the tracked app is still in the foreground, Stage 1
+     * is re-shown (with the updated open count) so the user must consciously confirm
+     * each additional session.
+     *
+     * Only one timer runs at a time; any previous timer is cancelled first.
+     */
+    private fun startSessionTimer(
+        packageName: String,
+        durationMinutes: Int,
+        challengeId: String,
+        scope: CoroutineScope
+    ) {
+        cancelSessionTimer()
+        sessionTimerPackage = packageName
+        val durationMs = durationMinutes * 60_000L
+        Timber.d("OverlayManager: session timer started for $packageName ($durationMinutes min)")
+
+        sessionTimerJob = scope.launch {
+            delay(durationMs)
+            Timber.d("OverlayManager: session timer expired for $packageName")
+            lastSessionEndedAt[packageName] = System.currentTimeMillis()
+            sessionTimerPackage = null
+
+            if (currentOverlayView != null) {
+                Timber.d("OverlayManager: overlay already showing on timer expiry — skipping re-show")
+                return@launch
+            }
+
+            val currentForeground = TrackedAppEventBus.currentForegroundPackage.value
+            if (currentForeground == packageName) {
+                Timber.d(
+                    "OverlayManager: $packageName still in foreground on timer expiry " +
+                            "— re-showing Stage 1"
+                )
+                val result = checkDailyLimitUseCase(packageName)
+                if (result.isSuccess) {
+                    handleSessionLimitApp(result.getOrThrow(), scope)
+                } else {
+                    Timber.w(
+                        "OverlayManager: failed to re-check limit on timer expiry for $packageName"
+                    )
+                }
+            } else {
+                Timber.d(
+                    "OverlayManager: $packageName not in foreground on timer expiry — no re-show"
+                )
+            }
+        }
+    }
+
+    private fun cancelSessionTimer() {
+        sessionTimerJob?.let {
+            Timber.d("OverlayManager: session timer cancelled for $sessionTimerPackage")
+            it.cancel()
+        }
+        sessionTimerJob = null
+        sessionTimerPackage = null
+    }
+
+    /**
+     * Writes a DailyLog entry when a Soft Mode session-limit challenge is failed intra-day.
+     * Idempotent: skips the insert if a log already exists for today.
+     * Sets limitExceeded=true and pointsEarned=0 so [DailyEvaluationWorker] at 23:59
+     * produces zero points for the day without running a second evaluation.
+     */
+    private suspend fun writeDailyLogForSessionFailed(challengeId: String, packageName: String) {
+        val today = todayMidnightMs()
+
+        val existing = dailyLogRepository.getLogForDate(challengeId, today)
+        if (existing.isSuccess && existing.getOrNull() != null) {
+            Timber.d("OverlayManager: DailyLog already exists for $challengeId — skipping")
+            return
+        }
+
+        val todayUsage = usageStatsRepository.getTodayUsageForApp(packageName)
+        val log = DailyLog(
+            id = UUID.randomUUID().toString(),
+            challengeId = challengeId,
+            date = today,
+            totalMinutes = todayUsage.minutes,
+            openCount = todayUsage.opens,
+            consciousOpens = consciousOpensToday.getOrDefault(packageName, 0),
+            pointsEarned = 0,
+            limitExceeded = true,
+            moneyLostCents = 0
+        )
+        dailyLogRepository.insertDailyLog(log)
+            .onSuccess {
+                Timber.d(
+                    "OverlayManager: DailyLog written for soft session-failed " +
+                            "challengeId=$challengeId (consciousOpens=${log.consciousOpens}, " +
+                            "minutes=${todayUsage.minutes}, opens=${todayUsage.opens})"
+                )
+            }
+            .onFailure { e ->
+                Timber.e(e, "OverlayManager: failed to write DailyLog for $challengeId")
+            }
+    }
+
+    // ── Blocking overlay (time-limit challenges only) ──────────────────────────
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val totalPoints = pointsRepository.getTotalPointsBalance().first()
@@ -131,10 +553,10 @@ class OverlayManager @Inject constructor(
                 )
             }
         }
-        showOverlay(composeView)
+        showOverlay(composeView, status.challenge.id)
     }
 
-    // ── Limit-exceeded overlay ─────────────────────────────────────────────────
+    // ── Limit-exceeded overlay (time-limit challenges only) ────────────────────
 
     private fun showLimitExceededOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
@@ -148,17 +570,12 @@ class OverlayManager @Inject constructor(
                     amountCents = challenge.amountCents,
                     onContinue = {
                         if (isHard && challenge.stripePaymentIntentId != null) {
-                            // Hard Mode: capture payment and lock the app
-                            scope.launch {
-                                captureAndLock(status, scope)
-                            }
+                            scope.launch { captureAndLock(status, scope) }
                         } else {
-                            // Soft Mode: mark exceeded (day's points will be 0 at evaluation),
-                            // dismiss overlay and restart the 5-min warning timer
                             analyticsService.logLimitExceeded("soft", challenge.appPackageName)
                             Timber.d(
                                 "OverlayManager: Soft Mode limit exceeded — " +
-                                        "${challenge.appDisplayName} marked exceeded for today, " +
+                                        "${challenge.appDisplayName} marked exceeded, " +
                                         "5-min re-show timer started"
                             )
                             exceededAppsToday.add(challenge.appPackageName)
@@ -169,71 +586,11 @@ class OverlayManager @Inject constructor(
                     onStop = {
                         dismissOverlay()
                         goHome()
-                    },
-                    onEmergencyCode = if (isHard) {
-                        {
-                            // Per spec: "money still lost + 50 points deducted".
-                            // Payment MUST be captured here — the emergency code button is an
-                            // alternative entry into the lockout flow, not a way to avoid the
-                            // charge. We also add the package to hardLockedPackages immediately so
-                            // that if the user exits home before entering the code, the lockout
-                            // is still shown on the next app-open (not the normal blocking screen).
-                            val code = challenge.emergencyCode
-                            if (code.isNullOrEmpty()) {
-                                // Should never happen for Hard Mode challenges — log and fall back
-                                // to the standard capture-and-lock path so the app is still locked.
-                                Timber.e(
-                                    "OverlayManager: Hard Mode challenge ${challenge.id} " +
-                                            "has null/empty emergencyCode — falling back to captureAndLock"
-                                )
-                                scope.launch { captureAndLock(status, scope) }
-                                return@LimitExceededOverlay
-                            }
-
-                            val info = LockedAppInfo(
-                                appName = challenge.appDisplayName,
-                                amountCents = challenge.amountCents ?: 0,
-                                emergencyCode = code
-                            )
-
-                            // Lock the package NOW so subsequent opens show the lockout even
-                            // if the user exits home without entering the code.
-                            hardLockedPackages[challenge.appPackageName] = info
-
-                            scope.launch {
-                                // Capture payment (fire-and-forget — show lockout regardless).
-                                // Per spec the money is lost when the emergency path is chosen.
-                                challenge.stripePaymentIntentId?.let { piId ->
-                                    Timber.d(
-                                        "OverlayManager: emergency code path — capturing payment " +
-                                                "for ${challenge.appDisplayName}"
-                                    )
-                                    paymentRepository.capturePayment(piId)
-                                        .onSuccess {
-                                            Timber.d(
-                                                "OverlayManager: payment captured via emergency " +
-                                                        "path for ${challenge.appDisplayName}"
-                                            )
-                                        }
-                                        .onFailure { e ->
-                                            Timber.e(
-                                                e,
-                                                "OverlayManager: payment capture failed on " +
-                                                        "emergency path for ${challenge.id}"
-                                            )
-                                        }
-                                }
-                            }
-
-                            analyticsService.logLimitExceeded("hard_emergency", challenge.appPackageName)
-                            dismissOverlay()
-                            showHardModeLockoutDirect(info, scope)
-                        }
-                    } else null
+                    }
                 )
             }
         }
-        showOverlay(composeView)
+        showOverlay(composeView, challenge.id)
     }
 
     // ── Hard Mode: capture payment → lock app ──────────────────────────────────
@@ -248,26 +605,18 @@ class OverlayManager @Inject constructor(
         analyticsService.logLimitExceeded("hard", challenge.appPackageName)
         dismissOverlay()
 
-        // Capture the payment (fire-and-forget — show lockout regardless of result)
         scope.launch {
             paymentRepository.capturePayment(paymentIntentId)
                 .onSuccess { Timber.d("Payment captured for ${challenge.appDisplayName}") }
                 .onFailure { e -> Timber.e(e, "Failed to capture payment") }
         }
 
-        val code = challenge.emergencyCode
-        if (code.isNullOrEmpty()) {
-            // Should never happen — Hard Mode challenges always get a code in CreateChallengeUseCase.
-            // Log so it shows up in Crashlytics breadcrumbs.
-            Timber.e(
-                "OverlayManager: captureAndLock — challenge ${challenge.id} has " +
-                        "null/empty emergencyCode; lockout will show but code input won't work"
-            )
-        }
+        writeDailyLogForHardCapture(challenge.id, challenge.appPackageName, challenge.amountCents ?: 0)
+
         val info = LockedAppInfo(
+            challengeId = challenge.id,
             appName = challenge.appDisplayName,
-            amountCents = challenge.amountCents ?: 0,
-            emergencyCode = code ?: ""
+            amountCents = challenge.amountCents ?: 0
         )
         hardLockedPackages[challenge.appPackageName] = info
         Timber.d(
@@ -275,6 +624,48 @@ class OverlayManager @Inject constructor(
                     "(€${(challenge.amountCents ?: 0) / 100f} captured)"
         )
         showHardModeLockoutDirect(info, scope)
+    }
+
+    /**
+     * Writes a DailyLog entry immediately when Hard Mode money is captured intra-day.
+     * Idempotent: skips the insert if a log already exists for today.
+     */
+    private suspend fun writeDailyLogForHardCapture(
+        challengeId: String,
+        packageName: String,
+        amountCents: Int
+    ) {
+        val today = todayMidnightMs()
+
+        val existing = dailyLogRepository.getLogForDate(challengeId, today)
+        if (existing.isSuccess && existing.getOrNull() != null) {
+            Timber.d("OverlayManager: DailyLog already exists for challengeId=$challengeId — skipping")
+            return
+        }
+
+        val todayUsage = usageStatsRepository.getTodayUsageForApp(packageName)
+        val log = DailyLog(
+            id = UUID.randomUUID().toString(),
+            challengeId = challengeId,
+            date = today,
+            totalMinutes = todayUsage.minutes,
+            openCount = todayUsage.opens,
+            consciousOpens = consciousOpensToday.getOrDefault(packageName, 0),
+            pointsEarned = 0,
+            limitExceeded = true,
+            moneyLostCents = amountCents
+        )
+        dailyLogRepository.insertDailyLog(log)
+            .onSuccess {
+                Timber.d(
+                    "OverlayManager: DailyLog written for challengeId=$challengeId " +
+                            "(moneyLostCents=$amountCents, minutes=${todayUsage.minutes}, " +
+                            "opens=${todayUsage.opens})"
+                )
+            }
+            .onFailure { e ->
+                Timber.e(e, "OverlayManager: Failed to write DailyLog for challengeId=$challengeId")
+            }
     }
 
     // ── Hard Mode lockout overlay ──────────────────────────────────────────────
@@ -289,31 +680,6 @@ class OverlayManager @Inject constructor(
                 HardModeLockoutOverlay(
                     appName = info.appName,
                     amountCents = info.amountCents,
-                    correctCode = info.emergencyCode,
-                    onEmergencyUnlock = {
-                        Timber.d(
-                            "OverlayManager: emergency unlock used for '${info.appName}' — " +
-                                    "deducting 50 pts, removing lockout"
-                        )
-                        // Deduct 50 points as penalty per spec
-                        scope.launch {
-                            pointsRepository.addPointTransaction(
-                                PointTransaction(
-                                    id = UUID.randomUUID().toString(),
-                                    type = "penalty",
-                                    amount = 50,
-                                    reason = "emergency_unlock",
-                                    challengeId = null,
-                                    timestamp = System.currentTimeMillis()
-                                )
-                            )
-                        }
-                        // Remove from locked set so the app can be opened again today
-                        hardLockedPackages.entries
-                            .filter { it.value == info }
-                            .forEach { hardLockedPackages.remove(it.key) }
-                        dismissOverlay()
-                    },
                     onExitHome = {
                         dismissOverlay()
                         goHome()
@@ -321,15 +687,15 @@ class OverlayManager @Inject constructor(
                 )
             }
         }
-        showOverlay(composeView)
+        showOverlay(composeView, info.challengeId)
     }
 
-    // ── 5-minute re-trigger timer (Soft Mode) ─────────────────────────────────
+    // ── 5-minute re-trigger timer (time-limit Soft Mode) ──────────────────────
 
     private fun startLimitReachedTimer(packageName: String, scope: CoroutineScope) {
         limitReachedTimerJob?.cancel()
         limitReachedTimerJob = scope.launch {
-            delay(5 * 60 * 1000L) // 5 minutes
+            delay(5 * 60 * 1000L)
             val tracked = TrackedAppEventBus.trackedPackages.value
             if (tracked.contains(packageName)) {
                 val result = checkDailyLimitUseCase(packageName)
@@ -354,10 +720,17 @@ class OverlayManager @Inject constructor(
 
         val delay = midnight - now
         mainHandler.postDelayed({
-            Timber.d("Midnight reset — clearing exceeded/locked apps")
+            Timber.d("Midnight reset — clearing all daily overlay state")
             exceededAppsToday.clear()
             hardLockedPackages.clear()
-            scheduleMidnightReset() // reschedule for next midnight
+            consciousOpensToday.clear()
+            lastSessionEndedAt.clear()
+            failedSessionAppsToday.clear()
+            TrackedAppEventBus.clearFreePackages()
+            sessionTimerJob?.cancel()
+            sessionTimerJob = null
+            sessionTimerPackage = null
+            scheduleMidnightReset()
         }, delay)
     }
 
@@ -376,25 +749,77 @@ class OverlayManager @Inject constructor(
         return composeView
     }
 
-    private fun showOverlay(view: ComposeView) {
+    /**
+     * Creates a standard ComposeView for session overlays and intercepts the hardware back button.
+     * Pressing the hardware back button is treated the same as tapping "No" —
+     * [onBack] is invoked instead of propagating the key event to the app underneath.
+     */
+    private fun createSessionComposeView(
+        onBack: () -> Unit,
+        content: @Composable () -> Unit
+    ): ComposeView {
+        val composeView = ComposeView(context)
+
+        // Intercept back button presses
+        composeView.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                onBack()
+                true
+            } else {
+                false
+            }
+        }
+
+        val lifecycleOwner = OverlayLifecycleOwner()
+        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+
+        composeView.setViewTreeLifecycleOwner(lifecycleOwner)
+        composeView.setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+        composeView.setContent(content)
+
+        return composeView
+    }
+
+
+
+    /**
+     * Shows a full-screen opaque overlay.
+     *
+     * All overlay types now share identical [WindowManager.LayoutParams]:
+     * - [PixelFormat.OPAQUE] — nothing bleeds through from the app underneath
+     * - [FLAG_LAYOUT_IN_SCREEN] only — [FLAG_NOT_FOCUSABLE] is intentionally absent
+     *   so buttons receive touch events reliably and the back-intercepting views work
+     * - [challengeId] is used to attribute overlay-visible time for screen-time correction
+     */
+    private fun showOverlay(view: ComposeView, challengeId: String? = null) {
         if (currentOverlayView != null) return
+
+        currentOverlayChallengeId = challengeId
+        currentOverlayShownAt = System.currentTimeMillis()
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.OPAQUE
         )
 
         try {
             windowManager.addView(view, params)
             currentOverlayView = view
+            view.requestFocus()
+            Timber.d("OverlayManager: overlay shown (opaque, focusable, challengeId=$challengeId)")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to show overlay")
+            Timber.e(e, "OverlayManager: failed to show overlay")
         }
     }
+
+    /** Session overlays use the same params — delegates to [showOverlay]. */
+    private fun showSessionOverlay(view: ComposeView, challengeId: String? = null) =
+        showOverlay(view, challengeId)
 
     private fun dismissOverlay() {
         currentOverlayView?.let { view ->
@@ -405,6 +830,29 @@ class OverlayManager @Inject constructor(
             }
             currentOverlayView = null
         }
+
+        // Persist the duration this overlay was visible so usage-time calculations
+        // can subtract it (the tracked app was in the background during this time).
+        val shownAt = currentOverlayShownAt
+        val challengeId = currentOverlayChallengeId
+        if (shownAt != null && challengeId != null) {
+            val durationMs = System.currentTimeMillis() - shownAt
+            if (durationMs > 0L) {
+                val today = todayMidnightMs()
+                serviceScope?.launch {
+                    dailyLogRepository.addOverlayPausedMs(challengeId, today, durationMs)
+                        .onFailure { e ->
+                            Timber.e(e, "OverlayManager: failed to persist overlay pause for $challengeId")
+                        }
+                    Timber.d(
+                        "OverlayManager: overlay dismissed after ${durationMs}ms " +
+                                "— overlay pause persisted for challengeId=$challengeId"
+                    )
+                }
+            }
+        }
+        currentOverlayShownAt = null
+        currentOverlayChallengeId = null
     }
 
     private fun goHome() {
@@ -415,12 +863,21 @@ class OverlayManager @Inject constructor(
         context.startActivity(homeIntent)
     }
 
+    private fun todayMidnightMs(): Long {
+        return Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
     // ── Data class ─────────────────────────────────────────────────────────────
 
     private data class LockedAppInfo(
+        val challengeId: String,
         val appName: String,
-        val amountCents: Int,
-        val emergencyCode: String
+        val amountCents: Int
     )
 
     // ── LifecycleOwner for overlays ────────────────────────────────────────────

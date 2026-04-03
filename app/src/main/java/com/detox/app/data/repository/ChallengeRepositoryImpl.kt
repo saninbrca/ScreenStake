@@ -115,7 +115,6 @@ class ChallengeRepositoryImpl @Inject constructor(
         endDate = endDate,
         amountCents = amountCents,
         stripePaymentIntentId = stripePaymentIntentId,
-        emergencyCode = emergencyCode,
         customMotivation = customMotivation,
         status = ChallengeStatus.valueOf(status.uppercase()),
         createdAt = createdAt
@@ -133,7 +132,6 @@ class ChallengeRepositoryImpl @Inject constructor(
         endDate = endDate,
         amountCents = amountCents,
         stripePaymentIntentId = stripePaymentIntentId,
-        emergencyCode = emergencyCode,
         customMotivation = customMotivation,
         status = status.name.lowercase(),
         createdAt = createdAt

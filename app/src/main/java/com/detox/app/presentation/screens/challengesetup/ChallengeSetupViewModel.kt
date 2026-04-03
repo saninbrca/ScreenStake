@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.R
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CreateChallengeUseCase
 import com.detox.app.domain.usecase.ProcessPaymentUseCase
 import com.detox.app.service.UsageTrackingService
@@ -33,7 +35,13 @@ data class ChallengeSetupFormState(
     val motivationText: String = "",
     val mode: ChallengeMode = ChallengeMode.SOFT,
     /** Amount in whole Euros (€5–€50). Converted to cents when creating challenge. */
-    val amountEuros: Int = 10
+    val amountEuros: Int = 10,
+    /** Average daily minutes over the last 14 days — used as the upper bound for TIME limit. */
+    val avgDailyMinutes: Int = 0,
+    /** Per-field validation errors; null = valid. */
+    val limitMinutesError: String? = null,
+    val limitSessionsError: String? = null,
+    val sessionMinutesError: String? = null
 )
 
 sealed interface ChallengeSetupUiState {
@@ -42,10 +50,6 @@ sealed interface ChallengeSetupUiState {
 
     /** Payment has been prepared — present Stripe PaymentSheet with this client secret. */
     data class AwaitingPayment(val clientSecret: String, val pendingChallengeId: String) :
-        ChallengeSetupUiState
-
-    /** Challenge created successfully. For Hard Mode, show the emergency code before navigating. */
-    data class ShowEmergencyCode(val code: String, val challengeId: String) :
         ChallengeSetupUiState
 
     data class Success(val challengeId: String) : ChallengeSetupUiState
@@ -58,6 +62,7 @@ class ChallengeSetupViewModel @Inject constructor(
     private val createChallengeUseCase: CreateChallengeUseCase,
     private val processPaymentUseCase: ProcessPaymentUseCase,
     private val challengeRepository: ChallengeRepository,
+    private val usageStatsRepository: UsageStatsRepository,
     private val firebaseAuthService: FirebaseAuthService,
     private val analyticsService: AnalyticsService,
     @ApplicationContext private val context: Context
@@ -79,10 +84,10 @@ class ChallengeSetupViewModel @Inject constructor(
     private var isImmediateCapture: Boolean = false
 
     init {
-        // Block challenge creation if the app is already being tracked
         val packageName = savedStateHandle.get<String>("packageName")
 
         if (packageName != null) {
+            // Block challenge creation if the app is already being tracked
             viewModelScope.launch {
                 val existing = challengeRepository.getActiveChallengeForApp(packageName)
                 if (existing.getOrNull() != null) {
@@ -92,15 +97,51 @@ class ChallengeSetupViewModel @Inject constructor(
                     )
                 }
             }
+
+            // Load the 14-day average to use as the upper bound for the TIME limit field
+            viewModelScope.launch {
+                val stats = usageStatsRepository.getAppUsageStats(14)
+                val avg = stats
+                    .firstOrNull { it.packageName == packageName }
+                    ?.avgDailyMinutes
+                    ?.toInt()
+                    ?: 0
+                Timber.d("ChallengeSetup: avgDailyMinutes=$avg for $packageName")
+                _formState.update { it.copy(avgDailyMinutes = avg) }
+            }
         }
     }
 
     // ── Form updates ────────────────────────────────────────────────────────────
 
     fun updateLimitType(limitType: LimitType) = _formState.update { it.copy(limitType = limitType) }
-    fun updateLimitMinutes(minutes: Int) = _formState.update { it.copy(limitMinutes = minutes) }
-    fun updateLimitSessions(sessions: Int) = _formState.update { it.copy(limitSessions = sessions) }
-    fun updateSessionMinutes(minutes: Int) = _formState.update { it.copy(sessionMinutes = minutes) }
+
+    fun updateLimitMinutes(minutes: Int) {
+        val avg = _formState.value.avgDailyMinutes
+        val error = when {
+            minutes < 5 ->
+                context.getString(R.string.challenge_setup_error_min_minutes)
+            avg > 0 && minutes >= avg ->
+                context.getString(R.string.challenge_setup_error_max_minutes, avg)
+            else -> null
+        }
+        _formState.update { it.copy(limitMinutes = minutes, limitMinutesError = error) }
+    }
+
+    fun updateLimitSessions(sessions: Int) {
+        val error = if (sessions < 1) {
+            context.getString(R.string.challenge_setup_error_min_sessions)
+        } else null
+        _formState.update { it.copy(limitSessions = sessions, limitSessionsError = error) }
+    }
+
+    fun updateSessionMinutes(minutes: Int) {
+        val error = if (minutes < 1) {
+            context.getString(R.string.challenge_setup_error_min_session_mins)
+        } else null
+        _formState.update { it.copy(sessionMinutes = minutes, sessionMinutesError = error) }
+    }
+
     fun updateDurationDays(days: Int) = _formState.update { it.copy(durationDays = days) }
     fun updateMotivationText(text: String) = _formState.update { it.copy(motivationText = text) }
     fun updateMode(mode: ChallengeMode) = _formState.update { it.copy(mode = mode) }
@@ -112,10 +153,36 @@ class ChallengeSetupViewModel @Inject constructor(
         val form = _formState.value
         firebaseAuthService.logAuthState("ChallengeSetupViewModel.createChallenge")
 
+        // Validate limit fields — trigger errors on any fields that haven't been
+        // touched yet so the user can see exactly what needs fixing.
+        if (!validateLimitFields(form)) {
+            _uiState.value = ChallengeSetupUiState.Error(
+                context.getString(R.string.challenge_setup_error_fix_limits)
+            )
+            return
+        }
+
         if (form.mode == ChallengeMode.HARD) {
             initiateHardModePayment(form)
         } else {
             saveSoftModeChallenge(form)
+        }
+    }
+
+    /** Returns true if all limit fields are valid. Also writes errors to formState. */
+    private fun validateLimitFields(form: ChallengeSetupFormState): Boolean {
+        return when (form.limitType) {
+            LimitType.TIME -> {
+                // Re-run the update to ensure error state is set
+                updateLimitMinutes(form.limitMinutes)
+                _formState.value.limitMinutesError == null
+            }
+            LimitType.SESSIONS -> {
+                updateLimitSessions(form.limitSessions)
+                updateSessionMinutes(form.sessionMinutes)
+                _formState.value.limitSessionsError == null &&
+                        _formState.value.sessionMinutesError == null
+            }
         }
     }
 
@@ -157,7 +224,6 @@ class ChallengeSetupViewModel @Inject constructor(
     private fun initiateHardModePayment(form: ChallengeSetupFormState) {
         _uiState.value = ChallengeSetupUiState.Loading
         viewModelScope.launch {
-            // Generate a temporary challenge ID used as idempotency key for the payment
             val tempChallengeId = java.util.UUID.randomUUID().toString()
             val amountCents = form.amountEuros * 100
 
@@ -184,7 +250,6 @@ class ChallengeSetupViewModel @Inject constructor(
 
     /**
      * Step 2 of Hard Mode: called after Stripe PaymentSheet confirms successfully.
-     * Saves the challenge to Room with the payment intent ID.
      */
     fun onPaymentConfirmed() {
         val form = _formState.value
@@ -212,13 +277,7 @@ class ChallengeSetupViewModel @Inject constructor(
                         durationDays = form.durationDays
                     )
                     UsageTrackingService.start(context)
-                    val code = result.emergencyCode
-                    if (code != null) {
-                        _uiState.value =
-                            ChallengeSetupUiState.ShowEmergencyCode(code, result.challengeId)
-                    } else {
-                        _uiState.value = ChallengeSetupUiState.Success(result.challengeId)
-                    }
+                    _uiState.value = ChallengeSetupUiState.Success(result.challengeId)
                 },
                 onFailure = { error ->
                     _uiState.value =
@@ -231,13 +290,6 @@ class ChallengeSetupViewModel @Inject constructor(
     fun onPaymentCancelled() {
         confirmedPaymentIntentId = null
         _uiState.value = ChallengeSetupUiState.Idle
-    }
-
-    fun onEmergencyCodeConfirmed() {
-        val current = _uiState.value
-        if (current is ChallengeSetupUiState.ShowEmergencyCode) {
-            _uiState.value = ChallengeSetupUiState.Success(current.challengeId)
-        }
     }
 
     private fun resolveLimitValues(form: ChallengeSetupFormState): Pair<Int, Int?> {

@@ -17,7 +17,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,7 +25,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.detox.app.R
 import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.ui.theme.DetoxTertiary
 
 @Composable
 fun LimitExceededOverlay(
@@ -34,17 +32,17 @@ fun LimitExceededOverlay(
     challengeMode: ChallengeMode = ChallengeMode.SOFT,
     amountCents: Int? = null,
     onContinue: () -> Unit,
-    onStop: () -> Unit,
-    onEmergencyCode: (() -> Unit)? = null
+    onStop: () -> Unit
 ) {
     @Suppress("KotlinConstantConditions")
     val isHardMode = challengeMode == ChallengeMode.HARD && amountCents != null
-    val bgTint = if (isHardMode) MaterialTheme.colorScheme.error else DetoxTertiary
+    // Solid opaque background — nothing bleeds through from the app underneath.
+    val bgColor = if (isHardMode) Color(0xFF1A0000) else Color(0xFF0D0D0D)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgTint.copy(alpha = if (isHardMode) 0.25f else 0.15f)),
+            .background(bgColor),
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -53,7 +51,7 @@ fun LimitExceededOverlay(
                 .padding(24.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
+                containerColor = Color(0xFF1C1C1C)
             )
         ) {
             Column(
@@ -71,7 +69,7 @@ fun LimitExceededOverlay(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = if (isHardMode) MaterialTheme.colorScheme.error else DetoxTertiary,
+                    color = if (isHardMode) Color(0xFFFF6B6B) else Color.White,
                     textAlign = TextAlign.Center
                 )
 
@@ -85,7 +83,7 @@ fun LimitExceededOverlay(
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Color.White.copy(alpha = 0.85f),
                     textAlign = TextAlign.Center
                 )
 
@@ -118,14 +116,6 @@ fun LimitExceededOverlay(
                     )
                 }
 
-                if (isHardMode && onEmergencyCode != null) {
-                    TextButton(onClick = onEmergencyCode) {
-                        Text(
-                            text = stringResource(R.string.limit_exceeded_emergency_code_button),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
         }
     }

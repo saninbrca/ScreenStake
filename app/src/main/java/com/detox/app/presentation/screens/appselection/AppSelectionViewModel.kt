@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,6 +32,9 @@ class AppSelectionViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<AppSelectionUiState>(AppSelectionUiState.Loading)
     val uiState: StateFlow<AppSelectionUiState> = _uiState.asStateFlow()
 
+    private val _selectedPackages = MutableStateFlow<Set<String>>(emptySet())
+    val selectedPackages: StateFlow<Set<String>> = _selectedPackages.asStateFlow()
+
     fun loadApps() {
         if (!usageStatsRepository.hasUsageStatsPermission()) {
             _uiState.value = AppSelectionUiState.NoPermission
@@ -52,6 +56,12 @@ class AppSelectionViewModel @Inject constructor(
                     )
                 }
             )
+        }
+    }
+
+    fun toggleSelection(packageName: String) {
+        _selectedPackages.update { current ->
+            if (current.contains(packageName)) current - packageName else current + packageName
         }
     }
 }

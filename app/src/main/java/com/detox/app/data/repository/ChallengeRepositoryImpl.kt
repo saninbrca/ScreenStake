@@ -5,6 +5,7 @@ import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.di.ApplicationScope
+import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
@@ -82,6 +83,23 @@ class ChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun markCompletionShown(id: String): Result<Unit> {
+        return try {
+            challengeDao.markCompletionShown(id)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getUnshownCompletedHardChallenge(): Result<Challenge?> {
+        return try {
+            Result.success(challengeDao.getUnshownCompletedHardChallenge()?.toDomain())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun updateChallengeStatus(id: String, status: ChallengeStatus): Result<Unit> {
         return try {
             val statusStr = status.name.lowercase()
@@ -103,27 +121,55 @@ class ChallengeRepositoryImpl @Inject constructor(
         }
     }
 
-    private fun ChallengeEntity.toDomain(): Challenge = Challenge(
-        id = id,
-        appPackageName = appPackageName,
-        appDisplayName = appDisplayName,
-        mode = ChallengeMode.valueOf(mode.uppercase()),
-        limitType = LimitType.valueOf(limitType.uppercase()),
-        limitValueMinutes = limitValueMinutes,
-        limitValueSessions = limitValueSessions,
-        startDate = startDate,
-        endDate = endDate,
-        amountCents = amountCents,
-        stripePaymentIntentId = stripePaymentIntentId,
-        customMotivation = customMotivation,
-        status = ChallengeStatus.valueOf(status.uppercase()),
-        createdAt = createdAt,
-        dailyBudgetMinutes = dailyBudgetMinutes
-    )
+    private fun ChallengeEntity.toDomain(): Challenge {
+        val type = runCatching { BlockingType.valueOf(blockingType.uppercase()) }
+            .getOrDefault(BlockingType.APP)
+        val packageNames = appPackageNames
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: if (appPackageName.isNotBlank()) listOf(appPackageName) else emptyList()
+        val domains = blockedDomains
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+        return Challenge(
+            id = id,
+            appPackageName = packageNames.firstOrNull(),
+            appPackageNames = packageNames,
+            appDisplayName = appDisplayName,
+            mode = ChallengeMode.valueOf(mode.uppercase()),
+            limitType = LimitType.valueOf(limitType.uppercase()),
+            limitValueMinutes = limitValueMinutes,
+            limitValueSessions = limitValueSessions,
+            startDate = startDate,
+            endDate = endDate,
+            amountCents = amountCents,
+            stripePaymentIntentId = stripePaymentIntentId,
+            customMotivation = customMotivation,
+            status = ChallengeStatus.valueOf(status.uppercase()),
+            createdAt = createdAt,
+            dailyBudgetMinutes = dailyBudgetMinutes,
+            blockedDomains = domains,
+            blockingType = type,
+            blockAdultContent = blockAdultContent != 0,
+            scheduleStartTime = scheduleStartTime,
+            scheduleEndTime = scheduleEndTime,
+            activeDays = activeDays
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                ?: emptyList(),
+            completionShown = completionShown != 0,
+            sessionDurationMinutes = sessionDurationMinutes,
+        )
+    }
 
     private fun Challenge.toEntity(): ChallengeEntity = ChallengeEntity(
         id = id,
-        appPackageName = appPackageName,
+        appPackageName = appPackageNames.firstOrNull() ?: "",
         appDisplayName = appDisplayName,
         mode = mode.name.lowercase(),
         limitType = limitType.name.lowercase(),
@@ -136,6 +182,15 @@ class ChallengeRepositoryImpl @Inject constructor(
         customMotivation = customMotivation,
         status = status.name.lowercase(),
         createdAt = createdAt,
-        dailyBudgetMinutes = dailyBudgetMinutes
+        dailyBudgetMinutes = dailyBudgetMinutes,
+        appPackageNames = appPackageNames.joinToString(",").ifEmpty { null },
+        blockedDomains = blockedDomains.joinToString(",").ifEmpty { null },
+        blockingType = blockingType.name.lowercase(),
+        blockAdultContent = if (blockAdultContent) 1 else 0,
+        scheduleStartTime = scheduleStartTime,
+        scheduleEndTime = scheduleEndTime,
+        activeDays = activeDays.joinToString(",").ifEmpty { null },
+        completionShown = if (completionShown) 1 else 0,
+        sessionDurationMinutes = sessionDurationMinutes,
     )
 }

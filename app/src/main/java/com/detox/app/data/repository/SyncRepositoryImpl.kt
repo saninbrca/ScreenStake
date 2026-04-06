@@ -67,7 +67,7 @@ class SyncRepositoryImpl @Inject constructor(
 
     private fun Challenge.toEntity() = ChallengeEntity(
         id = id,
-        appPackageName = appPackageName,
+        appPackageName = appPackageNames.firstOrNull() ?: "",
         appDisplayName = appDisplayName,
         mode = mode.name.lowercase(),
         limitType = limitType.name.lowercase(),
@@ -80,7 +80,14 @@ class SyncRepositoryImpl @Inject constructor(
         customMotivation = customMotivation,
         status = status.name.lowercase(),
         createdAt = createdAt,
-        dailyBudgetMinutes = dailyBudgetMinutes
+        dailyBudgetMinutes = dailyBudgetMinutes,
+        appPackageNames = appPackageNames.joinToString(",").ifEmpty { null },
+        blockedDomains = blockedDomains.joinToString(",").ifEmpty { null },
+        blockingType = blockingType.name.lowercase(),
+        blockAdultContent = if (blockAdultContent) 1 else 0,
+        scheduleStartTime = scheduleStartTime,
+        scheduleEndTime = scheduleEndTime,
+        activeDays = activeDays.joinToString(",").ifEmpty { null },
     )
 
     private fun DailyLog.toEntity() = DailyLogEntity(

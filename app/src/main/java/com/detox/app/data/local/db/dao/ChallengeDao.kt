@@ -22,7 +22,15 @@ interface ChallengeDao {
     @Query("SELECT * FROM challenges WHERE status = 'active'")
     suspend fun getActiveChallengesList(): List<ChallengeEntity>
 
-    @Query("SELECT * FROM challenges WHERE appPackageName = :packageName AND status = 'active' LIMIT 1")
+    @Query("""
+        SELECT * FROM challenges WHERE status = 'active' AND (
+            appPackageName = :packageName OR
+            appPackageNames = :packageName OR
+            appPackageNames LIKE :packageName || ',%' OR
+            appPackageNames LIKE '%,' || :packageName OR
+            appPackageNames LIKE '%,' || :packageName || ',%'
+        ) LIMIT 1
+    """)
     suspend fun getActiveChallengeForApp(packageName: String): ChallengeEntity?
 
     @Query("UPDATE challenges SET status = :status WHERE id = :id")
@@ -30,4 +38,12 @@ interface ChallengeDao {
 
     @Query("SELECT * FROM challenges ORDER BY createdAt DESC")
     fun getAllChallenges(): Flow<List<ChallengeEntity>>
+
+    /** Marks the congratulations overlay as shown so it does not appear again. */
+    @Query("UPDATE challenges SET completionShown = 1 WHERE id = :id")
+    suspend fun markCompletionShown(id: String)
+
+    /** Returns the first Hard Mode challenge that completed successfully but whose overlay has not yet been shown. */
+    @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'hard' AND completionShown = 0 LIMIT 1")
+    suspend fun getUnshownCompletedHardChallenge(): ChallengeEntity?
 }

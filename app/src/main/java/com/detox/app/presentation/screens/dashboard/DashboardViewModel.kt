@@ -2,7 +2,9 @@ package com.detox.app.presentation.screens.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyStats
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
 import com.detox.app.domain.usecase.SyncUserDataUseCase
@@ -31,11 +33,16 @@ sealed interface DashboardUiState {
 class DashboardViewModel @Inject constructor(
     private val getDailyStatsUseCase: GetDailyStatsUseCase,
     private val pointsRepository: PointsRepository,
-    private val syncUserDataUseCase: SyncUserDataUseCase
+    private val syncUserDataUseCase: SyncUserDataUseCase,
+    private val challengeRepository: ChallengeRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    /** Non-null while the Hard Mode success overlay should be shown. Null = overlay hidden. */
+    private val _completedChallenge = MutableStateFlow<Challenge?>(null)
+    val completedChallenge: StateFlow<Challenge?> = _completedChallenge.asStateFlow()
 
     // Always-current points cache. Using SharingStarted.Eagerly so .value is
     // populated immediately — this fixes the race where loadStats() fires while
@@ -91,6 +98,25 @@ class DashboardViewModel @Inject constructor(
                     )
                 }
             )
+            // Check if there is a Hard Mode challenge completed since last app open
+            challengeRepository.getUnshownCompletedHardChallenge()
+                .onSuccess { challenge ->
+                    if (challenge != null) {
+                        Timber.d("Dashboard: unseen completed Hard Mode challenge found — ${challenge.id}")
+                        _completedChallenge.value = challenge
+                    }
+                }
+                .onFailure { e -> Timber.w(e, "Dashboard: failed to check completed Hard Mode challenge") }
+        }
+    }
+
+    /** Called when the user taps "Start New Challenge" on the success overlay. */
+    fun dismissCompletionOverlay() {
+        val challenge = _completedChallenge.value ?: return
+        _completedChallenge.value = null
+        viewModelScope.launch {
+            challengeRepository.markCompletionShown(challenge.id)
+                .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for ${challenge.id}") }
         }
     }
 }

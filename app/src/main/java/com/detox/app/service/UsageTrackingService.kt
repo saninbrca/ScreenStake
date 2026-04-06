@@ -71,9 +71,27 @@ class UsageTrackingService : Service() {
 
         serviceScope.launch {
             challengeRepository.getActiveChallenges().collect { challenges ->
-                val packageNames = challenges.map { it.appPackageName }.toSet()
+                // Include every package from multi-app challenges
+                val packageNames = challenges.flatMap { it.appPackageNames }.toSet()
                 TrackedAppEventBus.updateTrackedPackages(packageNames)
                 Timber.d("Updated tracked packages: $packageNames")
+
+                // Aggregate blocked domains across all active challenges
+                val blockedDomains = challenges.flatMap { it.blockedDomains }.toSet()
+                TrackedAppEventBus.updateBlockedDomains(blockedDomains)
+                Timber.d("Updated blocked domains: $blockedDomains")
+
+                // Build per-package schedule map so AccessibilityService can gate overlays
+                val scheduleMap = challenges.flatMap { challenge ->
+                    challenge.appPackageNames.map { pkg ->
+                        pkg to TrackedAppEventBus.ScheduleInfo(
+                            scheduleStartTime = challenge.scheduleStartTime,
+                            scheduleEndTime = challenge.scheduleEndTime,
+                            activeDays = challenge.activeDays
+                        )
+                    }
+                }.toMap()
+                TrackedAppEventBus.updatePackageSchedules(scheduleMap)
             }
         }
 
@@ -127,12 +145,14 @@ class UsageTrackingService : Service() {
         }
 
         for (challenge in challenges) {
-            if (alerted80PercentApps.contains(challenge.appPackageName)) continue
+            val appPkg = challenge.appPackageName ?: continue  // WEBSITE challenges have no package
+
+            if (alerted80PercentApps.contains(appPkg)) continue
 
             val usage = runCatching {
-                usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
+                usageStatsRepository.getTodayUsageForApp(appPkg)
             }.onFailure { e ->
-                Timber.w(e, "UsageTrackingService: could not get usage for ${challenge.appPackageName}")
+                Timber.w(e, "UsageTrackingService: could not get usage for $appPkg")
             }.getOrNull()
 
             if (usage == null) continue
@@ -166,7 +186,7 @@ class UsageTrackingService : Service() {
                 )
                 NotificationHelper.createChannels(applicationContext)
                 NotificationHelper.sendUsage80Percent(applicationContext, challenge.appDisplayName)
-                alerted80PercentApps.add(challenge.appPackageName)
+                alerted80PercentApps.add(appPkg)
             }
         }
     }

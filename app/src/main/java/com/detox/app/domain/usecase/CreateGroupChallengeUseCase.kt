@@ -1,0 +1,162 @@
+package com.detox.app.domain.usecase
+
+import com.detox.app.data.remote.firebase.CloudFunctionsService
+import com.detox.app.domain.model.GroupChallenge
+import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.repository.GroupChallengeRepository
+import timber.log.Timber
+import java.util.Calendar
+import java.util.UUID
+import javax.inject.Inject
+
+class CreateGroupChallengeUseCase @Inject constructor(
+    private val groupChallengeRepository: GroupChallengeRepository,
+    private val cloudFunctionsService: CloudFunctionsService
+) {
+
+    /**
+     * Creates a new group challenge.
+     *
+     * @param creatorUserId  Firebase UID of the challenge creator.
+     * @param appPackageNames  List of app packages to block.
+     * @param appDisplayName  Human-readable name for the primary app.
+     * @param limitType  TIME, SESSIONS, or TIME_BUDGET.
+     * @param limitValueMinutes  Daily minute limit (TIME / TIME_BUDGET).
+     * @param limitValueSessions  Daily session count (SESSIONS only).
+     * @param durationDays  Challenge length in days (1–30).
+     * @param buyInCents  Fixed buy-in per participant (100–5000 cents / €1–€50).
+     * @param maxParticipants  Maximum number of players (2–20).
+     * @param startDateMs  Unix epoch of the intended start (must be ≥ now + 24 h).
+     * @param bonusEnabled  Whether to award a 10% bonus to the best performer.
+     *
+     * @return [Result] wrapping a [Pair] of (groupId, code) on success.
+     */
+    suspend operator fun invoke(
+        creatorUserId: String,
+        creatorDisplayName: String,
+        appPackageNames: List<String>,
+        appDisplayName: String,
+        limitType: LimitType,
+        limitValueMinutes: Int,
+        limitValueSessions: Int?,
+        durationDays: Int,
+        buyInCents: Int,
+        maxParticipants: Int,
+        startDateMs: Long,
+        bonusEnabled: Boolean
+    ): Result<Pair<String, String>> {
+
+        // ── Validation ──────────────────────────────────────────────────────────
+        if (appPackageNames.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Select at least one app to block."))
+        }
+        if (durationDays !in 1..30) {
+            return Result.failure(IllegalArgumentException("Duration must be between 1 and 30 days."))
+        }
+        if (buyInCents !in 100..5000) {
+            return Result.failure(IllegalArgumentException("Buy-in must be between €1 and €50."))
+        }
+        if (maxParticipants !in 2..20) {
+            return Result.failure(IllegalArgumentException("Participants must be between 2 and 20."))
+        }
+        val cal = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        if (startDateMs < cal.timeInMillis) {
+            return Result.failure(IllegalArgumentException("Start date must be tomorrow or later."))
+        }
+        if (limitType != LimitType.TIME_BUDGET && limitValueMinutes <= 0) {
+            return Result.failure(IllegalArgumentException("Time limit must be greater than 0."))
+        }
+        if (limitType == LimitType.SESSIONS && (limitValueSessions == null || limitValueSessions <= 0)) {
+            return Result.failure(IllegalArgumentException("Session count must be greater than 0."))
+        }
+
+        val groupId = UUID.randomUUID().toString()
+        val code = generateCode()
+        val endDateMs = startDateMs + durationDays.toLong() * 24 * 60 * 60 * 1000L
+
+        val groupChallenge = GroupChallenge(
+            groupId = groupId,
+            code = code,
+            creatorUserId = creatorUserId,
+            appPackageNames = appPackageNames,
+            appDisplayName = appDisplayName,
+            limitType = limitType,
+            limitValueMinutes = limitValueMinutes,
+            limitValueSessions = limitValueSessions,
+            durationDays = durationDays,
+            buyInCents = buyInCents,
+            maxParticipants = maxParticipants,
+            startDate = startDateMs,
+            endDate = endDateMs,
+            bonusEnabled = bonusEnabled,
+            status = GroupChallengeStatus.WAITING,
+            participants = emptyList()
+        )
+
+        // Save locally first for instant UI update
+        groupChallengeRepository.saveGroupChallenge(groupChallenge)
+            .onFailure { return Result.failure(it) }
+
+        // Persist to Firestore via Cloud Function (validates code uniqueness)
+        val groupDataMap = mapOf(
+            "groupId" to groupId,
+            "creatorUserId" to creatorUserId,
+            "creatorDisplayName" to creatorDisplayName,
+            "appPackageNames" to appPackageNames.joinToString(","),
+            "appDisplayName" to appDisplayName,
+            "limitType" to limitType.name.lowercase(),
+            "limitValueMinutes" to limitValueMinutes,
+            "limitValueSessions" to limitValueSessions,
+            "durationDays" to durationDays,
+            "buyInCents" to buyInCents,
+            "maxParticipants" to maxParticipants,
+            "startDate" to startDateMs,
+            "endDate" to endDateMs,
+            "bonusEnabled" to bonusEnabled,
+            "status" to "waiting"
+        )
+
+        val cfResult = cloudFunctionsService.createGroupChallenge(groupId, code, groupDataMap)
+        if (cfResult.isFailure) {
+            Timber.e(cfResult.exceptionOrNull(), "CreateGroupChallengeUseCase: cloud function failed")
+            return Result.failure(cfResult.exceptionOrNull()!!)
+        }
+
+        // Cloud Function has written the document to Firestore — fetch it back immediately
+        // (Source.SERVER, not cache) to populate Room before navigation.
+        Timber.d("Group created: $groupId — fetching from Firestore")
+        groupChallengeRepository.fetchAndCacheById(groupId)
+            .onSuccess { fetched ->
+                // Cross-check: verify the groupId we wrote matches what Firestore returned.
+                val fetchedId = fetched?.groupId
+                Timber.d(
+                    "CreateGroupChallengeUseCase: local groupId=%s  firestore groupId=%s  match=%b",
+                    groupId, fetchedId, groupId == fetchedId
+                )
+                if (fetched == null) {
+                    Timber.w(
+                        "CreateGroupChallengeUseCase: Firestore returned null for groupId=%s " +
+                                "— document may not have committed yet", groupId
+                    )
+                }
+            }
+            .onFailure { e ->
+                // Non-fatal: Room already has the locally-constructed version from saveGroupChallenge.
+                Timber.w(e, "CreateGroupChallengeUseCase: fetchAndCacheById failed — using local cache")
+            }
+
+        Timber.d("CreateGroupChallengeUseCase: created groupId=%s code=%s", groupId, code)
+        return Result.success(Pair(groupId, code))
+    }
+
+    /** Generates a random 6-character uppercase alphanumeric code. */
+    private fun generateCode(): String {
+        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no 0/O/1/I to avoid confusion
+        return (1..6).map { chars.random() }.joinToString("")
+    }
+}

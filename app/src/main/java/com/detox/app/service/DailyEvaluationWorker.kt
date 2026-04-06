@@ -69,7 +69,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         "DailyEvaluationWorker: '${challenge.appDisplayName}' already " +
                                 "evaluated today — skipping point/payment logic"
                     )
-                    if (now >= challenge.endDate) {
+                    val durationDays = ((challenge.endDate - challenge.startDate) /
+                            86_400_000L).toInt()
+                    if (now >= challenge.endDate || durationDays == 1) {
                         val log = existingRealLog
                         val finalStatus = if (log.limitExceeded) {
                             ChallengeStatus.FAILED
@@ -77,8 +79,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             ChallengeStatus.COMPLETED
                         }
                         challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
-                        val durationDays = ((challenge.endDate - challenge.startDate) /
-                                86_400_000L).toInt()
                         val mode = challenge.mode.name.lowercase()
                         NotificationHelper.createChannels(applicationContext)
                         if (finalStatus == ChallengeStatus.COMPLETED) {
@@ -87,9 +87,15 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 durationDays = durationDays,
                                 totalPoints = log.pointsEarned
                             )
-                            NotificationHelper.sendChallengeCompleted(
-                                applicationContext, challenge.appDisplayName
-                            )
+                            if (challenge.mode == ChallengeMode.HARD && challenge.amountCents != null) {
+                                NotificationHelper.sendHardModeCompleted(
+                                    applicationContext, challenge.appDisplayName, challenge.amountCents
+                                )
+                            } else {
+                                NotificationHelper.sendChallengeCompleted(
+                                    applicationContext, challenge.appDisplayName
+                                )
+                            }
                         } else {
                             analyticsService.logChallengeFailed(mode)
                             NotificationHelper.sendChallengeFailed(
@@ -136,7 +142,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 .onFailure { e ->
                                     Timber.e(e, "Failed to capture payment for ${challenge.id}")
                                 }
-                        } else if (now >= challenge.endDate) {
+                        } else if (now >= challenge.endDate || durationDays == 1) {
+                            Timber.d("Challenge ${challenge.id} completed → refund triggered for ${challenge.stripePaymentIntentId}")
                             paymentRepository.cancelOrRefundPayment(
                                 paymentIntentId = challenge.stripePaymentIntentId,
                                 wasImmediate = isImmediateCapture
@@ -195,15 +202,15 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         )
                     }
 
-                    if (now >= challenge.endDate) {
+                    val durationDays = ((challenge.endDate - challenge.startDate) /
+                            86_400_000L).toInt()
+                    if (now >= challenge.endDate || durationDays == 1) {
                         val finalStatus = if (pointsResult.limitExceeded) {
                             ChallengeStatus.FAILED
                         } else {
                             ChallengeStatus.COMPLETED
                         }
                         challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
-                        val durationDays = ((challenge.endDate - challenge.startDate) /
-                                86_400_000L).toInt()
                         val mode = challenge.mode.name.lowercase()
                         NotificationHelper.createChannels(applicationContext)
                         if (finalStatus == ChallengeStatus.COMPLETED) {
@@ -211,9 +218,15 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 mode = mode, durationDays = durationDays,
                                 totalPoints = pointsResult.points
                             )
-                            NotificationHelper.sendChallengeCompleted(
-                                applicationContext, challenge.appDisplayName
-                            )
+                            if (challenge.mode == ChallengeMode.HARD && challenge.amountCents != null) {
+                                NotificationHelper.sendHardModeCompleted(
+                                    applicationContext, challenge.appDisplayName, challenge.amountCents
+                                )
+                            } else {
+                                NotificationHelper.sendChallengeCompleted(
+                                    applicationContext, challenge.appDisplayName
+                                )
+                            }
                         } else {
                             analyticsService.logChallengeFailed(mode)
                             NotificationHelper.sendChallengeFailed(
@@ -229,7 +242,20 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 }
 
                 // ── TIME / SESSIONS: use UsageStats + overlay adjustment ───────────────
-                val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
+                // Sum usage across all tracked packages in this challenge (multi-app support)
+                val todayUsage = challenge.appPackageNames.fold(
+                    com.detox.app.domain.model.AppDailyUsage(0, 0)
+                ) { acc, pkg ->
+                    Timber.d(
+                        "DailyEvaluationWorker: checking package=$pkg against challenge " +
+                                "packages=${challenge.appPackageNames}"
+                    )
+                    val usage = usageStatsRepository.getTodayUsageForApp(pkg)
+                    com.detox.app.domain.model.AppDailyUsage(
+                        minutes = acc.minutes + usage.minutes,
+                        opens = acc.opens + usage.opens
+                    )
+                }
 
                 // Subtract time when our overlay was covering the app so that overlay wait-time
                 // doesn't count against the user's limit. Carry the value into the DailyLog.
@@ -284,9 +310,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             .onFailure { e ->
                                 Timber.e(e, "Failed to capture payment for ${challenge.id}")
                             }
-                    } else if (now >= challenge.endDate) {
+                    } else if (now >= challenge.endDate || durationDays == 1) {
                         // Challenge completed successfully → cancel pre-auth or issue refund
-                        Timber.d("Hard Mode challenge ${challenge.appDisplayName} completed — refunding/cancelling")
+                        Timber.d("Challenge ${challenge.id} completed → refund triggered for ${challenge.stripePaymentIntentId}")
                         paymentRepository.cancelOrRefundPayment(
                             paymentIntentId = challenge.stripePaymentIntentId,
                             wasImmediate = isImmediateCapture
@@ -362,15 +388,15 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 }
 
                 // ── Update challenge status if end date reached ─────────────────
-                if (now >= challenge.endDate) {
+                val durationDays = ((challenge.endDate - challenge.startDate) /
+                        86_400_000L).toInt()
+                if (now >= challenge.endDate || durationDays == 1) {
                     val finalStatus = if (pointsResult.limitExceeded) {
                         ChallengeStatus.FAILED
                     } else {
                         ChallengeStatus.COMPLETED
                     }
                     challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
-                    val durationDays = ((challenge.endDate - challenge.startDate) /
-                            86_400_000L).toInt()
                     val mode = challenge.mode.name.lowercase()
                     if (finalStatus == ChallengeStatus.COMPLETED) {
                         analyticsService.logChallengeCompleted(
@@ -387,9 +413,15 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     // Milestone notification
                     NotificationHelper.createChannels(applicationContext)
                     if (finalStatus == ChallengeStatus.COMPLETED) {
-                        NotificationHelper.sendChallengeCompleted(
-                            applicationContext, challenge.appDisplayName
-                        )
+                        if (challenge.mode == ChallengeMode.HARD && challenge.amountCents != null) {
+                            NotificationHelper.sendHardModeCompleted(
+                                applicationContext, challenge.appDisplayName, challenge.amountCents
+                            )
+                        } else {
+                            NotificationHelper.sendChallengeCompleted(
+                                applicationContext, challenge.appDisplayName
+                            )
+                        }
                     } else {
                         NotificationHelper.sendChallengeFailed(
                             applicationContext, challenge.appDisplayName

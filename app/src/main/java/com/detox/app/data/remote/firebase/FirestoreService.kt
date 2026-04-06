@@ -1,5 +1,6 @@
 package com.detox.app.data.remote.firebase
 
+import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
@@ -147,9 +148,26 @@ class FirestoreService @Inject constructor(
             snapshot.documents.mapNotNull { doc ->
                 val d = doc.data ?: return@mapNotNull null
                 try {
+                    val primaryPkg = d["appPackageName"] as? String ?: return@mapNotNull null
+                    // appPackageNames may be stored as a comma-separated string or be absent in
+                    // old documents; fall back to the single appPackageName field.
+                    val pkgNamesRaw = d["appPackageNames"] as? String
+                    val packageNames = pkgNamesRaw
+                        ?.split(",")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: listOf(primaryPkg)
+                    val domainsRaw = d["blockedDomains"] as? String
+                    val domains = domainsRaw
+                        ?.split(",")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?: emptyList()
                     Challenge(
                         id = d["id"] as? String ?: doc.id,
-                        appPackageName = d["appPackageName"] as? String ?: return@mapNotNull null,
+                        appPackageName = packageNames.firstOrNull(),
+                        appPackageNames = packageNames,
                         appDisplayName = d["appDisplayName"] as? String ?: return@mapNotNull null,
                         mode = ChallengeMode.valueOf(
                             (d["mode"] as? String ?: "soft").uppercase()
@@ -168,7 +186,21 @@ class FirestoreService @Inject constructor(
                             (d["status"] as? String ?: "active").uppercase()
                         ),
                         createdAt = d["createdAt"] as? Long ?: 0L,
-                        dailyBudgetMinutes = (d["dailyBudgetMinutes"] as? Long)?.toInt()
+                        dailyBudgetMinutes = (d["dailyBudgetMinutes"] as? Long)?.toInt(),
+                        blockedDomains = domains,
+                        blockingType = runCatching {
+                            BlockingType.valueOf(
+                                (d["blockingType"] as? String ?: "app").uppercase()
+                            )
+                        }.getOrDefault(BlockingType.APP),
+                        blockAdultContent = d["blockAdultContent"] as? Boolean ?: false,
+                        scheduleStartTime = d["scheduleStartTime"] as? String,
+                        scheduleEndTime = d["scheduleEndTime"] as? String,
+                        activeDays = (d["activeDays"] as? String)
+                            ?.split(",")
+                            ?.map { it.trim() }
+                            ?.filter { it.isNotBlank() }
+                            ?: emptyList(),
                     )
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to parse challenge document ${doc.id}")
@@ -254,7 +286,8 @@ class FirestoreService @Inject constructor(
 
     private fun Challenge.toMap(): Map<String, Any?> = mapOf(
         "id" to id,
-        "appPackageName" to appPackageName,
+        "appPackageName" to (appPackageName ?: ""),
+        "appPackageNames" to appPackageNames.joinToString(",").ifEmpty { null },
         "appDisplayName" to appDisplayName,
         "mode" to mode.name.lowercase(),
         "limitType" to limitType.name.lowercase(),
@@ -268,6 +301,12 @@ class FirestoreService @Inject constructor(
         "status" to status.name.lowercase(),
         "createdAt" to createdAt,
         "dailyBudgetMinutes" to dailyBudgetMinutes,
+        "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
+        "blockingType" to blockingType.name.lowercase(),
+        "blockAdultContent" to blockAdultContent,
+        "scheduleStartTime" to scheduleStartTime,
+        "scheduleEndTime" to scheduleEndTime,
+        "activeDays" to activeDays.joinToString(",").ifEmpty { null },
         "syncedAt" to com.google.firebase.Timestamp.now()
     )
 

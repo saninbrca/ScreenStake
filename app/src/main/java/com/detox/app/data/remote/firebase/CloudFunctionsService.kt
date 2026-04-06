@@ -109,4 +109,123 @@ class CloudFunctionsService @Inject constructor(
             Result.failure(e)
         }
     }
+
+    // ── Group Challenge Cloud Functions ────────────────────────────────────────
+
+    /**
+     * Creates a group challenge document server-side, validates the generated code for
+     * uniqueness, and persists all settings to Firestore.
+     *
+     * Expected input:  { groupId, code, groupData: {...} }
+     * Returns:         { code: String }
+     */
+    suspend fun createGroupChallenge(
+        groupId: String,
+        code: String,
+        groupData: Map<String, Any?>
+    ): Result<String> {
+        return try {
+            val result = functions
+                .getHttpsCallable("createGroupChallenge")
+                .call(mapOf("groupId" to groupId, "code" to code, "groupData" to groupData))
+                .await()
+            @Suppress("UNCHECKED_CAST")
+            val response = result.data as Map<String, Any>
+            val returnedCode = response["code"] as String
+            Timber.d("createGroupChallenge: groupId=%s code=%s", groupId, returnedCode)
+            Result.success(returnedCode)
+        } catch (e: Exception) {
+            Timber.e(e, "createGroupChallenge failed groupId=%s", groupId)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Validates the group code, creates a Stripe PaymentIntent for the buy-in, and
+     * adds the participant to the group challenge.
+     *
+     * Expected input:  { groupId, userId, displayName }
+     * Returns:         { paymentIntentId, clientSecret }
+     */
+    suspend fun joinGroupChallenge(
+        groupId: String,
+        userId: String,
+        displayName: String
+    ): Result<com.detox.app.domain.model.PaymentIntentData> {
+        return try {
+            val result = functions
+                .getHttpsCallable("joinGroupChallenge")
+                .call(mapOf("groupId" to groupId, "userId" to userId, "displayName" to displayName))
+                .await()
+            @Suppress("UNCHECKED_CAST")
+            val response = result.data as Map<String, Any>
+            val paymentIntentId = response["paymentIntentId"] as String
+            val clientSecret = response["clientSecret"] as String
+            Timber.d("joinGroupChallenge: groupId=%s userId=%s", groupId, userId)
+            Result.success(
+                com.detox.app.domain.model.PaymentIntentData(
+                    paymentIntentId = paymentIntentId,
+                    clientSecret = clientSecret,
+                    isImmediateCapture = true
+                )
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "joinGroupChallenge failed groupId=%s", groupId)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Checks if a group challenge has enough participants (≥ 2) and either activates it
+     * or cancels it with full refunds. Should be called at `startDate`.
+     */
+    suspend fun startGroupChallenge(groupId: String): Result<Unit> {
+        return try {
+            functions
+                .getHttpsCallable("startGroupChallenge")
+                .call(mapOf("groupId" to groupId))
+                .await()
+            Timber.d("startGroupChallenge: groupId=%s", groupId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "startGroupChallenge failed groupId=%s", groupId)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Marks a participant as FAILED, captures their Stripe payment, and sends
+     * push notifications to all other participants.
+     */
+    suspend fun failGroupParticipant(groupId: String, userId: String): Result<Unit> {
+        return try {
+            functions
+                .getHttpsCallable("failParticipant")
+                .call(mapOf("groupId" to groupId, "userId" to userId))
+                .await()
+            Timber.d("failGroupParticipant: groupId=%s userId=%s", groupId, userId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "failGroupParticipant failed groupId=%s userId=%s", groupId, userId)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Runs end-of-challenge payout logic: refunds winners, distributes pot from
+     * failed participants, optionally awards bonus to best performer.
+     */
+    suspend fun completeGroupChallenge(groupId: String): Result<Unit> {
+        return try {
+            functions
+                .getHttpsCallable("completeGroupChallenge")
+                .call(mapOf("groupId" to groupId))
+                .await()
+            Timber.d("completeGroupChallenge: groupId=%s", groupId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "completeGroupChallenge failed groupId=%s", groupId)
+            Result.failure(e)
+        }
+    }
 }

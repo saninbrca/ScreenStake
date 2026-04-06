@@ -122,6 +122,25 @@ object NotificationHelper {
     }
 
     /**
+     * Posts a milestone notification when a Hard Mode challenge is completed successfully.
+     * Includes the refunded amount so the user knows their money is coming back.
+     *
+     * @param amountCents amount in cents that was refunded (e.g. 1000 = €10)
+     */
+    fun sendHardModeCompleted(context: Context, appName: String, amountCents: Int) {
+        postMilestone(
+            context = context,
+            notifId = NOTIF_ID_MILESTONE_BASE + appName.hashCode() + 2,
+            title = context.getString(R.string.notif_hard_mode_completed_title),
+            body = context.getString(
+                R.string.notif_hard_mode_completed_body,
+                appName,
+                amountCents / 100
+            )
+        )
+    }
+
+    /**
      * Posts a milestone notification when a Hard Mode challenge is lost.
      */
     fun sendChallengeFailed(context: Context, appName: String) {

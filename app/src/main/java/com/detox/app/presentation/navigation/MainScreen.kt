@@ -2,6 +2,7 @@ package com.detox.app.presentation.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
@@ -23,11 +24,18 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.detox.app.R
+import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCreateViewModel
 import com.detox.app.presentation.screens.activechallenge.ActiveChallengeScreen
 import com.detox.app.presentation.screens.appselection.AppSelectionScreen
+import com.detox.app.presentation.screens.blockwebsite.BlockWebsiteScreen
 import com.detox.app.presentation.screens.challengesetup.ChallengeSetupScreen
+import com.detox.app.presentation.screens.challengetype.ChallengeTypeScreen
 import com.detox.app.presentation.screens.challenges.ChallengesScreen
 import com.detox.app.presentation.screens.dashboard.DashboardScreen
+import com.detox.app.presentation.screens.friends.FriendsHubScreen
+import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCreateScreen
+import com.detox.app.presentation.screens.groupchallenge.detail.GroupChallengeDetailScreen
+import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoinScreen
 import com.detox.app.presentation.screens.pointshop.PointShopScreen
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
@@ -40,10 +48,11 @@ private sealed class BottomNavTab(
 ) {
     data object Dashboard : BottomNavTab("dashboard", R.string.nav_dashboard, Icons.Filled.Home)
     data object Challenges : BottomNavTab("challenges", R.string.nav_challenges, Icons.Filled.List)
+    data object Friends : BottomNavTab("friends", R.string.nav_friends, Icons.Filled.Group)
     data object Profile : BottomNavTab("profile", R.string.nav_profile, Icons.Filled.Person)
 
     companion object {
-        val all = listOf(Dashboard, Challenges, Profile)
+        val all = listOf(Dashboard, Challenges, Friends, Profile)
     }
 }
 
@@ -84,7 +93,7 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             composable(BottomNavTab.Dashboard.route) {
                 DashboardScreen(
                     onAddChallenge = {
-                        navController.navigate("app_selection")
+                        navController.navigate("challenge_type")
                     },
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
@@ -102,7 +111,7 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             composable(BottomNavTab.Challenges.route) {
                 ChallengesScreen(
                     onAddChallenge = {
-                        navController.navigate("app_selection")
+                        navController.navigate("challenge_type")
                     },
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
@@ -115,28 +124,91 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                 ProfileScreen(onLoggedOut = onLoggedOut)
             }
 
+            // ── Friends / Group Challenges tab ──────────────────────────────────
+            composable(BottomNavTab.Friends.route) {
+                FriendsHubScreen(
+                    onCreateGroupChallenge = {
+                        navController.navigate("group_create_app_selection")
+                    },
+                    onJoinGroupChallenge = {
+                        navController.navigate("group_join")
+                    },
+                    onGroupChallengeClick = { groupId ->
+                        navController.navigate("group_detail/$groupId")
+                    }
+                )
+            }
+
+            // ── Challenge Type picker ───────────────────────────────────────────
+            composable("challenge_type") {
+                ChallengeTypeScreen(
+                    onBlockApp = {
+                        navController.navigate("app_selection")
+                    },
+                    onBlockWebsite = {
+                        navController.navigate("block_website")
+                    }
+                )
+            }
+
             // ── App Selection ───────────────────────────────────────────────────
             composable("app_selection") {
                 AppSelectionScreen(
-                    onAppSelected = { packageName, displayName ->
+                    onAppsSelected = { packages, displayName ->
+                        val encodedPackages = URLEncoder.encode(packages.joinToString(","), "UTF-8")
                         val encodedName = URLEncoder.encode(displayName, "UTF-8")
-                        navController.navigate("challenge_setup/$packageName/$encodedName")
+                        navController.navigate(
+                            "challenge_setup?blockingType=APP&packageNames=$encodedPackages&displayName=$encodedName"
+                        )
+                    }
+                )
+            }
+
+            // ── Block Website ───────────────────────────────────────────────────
+            composable("block_website") {
+                BlockWebsiteScreen(
+                    onContinue = { blockedDomains, blockAdultContent ->
+                        val encodedDomains = URLEncoder.encode(blockedDomains.joinToString(","), "UTF-8")
+                        navController.navigate(
+                            "challenge_setup?blockingType=WEBSITE&blockedDomains=$encodedDomains&blockAdultContent=$blockAdultContent"
+                        )
                     }
                 )
             }
 
             // ── Challenge Setup ─────────────────────────────────────────────────
             composable(
-                route = "challenge_setup/{packageName}/{displayName}",
+                route = "challenge_setup?blockingType={blockingType}&packageNames={packageNames}&displayName={displayName}&blockedDomains={blockedDomains}&blockAdultContent={blockAdultContent}",
                 arguments = listOf(
-                    navArgument("packageName") { type = NavType.StringType },
-                    navArgument("displayName") { type = NavType.StringType }
+                    navArgument("blockingType") {
+                        type = NavType.StringType
+                        defaultValue = "APP"
+                    },
+                    navArgument("packageNames") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                        nullable = true
+                    },
+                    navArgument("displayName") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                        nullable = true
+                    },
+                    navArgument("blockedDomains") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                        nullable = true
+                    },
+                    navArgument("blockAdultContent") {
+                        type = NavType.StringType
+                        defaultValue = "false"
+                    }
                 )
             ) {
                 ChallengeSetupScreen(
                     onChallengeCreated = {
                         navController.navigate(BottomNavTab.Dashboard.route) {
-                            popUpTo("app_selection") { inclusive = true }
+                            popUpTo("challenge_type") { inclusive = true }
                             launchSingleTop = true
                         }
                     }
@@ -163,6 +235,84 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             // ── Statistics ───────────────────────────────────────────────────────
             composable("statistics") {
                 StatisticsScreen(onBack = { navController.popBackStack() })
+            }
+
+            // ── Group Challenge — App selection (reuses AppSelectionScreen) ─────
+            composable("group_create_app_selection") {
+                AppSelectionScreen(
+                    onAppsSelected = { packages, displayName ->
+                        val encodedPackages = URLEncoder.encode(packages.joinToString(","), "UTF-8")
+                        val encodedName = URLEncoder.encode(displayName, "UTF-8")
+                        navController.navigate(
+                            "group_create?packageNames=$encodedPackages&displayName=$encodedName"
+                        )
+                    }
+                )
+            }
+
+            // ── Group Challenge — Create (two-step settings + review) ────────────
+            composable(
+                route = "group_create?packageNames={packageNames}&displayName={displayName}",
+                arguments = listOf(
+                    navArgument("packageNames") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                        nullable = true
+                    },
+                    navArgument("displayName") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                        nullable = true
+                    }
+                )
+            ) { backStackEntry ->
+                val packageNames = backStackEntry.arguments?.getString("packageNames") ?: ""
+                val displayName = backStackEntry.arguments?.getString("displayName") ?: ""
+                val viewModel = androidx.hilt.navigation.compose.hiltViewModel<GroupChallengeCreateViewModel>()
+                // Pre-fill packages from nav args on first composition
+                androidx.compose.runtime.LaunchedEffect(packageNames) {
+                    if (packageNames.isNotBlank()) {
+                        viewModel.setSelectedPackages(packageNames, displayName)
+                    }
+                }
+                GroupChallengeCreateScreen(
+                    onBack = { navController.popBackStack() },
+                    onSelectApps = {
+                        navController.navigate("group_create_app_selection")
+                    },
+                    onCreated = { groupId ->
+                        navController.navigate("group_detail/$groupId") {
+                            popUpTo("group_create_app_selection") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    viewModel = viewModel
+                )
+            }
+
+            // ── Group Challenge — Join ────────────────────────────────────────────
+            composable("group_join") {
+                GroupChallengeJoinScreen(
+                    onBack = { navController.popBackStack() },
+                    onJoined = {
+                        navController.navigate(BottomNavTab.Friends.route) {
+                            popUpTo("group_join") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+
+            // ── Group Challenge — Detail / Leaderboard ───────────────────────────
+            composable(
+                route = "group_detail/{groupId}",
+                arguments = listOf(
+                    navArgument("groupId") { type = NavType.StringType }
+                )
+            ) {
+                GroupChallengeDetailScreen(
+                    onBack = { navController.popBackStack() }
+                )
             }
         }
     }

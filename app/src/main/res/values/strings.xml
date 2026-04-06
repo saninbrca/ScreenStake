@@ -28,16 +28,20 @@
     <string name="accessibility_service_description">Detox uses this service to detect when tracked apps are opened, so it can show a reminder screen to help you manage your screen time.</string>
 
     <!-- App Selection -->
-    <string name="app_selection_title">Select an App</string>
+    <string name="app_selection_title">Select Apps</string>
     <string name="app_selection_subtitle">Choose an app to start a challenge. Only apps with high usage are eligible.</string>
+    <string name="app_selection_subtitle_multiselect">Select one or more apps to track. Only apps with high usage are eligible.</string>
     <string name="app_selection_trackable">Trackable</string>
     <string name="app_selection_not_trackable">Not enough usage in the last 14 days</string>
+    <string name="app_selection_not_enough_usage">Not enough usage data</string>
     <string name="app_selection_avg_daily_time">%1$d min/day</string>
     <string name="app_selection_avg_daily_opens">%1$d opens/day</string>
     <string name="app_selection_loading">Analyzing your app usage\u2026</string>
     <string name="app_selection_error">Could not load usage data. Please make sure the Usage Data Access permission is granted.</string>
     <string name="app_selection_no_permission">Usage data permission is required to see your apps.</string>
     <string name="app_selection_grant_permission">Grant Permission</string>
+    <string name="app_selection_select_hint">Select at least one app</string>
+    <string name="app_selection_next">Next (%1$d selected)</string>
 
     <!-- Challenge Setup -->
     <string name="challenge_setup_title">Set Up Challenge</string>
@@ -284,6 +288,48 @@
     <string name="challenge_card_budget_limit">Budget: %1$d min/day</string>
     <string name="challenge_card_budget_progress">%1$d of %2$d min used · %3$d min left</string>
 
+    <!-- Multi-app selection in Challenge Setup -->
+    <string name="challenge_setup_apps_label">Apps to track</string>
+    <string name="challenge_setup_apps_add">Add more apps</string>
+    <string name="challenge_setup_apps_hide">Hide app list</string>
+
+    <!-- Website blocking in Challenge Setup -->
+    <string name="challenge_setup_websites_label">Block Websites</string>
+    <string name="challenge_setup_no_detected_domains">No known domains detected for selected apps. Add domains manually below.</string>
+
+    <!-- Usage Schedule in Challenge Setup -->
+    <string name="challenge_setup_schedule_title">Usage Schedule (optional)</string>
+    <string name="challenge_setup_schedule_subtitle">Only enforce this challenge during specific hours and days.</string>
+    <string name="challenge_setup_schedule_from">Active from</string>
+    <string name="challenge_setup_schedule_to">Active until</string>
+    <string name="challenge_setup_schedule_start_hint">HH:mm</string>
+    <string name="challenge_setup_schedule_end_hint">HH:mm</string>
+    <string name="challenge_setup_schedule_clear">Clear schedule</string>
+    <string name="challenge_setup_block_adult">Also block all adult content</string>
+    <string name="challenge_setup_block_app_website">Also block %1$s</string>
+    <string name="challenge_setup_custom_domain_hint">Add domain (e.g. example.com)</string>
+    <string name="challenge_setup_custom_domain_add">Add</string>
+    <string name="challenge_setup_website_label">website</string>
+
+    <!-- Challenge Type picker -->
+    <string name="challenge_type_title">New Challenge</string>
+    <string name="challenge_type_subtitle">What do you want to reduce?</string>
+    <string name="challenge_type_app_title">Block App</string>
+    <string name="challenge_type_app_description">Limit or block a specific app on your phone</string>
+    <string name="challenge_type_website_title">Block Website</string>
+    <string name="challenge_type_website_description">Block specific websites in your browser</string>
+
+    <!-- Block Website setup screen -->
+    <string name="block_website_title">Block Websites</string>
+    <string name="block_website_subtitle">Add domains you want to block in your browser during this challenge.</string>
+    <string name="block_website_continue">Continue</string>
+
+    <!-- Website Blocked Overlay -->
+    <string name="website_blocked_title">Website Blocked</string>
+    <string name="website_blocked_message">This site is blocked by your active challenge. Stay strong!</string>
+    <string name="website_blocked_go_back">Go back</string>
+    <string name="website_blocked_visit_anyway">Visit anyway (free for today)</string>
+
     <!-- Budget Selection Overlay (TIME_BUDGET Stage 1) -->
     <string name="budget_overlay_title">Opening %1$s</string>
     <string name="budget_overlay_remaining">%1$d min remaining today</string>
@@ -293,4 +339,72 @@
     <string name="budget_overlay_increase">Increase minutes</string>
     <string name="budget_overlay_start">Start session</string>
     <string name="budget_overlay_go_back">No, go back</string>
+
+    <!-- Navigation — Friends tab -->
+    <string name="nav_friends">Friends</string>
+
+    <!-- Friends Hub screen -->
+    <string name="friends_hub_title">Friends</string>
+    <string name="friends_hub_create">Create Challenge</string>
+    <string name="friends_hub_join">Join with Code</string>
+    <string name="friends_hub_active">Active</string>
+    <string name="friends_hub_waiting">Waiting to Start</string>
+    <string name="friends_hub_history">History</string>
+    <string name="friends_hub_empty">No group challenges yet.\nCreate one or join a friend\'s challenge!</string>
+
+    <!-- Group Challenge — Create flow -->
+    <string name="group_create_title_step1">New Group Challenge</string>
+    <string name="group_create_title_step2">Review &amp; Share</string>
+    <string name="group_create_apps_label">Apps to Block</string>
+    <string name="group_create_apps_select">Select Apps…</string>
+    <string name="group_create_apps_change">Change Apps</string>
+    <string name="group_create_buy_in_label">Buy-In Per Player</string>
+    <string name="group_create_max_participants_label">Max Participants</string>
+    <string name="group_create_start_date_label">Start Date (must be tomorrow or later)</string>
+    <string name="group_create_start_date_hint">Pick a date…</string>
+    <string name="group_create_bonus_label">Bonus for winner</string>
+    <string name="group_create_bonus_info">What is the winner bonus?</string>
+    <string name="group_create_bonus_tooltip">The participant with the best performance (fewest opens / most time saved) receives an extra 10%% of the total pot. The app takes a 5%% fee.</string>
+    <string name="group_create_next">Next — Review</string>
+    <!-- Step 2 — Review -->
+    <string name="group_create_code_label">Your Group Code</string>
+    <string name="group_create_code_hint">Share this code with your friends so they can join!</string>
+    <string name="group_create_summary_app">App</string>
+    <string name="group_create_summary_limit">Daily Limit</string>
+    <string name="group_create_summary_duration">Duration</string>
+    <string name="group_create_summary_buy_in">Buy-In Per Player</string>
+    <string name="join_group_entry_fee">Entry fee: €%1$d</string>
+    <string name="group_create_summary_max_players">Max Players</string>
+    <string name="group_create_summary_bonus">Winner Bonus</string>
+    <string name="group_create_share_button">Create &amp; Share Code</string>
+    <string name="group_create_done_button">Done — Go to Friends</string>
+    <string name="group_create_share_text">Join my Detox challenge! Code: %1$s — App: %2$s, %3$d days, min €%4$d</string>
+    <string name="group_create_share_chooser">Share Challenge Code</string>
+
+    <!-- Group Challenge — Join flow -->
+    <string name="join_group_title">Join Challenge</string>
+    <string name="join_group_subtitle">Enter the 6-character code shared by the challenge creator.</string>
+    <string name="join_group_code_label">Challenge Code</string>
+    <string name="join_group_lookup">Look Up</string>
+    <string name="join_group_pay_button">Pay €%1$d &amp; Join</string>
+
+    <!-- Group Challenge — Detail / Leaderboard -->
+    <string name="group_detail_title">Group Challenge</string>
+    <string name="group_detail_leaderboard">Leaderboard</string>
+    <string name="group_detail_no_participants">No participants yet.</string>
+
+    <!-- Shared dialog buttons -->
+    <string name="dialog_ok">OK</string>
+    <string name="dialog_cancel">Cancel</string>
+
+    <!-- Hard Mode completion notification (includes refund amount) -->
+    <string name="notif_hard_mode_completed_title">🎉 Challenge Complete — Money Refunded!</string>
+    <string name="notif_hard_mode_completed_body">You completed your %1$s challenge! Your €%2$d has been refunded to your card.</string>
+
+    <!-- Hard Mode Success Overlay (shown once on Dashboard after completion) -->
+    <string name="success_overlay_title">Herzlichen Glückwunsch!</string>
+    <string name="success_overlay_subtitle">Du hast deine Challenge geschafft!</string>
+    <string name="success_overlay_refund">Your €%1$d has been refunded to your card</string>
+    <string name="success_overlay_duration">Challenge duration: %1$d days</string>
+    <string name="success_overlay_new_challenge">Start New Challenge</string>
 </resources>

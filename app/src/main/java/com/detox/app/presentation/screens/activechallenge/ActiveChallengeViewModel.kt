@@ -56,7 +56,7 @@ class ActiveChallengeViewModel @Inject constructor(
                             return@launch
                         }
                         // Also load today's limit status for live progress display
-                        val status = checkDailyLimitUseCase(challenge.appPackageName)
+                        val status = checkDailyLimitUseCase(challenge.appPackageName ?: "")
                             .getOrNull()
                         _uiState.value = ActiveChallengeUiState.Success(challenge, status)
                     },

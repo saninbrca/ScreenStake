@@ -142,6 +142,13 @@ class OverlayManager @Inject constructor(
             }
         }
 
+        // Website blocking: show overlay when AccessibilityService detects a blocked domain
+        scope.launch {
+            TrackedAppEventBus.urlBlockedEvents.collect { domain ->
+                showWebsiteBlockedOverlay(domain)
+            }
+        }
+
         // Cancel session and budget timers if the user navigates away from the tracked app
         foregroundListenerJob = scope.launch {
             TrackedAppEventBus.currentForegroundPackage.collect { current ->
@@ -245,7 +252,7 @@ class OverlayManager @Inject constructor(
      */
     private suspend fun handleSessionLimitApp(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
-        val packageName = challenge.appPackageName
+        val packageName = (challenge.appPackageName ?: "")
 
         // After a Soft Mode failure the app opens freely for the rest of the day
         if (failedSessionAppsToday.contains(packageName)) {
@@ -311,16 +318,16 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionIntentionOverlay(
-                    packageName = challenge.appPackageName,
+                    packageName = (challenge.appPackageName ?: ""),
                     appName = challenge.appDisplayName,
                     opensUsed = confirmedOpens,
                     maxOpens = maxOpens,
-                    lastSessionEndedAt = lastSessionEndedAt[challenge.appPackageName],
+                    lastSessionEndedAt = lastSessionEndedAt[(challenge.appPackageName ?: "")],
                     motivationText = motivationText,
                     onYes = {
                         val newCount =
-                            consciousOpensToday.getOrDefault(challenge.appPackageName, 0) + 1
-                        consciousOpensToday[challenge.appPackageName] = newCount
+                            consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0) + 1
+                        consciousOpensToday[(challenge.appPackageName ?: "")] = newCount
                         Timber.d(
                             "OverlayManager: Stage 1 'Yes, open it' — " +
                                     "consciousOpens=$newCount/$maxOpens for ${challenge.appDisplayName}"
@@ -350,8 +357,8 @@ class OverlayManager @Inject constructor(
                                     "for ${challenge.appDisplayName}"
                         )
                         startSessionTimer(
-                            packageName = challenge.appPackageName,
-                            durationMinutes = challenge.limitValueMinutes,
+                            packageName = (challenge.appPackageName ?: ""),
+                            durationMinutes = challenge.sessionDurationMinutes,
                             challengeId = challenge.id,
                             scope = scope
                         )
@@ -374,7 +381,7 @@ class OverlayManager @Inject constructor(
     private fun showSessionLimitReachedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
         val isHard = challenge.mode == ChallengeMode.HARD
-        val confirmedOpens = consciousOpensToday.getOrDefault(challenge.appPackageName, 0)
+        val confirmedOpens = consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0)
         Timber.d(
             "OverlayManager: Stage 2 shown for ${challenge.appDisplayName} " +
                     "— $confirmedOpens/${challenge.limitValueSessions} conscious opens, " +
@@ -393,7 +400,7 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
-                    packageName = challenge.appPackageName,
+                    packageName = (challenge.appPackageName ?: ""),
                     appName = challenge.appDisplayName,
                     challengeMode = challenge.mode,
                     amountCents = challenge.amountCents,
@@ -403,12 +410,12 @@ class OverlayManager @Inject constructor(
                                     "for ${challenge.appDisplayName} (mode=${challenge.mode})"
                         )
                         // Mark package as free immediately — no more overlays for the rest of the day
-                        failedSessionAppsToday.add(challenge.appPackageName)
-                        TrackedAppEventBus.markPackageFreeForToday(challenge.appPackageName)
+                        failedSessionAppsToday.add((challenge.appPackageName ?: ""))
+                        TrackedAppEventBus.markPackageFreeForToday((challenge.appPackageName ?: ""))
 
                         if (isHard && challenge.stripePaymentIntentId != null) {
                             // Hard Mode: capture payment only — app opens freely (no lockout)
-                            analyticsService.logLimitExceeded("hard_session", challenge.appPackageName)
+                            analyticsService.logLimitExceeded("hard_session", (challenge.appPackageName ?: ""))
                             Timber.d(
                                 "OverlayManager: Hard session FAILED — payment captured, " +
                                         "${challenge.appDisplayName} opens freely for rest of day"
@@ -430,20 +437,20 @@ class OverlayManager @Inject constructor(
                                     }
                                 writeDailyLogForHardCapture(
                                     challengeId = challenge.id,
-                                    packageName = challenge.appPackageName,
+                                    packageName = (challenge.appPackageName ?: ""),
                                     amountCents = challenge.amountCents ?: 0
                                 )
                             }
                             dismissOverlay()
                         } else {
                             // Soft Mode: write DailyLog (points = 0), app opens freely rest of day
-                            analyticsService.logLimitExceeded("soft_session", challenge.appPackageName)
+                            analyticsService.logLimitExceeded("soft_session", (challenge.appPackageName ?: ""))
                             Timber.d(
                                 "OverlayManager: Soft session FAILED — " +
                                         "${challenge.appDisplayName} opens freely for rest of day"
                             )
                             scope.launch {
-                                writeDailyLogForSessionFailed(challenge.id, challenge.appPackageName)
+                                writeDailyLogForSessionFailed(challenge.id, (challenge.appPackageName ?: ""))
                             }
                             dismissOverlay()
                         }
@@ -575,7 +582,7 @@ class OverlayManager @Inject constructor(
      */
     private suspend fun handleTimeBudgetApp(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
-        val packageName = challenge.appPackageName
+        val packageName = (challenge.appPackageName ?: "")
 
         if (failedSessionAppsToday.contains(packageName)) {
             Timber.d("OverlayManager: budget already exhausted for $packageName today — no overlay")
@@ -615,7 +622,7 @@ class OverlayManager @Inject constructor(
         scope: CoroutineScope
     ) {
         val challenge = status.challenge
-        val packageName = challenge.appPackageName
+        val packageName = (challenge.appPackageName ?: "")
         Timber.d(
             "OverlayManager: showing BudgetSelectionOverlay for ${challenge.appDisplayName} " +
                     "(remaining=${remainingMinutes}min)"
@@ -696,16 +703,16 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
-                    packageName = challenge.appPackageName,
+                    packageName = (challenge.appPackageName ?: ""),
                     appName = challenge.appDisplayName,
                     challengeMode = challenge.mode,
                     amountCents = challenge.amountCents,
                     onYesLose = {
-                        failedSessionAppsToday.add(challenge.appPackageName)
-                        TrackedAppEventBus.markPackageFreeForToday(challenge.appPackageName)
+                        failedSessionAppsToday.add((challenge.appPackageName ?: ""))
+                        TrackedAppEventBus.markPackageFreeForToday((challenge.appPackageName ?: ""))
 
                         if (isHard && challenge.stripePaymentIntentId != null) {
-                            analyticsService.logLimitExceeded("hard_budget", challenge.appPackageName)
+                            analyticsService.logLimitExceeded("hard_budget", (challenge.appPackageName ?: ""))
                             scope.launch {
                                 paymentRepository.capturePayment(challenge.stripePaymentIntentId)
                                     .onSuccess {
@@ -724,7 +731,7 @@ class OverlayManager @Inject constructor(
                             }
                             dismissOverlay()
                         } else {
-                            analyticsService.logLimitExceeded("soft_budget", challenge.appPackageName)
+                            analyticsService.logLimitExceeded("soft_budget", (challenge.appPackageName ?: ""))
                             scope.launch { writeDailyLogForBudgetExhausted(challenge) }
                             dismissOverlay()
                         }
@@ -808,7 +815,7 @@ class OverlayManager @Inject constructor(
             return
         }
         val totalBudget = challenge.dailyBudgetMinutes ?: 0
-        val remaining = budgetRemainingToday.getOrDefault(challenge.appPackageName, 0)
+        val remaining = budgetRemainingToday.getOrDefault((challenge.appPackageName ?: ""), 0)
         val used = totalBudget - remaining
         val amountCents = if (challenge.mode == ChallengeMode.HARD) challenge.amountCents ?: 0 else 0
 
@@ -837,6 +844,25 @@ class OverlayManager @Inject constructor(
     }
 
     // ── Blocking overlay (time-limit challenges only) ──────────────────────────
+
+    // ── Website blocking overlay ───────────────────────────────────────────────
+
+    private fun showWebsiteBlockedOverlay(domain: String) {
+        if (currentOverlayView != null) return
+        val composeView = createComposeView {
+            DetoxTheme {
+                com.detox.app.presentation.components.WebsiteBlockedOverlay(
+                    domain = domain,
+                    onGoBack = { dismissOverlay() },
+                    onVisitAnyway = {
+                        TrackedAppEventBus.markDomainFreeForToday(domain)
+                        dismissOverlay()
+                    }
+                )
+            }
+        }
+        showOverlay(composeView)
+    }
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val totalPoints = pointsRepository.getTotalPointsBalance().first()
@@ -877,15 +903,15 @@ class OverlayManager @Inject constructor(
                         if (isHard && challenge.stripePaymentIntentId != null) {
                             scope.launch { captureAndLock(status, scope) }
                         } else {
-                            analyticsService.logLimitExceeded("soft", challenge.appPackageName)
+                            analyticsService.logLimitExceeded("soft", (challenge.appPackageName ?: ""))
                             Timber.d(
                                 "OverlayManager: Soft Mode limit exceeded — " +
                                         "${challenge.appDisplayName} marked exceeded, " +
                                         "5-min re-show timer started"
                             )
-                            exceededAppsToday.add(challenge.appPackageName)
+                            exceededAppsToday.add((challenge.appPackageName ?: ""))
                             dismissOverlay()
-                            startLimitReachedTimer(challenge.appPackageName, scope)
+                            startLimitReachedTimer((challenge.appPackageName ?: ""), scope)
                         }
                     },
                     onStop = {
@@ -903,11 +929,11 @@ class OverlayManager @Inject constructor(
     private suspend fun captureAndLock(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
         val paymentIntentId = challenge.stripePaymentIntentId ?: run {
-            Timber.w("captureAndLock called but stripePaymentIntentId is null for ${challenge.appPackageName}")
+            Timber.w("captureAndLock called but stripePaymentIntentId is null for ${(challenge.appPackageName ?: "")}")
             return
         }
 
-        analyticsService.logLimitExceeded("hard", challenge.appPackageName)
+        analyticsService.logLimitExceeded("hard", (challenge.appPackageName ?: ""))
         dismissOverlay()
 
         scope.launch {
@@ -916,14 +942,14 @@ class OverlayManager @Inject constructor(
                 .onFailure { e -> Timber.e(e, "Failed to capture payment") }
         }
 
-        writeDailyLogForHardCapture(challenge.id, challenge.appPackageName, challenge.amountCents ?: 0)
+        writeDailyLogForHardCapture(challenge.id, (challenge.appPackageName ?: ""), challenge.amountCents ?: 0)
 
         val info = LockedAppInfo(
             challengeId = challenge.id,
             appName = challenge.appDisplayName,
             amountCents = challenge.amountCents ?: 0
         )
-        hardLockedPackages[challenge.appPackageName] = info
+        hardLockedPackages[(challenge.appPackageName ?: "")] = info
         Timber.d(
             "OverlayManager: Hard Mode lockout active for '${challenge.appDisplayName}' " +
                     "(€${(challenge.amountCents ?: 0) / 100f} captured)"

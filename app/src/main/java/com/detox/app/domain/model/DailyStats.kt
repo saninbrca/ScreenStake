@@ -3,7 +3,7 @@ package com.detox.app.domain.model
 data class DailyStats(
     val challengeId: String,
     val appDisplayName: String,
-    val appPackageName: String,
+    val appPackageName: String?,
     val limitType: LimitType,
     val limitValueMinutes: Int,
     val limitValueSessions: Int?,

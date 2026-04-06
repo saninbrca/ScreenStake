@@ -18,7 +18,11 @@
       "Bash(xargs grep:*)",
       "Bash(grep \"\\\\.kt$\")",
       "Bash(grep -E \"src/main.*\\\\.kt$\")",
-      "Bash(grep -r class.*Worker.*: C:UserssaninAndroidStudioProjectsScreenSTake/app/src/main/java)"
+      "Bash(grep -r class.*Worker.*: C:UserssaninAndroidStudioProjectsScreenSTake/app/src/main/java)",
+      "Bash(while read:*)",
+      "Bash(do grep:*)",
+      "Bash(echo \"MISSING: $name\")",
+      "Bash(done)"
     ]
   }
 }

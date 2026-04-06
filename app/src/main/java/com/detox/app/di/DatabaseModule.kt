@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.DailyLogDao
+import com.detox.app.data.local.db.dao.GroupChallengeDao
 import com.detox.app.data.local.db.dao.PointTransactionDao
 import dagger.Module
 import dagger.Provides
@@ -31,7 +32,16 @@ object DatabaseModule {
                 DetoxDatabase.MIGRATION_1_2,
                 DetoxDatabase.MIGRATION_2_3,
                 DetoxDatabase.MIGRATION_3_4,
-                DetoxDatabase.MIGRATION_4_5
+                DetoxDatabase.MIGRATION_4_5,
+                DetoxDatabase.MIGRATION_5_6,
+                DetoxDatabase.MIGRATION_6_7,
+                DetoxDatabase.MIGRATION_7_8,
+                DetoxDatabase.MIGRATION_8_9,
+                DetoxDatabase.MIGRATION_9_10,
+                DetoxDatabase.MIGRATION_10_11,
+                DetoxDatabase.MIGRATION_11_12,
+                DetoxDatabase.MIGRATION_12_13,
+                DetoxDatabase.MIGRATION_13_14
             )
             .build()
     }
@@ -49,5 +59,10 @@ object DatabaseModule {
     @Provides
     fun providePointTransactionDao(database: DetoxDatabase): PointTransactionDao {
         return database.pointTransactionDao()
+    }
+
+    @Provides
+    fun provideGroupChallengeDao(database: DetoxDatabase): GroupChallengeDao {
+        return database.groupChallengeDao()
     }
 }

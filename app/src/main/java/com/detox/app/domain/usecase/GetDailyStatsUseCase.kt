@@ -73,7 +73,7 @@ class GetDailyStatsUseCase @Inject constructor(
                 }
 
                 // TIME / SESSIONS: existing UsageStats-based flow.
-                val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName)
+                val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName ?: "")
 
                 // Subtract overlay-visible time so it doesn't count against the user's limit.
                 val overlayPausedMs = dailyLogRepository

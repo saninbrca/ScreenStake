@@ -10,27 +10,40 @@ import java.util.Calendar
 import java.util.UUID
 import javax.inject.Inject
 
+/** Data returned to the ViewModel after the Cloud Function succeeds. */
+data class GroupChallengeCreatedData(
+    val groupId: String,
+    val code: String,
+    /** Stripe client secret — present to the creator via PaymentSheet. */
+    val clientSecret: String,
+    /** paymentIntentId stored so we can update the participant record. */
+    val paymentIntentId: String,
+)
+
 class CreateGroupChallengeUseCase @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
     private val cloudFunctionsService: CloudFunctionsService
 ) {
 
     /**
-     * Creates a new group challenge.
+     * Creates a new group challenge server-side and returns the data needed to
+     * present the creator's Stripe PaymentSheet.
      *
      * @param creatorUserId  Firebase UID of the challenge creator.
+     * @param creatorDisplayName  Display name shown in the leaderboard.
      * @param appPackageNames  List of app packages to block.
      * @param appDisplayName  Human-readable name for the primary app.
      * @param limitType  TIME, SESSIONS, or TIME_BUDGET.
      * @param limitValueMinutes  Daily minute limit (TIME / TIME_BUDGET).
      * @param limitValueSessions  Daily session count (SESSIONS only).
+     * @param sessionDurationMinutes  Max duration per session in minutes (SESSIONS only).
      * @param durationDays  Challenge length in days (1–30).
      * @param buyInCents  Fixed buy-in per participant (100–5000 cents / €1–€50).
      * @param maxParticipants  Maximum number of players (2–20).
      * @param startDateMs  Unix epoch of the intended start (must be ≥ now + 24 h).
      * @param bonusEnabled  Whether to award a 10% bonus to the best performer.
      *
-     * @return [Result] wrapping a [Pair] of (groupId, code) on success.
+     * @return [Result] wrapping [GroupChallengeCreatedData] on success.
      */
     suspend operator fun invoke(
         creatorUserId: String,
@@ -40,12 +53,13 @@ class CreateGroupChallengeUseCase @Inject constructor(
         limitType: LimitType,
         limitValueMinutes: Int,
         limitValueSessions: Int?,
+        sessionDurationMinutes: Int = 5,
         durationDays: Int,
         buyInCents: Int,
         maxParticipants: Int,
         startDateMs: Long,
         bonusEnabled: Boolean
-    ): Result<Pair<String, String>> {
+    ): Result<GroupChallengeCreatedData> {
 
         // ── Validation ──────────────────────────────────────────────────────────
         if (appPackageNames.isEmpty()) {
@@ -60,12 +74,12 @@ class CreateGroupChallengeUseCase @Inject constructor(
         if (maxParticipants !in 2..20) {
             return Result.failure(IllegalArgumentException("Participants must be between 2 and 20."))
         }
-        val cal = Calendar.getInstance().apply {
+        val tomorrowMidnight = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 1)
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        if (startDateMs < cal.timeInMillis) {
+        }.timeInMillis
+        if (startDateMs < tomorrowMidnight) {
             return Result.failure(IllegalArgumentException("Start date must be tomorrow or later."))
         }
         if (limitType != LimitType.TIME_BUDGET && limitValueMinutes <= 0) {
@@ -79,30 +93,8 @@ class CreateGroupChallengeUseCase @Inject constructor(
         val code = generateCode()
         val endDateMs = startDateMs + durationDays.toLong() * 24 * 60 * 60 * 1000L
 
-        val groupChallenge = GroupChallenge(
-            groupId = groupId,
-            code = code,
-            creatorUserId = creatorUserId,
-            appPackageNames = appPackageNames,
-            appDisplayName = appDisplayName,
-            limitType = limitType,
-            limitValueMinutes = limitValueMinutes,
-            limitValueSessions = limitValueSessions,
-            durationDays = durationDays,
-            buyInCents = buyInCents,
-            maxParticipants = maxParticipants,
-            startDate = startDateMs,
-            endDate = endDateMs,
-            bonusEnabled = bonusEnabled,
-            status = GroupChallengeStatus.WAITING,
-            participants = emptyList()
-        )
-
-        // Save locally first for instant UI update
-        groupChallengeRepository.saveGroupChallenge(groupChallenge)
-            .onFailure { return Result.failure(it) }
-
-        // Persist to Firestore via Cloud Function (validates code uniqueness)
+        // Persist to Firestore via Cloud Function (validates code uniqueness,
+        // creates Stripe PaymentIntent for creator, adds creator as first participant)
         val groupDataMap = mapOf(
             "groupId" to groupId,
             "creatorUserId" to creatorUserId,
@@ -112,6 +104,7 @@ class CreateGroupChallengeUseCase @Inject constructor(
             "limitType" to limitType.name.lowercase(),
             "limitValueMinutes" to limitValueMinutes,
             "limitValueSessions" to limitValueSessions,
+            "sessionDurationMinutes" to sessionDurationMinutes,
             "durationDays" to durationDays,
             "buyInCents" to buyInCents,
             "maxParticipants" to maxParticipants,
@@ -127,12 +120,37 @@ class CreateGroupChallengeUseCase @Inject constructor(
             return Result.failure(cfResult.exceptionOrNull()!!)
         }
 
-        // Cloud Function has written the document to Firestore — fetch it back immediately
-        // (Source.SERVER, not cache) to populate Room before navigation.
+        val creationData = cfResult.getOrThrow()
+        val finalCode = creationData.code
+
+        // Save a minimal local copy so the detail screen can show something even if
+        // Firestore replication is slow. Participants list will be filled by the snapshot listener.
+        val groupChallenge = GroupChallenge(
+            groupId = groupId,
+            code = finalCode,
+            creatorUserId = creatorUserId,
+            appPackageNames = appPackageNames,
+            appDisplayName = appDisplayName,
+            limitType = limitType,
+            limitValueMinutes = limitValueMinutes,
+            limitValueSessions = limitValueSessions,
+            sessionDurationMinutes = sessionDurationMinutes,
+            durationDays = durationDays,
+            buyInCents = buyInCents,
+            maxParticipants = maxParticipants,
+            startDate = startDateMs,
+            endDate = endDateMs,
+            bonusEnabled = bonusEnabled,
+            status = GroupChallengeStatus.WAITING,
+            participants = emptyList()
+        )
+        groupChallengeRepository.saveGroupChallenge(groupChallenge)
+            .onFailure { Timber.w(it, "CreateGroupChallengeUseCase: local save failed (non-fatal)") }
+
+        // Fetch the server-authoritative version (Source.SERVER) to populate Room
         Timber.d("Group created: $groupId — fetching from Firestore")
         groupChallengeRepository.fetchAndCacheById(groupId)
             .onSuccess { fetched ->
-                // Cross-check: verify the groupId we wrote matches what Firestore returned.
                 val fetchedId = fetched?.groupId
                 Timber.d(
                     "CreateGroupChallengeUseCase: local groupId=%s  firestore groupId=%s  match=%b",
@@ -146,12 +164,18 @@ class CreateGroupChallengeUseCase @Inject constructor(
                 }
             }
             .onFailure { e ->
-                // Non-fatal: Room already has the locally-constructed version from saveGroupChallenge.
                 Timber.w(e, "CreateGroupChallengeUseCase: fetchAndCacheById failed — using local cache")
             }
 
-        Timber.d("CreateGroupChallengeUseCase: created groupId=%s code=%s", groupId, code)
-        return Result.success(Pair(groupId, code))
+        Timber.d("CreateGroupChallengeUseCase: created groupId=%s code=%s", groupId, finalCode)
+        return Result.success(
+            GroupChallengeCreatedData(
+                groupId = groupId,
+                code = finalCode,
+                clientSecret = creationData.clientSecret,
+                paymentIntentId = creationData.paymentIntentId
+            )
+        )
     }
 
     /** Generates a random 6-character uppercase alphanumeric code. */

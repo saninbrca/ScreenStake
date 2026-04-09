@@ -36,4 +36,6 @@ data class Challenge(
     val completionShown: Boolean = false,
     /** Duration of each allowed session in minutes (SESSIONS challenges only). */
     val sessionDurationMinutes: Int = 5,
+    /** Non-null when this challenge was auto-created to track a group challenge locally. */
+    val groupChallengeId: String? = null,
 )

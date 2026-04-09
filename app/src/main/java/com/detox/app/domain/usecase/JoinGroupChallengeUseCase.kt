@@ -2,10 +2,17 @@ package com.detox.app.domain.usecase
 
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.GroupChallenge
+import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.PaymentIntentData
 import com.detox.app.domain.repository.GroupChallengeRepository
 import timber.log.Timber
 import javax.inject.Inject
+
+/** Returned after payment is initiated so the ViewModel can present Stripe PaymentSheet. */
+data class JoinPaymentData(
+    val paymentData: PaymentIntentData,
+    val groupId: String,
+)
 
 class JoinGroupChallengeUseCase @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
@@ -13,20 +20,23 @@ class JoinGroupChallengeUseCase @Inject constructor(
 ) {
 
     /**
-     * Looks up a group challenge by its invite [code], validates it, and returns
-     * the [PaymentIntentData] the caller needs to present the Stripe PaymentSheet.
+     * Looks up a group challenge by its invite [code], validates it is joinable,
+     * and returns the [GroupChallenge] for preview.
      *
-     * The participant is **not** added until Stripe payment is confirmed — that is
-     * handled server-side by the `joinGroupChallenge` Cloud Function reacting to the
-     * confirmed PaymentIntent webhook.
+     * @param currentUserId Firebase UID of the user attempting to join — used to check
+     *                      that they are not the creator and have not already joined.
      */
-    suspend fun fetchByCode(code: String): Result<GroupChallenge> {
+    suspend fun fetchByCode(code: String, currentUserId: String): Result<GroupChallenge> {
         val gc = groupChallengeRepository.fetchGroupChallengeByCode(code)
             .getOrElse { return Result.failure(it) }
             ?: return Result.failure(IllegalArgumentException("No challenge found for code \"$code\"."))
 
         return when {
-            gc.status != com.detox.app.domain.model.GroupChallengeStatus.WAITING ->
+            gc.creatorUserId == currentUserId ->
+                Result.failure(IllegalStateException("You created this challenge — you're already the first participant!"))
+            gc.participants.any { it.userId == currentUserId } ->
+                Result.failure(IllegalStateException("You have already joined this challenge."))
+            gc.status != GroupChallengeStatus.WAITING ->
                 Result.failure(IllegalStateException("This challenge has already started or ended."))
             gc.participants.size >= gc.maxParticipants ->
                 Result.failure(IllegalStateException("This challenge is full (${gc.maxParticipants}/${gc.maxParticipants})."))
@@ -38,14 +48,15 @@ class JoinGroupChallengeUseCase @Inject constructor(
 
     /**
      * Initiates the buy-in payment for joining [groupId].
-     * Returns [PaymentIntentData] with the Stripe client secret to show PaymentSheet.
+     * Returns [JoinPaymentData] with the Stripe client secret to show PaymentSheet.
      */
     suspend fun initiatePayment(
         groupId: String,
         userId: String,
         displayName: String
-    ): Result<PaymentIntentData> {
+    ): Result<JoinPaymentData> {
         Timber.d("JoinGroupChallengeUseCase: initiatePayment groupId=%s userId=%s", groupId, userId)
         return cloudFunctionsService.joinGroupChallenge(groupId, userId, displayName)
+            .map { paymentData -> JoinPaymentData(paymentData, groupId) }
     }
 }

@@ -164,6 +164,7 @@ class ChallengeRepositoryImpl @Inject constructor(
                 ?: emptyList(),
             completionShown = completionShown != 0,
             sessionDurationMinutes = sessionDurationMinutes,
+            groupChallengeId = groupChallengeId,
         )
     }
 
@@ -192,5 +193,6 @@ class ChallengeRepositoryImpl @Inject constructor(
         activeDays = activeDays.joinToString(",").ifEmpty { null },
         completionShown = if (completionShown) 1 else 0,
         sessionDurationMinutes = sessionDurationMinutes,
+        groupChallengeId = groupChallengeId,
     )
 }

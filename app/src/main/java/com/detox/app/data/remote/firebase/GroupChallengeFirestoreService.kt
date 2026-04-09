@@ -78,7 +78,12 @@ class GroupChallengeFirestoreService @Inject constructor(
                     close(error)
                     return@addSnapshotListener
                 }
-                trySend(snapshot?.takeIf { it.exists() }?.toGroupChallenge())
+                val gc = snapshot?.takeIf { it.exists() }?.toGroupChallenge()
+                Timber.d(
+                    "GroupChallengeFirestore: snapshot for %s exists=%b status=%s participants=%d",
+                    groupId, snapshot?.exists(), gc?.status, gc?.participants?.size
+                )
+                trySend(gc)
             }
         awaitClose { registration.remove() }
     }
@@ -119,6 +124,7 @@ class GroupChallengeFirestoreService @Inject constructor(
         "limitType" to limitType.name.lowercase(),
         "limitValueMinutes" to limitValueMinutes,
         "limitValueSessions" to limitValueSessions,
+        "sessionDurationMinutes" to sessionDurationMinutes,
         "durationDays" to durationDays,
         "buyInCents" to buyInCents,
         "maxParticipants" to maxParticipants,
@@ -134,7 +140,8 @@ class GroupChallengeFirestoreService @Inject constructor(
                 "amountCents" to p.amountCents,
                 "status" to p.status.name.lowercase(),
                 "opensToday" to p.opensToday,
-                "timeUsedMinutes" to p.timeUsedMinutes
+                "timeUsedMinutes" to p.timeUsedMinutes,
+                "joinedAt" to p.joinedAt
             )
         },
         // Denormalised list for Firestore array-contains queries
@@ -162,7 +169,8 @@ class GroupChallengeFirestoreService @Inject constructor(
                         )
                     }.getOrDefault(ParticipantStatus.ACTIVE),
                     opensToday = (p["opensToday"] as? Long)?.toInt() ?: 0,
-                    timeUsedMinutes = (p["timeUsedMinutes"] as? Long)?.toInt() ?: 0
+                    timeUsedMinutes = (p["timeUsedMinutes"] as? Long)?.toInt() ?: 0,
+                    joinedAt = (p["joinedAt"] as? Long) ?: 0L
                 )
             }
 
@@ -177,6 +185,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                 }.getOrDefault(LimitType.TIME),
                 limitValueMinutes = (d["limitValueMinutes"] as? Long)?.toInt() ?: 60,
                 limitValueSessions = (d["limitValueSessions"] as? Long)?.toInt(),
+                sessionDurationMinutes = (d["sessionDurationMinutes"] as? Long)?.toInt() ?: 5,
                 durationDays = (d["durationDays"] as? Long)?.toInt() ?: 7,
                 buyInCents = (d["buyInCents"] as? Long)?.toInt() ?: 500,
                 maxParticipants = (d["maxParticipants"] as? Long)?.toInt() ?: 5,

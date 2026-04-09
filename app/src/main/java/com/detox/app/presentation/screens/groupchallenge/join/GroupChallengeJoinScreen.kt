@@ -46,6 +46,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.LimitType
+import com.stripe.android.paymentsheet.PaymentSheet
+import com.stripe.android.paymentsheet.PaymentSheetResult
+import com.stripe.android.paymentsheet.rememberPaymentSheet
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,18 +58,37 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun GroupChallengeJoinScreen(
     onBack: () -> Unit,
-    onJoined: () -> Unit,
+    onJoined: (groupId: String) -> Unit,
     viewModel: GroupChallengeJoinViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val codeInput by viewModel.codeInput.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Stripe PaymentSheet for participant's buy-in
+    val paymentSheet = rememberPaymentSheet { result ->
+        when (result) {
+            is PaymentSheetResult.Completed -> viewModel.onPaymentSuccess()
+            is PaymentSheetResult.Canceled -> viewModel.onPaymentCancelled()
+            is PaymentSheetResult.Failed -> viewModel.onPaymentCancelled()
+        }
+    }
+
     LaunchedEffect(uiState) {
-        if (uiState is GroupJoinUiState.JoinedSuccessfully) onJoined()
-        if (uiState is GroupJoinUiState.Error) {
-            snackbarHostState.showSnackbar((uiState as GroupJoinUiState.Error).message)
-            viewModel.clearError()
+        when (val s = uiState) {
+            is GroupJoinUiState.JoinedSuccessfully -> onJoined(s.groupId)
+            is GroupJoinUiState.AwaitingPayment -> {
+                // Launch PaymentSheet with the client secret from the CF
+                paymentSheet.presentWithPaymentIntent(
+                    paymentIntentClientSecret = s.paymentData.clientSecret,
+                    configuration = PaymentSheet.Configuration(merchantDisplayName = "Detox App")
+                )
+            }
+            is GroupJoinUiState.Error -> {
+                snackbarHostState.showSnackbar(s.message)
+                viewModel.clearError()
+            }
+            else -> Unit
         }
     }
 
@@ -132,8 +154,7 @@ fun GroupChallengeJoinScreen(
             val previewGc = when (val s = uiState) {
                 is GroupJoinUiState.Preview -> s.groupChallenge
                 is GroupJoinUiState.AwaitingPayment -> s.groupChallenge
-                is GroupJoinUiState.ProcessingPayment ->
-                    (uiState as? GroupJoinUiState.AwaitingPayment)?.groupChallenge
+                is GroupJoinUiState.ProcessingPayment -> null
                 else -> null
             }
 
@@ -161,18 +182,6 @@ fun GroupChallengeJoinScreen(
                     )
                 }
             }
-
-            // ── Payment sheet trigger ───────────────────────────────────────────
-            val awaitingPayment = uiState as? GroupJoinUiState.AwaitingPayment
-            if (awaitingPayment != null) {
-                // In a real integration this triggers Stripe PaymentSheet.
-                // For now we surface the clientSecret and simulate success.
-                LaunchedEffect(awaitingPayment.paymentData.clientSecret) {
-                    // TODO: launch Stripe PaymentSheet with awaitingPayment.paymentData.clientSecret
-                    // On success: viewModel.onPaymentSuccess()
-                    // On cancel: viewModel.onPaymentCancelled()
-                }
-            }
         }
     }
 }
@@ -193,7 +202,7 @@ private fun GroupPreviewCard(gc: GroupChallenge) {
             )
             val limitSummary = when (gc.limitType) {
                 LimitType.TIME -> "Max ${gc.limitValueMinutes} min/day"
-                LimitType.SESSIONS -> "Max ${gc.limitValueSessions} opens/day"
+                LimitType.SESSIONS -> "Max ${gc.limitValueSessions} opens/day, ${gc.sessionDurationMinutes} min each"
                 LimitType.TIME_BUDGET -> "Budget: ${gc.limitValueMinutes} min/day"
             }
             Text(text = limitSummary, style = MaterialTheme.typography.bodyMedium)
@@ -201,6 +210,13 @@ private fun GroupPreviewCard(gc: GroupChallenge) {
             Text(
                 text = stringResource(R.string.join_group_entry_fee, gc.buyInCents / 100),
                 style = MaterialTheme.typography.bodyMedium
+            )
+            // Total pot estimate
+            val potEuros = (gc.participants.size + 1) * (gc.buyInCents / 100)
+            Text(
+                text = "Pot if all join: €$potEuros",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
             )
             Text(
                 text = "${gc.participants.size}/${gc.maxParticipants} joined",

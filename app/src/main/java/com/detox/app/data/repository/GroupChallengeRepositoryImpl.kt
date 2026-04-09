@@ -1,6 +1,8 @@
 package com.detox.app.data.repository
 
+import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.GroupChallengeDao
+import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.GroupChallengeEntity
 import com.detox.app.data.remote.firebase.GroupChallengeFirestoreService
 import com.detox.app.di.ApplicationScope
@@ -24,6 +26,7 @@ import javax.inject.Singleton
 @Singleton
 class GroupChallengeRepositoryImpl @Inject constructor(
     private val groupChallengeDao: GroupChallengeDao,
+    private val challengeDao: ChallengeDao,
     private val firestoreService: GroupChallengeFirestoreService,
     @ApplicationScope private val appScope: CoroutineScope
 ) : GroupChallengeRepository {
@@ -85,6 +88,68 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun syncGroupChallengeToLocalTracking(
+        groupChallenge: GroupChallenge,
+        userId: String
+    ): Result<Unit> {
+        return try {
+            val userParticipant = groupChallenge.participants.find { it.userId == userId }
+            if (userParticipant == null) {
+                Timber.w(
+                    "GroupChallengeRepo: syncToTracking — user %s not in participants for %s",
+                    userId, groupChallenge.groupId
+                )
+                return Result.success(Unit)
+            }
+
+            val localChallengeId = "group_${groupChallenge.groupId}"
+            val entity = ChallengeEntity(
+                id = localChallengeId,
+                appPackageName = groupChallenge.appPackageNames.firstOrNull() ?: "",
+                appDisplayName = groupChallenge.appDisplayName,
+                mode = "hard",
+                limitType = groupChallenge.limitType.name.lowercase(),
+                limitValueMinutes = groupChallenge.limitValueMinutes,
+                limitValueSessions = groupChallenge.limitValueSessions,
+                startDate = groupChallenge.startDate,
+                endDate = groupChallenge.endDate,
+                amountCents = groupChallenge.buyInCents,
+                stripePaymentIntentId = userParticipant.paymentIntentId,
+                customMotivation = null,
+                status = "active",
+                createdAt = System.currentTimeMillis(),
+                appPackageNames = groupChallenge.appPackageNames.joinToString(","),
+                sessionDurationMinutes = groupChallenge.sessionDurationMinutes,
+                groupChallengeId = groupChallenge.groupId
+            )
+            challengeDao.insertChallenge(entity)
+            Timber.d(
+                "GroupChallengeRepo: synced group challenge %s → local challenge %s (paymentIntent=%s)",
+                groupChallenge.groupId, localChallengeId, userParticipant.paymentIntentId
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeRepo: syncToTracking failed for %s", groupChallenge.groupId)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun finishLocalGroupChallenge(groupId: String, succeeded: Boolean): Result<Unit> {
+        return try {
+            val localChallengeId = "group_$groupId"
+            val finalStatus = if (succeeded) "completed" else "failed"
+            challengeDao.updateStatus(localChallengeId, finalStatus)
+            Timber.d(
+                "GroupChallengeRepo: finishLocalGroupChallenge %s → %s",
+                groupId, finalStatus
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeRepo: finishLocalGroupChallenge failed for %s", groupId)
+            Result.failure(e)
+        }
+    }
+
     // ── Entity ↔ Domain ─────────────────────────────────────────────────────────
 
     private fun GroupChallengeEntity.toDomain(): GroupChallenge {
@@ -103,7 +168,8 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                         ParticipantStatus.valueOf(obj.optString("status", "active").uppercase())
                     }.getOrDefault(ParticipantStatus.ACTIVE),
                     opensToday = obj.optInt("opensToday", 0),
-                    timeUsedMinutes = obj.optInt("timeUsedMinutes", 0)
+                    timeUsedMinutes = obj.optInt("timeUsedMinutes", 0),
+                    joinedAt = obj.optLong("joinedAt", 0L)
                 )
             }
         }.getOrDefault(emptyList())
@@ -118,6 +184,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 .getOrDefault(LimitType.TIME),
             limitValueMinutes = limitValueMinutes,
             limitValueSessions = limitValueSessions,
+            sessionDurationMinutes = sessionDurationMinutes,
             durationDays = durationDays,
             buyInCents = buyInCents,
             maxParticipants = maxParticipants,
@@ -141,6 +208,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             obj.put("status", p.status.name.lowercase())
             obj.put("opensToday", p.opensToday)
             obj.put("timeUsedMinutes", p.timeUsedMinutes)
+            obj.put("joinedAt", p.joinedAt)
             array.put(obj)
         }
         return GroupChallengeEntity(
@@ -152,6 +220,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             limitType = limitType.name.lowercase(),
             limitValueMinutes = limitValueMinutes,
             limitValueSessions = limitValueSessions,
+            sessionDurationMinutes = sessionDurationMinutes,
             durationDays = durationDays,
             buyInCents = buyInCents,
             maxParticipants = maxParticipants,

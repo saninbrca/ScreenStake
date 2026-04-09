@@ -20,8 +20,13 @@ sealed interface GroupJoinUiState {
     data object LookingUp : GroupJoinUiState
     data class Preview(val groupChallenge: GroupChallenge) : GroupJoinUiState
     data object ProcessingPayment : GroupJoinUiState
-    data class AwaitingPayment(val paymentData: PaymentIntentData, val groupChallenge: GroupChallenge) : GroupJoinUiState
-    data object JoinedSuccessfully : GroupJoinUiState
+    data class AwaitingPayment(
+        val paymentData: PaymentIntentData,
+        val groupChallenge: GroupChallenge,
+        val groupId: String,
+    ) : GroupJoinUiState
+    /** Payment confirmed — navigate to the group detail screen using [groupId]. */
+    data class JoinedSuccessfully(val groupId: String) : GroupJoinUiState
     data class Error(val message: String) : GroupJoinUiState
 }
 
@@ -48,9 +53,13 @@ class GroupChallengeJoinViewModel @Inject constructor(
             _uiState.value = GroupJoinUiState.Error("Enter the full 6-character code.")
             return
         }
+        val currentUserId = firebaseAuthService.currentUserId() ?: run {
+            _uiState.value = GroupJoinUiState.Error("Not signed in.")
+            return
+        }
         _uiState.value = GroupJoinUiState.LookingUp
         viewModelScope.launch {
-            joinGroupChallengeUseCase.fetchByCode(code).fold(
+            joinGroupChallengeUseCase.fetchByCode(code, currentUserId).fold(
                 onSuccess = { gc ->
                     Timber.d("GroupJoinVM: found groupId=%s", gc.groupId)
                     _uiState.value = GroupJoinUiState.Preview(gc)
@@ -68,14 +77,20 @@ class GroupChallengeJoinViewModel @Inject constructor(
             _uiState.value = GroupJoinUiState.Error("Not signed in.")
             return
         }
-        val displayName = firebaseAuthService.currentUser()?.displayName ?: firebaseAuthService.currentUser()?.email ?: "Anonymous"
+        val displayName = firebaseAuthService.currentUser()?.displayName
+            ?: firebaseAuthService.currentUser()?.email
+            ?: "Anonymous"
         _uiState.value = GroupJoinUiState.ProcessingPayment
         viewModelScope.launch {
             joinGroupChallengeUseCase.initiatePayment(groupChallenge.groupId, userId, displayName)
                 .fold(
-                    onSuccess = { paymentData ->
-                        Timber.d("GroupJoinVM: payment intent created %s", paymentData.paymentIntentId)
-                        _uiState.value = GroupJoinUiState.AwaitingPayment(paymentData, groupChallenge)
+                    onSuccess = { joinData ->
+                        Timber.d("GroupJoinVM: payment intent created %s", joinData.paymentData.paymentIntentId)
+                        _uiState.value = GroupJoinUiState.AwaitingPayment(
+                            paymentData = joinData.paymentData,
+                            groupChallenge = groupChallenge,
+                            groupId = joinData.groupId
+                        )
                     },
                     onFailure = { e ->
                         Timber.e(e, "GroupJoinVM: initiatePayment failed")
@@ -86,8 +101,9 @@ class GroupChallengeJoinViewModel @Inject constructor(
     }
 
     fun onPaymentSuccess() {
-        Timber.d("GroupJoinVM: payment confirmed — joined successfully")
-        _uiState.value = GroupJoinUiState.JoinedSuccessfully
+        val groupId = (_uiState.value as? GroupJoinUiState.AwaitingPayment)?.groupId ?: return
+        Timber.d("GroupJoinVM: payment confirmed — joined groupId=%s", groupId)
+        _uiState.value = GroupJoinUiState.JoinedSuccessfully(groupId)
     }
 
     fun onPaymentCancelled() {

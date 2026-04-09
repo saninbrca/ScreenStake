@@ -15,18 +15,20 @@ import timber.log.Timber
  */
 object NotificationHelper {
 
-    private const val CHANNEL_DAILY_REPORT = "daily_report"
-    private const val CHANNEL_MILESTONES   = "milestones"
+    private const val CHANNEL_DAILY_REPORT  = "daily_report"
+    private const val CHANNEL_MILESTONES    = "milestones"
     // High-importance channel for proactive reminders: 20:00 daily nudge + 80% usage warning.
     // Must be IMPORTANCE_HIGH so the notification shows as a heads-up banner on Huawei EMUI.
-    const val CHANNEL_REMINDERS = "detox_reminders"
+    const val CHANNEL_REMINDERS             = "detox_reminders"
+    private const val CHANNEL_GROUP_EVENTS  = "group_events"
 
-    private const val NOTIF_ID_DAILY_REPORT   = 2001
-    private const val NOTIF_ID_MILESTONE_BASE = 3000
-    private const val NOTIF_ID_DAILY_REMINDER = 4001
+    private const val NOTIF_ID_DAILY_REPORT      = 2001
+    private const val NOTIF_ID_MILESTONE_BASE    = 3000
+    private const val NOTIF_ID_DAILY_REMINDER    = 4001
     // Per-app IDs derived from package name hash so each app gets its own slot
-    private const val NOTIF_ID_USAGE_80_BASE    = 5000
+    private const val NOTIF_ID_USAGE_80_BASE     = 5000
     private const val NOTIF_ID_DAY_CONGRATS_BASE = 6000
+    private const val NOTIF_ID_GROUP_BASE        = 7000
 
     /** Must be called before posting any notification — safe to call repeatedly. */
     fun createChannels(context: Context) {
@@ -62,6 +64,16 @@ object NotificationHelper {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = context.getString(R.string.notif_channel_reminders_desc)
+            }
+        )
+
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_GROUP_EVENTS,
+                "Group Challenges",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Updates from your group challenges — failures, completions, and cancellations"
             }
         )
     }
@@ -240,6 +252,97 @@ object NotificationHelper {
             Timber.d("Day congratulations notification posted for $appName")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping congratulations notification")
+        }
+    }
+
+    // ── Group Challenge notifications ──────────────────────────────────────────
+
+    /**
+     * Fired when another participant in a group challenge exceeds their limit.
+     * Encourages the remaining participants to keep going.
+     *
+     * @param failedDisplayName the display name of the participant who was eliminated
+     * @param appName           human-readable name of the tracked app
+     */
+    fun sendGroupParticipantFailed(context: Context, failedDisplayName: String, appName: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + failedDisplayName.hashCode()
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_group_participant_failed_title, failedDisplayName))
+            .setContentText(context.getString(R.string.notif_group_participant_failed_body, failedDisplayName, appName))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group participant failed notification posted: $failedDisplayName in $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group participant failed notification")
+        }
+    }
+
+    /**
+     * Fired when a group challenge is cancelled because not enough players joined.
+     * Informs the user that their buy-in will be refunded.
+     *
+     * @param appName human-readable name of the tracked app
+     */
+    fun sendGroupChallengeCancelled(context: Context, appName: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + appName.hashCode() + 1
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_group_cancelled_title))
+            .setContentText(context.getString(R.string.notif_group_cancelled_body, appName))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group challenge cancelled notification posted for $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group cancelled notification")
+        }
+    }
+
+    /**
+     * Fired at the end of a group challenge to inform the user of the result.
+     *
+     * @param appName     human-readable name of the tracked app
+     * @param succeeded   true if the current user succeeded; false if they were eliminated
+     * @param refundCents amount in cents being refunded (only meaningful when [succeeded] is true)
+     */
+    fun sendGroupChallengeCompleted(
+        context: Context,
+        appName: String,
+        succeeded: Boolean,
+        refundCents: Int
+    ) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + appName.hashCode() + 2
+        val title: String
+        val body: String
+        if (succeeded) {
+            title = context.getString(R.string.notif_group_completed_success_title)
+            body = context.getString(R.string.notif_group_completed_success_body, appName, refundCents / 100)
+        } else {
+            title = context.getString(R.string.notif_group_completed_failed_title)
+            body = context.getString(R.string.notif_group_completed_failed_body, appName)
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group challenge completed notification posted: $appName succeeded=$succeeded refund=${refundCents / 100}€")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group completed notification")
         }
     }
 }

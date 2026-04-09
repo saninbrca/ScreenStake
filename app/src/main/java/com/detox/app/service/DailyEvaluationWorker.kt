@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.detox.app.data.remote.firebase.AnalyticsService
+import com.detox.app.data.remote.firebase.CloudFunctionsService
+import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
@@ -14,7 +18,6 @@ import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.repository.UsageStatsRepository
-import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.usecase.CalculatePointsUseCase
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.assisted.Assisted
@@ -33,7 +36,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val usageStatsRepository: UsageStatsRepository,
     private val paymentRepository: PaymentRepository,
     private val calculatePointsUseCase: CalculatePointsUseCase,
-    private val analyticsService: AnalyticsService
+    private val analyticsService: AnalyticsService,
+    private val cloudFunctionsService: CloudFunctionsService,
+    private val firebaseAuthService: FirebaseAuthService,
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -52,8 +57,15 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 Timber.d(
                     "DailyEvaluationWorker: evaluating '${challenge.appDisplayName}' " +
                             "(id=${challenge.id}, mode=${challenge.mode}, " +
-                            "limitType=${challenge.limitType})"
+                            "limitType=${challenge.limitType}, " +
+                            "groupChallengeId=${challenge.groupChallengeId})"
                 )
+
+                // ── Group Challenge shadow row: delegate to Cloud Functions ───────────
+                if (challenge.groupChallengeId != null) {
+                    evaluateGroupChallenge(challenge, challenge.groupChallengeId, today, now)
+                    continue
+                }
 
                 // Skip full evaluation if already evaluated today (e.g. OverlayManager wrote
                 // the log intra-day after a Hard Mode capture), but STILL check whether the
@@ -463,6 +475,139 @@ class DailyEvaluationWorker @AssistedInject constructor(
             Timber.e(e, "DailyEvaluationWorker failed")
             FirebaseCrashlytics.getInstance().recordException(e)
             Result.retry()
+        }
+    }
+
+    /**
+     * Handles daily evaluation for a group challenge shadow row (a [Challenge] whose
+     * [Challenge.groupChallengeId] is non-null).
+     *
+     * Unlike solo challenges, group challenges are managed server-side by Cloud Functions:
+     *  - Limit exceeded today → call [CloudFunctionsService.failGroupParticipant] (CF marks
+     *    the participant as FAILED in Firestore and captures their Stripe payment).
+     *  - End date reached    → call [CloudFunctionsService.completeGroupChallenge] (CF runs
+     *    payout logic: refunds winners, distributes the pot, awards the bonus if enabled).
+     *
+     * Both CF calls are idempotent — re-calling them when already processed is safe.
+     */
+    private suspend fun evaluateGroupChallenge(
+        challenge: Challenge,
+        groupId: String,
+        today: Long,
+        now: Long
+    ) {
+        val userId = firebaseAuthService.currentUserId()
+        if (userId == null) {
+            Timber.w("DailyEvaluationWorker: group %s — user not signed in, skipping", groupId)
+            return
+        }
+
+        Timber.d(
+            "DailyEvaluationWorker: group shadow evaluation — challengeId=%s groupId=%s",
+            challenge.id, groupId
+        )
+
+        // If we already recorded a failure for this challenge today (written below or by
+        // OverlayManager), skip the usage check but still trigger completeGroupChallenge
+        // when the end date is reached.
+        val existingLog = dailyLogRepository.getLogForDate(challenge.id, today)
+        val alreadyFailed = existingLog.getOrNull()?.limitExceeded == true
+
+        if (!alreadyFailed) {
+            // Compute today's usage for all packages in this challenge
+            val todayUsage = challenge.appPackageNames.fold(
+                com.detox.app.domain.model.AppDailyUsage(0, 0)
+            ) { acc, pkg ->
+                val usage = usageStatsRepository.getTodayUsageForApp(pkg)
+                com.detox.app.domain.model.AppDailyUsage(
+                    minutes = acc.minutes + usage.minutes,
+                    opens   = acc.opens   + usage.opens
+                )
+            }
+
+            val overlayPausedMs       = existingLog.getOrNull()?.overlayPausedMs ?: 0L
+            val overlayPausedMinutes  = (overlayPausedMs / 60_000L).toInt()
+            val adjustedMinutes       = maxOf(0, todayUsage.minutes - overlayPausedMinutes)
+
+            Timber.d(
+                "DailyEvaluationWorker: group %s usage — %dmin (adjusted), %d opens",
+                groupId, adjustedMinutes, todayUsage.opens
+            )
+
+            val pointsResult = calculatePointsUseCase(
+                limitType          = challenge.limitType,
+                limitValueMinutes  = challenge.limitValueMinutes,
+                limitValueSessions = challenge.limitValueSessions,
+                todayMinutes       = adjustedMinutes,
+                todayOpens         = todayUsage.opens
+            )
+
+            if (pointsResult.limitExceeded) {
+                Timber.d(
+                    "DailyEvaluationWorker: group participant limit exceeded — " +
+                            "calling failGroupParticipant groupId=%s userId=%s", groupId, userId
+                )
+                cloudFunctionsService.failGroupParticipant(groupId, userId)
+                    .onSuccess {
+                        Timber.d(
+                            "DailyEvaluationWorker: failGroupParticipant succeeded — " +
+                                    "groupId=%s userId=%s", groupId, userId
+                        )
+                        // Update shadow row locally so other UI reflects the failure
+                        challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED)
+                            .onFailure { e ->
+                                Timber.e(e, "DailyEvaluationWorker: failed to update local shadow status for %s", challenge.id)
+                            }
+                    }
+                    .onFailure { e ->
+                        Timber.e(e, "DailyEvaluationWorker: failGroupParticipant failed — groupId=%s userId=%s", groupId, userId)
+                    }
+
+                // Record a minimal daily log so we don't retry this on the next worker run
+                dailyLogRepository.insertDailyLog(
+                    DailyLog(
+                        id                     = UUID.randomUUID().toString(),
+                        challengeId            = challenge.id,
+                        date                   = today,
+                        totalMinutes           = adjustedMinutes,
+                        openCount              = todayUsage.opens,
+                        overlayPausedMs        = overlayPausedMs,
+                        pointsEarned           = 0,
+                        limitExceeded          = true,
+                        moneyLostCents         = challenge.amountCents ?: 0
+                    )
+                )
+                Timber.d("DailyEvaluationWorker: group failure DailyLog written for %s", challenge.id)
+            }
+        } else {
+            Timber.d("DailyEvaluationWorker: group %s already failed today — skipping usage check", groupId)
+        }
+
+        // End-of-challenge: call completeGroupChallenge CF so it can run payout logic.
+        // The CF is idempotent — it checks the current status before doing any work.
+        if (now >= challenge.endDate) {
+            Timber.d(
+                "DailyEvaluationWorker: group %s endDate reached — calling completeGroupChallenge",
+                groupId
+            )
+            cloudFunctionsService.completeGroupChallenge(groupId)
+                .onSuccess {
+                    Timber.d("DailyEvaluationWorker: completeGroupChallenge succeeded for %s", groupId)
+                    // Determine if this user succeeded (shadow row not FAILED)
+                    val localStatus = challengeRepository.getChallengeById(challenge.id)
+                        .getOrNull()?.status
+                    val succeeded = localStatus != ChallengeStatus.FAILED
+                    NotificationHelper.createChannels(applicationContext)
+                    NotificationHelper.sendGroupChallengeCompleted(
+                        context     = applicationContext,
+                        appName     = challenge.appDisplayName,
+                        succeeded   = succeeded,
+                        refundCents = challenge.amountCents ?: 0
+                    )
+                }
+                .onFailure { e ->
+                    Timber.e(e, "DailyEvaluationWorker: completeGroupChallenge failed for %s", groupId)
+                }
         }
     }
 

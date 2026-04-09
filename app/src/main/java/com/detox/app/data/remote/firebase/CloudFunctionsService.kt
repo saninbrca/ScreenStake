@@ -114,16 +114,17 @@ class CloudFunctionsService @Inject constructor(
 
     /**
      * Creates a group challenge document server-side, validates the generated code for
-     * uniqueness, and persists all settings to Firestore.
+     * uniqueness, creates a Stripe PaymentIntent for the creator's buy-in, and adds the
+     * creator as the first participant.
      *
      * Expected input:  { groupId, code, groupData: {...} }
-     * Returns:         { code: String }
+     * Returns:         { code: String, paymentIntentId: String, clientSecret: String }
      */
     suspend fun createGroupChallenge(
         groupId: String,
         code: String,
         groupData: Map<String, Any?>
-    ): Result<String> {
+    ): Result<GroupChallengeCreationData> {
         return try {
             val result = functions
                 .getHttpsCallable("createGroupChallenge")
@@ -132,13 +133,21 @@ class CloudFunctionsService @Inject constructor(
             @Suppress("UNCHECKED_CAST")
             val response = result.data as Map<String, Any>
             val returnedCode = response["code"] as String
-            Timber.d("createGroupChallenge: groupId=%s code=%s", groupId, returnedCode)
-            Result.success(returnedCode)
+            val paymentIntentId = response["paymentIntentId"] as String
+            val clientSecret = response["clientSecret"] as String
+            Timber.d("createGroupChallenge: groupId=%s code=%s paymentIntentId=%s", groupId, returnedCode, paymentIntentId)
+            Result.success(GroupChallengeCreationData(returnedCode, paymentIntentId, clientSecret))
         } catch (e: Exception) {
             Timber.e(e, "createGroupChallenge failed groupId=%s", groupId)
             Result.failure(e)
         }
     }
+
+    data class GroupChallengeCreationData(
+        val code: String,
+        val paymentIntentId: String,
+        val clientSecret: String
+    )
 
     /**
      * Validates the group code, creates a Stripe PaymentIntent for the buy-in, and

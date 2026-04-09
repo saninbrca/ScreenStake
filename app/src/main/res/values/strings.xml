@@ -407,4 +407,19 @@
     <string name="success_overlay_refund">Your €%1$d has been refunded to your card</string>
     <string name="success_overlay_duration">Challenge duration: %1$d days</string>
     <string name="success_overlay_new_challenge">Start New Challenge</string>
+
+    <!-- Group Challenge — Detail screen -->
+    <string name="group_detail_total_pot">Total pot: €%1$d</string>
+    <string name="group_detail_share_code">Share Code</string>
+    <string name="group_detail_code_hint">Share this code with friends so they can join!</string>
+
+    <!-- Group Challenge — Notifications -->
+    <string name="notif_group_participant_failed_title">%1$s failed! Keep going 💪</string>
+    <string name="notif_group_participant_failed_body">%1$s exceeded their limit in the %2$s challenge. Stay strong!</string>
+    <string name="notif_group_cancelled_title">Challenge Cancelled</string>
+    <string name="notif_group_cancelled_body">Not enough players joined the %1$s challenge. Your buy-in will be refunded.</string>
+    <string name="notif_group_completed_success_title">Challenge Complete! 🎉</string>
+    <string name="notif_group_completed_success_body">You completed the %1$s group challenge! €%2$d is being refunded.</string>
+    <string name="notif_group_completed_failed_title">Challenge Over</string>
+    <string name="notif_group_completed_failed_body">The %1$s group challenge has ended. Better luck next time!</string>
 </resources>

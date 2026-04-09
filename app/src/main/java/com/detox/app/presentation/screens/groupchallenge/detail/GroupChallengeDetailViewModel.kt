@@ -3,7 +3,9 @@ package com.detox.app.presentation.screens.groupchallenge.detail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.GroupChallenge
+import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.GroupChallengeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -23,7 +25,8 @@ sealed interface GroupDetailUiState {
 @HiltViewModel
 class GroupChallengeDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val groupChallengeRepository: GroupChallengeRepository
+    private val groupChallengeRepository: GroupChallengeRepository,
+    private val firebaseAuthService: FirebaseAuthService
 ) : ViewModel() {
 
     private val groupId: String = requireNotNull(savedStateHandle["groupId"]) {
@@ -43,6 +46,8 @@ class GroupChallengeDetailViewModel @Inject constructor(
 
     /** True after the first null emission has already triggered a one-shot retry. */
     private var retryScheduled = false
+    /** Tracks the last observed status so we only sync once per transition. */
+    private var lastSyncedStatus: GroupChallengeStatus? = null
 
     init {
         Timber.d("GroupDetailVM: start observing groupId=%s", groupId)
@@ -63,6 +68,12 @@ class GroupChallengeDetailViewModel @Inject constructor(
                         )
                         retryScheduled = false
                         _uiState.value = GroupDetailUiState.Success(gc)
+
+                        // Sync to local Room when status transitions (once per transition)
+                        if (gc.status != lastSyncedStatus) {
+                            lastSyncedStatus = gc.status
+                            syncToLocalTracking(gc)
+                        }
                     } else {
                         // Document not yet visible to the listener. Schedule a one-shot
                         // server fetch after 1 s rather than showing "not found" immediately.
@@ -96,11 +107,36 @@ class GroupChallengeDetailViewModel @Inject constructor(
                                 }
                             }
                         }
-                        // If retryScheduled is already true the snapshot listener emitted null
-                        // a second time while the retry coroutine is in flight — ignore it and
-                        // let the retry coroutine resolve the state.
                     }
                 }
+        }
+    }
+
+    private fun syncToLocalTracking(gc: GroupChallenge) {
+        val userId = firebaseAuthService.currentUserId() ?: return
+        viewModelScope.launch {
+            when (gc.status) {
+                GroupChallengeStatus.ACTIVE -> {
+                    Timber.d("GroupDetailVM: status → ACTIVE for %s — syncing to local Room", groupId)
+                    groupChallengeRepository.syncGroupChallengeToLocalTracking(gc, userId)
+                        .onSuccess { Timber.d("GroupDetailVM: local challenge created for group %s", groupId) }
+                        .onFailure { e -> Timber.e(e, "GroupDetailVM: syncToLocalTracking failed") }
+                }
+                GroupChallengeStatus.COMPLETED -> {
+                    Timber.d("GroupDetailVM: status → COMPLETED for %s — finalising local challenge", groupId)
+                    // Check if current user succeeded or failed
+                    val participant = gc.participants.find { it.userId == userId }
+                    val succeeded = participant?.status?.name?.uppercase() != "FAILED"
+                    groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded)
+                        .onFailure { e -> Timber.e(e, "GroupDetailVM: finishLocalGroupChallenge failed") }
+                }
+                GroupChallengeStatus.CANCELLED -> {
+                    Timber.d("GroupDetailVM: status → CANCELLED for %s — finalising local challenge as failed", groupId)
+                    groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded = false)
+                        .onFailure { e -> Timber.e(e, "GroupDetailVM: finishLocalGroupChallenge (cancelled) failed") }
+                }
+                GroupChallengeStatus.WAITING -> Unit // nothing to sync yet
+            }
         }
     }
 }

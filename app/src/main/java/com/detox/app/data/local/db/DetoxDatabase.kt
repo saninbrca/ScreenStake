@@ -21,7 +21,7 @@ import com.detox.app.data.local.db.entity.PointTransactionEntity
         PointTransactionEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -221,6 +221,19 @@ abstract class DetoxDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
                 Timber.d("DB migration 12→13: recreated group_challenges with buyInCents column")
+            }
+        }
+
+        /**
+         * Adds sessionDurationMinutes to group_challenges and groupChallengeId to challenges.
+         * sessionDurationMinutes: countdown duration for SESSIONS group challenges.
+         * groupChallengeId: links a local shadow challenge to its group challenge parent.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE group_challenges ADD COLUMN sessionDurationMinutes INTEGER NOT NULL DEFAULT 5")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN groupChallengeId TEXT DEFAULT NULL")
+                Timber.d("DB migration 14→15: added sessionDurationMinutes to group_challenges, groupChallengeId to challenges")
             }
         }
 

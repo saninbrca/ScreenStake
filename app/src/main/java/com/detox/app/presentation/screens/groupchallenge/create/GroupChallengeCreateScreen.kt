@@ -66,6 +66,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.LimitType
+import com.stripe.android.paymentsheet.PaymentSheet
+import com.stripe.android.paymentsheet.PaymentSheetResult
+import com.stripe.android.paymentsheet.rememberPaymentSheet
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -87,12 +90,29 @@ fun GroupChallengeCreateScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Two-step state: step 1 = settings, step 2 = review
+    // Stripe PaymentSheet for creator's buy-in
+    val paymentSheet = rememberPaymentSheet { result ->
+        when (result) {
+            is PaymentSheetResult.Completed -> viewModel.onPaymentSuccess()
+            is PaymentSheetResult.Canceled -> viewModel.onPaymentCancelled()
+            is PaymentSheetResult.Failed -> viewModel.onPaymentCancelled()
+        }
+    }
+
+    // Two-step state: step 1 = settings, step 2 = review (shown after payment)
     var currentStep by remember { mutableIntStateOf(1) }
 
     LaunchedEffect(uiState) {
         when (val s = uiState) {
+            is GroupCreateUiState.AwaitingPayment -> {
+                // Launch PaymentSheet for creator's buy-in
+                paymentSheet.presentWithPaymentIntent(
+                    paymentIntentClientSecret = s.clientSecret,
+                    configuration = PaymentSheet.Configuration(merchantDisplayName = "Detox App")
+                )
+            }
             is GroupCreateUiState.Created -> {
+                // Payment confirmed — show review step then navigate
                 currentStep = 2
             }
             is GroupCreateUiState.Error -> {
@@ -146,7 +166,7 @@ fun GroupChallengeCreateScreen(
                         viewModel.createChallenge()
                     }
                 },
-                isLoading = uiState is GroupCreateUiState.Loading
+                isLoading = uiState is GroupCreateUiState.Loading || uiState is GroupCreateUiState.AwaitingPayment
             )
         } else {
             Step2Review(

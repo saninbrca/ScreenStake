@@ -40,4 +40,6 @@ data class ChallengeEntity(
     @androidx.room.ColumnInfo(name = "completionShown", defaultValue = "0") val completionShown: Int = 0,
     /** Duration of each allowed session in minutes (SESSIONS challenges only). Default 5 min for existing rows. */
     @androidx.room.ColumnInfo(name = "sessionDurationMinutes", defaultValue = "5") val sessionDurationMinutes: Int = 5,
+    /** Non-null when this row was auto-created to locally track a group challenge. Stores the groupId. */
+    @androidx.room.ColumnInfo(name = "groupChallengeId", defaultValue = "NULL") val groupChallengeId: String? = null,
 )

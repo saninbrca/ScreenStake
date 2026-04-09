@@ -1,5 +1,6 @@
 package com.detox.app.presentation.screens.groupchallenge.detail
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -108,6 +111,7 @@ fun GroupChallengeDetailScreen(
 @Composable
 private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier) {
     val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -117,43 +121,90 @@ private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier
         // ── Summary card ────────────────────────────────────────────────────────
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = gc.appDisplayName,
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
                         )
                         StatusBadge(gc.status)
                     }
 
+                    // Code row with share button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = gc.code,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = androidx.compose.ui.unit.TextUnit(
+                                6f, androidx.compose.ui.unit.TextUnitType.Sp
+                            )
+                        )
+                        IconButton(onClick = {
+                            val shareText = context.getString(
+                                R.string.group_create_share_text,
+                                gc.code,
+                                gc.appDisplayName,
+                                gc.durationDays,
+                                gc.buyInCents / 100
+                            )
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            }
+                            context.startActivity(Intent.createChooser(intent, context.getString(R.string.group_create_share_chooser)))
+                        }) {
+                            Icon(Icons.Default.Share, contentDescription = stringResource(R.string.group_detail_share_code))
+                        }
+                    }
                     Text(
-                        text = "Code: ${gc.code}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        text = stringResource(R.string.group_detail_code_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    HorizontalDivider()
 
                     val limitSummary = when (gc.limitType) {
                         LimitType.TIME -> "Max ${gc.limitValueMinutes} min/day"
-                        LimitType.SESSIONS -> "Max ${gc.limitValueSessions} opens/day"
+                        LimitType.SESSIONS -> "Max ${gc.limitValueSessions} opens/day, ${gc.sessionDurationMinutes} min each"
                         LimitType.TIME_BUDGET -> "Budget: ${gc.limitValueMinutes} min/day"
                     }
                     Text(text = limitSummary, style = MaterialTheme.typography.bodyMedium)
 
                     val daysLeft = TimeUnit.MILLISECONDS.toDays(gc.endDate - System.currentTimeMillis())
-                    val dateInfo = if (gc.status == GroupChallengeStatus.ACTIVE && daysLeft > 0) {
-                        "$daysLeft days remaining"
-                    } else {
-                        "Ends ${sdf.format(Date(gc.endDate))}"
+                    val dateInfo = when {
+                        gc.status == GroupChallengeStatus.ACTIVE && daysLeft > 0 -> "$daysLeft days remaining"
+                        gc.status == GroupChallengeStatus.WAITING -> {
+                            val diffMs = gc.startDate - System.currentTimeMillis()
+                            if (diffMs > 0) {
+                                val d = TimeUnit.MILLISECONDS.toDays(diffMs)
+                                val h = TimeUnit.MILLISECONDS.toHours(diffMs) % 24
+                                "Starts in ${d}d ${h}h"
+                            } else "Starts ${sdf.format(Date(gc.startDate))}"
+                        }
+                        else -> "Ended ${sdf.format(Date(gc.endDate))}"
                     }
                     Text(text = dateInfo, style = MaterialTheme.typography.bodyMedium)
 
+                    // Total pot
+                    val totalPotEuros = gc.participants.size * gc.buyInCents / 100
                     Text(
-                        text = "Buy-in: €${gc.buyInCents / 100} per player",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = stringResource(R.string.group_detail_total_pot, totalPotEuros),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
                     )
 
                     if (gc.bonusEnabled) {
@@ -164,7 +215,7 @@ private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier
                         )
                     }
 
-                    // Waiting state: participant count
+                    // Waiting state: participant count + needs info
                     if (gc.status == GroupChallengeStatus.WAITING) {
                         val joined = gc.participants.size
                         val max = gc.maxParticipants
@@ -174,18 +225,15 @@ private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier
                             color = if (joined < 2) MaterialTheme.colorScheme.error
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        val diffMs = gc.startDate - System.currentTimeMillis()
-                        if (diffMs > 0) {
-                            val d = TimeUnit.MILLISECONDS.toDays(diffMs)
-                            val h = TimeUnit.MILLISECONDS.toHours(diffMs) % 24
-                            Text(
-                                text = "Starts in ${d}d ${h}h",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                 }
+            }
+        }
+
+        // ── Result summary (COMPLETED / CANCELLED) ──────────────────────────────
+        if (gc.status == GroupChallengeStatus.COMPLETED || gc.status == GroupChallengeStatus.CANCELLED) {
+            item {
+                ResultSummaryCard(gc)
             }
         }
 
@@ -198,12 +246,12 @@ private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier
             )
         }
 
-        // Sort: active participants first by performance, failed at the bottom
+        // Sort: active/success first by performance, failed at the bottom
         val sorted = gc.participants
             .sortedWith(
                 compareBy<Participant> { it.status == ParticipantStatus.FAILED }
                     .thenBy { it.opensToday }
-                    .thenByDescending { it.timeUsedMinutes }
+                    .thenBy { it.timeUsedMinutes }
             )
 
         itemsIndexed(sorted) { index, participant ->
@@ -227,6 +275,55 @@ private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier
 }
 
 @Composable
+private fun ResultSummaryCard(gc: GroupChallenge) {
+    val failedCount = gc.participants.count { it.status == ParticipantStatus.FAILED }
+    val succeededCount = gc.participants.count { it.status == ParticipantStatus.SUCCESS }
+    val potCents = failedCount * gc.buyInCents
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                gc.status == GroupChallengeStatus.CANCELLED -> MaterialTheme.colorScheme.errorContainer
+                failedCount == 0 -> MaterialTheme.colorScheme.tertiaryContainer
+                succeededCount == 0 -> MaterialTheme.colorScheme.errorContainer
+                else -> MaterialTheme.colorScheme.secondaryContainer
+            }
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = when {
+                    gc.status == GroupChallengeStatus.CANCELLED -> "⚠️ Challenge Cancelled"
+                    failedCount == 0 -> "🎉 Everyone Succeeded!"
+                    succeededCount == 0 -> "💸 Everyone Failed"
+                    else -> "🏁 Challenge Complete"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            when {
+                gc.status == GroupChallengeStatus.CANCELLED ->
+                    Text("Not enough players joined. All buy-ins refunded.", style = MaterialTheme.typography.bodyMedium)
+                failedCount == 0 ->
+                    Text("All ${succeededCount} participants stayed within their limits. Full refunds incoming!", style = MaterialTheme.typography.bodyMedium)
+                succeededCount == 0 ->
+                    Text("All ${failedCount} participants exceeded their limits. All buy-ins captured.", style = MaterialTheme.typography.bodyMedium)
+                else -> {
+                    Text("$succeededCount succeeded · $failedCount eliminated", style = MaterialTheme.typography.bodyMedium)
+                    if (potCents > 0) {
+                        Text(
+                            text = "Pot of €${potCents / 100} from failed participants distributed to winners",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LeaderboardRow(rank: Int, participant: Participant) {
     val isFailed = participant.status == ParticipantStatus.FAILED
     val isSuccess = participant.status == ParticipantStatus.SUCCESS
@@ -240,7 +337,7 @@ private fun LeaderboardRow(rank: Int, participant: Participant) {
     ) {
         // Rank
         Text(
-            text = if (isFailed) "❌" else "#$rank",
+            text = if (isFailed) "❌" else if (isSuccess && rank == 1) "🥇" else "#$rank",
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             color = if (isFailed) MaterialTheme.colorScheme.error

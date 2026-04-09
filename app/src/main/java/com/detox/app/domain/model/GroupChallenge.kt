@@ -9,6 +9,8 @@ data class GroupChallenge(
     val limitType: LimitType,
     val limitValueMinutes: Int,
     val limitValueSessions: Int?,
+    /** Duration of each allowed session in minutes (SESSIONS challenges only). Default 5. */
+    val sessionDurationMinutes: Int = 5,
     val durationDays: Int,
     val buyInCents: Int,
     val maxParticipants: Int,

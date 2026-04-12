@@ -36,6 +36,9 @@ class CalculatePointsUseCase @Inject constructor() {
                 }
                 todayOpens >= maxSessions
             }
+            // TIME_WINDOW: no usage limit — blocking is schedule-based via VPN / Accessibility.
+            // Every day always counts as a success; flat base points, no bonus.
+            LimitType.TIME_WINDOW -> false
         }
 
         if (limitExceeded) {
@@ -52,6 +55,8 @@ class CalculatePointsUseCase @Inject constructor() {
                 val maxSessionMinutes = limitValueMinutes * (limitValueSessions ?: 1)
                 maxSessionMinutes - todayMinutes
             }
+            // TIME_WINDOW: no remaining concept; no bonus points
+            LimitType.TIME_WINDOW -> 0
         }
         val bonusPoints = maxOf(0, remainingMinutes / 5)
         val total = basePoints + bonusPoints

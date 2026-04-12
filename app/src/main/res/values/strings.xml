@@ -63,7 +63,7 @@
     <string name="challenge_setup_error_min_minutes">Minimum 5 minutes</string>
     <string name="challenge_setup_error_max_minutes">Must be below your average (%1$d min/day)</string>
     <string name="challenge_setup_error_min_sessions">Minimum 1 session</string>
-    <string name="challenge_setup_error_min_session_mins">Minimum 1 minute per session</string>
+    <string name="challenge_setup_error_min_session_mins">Minimum 5 minutes per session</string>
     <string name="challenge_setup_error_fix_limits">Please fix the highlighted fields before starting</string>
     <string name="challenge_setup_error_min_budget">Budget must be at least 1 minute</string>
     <string name="challenge_setup_budget_field_label">Daily budget (minutes)</string>
@@ -288,6 +288,21 @@
     <string name="challenge_card_budget_limit">Budget: %1$d min/day</string>
     <string name="challenge_card_budget_progress">%1$d of %2$d min used · %3$d min left</string>
 
+    <!-- Challenge Card — TIME_WINDOW + VPN/adult status lines -->
+    <string name="challenge_card_time_window_limit">Time window only</string>
+    <string name="challenge_card_time_window_progress">%1$d min used</string>
+    <string name="challenge_card_vpn_active">Website blocking: VPN active</string>
+    <string name="challenge_card_adult_blocked">Adult content: fully blocked</string>
+
+    <!-- Challenge Setup — TIME_WINDOW limit type -->
+    <string name="challenge_setup_time_window_limit">Time Window</string>
+    <string name="challenge_setup_time_window_info">Only accessible during scheduled hours — no usage limit applies</string>
+    <string name="challenge_setup_error_schedule_required">Set a start and end time above</string>
+
+    <!-- Challenge Setup — adult content blocking -->
+    <string name="challenge_setup_adult_content_label">Block adult content</string>
+    <string name="challenge_setup_adult_content_info">Adult content is always fully blocked — no time limits</string>
+
     <!-- Multi-app selection in Challenge Setup -->
     <string name="challenge_setup_apps_label">Apps to track</string>
     <string name="challenge_setup_apps_add">Add more apps</string>
@@ -407,6 +422,37 @@
     <string name="success_overlay_refund">Your €%1$d has been refunded to your card</string>
     <string name="success_overlay_duration">Challenge duration: %1$d days</string>
     <string name="success_overlay_new_challenge">Start New Challenge</string>
+
+    <!-- VPN rationale dialog (shown before the system VPN permission dialog) -->
+    <string name="vpn_rationale_title">Enable Website Blocking</string>
+    <string name="vpn_rationale_message">Detox needs VPN permission to block websites. Your data never leaves your device — the VPN only filters DNS requests locally.</string>
+    <string name="vpn_rationale_confirm">Continue</string>
+    <string name="vpn_rationale_cancel">Cancel</string>
+
+    <!-- VPN permission (onboarding step) -->
+    <string name="permission_vpn_title">Block websites completely</string>
+    <string name="permission_vpn_description">Detox uses a local VPN to block distracting and adult websites. Your data never leaves your device — this VPN only filters DNS requests.</string>
+    <string name="permission_vpn_enable_button">Enable Website Protection</string>
+    <string name="permission_vpn_denied_warning">Website blocking will not work without this permission</string>
+    <string name="permission_vpn_try_again">Try again</string>
+
+    <!-- Huawei battery optimization step -->
+    <string name="permission_huawei_battery_title">Keep VPN Running</string>
+    <string name="permission_huawei_battery_description">To prevent your device from stopping website blocking, please disable battery optimization for Detox. Look for "App launch" or "Protected apps" in Power settings.</string>
+    <string name="permission_huawei_battery_button">Adjust Power Settings</string>
+
+    <!-- VPN foreground notification -->
+    <string name="notif_channel_vpn_name">Website Blocking VPN</string>
+    <string name="notif_vpn_title">Detox VPN active — websites protected</string>
+    <string name="notif_vpn_text">Local VPN active — your data stays on this device</string>
+    <string name="notif_vpn_paused_title">Website blocking paused</string>
+    <string name="notif_vpn_paused_text">Tap to restart website protection</string>
+
+    <!-- Profile — VPN status -->
+    <string name="profile_vpn_status">VPN Status</string>
+    <string name="profile_vpn_active">Active</string>
+    <string name="profile_vpn_inactive">Inactive</string>
+    <string name="profile_vpn_restart">Restart</string>
 
     <!-- Group Challenge — Detail screen -->
     <string name="group_detail_total_pot">Total pot: €%1$d</string>

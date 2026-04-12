@@ -25,11 +25,6 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
-private val ADULT_DOMAINS = listOf(
-    "pornhub.com", "xvideos.com", "xnxx.com", "redtube.com",
-    "youporn.com", "xhamster.com", "tube8.com", "spankbang.com"
-)
-
 /** Maps common app package names to their associated web domain. */
 val APP_DOMAIN_MAP = mapOf(
     "com.instagram.android" to "instagram.com",
@@ -199,8 +194,19 @@ class ChallengeSetupViewModel @Inject constructor(
     }
 
     fun updateSessionMinutes(minutes: Int) {
-        val error = if (minutes < 1) context.getString(R.string.challenge_setup_error_min_session_mins) else null
+        val error = if (minutes < 5) context.getString(R.string.challenge_setup_error_min_session_mins) else null
         _formState.update { it.copy(sessionMinutes = minutes, sessionMinutesError = error) }
+    }
+
+    fun updateBlockAdultContent(enabled: Boolean) {
+        _formState.update { form ->
+            form.copy(
+                blockAdultContent = enabled,
+                // Adult-content challenges have no usage limit — switch to TIME_WINDOW so
+                // validateLimitFields skips all usage-limit checks.
+                limitType = if (enabled) LimitType.TIME_WINDOW else form.limitType
+            )
+        }
     }
 
     fun updateDurationDays(days: Int) = _formState.update { it.copy(durationDays = days) }
@@ -267,7 +273,8 @@ class ChallengeSetupViewModel @Inject constructor(
             }
             BlockingType.WEBSITE -> {
                 domains.addAll(form.blockedDomains)
-                if (form.blockAdultContent) domains.addAll(ADULT_DOMAINS)
+                // Adult domains are not stored in Room — DetoxVpnService loads them from
+                // assets/adult_domains.txt and applies them when blockAdultContent = true.
             }
         }
         domains.addAll(form.customDomains)
@@ -299,6 +306,9 @@ class ChallengeSetupViewModel @Inject constructor(
     }
 
     private fun validateLimitFields(form: ChallengeSetupFormState): Boolean {
+        // Adult-content challenges are always fully blocked via VPN — no usage limit needed.
+        if (form.blockAdultContent) return true
+
         return when (form.limitType) {
             LimitType.TIME -> {
                 updateLimitMinutes(form.limitMinutes)
@@ -312,6 +322,16 @@ class ChallengeSetupViewModel @Inject constructor(
             LimitType.TIME_BUDGET -> {
                 updateDailyBudgetMinutes(form.dailyBudgetMinutes)
                 _formState.value.dailyBudgetMinutesError == null
+            }
+            // TIME_WINDOW: schedule is the constraint — must have a valid start + end time.
+            LimitType.TIME_WINDOW -> {
+                val hasSchedule = form.scheduleStartTime.length == 5 && form.scheduleEndTime.length == 5
+                if (!hasSchedule) {
+                    _uiState.value = ChallengeSetupUiState.Error(
+                        context.getString(R.string.challenge_setup_error_schedule_required)
+                    )
+                }
+                hasSchedule
             }
         }
     }
@@ -439,11 +459,13 @@ class ChallengeSetupViewModel @Inject constructor(
             LimitType.TIME -> form.limitMinutes
             LimitType.SESSIONS -> form.sessionMinutes
             LimitType.TIME_BUDGET -> 0
+            LimitType.TIME_WINDOW -> 0
         }
         val limitSessions = when (form.limitType) {
             LimitType.TIME -> null
             LimitType.SESSIONS -> form.limitSessions
             LimitType.TIME_BUDGET -> null
+            LimitType.TIME_WINDOW -> null
         }
         return limitMinutes to limitSessions
     }

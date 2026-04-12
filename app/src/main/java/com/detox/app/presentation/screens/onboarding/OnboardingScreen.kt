@@ -15,7 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -45,6 +49,7 @@ fun OnboardingScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val isHuawei = Build.MANUFACTURER.lowercase() == "huawei"
 
     // Re-check permissions every time the screen resumes (user returns from Settings)
     LaunchedEffect(lifecycleOwner) {
@@ -151,7 +156,7 @@ fun OnboardingScreen(
                     onNext = { viewModel.advanceStep() }
                 )
 
-                // ── Step 3: Notifications (Android 13+) ────────────────────────
+                // ── Step 3: Notifications (Android 13+) / Battery (Huawei <13) / done ──
                 3 -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         PermissionStep(
@@ -163,6 +168,33 @@ fun OnboardingScreen(
                                     Manifest.permission.POST_NOTIFICATIONS
                                 )
                             },
+                            onNext = {
+                                if (isHuawei) viewModel.advanceStep() else onOnboardingComplete()
+                            }
+                        )
+                    } else if (isHuawei) {
+                        HuaweiBatteryStep(
+                            onRequest = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                )
+                            },
+                            onNext = { onOnboardingComplete() }
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { onOnboardingComplete() }
+                    }
+                }
+
+                // ── Step 4: Battery (Android 13+ Huawei) / done otherwise ───────
+                4 -> {
+                    if (isHuawei) {
+                        HuaweiBatteryStep(
+                            onRequest = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                )
+                            },
                             onNext = { onOnboardingComplete() }
                         )
                     } else {
@@ -172,6 +204,58 @@ fun OnboardingScreen(
 
                 else -> LaunchedEffect(Unit) { onOnboardingComplete() }
             }
+        }
+    }
+}
+
+// ── Huawei battery optimization step ──────────────────────────────────────────
+
+@Composable
+private fun HuaweiBatteryStep(
+    onRequest: () -> Unit,
+    onNext: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.BatteryFull,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+
+        Text(
+            text = stringResource(R.string.permission_huawei_battery_title),
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center
+        )
+
+        Text(
+            text = stringResource(R.string.permission_huawei_battery_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = onRequest,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.permission_huawei_battery_button))
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        OutlinedButton(
+            onClick = onNext,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.onboarding_skip))
         }
     }
 }

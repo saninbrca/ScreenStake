@@ -38,7 +38,8 @@ class CreateChallengeUseCase @Inject constructor(
         activeDays: List<String> = emptyList(),
         sessionDurationMinutes: Int = 5,
     ): Result<ChallengeCreationResult> {
-        if (limitType != LimitType.TIME_BUDGET && limitValueMinutes <= 0) {
+        // TIME_BUDGET and TIME_WINDOW challenges don't use limitValueMinutes as a usage cap
+        if (limitType != LimitType.TIME_BUDGET && limitType != LimitType.TIME_WINDOW && limitValueMinutes <= 0) {
             return Result.failure(IllegalArgumentException("Limit minutes must be greater than 0"))
         }
         if (limitType == LimitType.TIME_BUDGET && (dailyBudgetMinutes == null || dailyBudgetMinutes <= 0)) {

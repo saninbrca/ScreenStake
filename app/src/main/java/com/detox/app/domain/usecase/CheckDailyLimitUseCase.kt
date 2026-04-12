@@ -66,6 +66,12 @@ class CheckDailyLimitUseCase @Inject constructor(
                     limitExceeded = false
                     remainingOpens = null
                 }
+                // TIME_WINDOW: no usage limit — access is gated by schedule only.
+                LimitType.TIME_WINDOW -> {
+                    todayOpens = todayUsage.opens
+                    limitExceeded = false
+                    remainingOpens = null
+                }
             }
 
             val remainingMinutes = when (challenge.limitType) {
@@ -75,6 +81,7 @@ class CheckDailyLimitUseCase @Inject constructor(
                     maxOf(0, maxSessionMinutes - adjustedMinutes)
                 }
                 LimitType.TIME_BUDGET -> challenge.dailyBudgetMinutes ?: 0
+                LimitType.TIME_WINDOW -> 0
             }
 
             Result.success(

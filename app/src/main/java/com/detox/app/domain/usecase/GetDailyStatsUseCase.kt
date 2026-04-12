@@ -68,7 +68,9 @@ class GetDailyStatsUseCase @Inject constructor(
                         daysRemaining = daysRemaining,
                         moneyLostCents = moneyLostCents,
                         dailyBudgetMinutes = totalBudget,
-                        budgetRemainingMinutes = budgetRemaining
+                        budgetRemainingMinutes = budgetRemaining,
+                        blockedDomains = challenge.blockedDomains,
+                        blockAdultContent = challenge.blockAdultContent
                     )
                 }
 
@@ -114,7 +116,9 @@ class GetDailyStatsUseCase @Inject constructor(
                     limitExceeded = pointsResult.limitExceeded,
                     customMotivation = challenge.customMotivation,
                     daysRemaining = daysRemaining,
-                    moneyLostCents = moneyLostCents
+                    moneyLostCents = moneyLostCents,
+                    blockedDomains = challenge.blockedDomains,
+                    blockAdultContent = challenge.blockAdultContent
                 )
             }
 

@@ -76,10 +76,15 @@ class UsageTrackingService : Service() {
                 TrackedAppEventBus.updateTrackedPackages(packageNames)
                 Timber.d("Updated tracked packages: $packageNames")
 
-                // Aggregate blocked domains across all active challenges
+                // Aggregate blocked domains across all active challenges (for the event bus only)
                 val blockedDomains = challenges.flatMap { it.blockedDomains }.toSet()
                 TrackedAppEventBus.updateBlockedDomains(blockedDomains)
                 Timber.d("Updated blocked domains: $blockedDomains")
+
+                // Notify AccessibilityService whether adult content blocking is needed.
+                // It reads this in-memory flag on every browser URL event — no Room query.
+                val adultBlockingActive = challenges.any { it.blockAdultContent }
+                TrackedAppEventBus.updateAdultBlockingActive(adultBlockingActive)
 
                 // Build per-package schedule map so AccessibilityService can gate overlays
                 val scheduleMap = challenges.flatMap { challenge ->
@@ -172,6 +177,8 @@ class UsageTrackingService : Service() {
                     val budget = challenge.dailyBudgetMinutes ?: 0
                     if (budget > 0) usage.minutes.toFloat() / budget else 0f
                 }
+                // TIME_WINDOW has no usage cap — 80% threshold never applies
+                LimitType.TIME_WINDOW -> 0f
             }
 
             Timber.d(

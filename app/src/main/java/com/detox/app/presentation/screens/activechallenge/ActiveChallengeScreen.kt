@@ -210,6 +210,7 @@ private fun ActiveChallengeContent(
                 R.string.challenge_card_budget_limit,
                 challenge.dailyBudgetMinutes ?: 0
             )
+            LimitType.TIME_WINDOW -> stringResource(R.string.challenge_card_time_window_limit)
         }
         Text(
             text = limitText,
@@ -247,6 +248,10 @@ private fun ActiveChallengeContent(
                         s.todayMinutes, budget, remaining
                     )
                 }
+                LimitType.TIME_WINDOW -> 0f to stringResource(
+                    R.string.challenge_card_time_window_progress,
+                    s.todayMinutes
+                )
             }
 
             Text(

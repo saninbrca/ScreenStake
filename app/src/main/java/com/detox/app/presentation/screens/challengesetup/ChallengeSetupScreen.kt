@@ -147,6 +147,33 @@ fun ChallengeSetupScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
+
+                // Adult-content blocking toggle
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.challenge_setup_adult_content_label),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        if (formState.blockAdultContent) {
+                            Text(
+                                text = stringResource(R.string.challenge_setup_adult_content_info),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = formState.blockAdultContent,
+                        onCheckedChange = { viewModel.updateBlockAdultContent(it) }
+                    )
+                }
             }
 
             // Custom domain input (both modes)
@@ -235,59 +262,80 @@ fun ChallengeSetupScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // ── Limit Type ──────────────────────────────────────────────────────
-            Text(
-                text = stringResource(R.string.challenge_setup_limit_type),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = formState.limitType == LimitType.TIME,
-                    onClick = { viewModel.updateLimitType(LimitType.TIME) },
-                    label = { Text(stringResource(R.string.challenge_setup_time_limit)) }
+            if (formState.blockAdultContent) {
+                // Adult content is always fully blocked — no time limit concept applies.
+                Text(
+                    text = stringResource(R.string.challenge_setup_adult_content_info),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                FilterChip(
-                    selected = formState.limitType == LimitType.SESSIONS,
-                    onClick = { viewModel.updateLimitType(LimitType.SESSIONS) },
-                    label = { Text(stringResource(R.string.challenge_setup_session_limit)) }
+            } else {
+                Text(
+                    text = stringResource(R.string.challenge_setup_limit_type),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
-                FilterChip(
-                    selected = formState.limitType == LimitType.TIME_BUDGET,
-                    onClick = { viewModel.updateLimitType(LimitType.TIME_BUDGET) },
-                    label = { Text(stringResource(R.string.challenge_setup_budget_limit)) }
-                )
-            }
+                Spacer(modifier = Modifier.height(8.dp))
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = formState.limitType == LimitType.TIME,
+                        onClick = { viewModel.updateLimitType(LimitType.TIME) },
+                        label = { Text(stringResource(R.string.challenge_setup_time_limit)) }
+                    )
+                    FilterChip(
+                        selected = formState.limitType == LimitType.SESSIONS,
+                        onClick = { viewModel.updateLimitType(LimitType.SESSIONS) },
+                        label = { Text(stringResource(R.string.challenge_setup_session_limit)) }
+                    )
+                    FilterChip(
+                        selected = formState.limitType == LimitType.TIME_BUDGET,
+                        onClick = { viewModel.updateLimitType(LimitType.TIME_BUDGET) },
+                        label = { Text(stringResource(R.string.challenge_setup_budget_limit)) }
+                    )
+                    FilterChip(
+                        selected = formState.limitType == LimitType.TIME_WINDOW,
+                        onClick = { viewModel.updateLimitType(LimitType.TIME_WINDOW) },
+                        label = { Text(stringResource(R.string.challenge_setup_time_window_limit)) }
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            val targetLabel = if (formState.blockingType == BlockingType.APP)
-                formState.displayName
-            else
-                stringResource(R.string.challenge_setup_website_label)
+                val targetLabel = if (formState.blockingType == BlockingType.APP)
+                    formState.displayName
+                else
+                    stringResource(R.string.challenge_setup_website_label)
 
-            when (formState.limitType) {
-                LimitType.TIME -> TimeLimitInput(
-                    limitMinutes = formState.limitMinutes,
-                    error = formState.limitMinutesError,
-                    displayName = targetLabel,
-                    onValueChange = { viewModel.updateLimitMinutes(it) }
-                )
-                LimitType.SESSIONS -> SessionLimitInput(
-                    limitSessions = formState.limitSessions,
-                    sessionMinutes = formState.sessionMinutes,
-                    sessionsError = formState.limitSessionsError,
-                    sessionMinsError = formState.sessionMinutesError,
-                    displayName = targetLabel,
-                    onSessionsChange = { viewModel.updateLimitSessions(it) },
-                    onSessionMinsChange = { viewModel.updateSessionMinutes(it) }
-                )
-                LimitType.TIME_BUDGET -> BudgetLimitInput(
-                    budgetMinutes = formState.dailyBudgetMinutes,
-                    error = formState.dailyBudgetMinutesError,
-                    displayName = targetLabel,
-                    onValueChange = { viewModel.updateDailyBudgetMinutes(it) }
-                )
+                when (formState.limitType) {
+                    LimitType.TIME -> TimeLimitInput(
+                        limitMinutes = formState.limitMinutes,
+                        error = formState.limitMinutesError,
+                        displayName = targetLabel,
+                        onValueChange = { viewModel.updateLimitMinutes(it) }
+                    )
+                    LimitType.SESSIONS -> SessionLimitInput(
+                        limitSessions = formState.limitSessions,
+                        sessionMinutes = formState.sessionMinutes,
+                        sessionsError = formState.limitSessionsError,
+                        sessionMinsError = formState.sessionMinutesError,
+                        displayName = targetLabel,
+                        onSessionsChange = { viewModel.updateLimitSessions(it) },
+                        onSessionMinsChange = { viewModel.updateSessionMinutes(it) }
+                    )
+                    LimitType.TIME_BUDGET -> BudgetLimitInput(
+                        budgetMinutes = formState.dailyBudgetMinutes,
+                        error = formState.dailyBudgetMinutesError,
+                        displayName = targetLabel,
+                        onValueChange = { viewModel.updateDailyBudgetMinutes(it) }
+                    )
+                    LimitType.TIME_WINDOW -> Text(
+                        text = stringResource(R.string.challenge_setup_time_window_info),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

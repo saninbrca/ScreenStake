@@ -204,6 +204,7 @@ private fun GroupPreviewCard(gc: GroupChallenge) {
                 LimitType.TIME -> "Max ${gc.limitValueMinutes} min/day"
                 LimitType.SESSIONS -> "Max ${gc.limitValueSessions} opens/day, ${gc.sessionDurationMinutes} min each"
                 LimitType.TIME_BUDGET -> "Budget: ${gc.limitValueMinutes} min/day"
+                LimitType.TIME_WINDOW -> "Time window only"
             }
             Text(text = limitSummary, style = MaterialTheme.typography.bodyMedium)
             Text(text = "${gc.durationDays} days", style = MaterialTheme.typography.bodyMedium)

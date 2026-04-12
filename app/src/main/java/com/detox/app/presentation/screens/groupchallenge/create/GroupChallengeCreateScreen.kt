@@ -178,6 +178,7 @@ fun GroupChallengeCreateScreen(
                         LimitType.TIME -> "${formState.limitValueMinutes} min/day"
                         LimitType.SESSIONS -> "${formState.limitValueSessions} opens/day"
                         LimitType.TIME_BUDGET -> "Budget ${formState.limitValueMinutes} min/day"
+                        else -> "Time window"
                     }
                     val shareText = context.getString(
                         R.string.group_create_share_text,
@@ -300,7 +301,7 @@ private fun Step1Settings(
                 fontWeight = FontWeight.SemiBold
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LimitType.entries.forEach { type ->
+                listOf(LimitType.TIME, LimitType.SESSIONS, LimitType.TIME_BUDGET).forEach { type ->
                     FilterChip(
                         selected = formState.limitType == type,
                         onClick = { onLimitTypeChange(type) },
@@ -310,6 +311,7 @@ private fun Step1Settings(
                                     LimitType.TIME -> stringResource(R.string.challenge_setup_time_limit)
                                     LimitType.SESSIONS -> stringResource(R.string.challenge_setup_session_limit)
                                     LimitType.TIME_BUDGET -> stringResource(R.string.challenge_setup_budget_limit)
+                                    else -> ""
                                 }
                             )
                         }
@@ -344,6 +346,8 @@ private fun Step1Settings(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                // TIME_WINDOW is not offered in group challenges — no slider needed
+                LimitType.TIME_WINDOW -> Unit
             }
         }
 
@@ -551,6 +555,7 @@ private fun Step2Review(
                     LimitType.TIME -> "${formState.limitValueMinutes} min/day"
                     LimitType.SESSIONS -> "${formState.limitValueSessions} opens/day"
                     LimitType.TIME_BUDGET -> "Budget ${formState.limitValueMinutes} min/day"
+                    else -> "Time window"
                 }
                 SummaryRow(label = stringResource(R.string.group_create_summary_limit), value = limitSummary)
                 SummaryRow(

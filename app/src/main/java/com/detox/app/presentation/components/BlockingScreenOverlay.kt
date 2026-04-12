@@ -122,6 +122,10 @@ fun BlockingScreenOverlay(
                         status.todayMinutes,
                         status.challenge.dailyBudgetMinutes ?: 0
                     )
+                    LimitType.TIME_WINDOW -> stringResource(
+                        R.string.challenge_card_time_window_progress,
+                        status.todayMinutes
+                    )
                 }
                 Text(
                     text = progressText,
@@ -143,6 +147,7 @@ fun BlockingScreenOverlay(
                         val budget = status.challenge.dailyBudgetMinutes ?: 1
                         if (budget > 0) status.todayMinutes.toFloat() / budget else 0f
                     }
+                    LimitType.TIME_WINDOW -> 0f
                 }.coerceIn(0f, 1f)
 
                 LinearProgressIndicator(

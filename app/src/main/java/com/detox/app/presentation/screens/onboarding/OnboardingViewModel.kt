@@ -30,14 +30,23 @@ data class OnboardingState(
     val notificationsGranted: Boolean = false
 ) {
     /**
-     * Total steps (all permissions):
+     * Total steps:
      *   0 = Usage Stats
      *   1 = Overlay
      *   2 = Accessibility
-     *   3 = Notifications (Android 13+ only)
+     *   3 = Notifications (Android 13+) | Battery (Android <13, Huawei) | done (Android <13)
+     *   4 = Battery (Android 13+, Huawei) | done otherwise
      */
     val totalSteps: Int
-        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) 4 else 3
+        get() {
+            val isHuawei = Build.MANUFACTURER.lowercase() == "huawei"
+            return when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && isHuawei -> 5
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> 4
+                isHuawei -> 4
+                else -> 3
+            }
+        }
 }
 
 @HiltViewModel
@@ -64,7 +73,6 @@ class OnboardingViewModel @Inject constructor(
 
         // Android 10+ may have a brief delay before canDrawOverlays() returns true
         // immediately after the user grants the permission and returns to the app.
-        // Retry once after 500 ms to catch this race condition.
         if (!overlayGranted) {
             viewModelScope.launch {
                 delay(500L)

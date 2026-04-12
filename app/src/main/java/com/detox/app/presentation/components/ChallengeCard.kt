@@ -47,6 +47,8 @@ fun ChallengeCard(
             val budget = dailyStats.dailyBudgetMinutes ?: dailyStats.limitValueMinutes
             if (budget > 0) dailyStats.todayMinutes.toFloat() / budget else 0f
         }
+        // TIME_WINDOW has no usage limit — progress bar stays empty
+        LimitType.TIME_WINDOW -> 0f
     }.coerceIn(0f, 1f)
 
     val progressColor = if (dailyStats.limitExceeded) DetoxTertiary else DetoxTrackableGreen
@@ -90,6 +92,7 @@ fun ChallengeCard(
                                 R.string.challenge_card_budget_limit,
                                 dailyStats.dailyBudgetMinutes ?: dailyStats.limitValueMinutes
                             )
+                            LimitType.TIME_WINDOW -> stringResource(R.string.challenge_card_time_window_limit)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -135,6 +138,10 @@ fun ChallengeCard(
                             dailyStats.budgetRemainingMinutes
                                 ?: ((dailyStats.dailyBudgetMinutes ?: 0) - dailyStats.todayMinutes)
                         )
+                        LimitType.TIME_WINDOW -> stringResource(
+                            R.string.challenge_card_time_window_progress,
+                            dailyStats.todayMinutes
+                        )
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -159,6 +166,24 @@ fun ChallengeCard(
                 color = progressColor,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
+
+            // Website blocking / adult content summary lines
+            if (dailyStats.blockedDomains.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.challenge_card_vpn_active),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (dailyStats.blockAdultContent) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.challenge_card_adult_blocked),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
             // Hard Mode: show payment-captured banner if money was charged today
             if (dailyStats.moneyLostCents > 0) {

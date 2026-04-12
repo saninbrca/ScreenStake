@@ -46,7 +46,15 @@ object TrackedAppEventBus {
     private val _freedPackagesToday = MutableStateFlow<Set<String>>(emptySet())
     val freedPackagesToday: StateFlow<Set<String>> = _freedPackagesToday.asStateFlow()
 
-    // ── Website blocking ───────────────────────────────────────────────────────
+    // ── Website / adult blocking ───────────────────────────────────────────────
+
+    /**
+     * True when at least one active challenge has blockAdultContent = true.
+     * Written by [UsageTrackingService]; read by [AppDetectionAccessibilityService]
+     * as a fast in-memory flag — no Room query on every accessibility event.
+     */
+    private val _adultBlockingActive = MutableStateFlow(false)
+    val adultBlockingActive: StateFlow<Boolean> = _adultBlockingActive.asStateFlow()
 
     /** All blocked domains aggregated across active challenges. */
     private val _blockedDomains = MutableStateFlow<Set<String>>(emptySet())
@@ -89,6 +97,10 @@ object TrackedAppEventBus {
 
     fun markPackageFreeForToday(packageName: String) {
         _freedPackagesToday.value = _freedPackagesToday.value + packageName
+    }
+
+    fun updateAdultBlockingActive(active: Boolean) {
+        _adultBlockingActive.value = active
     }
 
     fun updateBlockedDomains(domains: Set<String>) {

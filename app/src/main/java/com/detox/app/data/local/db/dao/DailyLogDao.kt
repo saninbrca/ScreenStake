@@ -19,9 +19,6 @@ interface DailyLogDao {
     @Query("SELECT * FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
     suspend fun getLogForDate(challengeId: String, date: Long): DailyLogEntity?
 
-    @Query("SELECT COALESCE(SUM(pointsEarned), 0) FROM daily_logs WHERE challengeId = :challengeId")
-    suspend fun getTotalPointsForChallenge(challengeId: String): Int
-
     @Query("SELECT COALESCE(consciousOpens, 0) FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
     suspend fun getConsciousOpens(challengeId: String, date: Long): Int
 

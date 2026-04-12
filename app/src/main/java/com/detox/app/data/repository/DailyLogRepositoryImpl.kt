@@ -52,14 +52,6 @@ class DailyLogRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getTotalPointsForChallenge(challengeId: String): Result<Int> {
-        return try {
-            Result.success(dailyLogDao.getTotalPointsForChallenge(challengeId))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     override suspend fun getConsciousOpens(challengeId: String, date: Long): Result<Int> {
         return try {
             Result.success(dailyLogDao.getConsciousOpens(challengeId, date))

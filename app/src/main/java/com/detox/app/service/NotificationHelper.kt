@@ -81,13 +81,11 @@ object NotificationHelper {
     /**
      * Posts the end-of-day summary notification.
      *
-     * @param pointsEarned total points earned today across all challenges
      * @param onTrackCount  number of challenges where the limit was NOT exceeded today
      * @param totalCount    total number of active challenges evaluated
      */
     fun sendDailyReport(
         context: Context,
-        pointsEarned: Int,
         onTrackCount: Int,
         totalCount: Int
     ) {
@@ -97,12 +95,7 @@ object NotificationHelper {
         }
 
         val title = context.getString(R.string.notif_daily_report_title)
-        val body = context.getString(
-            R.string.notif_daily_report_body,
-            pointsEarned,
-            onTrackCount,
-            totalCount
-        )
+        val body = context.getString(R.string.notif_daily_report_body, onTrackCount, totalCount)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_DAILY_REPORT)
             .setSmallIcon(R.drawable.ic_launcher_foreground)

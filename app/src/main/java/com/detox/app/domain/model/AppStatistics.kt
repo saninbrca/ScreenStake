@@ -7,7 +7,6 @@ package com.detox.app.domain.model
  * @param totalDaysTracked total number of days that have a daily log entry
  * @param daysSucceeded    days where the limit was NOT exceeded
  * @param daysExceeded     days where the limit WAS exceeded
- * @param totalPointsEarned sum of all pointsEarned across all daily logs
  * @param currentStreak    consecutive days of success ending today (or the latest log date)
  * @param bestStreak       longest consecutive success streak ever recorded
  * @param recentLogs       last 7 daily logs, newest first — used for the 7-day dot row in the UI
@@ -17,7 +16,6 @@ data class AppStatistics(
     val totalDaysTracked: Int,
     val daysSucceeded: Int,
     val daysExceeded: Int,
-    val totalPointsEarned: Int,
     val currentStreak: Int,
     val bestStreak: Int,
     val recentLogs: List<DailyLog>

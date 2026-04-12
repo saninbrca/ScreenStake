@@ -81,6 +81,22 @@ class FirebaseAuthService @Inject constructor(
         }
     }
 
+    /**
+     * Permanently deletes the currently signed-in Firebase Auth account.
+     * The caller is responsible for deleting all associated Firestore data first.
+     */
+    suspend fun deleteAccount(): Result<Unit> {
+        return try {
+            firebaseAuth.currentUser?.delete()?.await()
+                ?: return Result.failure(Exception("No signed-in user to delete"))
+            Timber.d("Firebase Auth account deleted")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to delete Firebase Auth account")
+            Result.failure(e)
+        }
+    }
+
     /** Sign the current user out. */
     fun signOut() {
         firebaseAuth.signOut()

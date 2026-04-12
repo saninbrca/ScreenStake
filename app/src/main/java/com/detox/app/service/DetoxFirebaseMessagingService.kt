@@ -51,10 +51,9 @@ class DetoxFirebaseMessagingService : FirebaseMessagingService() {
 
         when (message.data["type"]) {
             "daily_report" -> {
-                val points = message.data["pointsEarned"]?.toIntOrNull() ?: 0
                 val onTrack = message.data["onTrackCount"]?.toIntOrNull() ?: 0
                 val total = message.data["totalCount"]?.toIntOrNull() ?: 0
-                NotificationHelper.sendDailyReport(applicationContext, points, onTrack, total)
+                NotificationHelper.sendDailyReport(applicationContext, onTrack, total)
             }
 
             "challenge_completed" -> {

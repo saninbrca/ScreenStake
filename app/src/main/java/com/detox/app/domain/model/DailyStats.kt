@@ -9,7 +9,6 @@ data class DailyStats(
     val limitValueSessions: Int?,
     val todayMinutes: Int,
     val todayOpens: Int,
-    val pointsEarnedToday: Int,
     val limitExceeded: Boolean,
     val customMotivation: String?,
     val daysRemaining: Int,

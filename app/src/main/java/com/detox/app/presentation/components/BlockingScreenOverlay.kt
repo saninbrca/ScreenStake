@@ -33,7 +33,6 @@ import com.detox.app.domain.usecase.DailyLimitStatus
 @Composable
 fun BlockingScreenOverlay(
     status: DailyLimitStatus,
-    totalPoints: Int,
     onOpenAnyway: () -> Unit,
     onSkip: () -> Unit
 ) {
@@ -157,13 +156,6 @@ fun BlockingScreenOverlay(
                         .height(8.dp),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-
-                // Points
-                Text(
-                    text = stringResource(R.string.blocking_overlay_points_today, totalPoints),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))

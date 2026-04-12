@@ -2,15 +2,12 @@ package com.detox.app.data.repository
 
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.DailyLogDao
-import com.detox.app.data.local.db.dao.PointTransactionDao
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.DailyLogEntity
-import com.detox.app.data.local.db.entity.PointTransactionEntity
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
-import com.detox.app.domain.model.PointTransaction
 import com.detox.app.domain.repository.SyncRepository
 import timber.log.Timber
 import javax.inject.Inject
@@ -21,8 +18,7 @@ class SyncRepositoryImpl @Inject constructor(
     private val firestoreService: FirestoreService,
     private val firebaseAuthService: FirebaseAuthService,
     private val challengeDao: ChallengeDao,
-    private val dailyLogDao: DailyLogDao,
-    private val pointTransactionDao: PointTransactionDao
+    private val dailyLogDao: DailyLogDao
 ) : SyncRepository {
 
     override suspend fun syncUserData(): Result<Unit> {
@@ -49,11 +45,6 @@ class SyncRepositoryImpl @Inject constructor(
                 )
                 logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
             }
-
-            // 3. Fetch and upsert point transactions
-            val transactions = firestoreService.fetchPointTransactions(userId)
-            Timber.d("SyncRepository: fetched ${transactions.size} point transactions")
-            transactions.forEach { tx -> pointTransactionDao.insertTransaction(tx.toEntity()) }
 
             Timber.d("SyncRepository: sync completed")
             Result.success(Unit)
@@ -100,17 +91,8 @@ class SyncRepositoryImpl @Inject constructor(
         overlayPausedMs = overlayPausedMs,
         budgetUsedMinutes = budgetUsedMinutes,
         budgetRemainingMinutes = budgetRemainingMinutes,
-        pointsEarned = pointsEarned,
+        pointsEarned = 0,
         limitExceeded = limitExceeded,
         moneyLostCents = moneyLostCents
-    )
-
-    private fun PointTransaction.toEntity() = PointTransactionEntity(
-        id = id,
-        type = type,
-        amount = amount,
-        reason = reason,
-        challengeId = challengeId,
-        timestamp = timestamp
     )
 }

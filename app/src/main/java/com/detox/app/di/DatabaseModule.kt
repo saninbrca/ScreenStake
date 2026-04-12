@@ -6,7 +6,6 @@ import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.DailyLogDao
 import com.detox.app.data.local.db.dao.GroupChallengeDao
-import com.detox.app.data.local.db.dao.PointTransactionDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -42,7 +41,8 @@ object DatabaseModule {
                 DetoxDatabase.MIGRATION_11_12,
                 DetoxDatabase.MIGRATION_12_13,
                 DetoxDatabase.MIGRATION_13_14,
-                DetoxDatabase.MIGRATION_14_15
+                DetoxDatabase.MIGRATION_14_15,
+                DetoxDatabase.MIGRATION_15_16
             )
             .build()
     }
@@ -55,11 +55,6 @@ object DatabaseModule {
     @Provides
     fun provideDailyLogDao(database: DetoxDatabase): DailyLogDao {
         return database.dailyLogDao()
-    }
-
-    @Provides
-    fun providePointTransactionDao(database: DetoxDatabase): PointTransactionDao {
-        return database.pointTransactionDao()
     }
 
     @Provides

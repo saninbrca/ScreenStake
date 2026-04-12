@@ -8,26 +8,22 @@ import timber.log.Timber
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.DailyLogDao
 import com.detox.app.data.local.db.dao.GroupChallengeDao
-import com.detox.app.data.local.db.dao.PointTransactionDao
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.DailyLogEntity
 import com.detox.app.data.local.db.entity.GroupChallengeEntity
-import com.detox.app.data.local.db.entity.PointTransactionEntity
 
 @Database(
     entities = [
         ChallengeEntity::class,
         DailyLogEntity::class,
-        PointTransactionEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
     abstract fun challengeDao(): ChallengeDao
     abstract fun dailyLogDao(): DailyLogDao
-    abstract fun pointTransactionDao(): PointTransactionDao
     abstract fun groupChallengeDao(): GroupChallengeDao
 
     companion object {
@@ -234,6 +230,14 @@ abstract class DetoxDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE group_challenges ADD COLUMN sessionDurationMinutes INTEGER NOT NULL DEFAULT 5")
                 database.execSQL("ALTER TABLE challenges ADD COLUMN groupChallengeId TEXT DEFAULT NULL")
                 Timber.d("DB migration 14→15: added sessionDurationMinutes to group_challenges, groupChallengeId to challenges")
+            }
+        }
+
+        /** Drops the point_transactions table — points system removed. */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("DROP TABLE IF EXISTS point_transactions")
+                Timber.d("DB migration 15→16: dropped point_transactions table")
             }
         }
 

@@ -5,16 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.repository.ChallengeRepository
-import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
 import com.detox.app.domain.usecase.SyncUserDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -22,8 +19,7 @@ import javax.inject.Inject
 sealed interface DashboardUiState {
     data object Loading : DashboardUiState
     data class Success(
-        val activeChallenges: List<DailyStats>,
-        val totalPoints: Int
+        val activeChallenges: List<DailyStats>
     ) : DashboardUiState
     data object Empty : DashboardUiState
     data class Error(val message: String) : DashboardUiState
@@ -32,7 +28,6 @@ sealed interface DashboardUiState {
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val getDailyStatsUseCase: GetDailyStatsUseCase,
-    private val pointsRepository: PointsRepository,
     private val syncUserDataUseCase: SyncUserDataUseCase,
     private val challengeRepository: ChallengeRepository
 ) : ViewModel() {
@@ -44,12 +39,6 @@ class DashboardViewModel @Inject constructor(
     private val _completedChallenge = MutableStateFlow<Challenge?>(null)
     val completedChallenge: StateFlow<Challenge?> = _completedChallenge.asStateFlow()
 
-    // Always-current points cache. Using SharingStarted.Eagerly so .value is
-    // populated immediately — this fixes the race where loadStats() fires while
-    // the state is Loading and reads 0 from the (Loading) UI state.
-    private val _totalPoints: StateFlow<Int> = pointsRepository.getTotalPointsBalance()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
-
     // Kicked off immediately on ViewModel creation. loadStats() awaits this before
     // reading Room, ensuring re-login always sees up-to-date data. On subsequent
     // loadStats() calls (tab switches, etc.) join() returns instantly.
@@ -58,19 +47,6 @@ class DashboardViewModel @Inject constructor(
         syncUserDataUseCase()
             .onSuccess { Timber.d("Dashboard: sync completed") }
             .onFailure { e -> Timber.w(e, "Dashboard: sync failed (offline?)") }
-    }
-
-    init {
-        // Keep the Success state in sync whenever points change in the DB
-        // (e.g. after DailyEvaluationWorker runs or a points shop purchase).
-        viewModelScope.launch {
-            _totalPoints.collect { points ->
-                val currentState = _uiState.value
-                if (currentState is DashboardUiState.Success) {
-                    _uiState.value = currentState.copy(totalPoints = points)
-                }
-            }
-        }
     }
 
     fun loadStats() {
@@ -84,11 +60,8 @@ class DashboardViewModel @Inject constructor(
                     if (stats.isEmpty()) {
                         _uiState.value = DashboardUiState.Empty
                     } else {
-                        // _totalPoints.value is always current because the
-                        // StateFlow uses SharingStarted.Eagerly — no race condition.
                         _uiState.value = DashboardUiState.Success(
-                            activeChallenges = stats,
-                            totalPoints = _totalPoints.value
+                            activeChallenges = stats
                         )
                     }
                 },

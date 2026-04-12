@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,14 +43,12 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.presentation.components.ChallengeCard
-import com.detox.app.presentation.components.PointsBadge
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     onAddChallenge: () -> Unit,
     onChallengeClick: (String) -> Unit,
-    onOpenShop: () -> Unit = {},
     onOpenStats: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
@@ -77,16 +75,9 @@ fun DashboardScreen(
                 actions = {
                     IconButton(onClick = onOpenStats) {
                         Icon(
-                            imageVector = Icons.Filled.ShoppingCart, // reused; stats uses bar chart
+                            imageVector = Icons.Filled.BarChart,
                             contentDescription = stringResource(R.string.stats_title),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = onOpenShop) {
-                        Icon(
-                            imageVector = Icons.Filled.ShoppingCart,
-                            contentDescription = stringResource(R.string.shop_title),
-                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -161,15 +152,6 @@ fun DashboardScreen(
                 }
 
                 is DashboardUiState.Success -> {
-                    PointsBadge(
-                        points = state.totalPoints,
-                        modifier = Modifier
-                            .padding(horizontal = 24.dp)
-                            .fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
                     LazyColumn(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)

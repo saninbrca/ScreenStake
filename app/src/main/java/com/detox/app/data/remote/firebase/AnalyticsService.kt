@@ -22,11 +22,10 @@ class AnalyticsService @Inject constructor(
         })
     }
 
-    fun logChallengeCompleted(mode: String, durationDays: Int, totalPoints: Int) {
+    fun logChallengeCompleted(mode: String, durationDays: Int) {
         analytics.logEvent("challenge_completed", Bundle().apply {
             putString("mode", mode)
             putInt("duration_days", durationDays)
-            putInt("total_points", totalPoints)
         })
     }
 
@@ -46,13 +45,6 @@ class AnalyticsService @Inject constructor(
         analytics.logEvent("limit_exceeded", Bundle().apply {
             putString("mode", mode)
             putString("package_name", packageName)
-        })
-    }
-
-    fun logRewardRedeemed(rewardId: String, pointsCost: Int) {
-        analytics.logEvent("reward_redeemed", Bundle().apply {
-            putString("reward_id", rewardId)
-            putInt("points_cost", pointsCost)
         })
     }
 

@@ -147,13 +147,6 @@ fun ChallengeCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                Text(
-                    text = stringResource(R.string.challenge_card_points_today, dailyStats.pointsEarnedToday),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))

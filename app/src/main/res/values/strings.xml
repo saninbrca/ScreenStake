@@ -116,7 +116,7 @@
     <string name="notif_channel_milestones_desc">Notifications for completed or failed challenges</string>
 
     <string name="notif_daily_report_title">Your Daily Report</string>
-    <string name="notif_daily_report_body">You earned %1$d points today! %2$d/%3$d challenges successful.</string>
+    <string name="notif_daily_report_body">%1$d/%2$d challenges successful today.</string>
 
     <string name="notif_challenge_completed_title">Challenge Completed!</string>
     <string name="notif_challenge_completed_body">You successfully finished the %1$s challenge.</string>
@@ -137,7 +137,7 @@
 
     <!-- Successful-day congratulations (from DailyEvaluationWorker) -->
     <string name="notif_day_congrats_title">Great job today! 🎉</string>
-    <string name="notif_day_congrats_body">You stayed within your %1$s limit and earned points!</string>
+    <string name="notif_day_congrats_body">You stayed within your %1$s limit today!</string>
 
 
     <!-- Auth screen (Login / Register) -->
@@ -468,4 +468,56 @@
     <string name="notif_group_completed_success_body">You completed the %1$s group challenge! €%2$d is being refunded.</string>
     <string name="notif_group_completed_failed_title">Challenge Over</string>
     <string name="notif_group_completed_failed_body">The %1$s group challenge has ended. Better luck next time!</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+
+    <!-- Settings — Account section -->
+    <string name="settings_section_account">Account</string>
+    <string name="settings_change_password">Change Password</string>
+    <string name="settings_change_password_subtitle">Send a password reset link to your email</string>
+    <string name="settings_logout">Log Out</string>
+    <string name="settings_delete_account">Delete Account</string>
+    <string name="settings_delete_account_subtitle">Permanently delete your account and all data</string>
+    <string name="settings_delete_account_confirm_title">Delete Account?</string>
+    <string name="settings_delete_account_confirm_message">This will permanently delete your account, all challenges, and all data. This cannot be undone.</string>
+    <string name="settings_delete_account_confirm_yes">Delete permanently</string>
+
+    <!-- Settings — Notifications section -->
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_daily_reminder">Daily Reminder</string>
+    <string name="settings_daily_reminder_subtitle">Get a daily nudge to check your progress</string>
+    <string name="settings_reminder_time">Reminder Time</string>
+    <string name="settings_reminder_time_picker_title">Pick reminder time</string>
+    <string name="settings_challenge_updates">Challenge Updates</string>
+    <string name="settings_challenge_updates_subtitle">Notifications when challenges complete or fail</string>
+    <string name="settings_friend_alerts">Friend Alerts</string>
+    <string name="settings_friend_alerts_subtitle">Notifications when friends reach milestones</string>
+
+    <!-- Settings — Permissions section -->
+    <string name="settings_section_permissions">Permissions</string>
+    <string name="settings_all_permissions_active">All permissions active ✅</string>
+    <string name="settings_open_settings">Open Settings</string>
+    <string name="settings_permission_accessibility">Accessibility Service</string>
+    <string name="settings_permission_accessibility_subtitle">Required to detect app launches</string>
+    <string name="settings_permission_overlay">Display Over Other Apps</string>
+    <string name="settings_permission_overlay_subtitle">Required to show the blocking overlay</string>
+    <string name="settings_permission_usage">Usage Data Access</string>
+    <string name="settings_permission_usage_subtitle">Required to track your screen time</string>
+
+    <!-- Settings — Privacy section -->
+    <string name="settings_section_privacy">Privacy</string>
+    <string name="settings_privacy_policy">Privacy Policy</string>
+    <string name="settings_terms_of_service">Terms of Service</string>
+    <string name="settings_export_data">Export My Data</string>
+    <string name="settings_export_data_subtitle">Download all your challenges and logs as JSON</string>
+    <string name="settings_delete_all_data">Delete All My Data</string>
+    <string name="settings_delete_all_data_subtitle">Permanently erase your account and all data</string>
+
+    <!-- Settings — App Info section -->
+    <string name="settings_section_app_info">App Info</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_rate_app">Rate the App</string>
+    <string name="settings_send_feedback">Send Feedback</string>
+    <string name="settings_contact_support">Contact Support</string>
 </resources>

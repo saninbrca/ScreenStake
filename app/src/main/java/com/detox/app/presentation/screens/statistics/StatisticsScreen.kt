@@ -172,16 +172,6 @@ private fun OverviewCard(stats: OverallStatistics) {
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 StatColumn(
-                    label = stringResource(R.string.stats_total_points),
-                    value = "${stats.totalPoints}",
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                StatColumn(
-                    label = stringResource(R.string.stats_weekly_points),
-                    value = "+${stats.weeklyPoints}",
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                StatColumn(
                     label = stringResource(R.string.stats_completed),
                     value = "${stats.challengesCompleted}",
                     color = MaterialTheme.colorScheme.secondary

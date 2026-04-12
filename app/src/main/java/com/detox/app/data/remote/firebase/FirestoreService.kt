@@ -6,7 +6,6 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
-import com.detox.app.domain.model.PointTransaction
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
@@ -34,7 +33,6 @@ class FirestoreService @Inject constructor(
         try {
             val data = mutableMapOf<String, Any>(
                 "email" to email,
-                "totalPoints" to 0,
                 "createdAt" to com.google.firebase.Timestamp.now()
             )
             displayName?.let { data["displayName"] = it }
@@ -113,21 +111,6 @@ class FirestoreService @Inject constructor(
             Timber.d("Synced daily log ${log.id} to Firestore")
         } catch (e: Exception) {
             Timber.e(e, "Failed to sync daily log ${log.id}")
-        }
-    }
-
-    // ── Point Transactions ─────────────────────────────────────────────────────
-
-    suspend fun savePointTransaction(userId: String, transaction: PointTransaction) {
-        try {
-            firestore
-                .collection("users").document(userId)
-                .collection("pointTransactions").document(transaction.id)
-                .set(transaction.toMap())
-                .await()
-            Timber.d("Synced point transaction ${transaction.id} to Firestore")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to sync point transaction ${transaction.id}")
         }
     }
 
@@ -250,35 +233,37 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    // ── Account deletion ──────────────────────────────────────────────────────
+
     /**
-     * Fetches all point transactions for the given user.
+     * Deletes all Firestore data for a user: iterates every challenge document,
+     * deletes all nested dailyLogs sub-documents, then the challenge itself,
+     * and finally the top-level user document.
+     *
+     * This is a best-effort client-side deletion. For a production app, prefer
+     * a Cloud Function with admin SDK for atomicity; this covers the common case.
      */
-    suspend fun fetchPointTransactions(userId: String): List<PointTransaction> {
-        return try {
-            val snapshot = firestore
-                .collection("users").document(userId)
-                .collection("pointTransactions")
-                .get()
-                .await()
-            snapshot.documents.mapNotNull { doc ->
-                val d = doc.data ?: return@mapNotNull null
+    suspend fun deleteUserData(userId: String) {
+        try {
+            val challengesRef = firestore.collection("users").document(userId)
+                .collection("challenges")
+            val challenges = challengesRef.get().await()
+            for (challengeDoc in challenges.documents) {
                 try {
-                    PointTransaction(
-                        id = d["id"] as? String ?: doc.id,
-                        type = d["type"] as? String ?: return@mapNotNull null,
-                        amount = (d["amount"] as? Long)?.toInt() ?: 0,
-                        reason = d["reason"] as? String ?: "",
-                        challengeId = d["challengeId"] as? String,
-                        timestamp = d["timestamp"] as? Long ?: 0L
-                    )
+                    val logs = challengeDoc.reference.collection("dailyLogs").get().await()
+                    for (log in logs.documents) {
+                        log.reference.delete().await()
+                    }
+                    challengeDoc.reference.delete().await()
                 } catch (e: Exception) {
-                    Timber.e(e, "Failed to parse point transaction document ${doc.id}")
-                    null
+                    Timber.w(e, "Failed to delete challenge ${challengeDoc.id} for uid=$userId")
                 }
             }
+            firestore.collection("users").document(userId).delete().await()
+            Timber.d("Deleted all Firestore data for uid=$userId")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to fetch point transactions for uid=$userId")
-            emptyList()
+            Timber.e(e, "Failed to delete Firestore data for uid=$userId")
+            throw e
         }
     }
 
@@ -325,12 +310,4 @@ class FirestoreService @Inject constructor(
         "moneyLostCents" to moneyLostCents
     )
 
-    private fun PointTransaction.toMap(): Map<String, Any?> = mapOf(
-        "id" to id,
-        "type" to type,
-        "amount" to amount,
-        "reason" to reason,
-        "challengeId" to challengeId,
-        "timestamp" to timestamp
-    )
 }

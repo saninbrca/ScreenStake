@@ -36,8 +36,8 @@ import com.detox.app.presentation.screens.friends.FriendsHubScreen
 import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCreateScreen
 import com.detox.app.presentation.screens.groupchallenge.detail.GroupChallengeDetailScreen
 import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoinScreen
-import com.detox.app.presentation.screens.pointshop.PointShopScreen
 import com.detox.app.presentation.screens.profile.ProfileScreen
+import com.detox.app.presentation.screens.settings.SettingsScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
 import java.net.URLEncoder
 
@@ -98,9 +98,6 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
                     },
-                    onOpenShop = {
-                        navController.navigate("point_shop")
-                    },
                     onOpenStats = {
                         navController.navigate("statistics")
                     }
@@ -121,7 +118,10 @@ fun MainScreen(onLoggedOut: () -> Unit) {
 
             // ── Profile tab ─────────────────────────────────────────────────────
             composable(BottomNavTab.Profile.route) {
-                ProfileScreen(onLoggedOut = onLoggedOut)
+                ProfileScreen(
+                    onLoggedOut = onLoggedOut,
+                    onOpenSettings = { navController.navigate("settings") }
+                )
             }
 
             // ── Friends / Group Challenges tab ──────────────────────────────────
@@ -227,14 +227,17 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                 )
             }
 
-            // ── Point Shop ───────────────────────────────────────────────────────
-            composable("point_shop") {
-                PointShopScreen(onBack = { navController.popBackStack() })
-            }
-
             // ── Statistics ───────────────────────────────────────────────────────
             composable("statistics") {
                 StatisticsScreen(onBack = { navController.popBackStack() })
+            }
+
+            // ── Settings ─────────────────────────────────────────────────────────
+            composable("settings") {
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onNavigateToLogin = onLoggedOut
+                )
             }
 
             // ── Group Challenge — App selection (reuses AppSelectionScreen) ─────

@@ -25,7 +25,6 @@ import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.PaymentRepository
-import com.detox.app.domain.repository.PointsRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
@@ -40,7 +39,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Calendar
@@ -52,7 +50,6 @@ import javax.inject.Singleton
 class OverlayManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val checkDailyLimitUseCase: CheckDailyLimitUseCase,
-    private val pointsRepository: PointsRepository,
     private val paymentRepository: PaymentRepository,
     private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
@@ -865,13 +862,10 @@ class OverlayManager @Inject constructor(
     }
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
-        val totalPoints = pointsRepository.getTotalPointsBalance().first()
-
         val composeView = createComposeView {
             DetoxTheme {
                 BlockingScreenOverlay(
                     status = status,
-                    totalPoints = totalPoints,
                     onOpenAnyway = {
                         analyticsService.logBlockingScreenAction("opened_anyway")
                         dismissOverlay()

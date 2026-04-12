@@ -11,7 +11,6 @@ import javax.inject.Inject
 class GetDailyStatsUseCase @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val usageStatsRepository: UsageStatsRepository,
-    private val calculatePointsUseCase: CalculatePointsUseCase,
     private val dailyLogRepository: DailyLogRepository
 ) {
     suspend operator fun invoke(): Result<List<DailyStats>> {
@@ -43,15 +42,7 @@ class GetDailyStatsUseCase @Inject constructor(
                         totalBudget  // no deductions yet → full budget available
                     }
                     val moneyLostCents = todayLog?.moneyLostCents ?: 0
-                    val limitExceeded = todayLog?.limitExceeded ?: false
-
-                    val pointsResult = calculatePointsUseCase(
-                        limitType = LimitType.TIME_BUDGET,
-                        limitValueMinutes = totalBudget,
-                        limitValueSessions = null,
-                        todayMinutes = budgetUsed,
-                        todayOpens = 0
-                    )
+                    val limitExceeded = todayLog?.limitExceeded ?: (budgetUsed >= totalBudget)
 
                     return@map DailyStats(
                         challengeId = challenge.id,
@@ -62,7 +53,6 @@ class GetDailyStatsUseCase @Inject constructor(
                         limitValueSessions = null,
                         todayMinutes = budgetUsed,
                         todayOpens = 0,
-                        pointsEarnedToday = pointsResult.points,
                         limitExceeded = limitExceeded,
                         customMotivation = challenge.customMotivation,
                         daysRemaining = daysRemaining,
@@ -93,13 +83,15 @@ class GetDailyStatsUseCase @Inject constructor(
                     else -> todayUsage.opens
                 }
 
-                val pointsResult = calculatePointsUseCase(
-                    limitType = challenge.limitType,
-                    limitValueMinutes = challenge.limitValueMinutes,
-                    limitValueSessions = challenge.limitValueSessions,
-                    todayMinutes = adjustedMinutes,
-                    todayOpens = todayOpens
-                )
+                val limitExceeded = when (challenge.limitType) {
+                    LimitType.TIME -> adjustedMinutes >= challenge.limitValueMinutes
+                    LimitType.SESSIONS -> {
+                        val max = challenge.limitValueSessions
+                        if (max != null) todayOpens >= max else false
+                    }
+                    LimitType.TIME_WINDOW -> false
+                    else -> false
+                }
 
                 val moneyLostCents = todayLog?.moneyLostCents ?: 0
 
@@ -112,8 +104,7 @@ class GetDailyStatsUseCase @Inject constructor(
                     limitValueSessions = challenge.limitValueSessions,
                     todayMinutes = adjustedMinutes,
                     todayOpens = todayOpens,
-                    pointsEarnedToday = pointsResult.points,
-                    limitExceeded = pointsResult.limitExceeded,
+                    limitExceeded = limitExceeded,
                     customMotivation = challenge.customMotivation,
                     daysRemaining = daysRemaining,
                     moneyLostCents = moneyLostCents,

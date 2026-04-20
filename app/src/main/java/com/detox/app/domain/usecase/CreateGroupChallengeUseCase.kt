@@ -65,11 +65,11 @@ class CreateGroupChallengeUseCase @Inject constructor(
         if (appPackageNames.isEmpty()) {
             return Result.failure(IllegalArgumentException("Select at least one app to block."))
         }
-        if (durationDays !in 1..30) {
-            return Result.failure(IllegalArgumentException("Duration must be between 1 and 30 days."))
+        if (durationDays !in 3..365) {
+            return Result.failure(IllegalArgumentException("Duration must be between 3 and 365 days."))
         }
-        if (buyInCents !in 100..5000) {
-            return Result.failure(IllegalArgumentException("Buy-in must be between €1 and €50."))
+        if (buyInCents !in 1000..5000) {
+            return Result.failure(IllegalArgumentException("Buy-in must be between €10 and €50."))
         }
         if (maxParticipants !in 2..20) {
             return Result.failure(IllegalArgumentException("Participants must be between 2 and 20."))

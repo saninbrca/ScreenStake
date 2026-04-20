@@ -24,9 +24,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.detox.app.R
-import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCreateViewModel
 import com.detox.app.presentation.screens.activechallenge.ActiveChallengeScreen
-import com.detox.app.presentation.screens.appselection.AppSelectionScreen
 import com.detox.app.presentation.screens.challengecreation.ChallengeCreationScreen
 import com.detox.app.presentation.screens.challenges.ChallengesScreen
 import com.detox.app.presentation.screens.dashboard.DashboardScreen
@@ -37,7 +35,6 @@ import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoin
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
-import java.net.URLEncoder
 
 private sealed class BottomNavTab(
     val route: String,
@@ -126,7 +123,7 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             composable(BottomNavTab.Friends.route) {
                 FriendsHubScreen(
                     onCreateGroupChallenge = {
-                        navController.navigate("group_create_app_selection")
+                        navController.navigate("group_create")
                     },
                     onJoinGroupChallenge = {
                         navController.navigate("group_join")
@@ -177,56 +174,16 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                 )
             }
 
-            // ── Group Challenge — App selection (reuses AppSelectionScreen) ─────
-            composable("group_create_app_selection") {
-                AppSelectionScreen(
-                    onAppsSelected = { packages, displayName ->
-                        val encodedPackages = URLEncoder.encode(packages.joinToString(","), "UTF-8")
-                        val encodedName = URLEncoder.encode(displayName, "UTF-8")
-                        navController.navigate(
-                            "group_create?packageNames=$encodedPackages&displayName=$encodedName"
-                        )
-                    }
-                )
-            }
-
-            // ── Group Challenge — Create (two-step settings + review) ────────────
-            composable(
-                route = "group_create?packageNames={packageNames}&displayName={displayName}",
-                arguments = listOf(
-                    navArgument("packageNames") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                        nullable = true
-                    },
-                    navArgument("displayName") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                        nullable = true
-                    }
-                )
-            ) { backStackEntry ->
-                val packageNames = backStackEntry.arguments?.getString("packageNames") ?: ""
-                val displayName = backStackEntry.arguments?.getString("displayName") ?: ""
-                val viewModel = androidx.hilt.navigation.compose.hiltViewModel<GroupChallengeCreateViewModel>()
-                // Pre-fill packages from nav args on first composition
-                androidx.compose.runtime.LaunchedEffect(packageNames) {
-                    if (packageNames.isNotBlank()) {
-                        viewModel.setSelectedPackages(packageNames, displayName)
-                    }
-                }
+            // ── Group Challenge — Create wizard (6-step, app selection embedded) ──
+            composable("group_create") {
                 GroupChallengeCreateScreen(
                     onBack = { navController.popBackStack() },
-                    onSelectApps = {
-                        navController.navigate("group_create_app_selection")
-                    },
                     onCreated = { groupId ->
                         navController.navigate("group_detail/$groupId") {
-                            popUpTo("group_create_app_selection") { inclusive = true }
+                            popUpTo("group_create") { inclusive = true }
                             launchSingleTop = true
                         }
                     },
-                    viewModel = viewModel
                 )
             }
 

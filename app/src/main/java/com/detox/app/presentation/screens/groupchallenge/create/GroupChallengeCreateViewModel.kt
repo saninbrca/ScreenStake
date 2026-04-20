@@ -4,7 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CreateGroupChallengeUseCase
+import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
+import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
+import com.detox.app.presentation.screens.challengecreation.AppListState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,39 +20,46 @@ import timber.log.Timber
 import java.util.Calendar
 import javax.inject.Inject
 
+const val GROUP_WIZARD_TOTAL_STEPS = 6
+private const val MAX_PARTICIPANTS = 20
+
 data class GroupCreateFormState(
-    // Step 1 — settings
+    val currentStep: Int = 1,
+    // Step 1 — app selection
     val packageNames: List<String> = emptyList(),
     val displayName: String = "",
+    val searchQuery: String = "",
+    val domainToggles: Map<String, Boolean> = emptyMap(),
+    // Step 2 — limit type
     val limitType: LimitType = LimitType.TIME,
+    // Step 3 — limit value + duration
     val limitValueMinutes: Int = 60,
     val limitValueSessions: Int = 5,
     val sessionMinutes: Int = 5,
+    val dailyBudgetMinutes: Int = 60,
     val durationDays: Int = 7,
-    val buyInEuros: Int = 10,          // 10–50
-    val maxParticipants: Int = 5,      // 2–20
+    val durationError: String? = null,
+    // Step 4 — buy-in
+    val buyInEuros: Int = 10,
+    // Step 5 — start date + bonus
     val startDateMs: Long = 0L,
     val bonusEnabled: Boolean = false,
-    val showBonusTooltip: Boolean = false,
-    // Step 2 — review (shown after payment)
+    // Step 6 — review (populated after creation)
     val generatedCode: String = "",
     // Errors
     val packageNamesError: String? = null,
     val startDateError: String? = null,
-    val buyInEurosError: String? = null,
     val genericError: String? = null
 )
 
 sealed interface GroupCreateUiState {
     data object Idle : GroupCreateUiState
     data object Loading : GroupCreateUiState
-    /** CF succeeded — creator must now pay via PaymentSheet before we navigate. */
     data class AwaitingPayment(
         val groupId: String,
         val code: String,
         val clientSecret: String,
     ) : GroupCreateUiState
-    /** Creator paid — navigate to detail screen. */
     data class Created(val groupId: String, val code: String) : GroupCreateUiState
     data class Error(val message: String) : GroupCreateUiState
 }
@@ -55,7 +67,10 @@ sealed interface GroupCreateUiState {
 @HiltViewModel
 class GroupChallengeCreateViewModel @Inject constructor(
     private val createGroupChallengeUseCase: CreateGroupChallengeUseCase,
-    private val firebaseAuthService: FirebaseAuthService
+    private val firebaseAuthService: FirebaseAuthService,
+    private val getAddictiveAppsUseCase: GetAddictiveAppsUseCase,
+    private val usageStatsRepository: UsageStatsRepository,
+    private val challengeRepository: ChallengeRepository,
 ) : ViewModel() {
 
     private val _formState = MutableStateFlow(GroupCreateFormState())
@@ -64,26 +79,101 @@ class GroupChallengeCreateViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<GroupCreateUiState>(GroupCreateUiState.Idle)
     val uiState: StateFlow<GroupCreateUiState> = _uiState.asStateFlow()
 
-    // ── Step 1 setters ──────────────────────────────────────────────────────────
+    private val _appListState = MutableStateFlow(AppListState())
+    val appListState: StateFlow<AppListState> = _appListState.asStateFlow()
 
-    fun setSelectedPackages(packageNamesRaw: String, displayName: String) {
-        val packages = packageNamesRaw.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        _formState.update { it.copy(packageNames = packages, displayName = displayName, packageNamesError = null) }
+    init {
+        loadApps()
     }
+
+    // ── App loading ─────────────────────────────────────────────────────────────
+
+    fun loadApps() {
+        if (!usageStatsRepository.hasUsageStatsPermission()) {
+            _appListState.value = AppListState(isLoading = false, noPermission = true)
+            return
+        }
+        viewModelScope.launch {
+            _appListState.update { it.copy(isLoading = true, error = null, noPermission = false) }
+            val conflicts = mutableMapOf<String, String>()
+            challengeRepository.getActiveChallengesList().getOrNull()?.forEach { challenge ->
+                challenge.appPackageNames.forEach { pkg -> conflicts[pkg] = challenge.appDisplayName }
+            }
+            getAddictiveAppsUseCase().fold(
+                onSuccess = { result ->
+                    _appListState.value = AppListState(
+                        isLoading = false,
+                        trackableApps = result.trackableApps,
+                        nonTrackableApps = result.nonTrackableApps,
+                        conflictingPackages = conflicts,
+                    )
+                },
+                onFailure = { error ->
+                    _appListState.value = AppListState(isLoading = false, error = error.message ?: "Unknown error")
+                },
+            )
+        }
+    }
+
+    // ── Step 1 — app selection ──────────────────────────────────────────────────
+
+    fun toggleApp(packageName: String) {
+        val current = _formState.value.packageNames.toMutableList()
+        if (current.contains(packageName)) {
+            current.remove(packageName)
+        } else {
+            current.add(packageName)
+        }
+        val apps = _appListState.value.trackableApps
+        val primaryName = apps.firstOrNull { it.packageName == current.firstOrNull() }?.appName ?: ""
+        val newDomainToggles = current
+            .filter { APP_DOMAIN_MAP.containsKey(it) }
+            .associateWith { _formState.value.domainToggles[it] ?: true }
+        _formState.update {
+            it.copy(
+                packageNames = current,
+                displayName = primaryName,
+                domainToggles = newDomainToggles,
+                packageNamesError = null,
+            )
+        }
+    }
+
+    fun toggleDomain(packageName: String) {
+        _formState.update {
+            val updated = it.domainToggles.toMutableMap()
+            updated[packageName] = !(updated[packageName] ?: true)
+            it.copy(domainToggles = updated)
+        }
+    }
+
+    fun updateSearchQuery(q: String) = _formState.update { it.copy(searchQuery = q) }
+
+    // ── Step 2 — limit type ─────────────────────────────────────────────────────
 
     fun setLimitType(type: LimitType) = _formState.update { it.copy(limitType = type) }
-    fun setLimitValueMinutes(v: Int) = _formState.update { it.copy(limitValueMinutes = v.coerceIn(1, 1440)) }
-    fun setLimitValueSessions(v: Int) = _formState.update { it.copy(limitValueSessions = v.coerceIn(1, 100)) }
-    fun setSessionMinutes(v: Int) = _formState.update { it.copy(sessionMinutes = v.coerceIn(1, 60)) }
-    fun setDurationDays(v: Int) = _formState.update { it.copy(durationDays = v.coerceIn(1, 30)) }
+
+    // ── Step 3 — limit value + duration ────────────────────────────────────────
+
+    fun setLimitValueMinutes(v: Int) = _formState.update { it.copy(limitValueMinutes = v.coerceIn(5, 600)) }
+    fun setLimitValueSessions(v: Int) = _formState.update { it.copy(limitValueSessions = v.coerceIn(1, 50)) }
+    fun setSessionMinutes(v: Int) = _formState.update { it.copy(sessionMinutes = v.coerceIn(5, 120)) }
+    fun setDailyBudgetMinutes(v: Int) = _formState.update { it.copy(dailyBudgetMinutes = v.coerceIn(5, 600)) }
+
+    fun setDurationDays(v: Int) {
+        val clamped = v.coerceIn(1, 365)
+        val error = if (clamped < 3) "Group challenges require minimum 3 days" else null
+        _formState.update { it.copy(durationDays = clamped, durationError = error) }
+    }
+
+    // ── Step 4 — buy-in ─────────────────────────────────────────────────────────
+
     fun setBuyInEuros(v: Int) {
         val clamped = v.coerceIn(10, 50)
-        val error = if (clamped < 10) "Minimum buy-in is €10" else null
-        _formState.update { it.copy(buyInEuros = clamped, buyInEurosError = error) }
+        _formState.update { it.copy(buyInEuros = clamped) }
     }
-    fun setMaxParticipants(v: Int) = _formState.update { it.copy(maxParticipants = v.coerceIn(2, 20)) }
-    fun setBonusEnabled(v: Boolean) = _formState.update { it.copy(bonusEnabled = v) }
-    fun setShowBonusTooltip(v: Boolean) = _formState.update { it.copy(showBonusTooltip = v) }
+
+    // ── Step 5 — start date + bonus ─────────────────────────────────────────────
 
     fun setStartDate(ms: Long) {
         val tomorrowMidnight = Calendar.getInstance().apply {
@@ -95,46 +185,71 @@ class GroupChallengeCreateViewModel @Inject constructor(
         _formState.update { it.copy(startDateMs = ms, startDateError = error) }
     }
 
-    fun clearError() {
-        _formState.update { it.copy(genericError = null) }
-        _uiState.value = GroupCreateUiState.Idle
+    fun setBonusEnabled(v: Boolean) = _formState.update { it.copy(bonusEnabled = v) }
+
+    // ── Navigation ──────────────────────────────────────────────────────────────
+
+    fun goNext() {
+        val step = _formState.value.currentStep
+        if (step < GROUP_WIZARD_TOTAL_STEPS && validateCurrentStep()) {
+            _formState.update { it.copy(currentStep = it.currentStep + 1) }
+        }
     }
 
-    // ── Step 1 → Step 2 validation ──────────────────────────────────────────────
+    fun goBack() {
+        val step = _formState.value.currentStep
+        if (step > 1) {
+            _formState.update { it.copy(currentStep = it.currentStep - 1) }
+        }
+    }
 
-    /** Returns true if Step 1 form is valid and the ViewModel can proceed. */
-    fun validateStep1(): Boolean {
+    fun canGoNext(): Boolean {
         val s = _formState.value
-        var valid = true
-        if (s.packageNames.isEmpty()) {
-            _formState.update { it.copy(packageNamesError = "Select at least one app") }
-            valid = false
+        return when (s.currentStep) {
+            1 -> s.packageNames.isNotEmpty()
+            2 -> true
+            3 -> s.durationError == null && s.durationDays >= 3
+            4 -> s.buyInEuros >= 10
+            5 -> s.startDateMs > 0L && s.startDateError == null
+            else -> true
         }
-        if (s.startDateMs == 0L || s.startDateError != null) {
-            _formState.update { it.copy(startDateError = "Pick a valid start date (≥ 24 h from now)") }
-            valid = false
+    }
+
+    private fun validateCurrentStep(): Boolean {
+        val s = _formState.value
+        return when (s.currentStep) {
+            1 -> {
+                if (s.packageNames.isEmpty()) {
+                    _formState.update { it.copy(packageNamesError = "Select at least one app") }
+                    false
+                } else true
+            }
+            3 -> {
+                if (s.durationDays < 3) {
+                    _formState.update { it.copy(durationError = "Group challenges require minimum 3 days") }
+                    false
+                } else true
+            }
+            4 -> true
+            5 -> {
+                if (s.startDateMs == 0L) {
+                    _formState.update { it.copy(startDateError = "Pick a valid start date") }
+                    false
+                } else true
+            }
+            else -> true
         }
-        if (s.buyInEuros < 10) {
-            _formState.update { it.copy(buyInEurosError = "Minimum buy-in is €10") }
-            valid = false
-        }
-        return valid
     }
 
     // ── Create ──────────────────────────────────────────────────────────────────
 
-    /**
-     * Calls the Cloud Function to create the group challenge and obtain the creator's
-     * Stripe PaymentIntent. On success, transitions to [GroupCreateUiState.AwaitingPayment]
-     * so the Screen can launch the PaymentSheet.
-     */
     fun createChallenge() {
         val s = _formState.value
         val userId = firebaseAuthService.currentUserId() ?: run {
             _uiState.value = GroupCreateUiState.Error("Not signed in.")
             return
         }
-        val displayName = firebaseAuthService.currentUser()?.displayName
+        val creatorName = firebaseAuthService.currentUser()?.displayName
             ?: firebaseAuthService.currentUser()?.email
             ?: "Unknown"
 
@@ -142,49 +257,52 @@ class GroupChallengeCreateViewModel @Inject constructor(
         viewModelScope.launch {
             val result = createGroupChallengeUseCase(
                 creatorUserId = userId,
-                creatorDisplayName = displayName,
+                creatorDisplayName = creatorName,
                 appPackageNames = s.packageNames,
                 appDisplayName = s.displayName,
                 limitType = s.limitType,
-                limitValueMinutes = s.limitValueMinutes,
+                limitValueMinutes = when (s.limitType) {
+                    LimitType.TIME -> s.limitValueMinutes
+                    LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
+                    else -> s.limitValueMinutes
+                },
                 limitValueSessions = if (s.limitType == LimitType.SESSIONS) s.limitValueSessions else null,
                 sessionDurationMinutes = s.sessionMinutes,
                 durationDays = s.durationDays,
                 buyInCents = s.buyInEuros * 100,
-                maxParticipants = s.maxParticipants,
+                maxParticipants = MAX_PARTICIPANTS,
                 startDateMs = s.startDateMs,
-                bonusEnabled = s.bonusEnabled
+                bonusEnabled = s.bonusEnabled,
             )
             result.fold(
                 onSuccess = { data ->
-                    Timber.d("GroupChallengeCreateVM: CF succeeded groupId=%s code=%s — awaiting payment", data.groupId, data.code)
+                    Timber.d("GroupChallengeCreateVM: created groupId=%s code=%s", data.groupId, data.code)
                     _formState.update { it.copy(generatedCode = data.code) }
                     _uiState.value = GroupCreateUiState.AwaitingPayment(
                         groupId = data.groupId,
                         code = data.code,
-                        clientSecret = data.clientSecret
+                        clientSecret = data.clientSecret,
                     )
                 },
                 onFailure = { e ->
                     Timber.e(e, "GroupChallengeCreateVM: create failed")
-                    _uiState.value = GroupCreateUiState.Error(
-                        e.message ?: "Failed to create group challenge."
-                    )
-                }
+                    _uiState.value = GroupCreateUiState.Error(e.message ?: "Failed to create group challenge.")
+                },
             )
         }
     }
 
-    /** Called by the Screen when the Stripe PaymentSheet completes successfully. */
     fun onPaymentSuccess() {
         val state = _uiState.value as? GroupCreateUiState.AwaitingPayment ?: return
-        Timber.d("GroupChallengeCreateVM: creator payment confirmed — groupId=%s", state.groupId)
         _uiState.value = GroupCreateUiState.Created(groupId = state.groupId, code = state.code)
     }
 
-    /** Called by the Screen when the user cancels the PaymentSheet. */
     fun onPaymentCancelled() {
-        Timber.d("GroupChallengeCreateVM: creator payment cancelled")
-        _uiState.value = GroupCreateUiState.Error("Payment was cancelled. The group challenge was not created.")
+        _uiState.value = GroupCreateUiState.Error("Payment was cancelled.")
+    }
+
+    fun clearError() {
+        _formState.update { it.copy(genericError = null) }
+        _uiState.value = GroupCreateUiState.Idle
     }
 }

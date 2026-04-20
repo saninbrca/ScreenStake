@@ -2,38 +2,46 @@ package com.detox.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary — Electric Indigo (attention-grabbing, Gen Z aesthetic)
-val DetoxPrimary = Color(0xFF6C63FF)
-val DetoxPrimaryDark = Color(0xFF9D97FF)
-val DetoxPrimaryContainer = Color(0xFF1A1340)
-val DetoxOnPrimaryContainer = Color(0xFFE0DEFF)
+// Primary — Electric Green
+val DetoxPrimary = Color(0xFF00C853)
+val DetoxPrimaryVariant = Color(0xFF00A846)
+val DetoxPrimaryDark = Color(0xFF00E676)
+val DetoxPrimaryContainer = Color(0xFF003318)
+val DetoxOnPrimaryContainer = Color(0xFFD8FFE8)
 
-// Secondary — Neon Cyan (contrast accent)
-val DetoxSecondary = Color(0xFF00D9C0)
-val DetoxSecondaryDark = Color(0xFF5EFCE8)
-val DetoxSecondaryContainer = Color(0xFF003731)
-val DetoxOnSecondaryContainer = Color(0xFFC4FFF6)
+// Secondary — Dark accents
+val DetoxSecondary = Color(0xFF1A1A1A)
+val DetoxSecondaryDark = Color(0xFF424242)
+val DetoxSecondaryContainer = Color(0xFF212121)
+val DetoxOnSecondaryContainer = Color(0xFFF5F5F5)
 
-// Tertiary — Coral (warning/attention, used for Hard Mode)
-val DetoxTertiary = Color(0xFFFF6B6B)
-val DetoxTertiaryDark = Color(0xFFFFB3B3)
+// Semantic
+val DetoxSuccess = Color(0xFF00E676)
+val DetoxWarning = Color(0xFFFF6B35)
+val DetoxDanger = Color(0xFFFF3B30)
+
+// Tertiary (maps to Warning in Material3)
+val DetoxTertiary = Color(0xFFFF6B35)
+val DetoxTertiaryDark = Color(0xFFFFAB8A)
 
 // Error
-val DetoxError = Color(0xFFFF4444)
-val DetoxErrorDark = Color(0xFFFFB4AB)
+val DetoxError = Color(0xFFFF3B30)
+val DetoxErrorDark = Color(0xFFFF6B6B)
 
-// Backgrounds
-val DetoxBackgroundLight = Color(0xFFF8F7FF)
-val DetoxBackgroundDark = Color(0xFF0F0D1A)
-val DetoxSurfaceLight = Color(0xFFFFFFFF)
-val DetoxSurfaceDark = Color(0xFF1A1726)
+// Light theme backgrounds
+val DetoxBackgroundLight = Color(0xFFFFFFFF)
+val DetoxSurfaceLight = Color(0xFFF5F5F5)
+val DetoxOnBackgroundLight = Color(0xFF1A1A1A)
+val DetoxOnSurfaceLight = Color(0xFF1A1A1A)
+val DetoxTextSecondaryLight = Color(0xFF757575)
 
-// On colors
-val DetoxOnBackgroundLight = Color(0xFF1A1726)
-val DetoxOnBackgroundDark = Color(0xFFE8E5F0)
-val DetoxOnSurfaceLight = Color(0xFF1A1726)
-val DetoxOnSurfaceDark = Color(0xFFE8E5F0)
+// Dark theme backgrounds
+val DetoxBackgroundDark = Color(0xFF0F0F0F)
+val DetoxSurfaceDark = Color(0xFF1A1A1A)
+val DetoxOnBackgroundDark = Color(0xFFFFFFFF)
+val DetoxOnSurfaceDark = Color(0xFFFFFFFF)
+val DetoxTextSecondaryDark = Color(0xFF9E9E9E)
 
-// Status colors (used in app selection)
-val DetoxTrackableGreen = Color(0xFF4CAF50)
-val DetoxGrayedOut = Color(0xFF9E9E9E)
+// Status colors
+val DetoxTrackableGreen = Color(0xFF00C853)
+val DetoxGrayedOut = Color(0xFF757575)

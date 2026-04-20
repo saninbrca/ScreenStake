@@ -526,6 +526,11 @@
     <string name="settings_delete_all_data">Delete All My Data</string>
     <string name="settings_delete_all_data_subtitle">Permanently erase your account and all data</string>
 
+    <!-- Settings — Appearance section -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_dark_mode">Dark Mode</string>
+    <string name="settings_dark_mode_subtitle">Switch to dark theme</string>
+
     <!-- Settings — App Info section -->
     <string name="settings_section_app_info">App Info</string>
     <string name="settings_version">Version</string>

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -240,7 +241,20 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // ── 2. NOTIFICATIONS ───────────────────────────────────────────────
+            // ── 2. APPEARANCE ──────────────────────────────────────────────────
+            SectionHeader(stringResource(R.string.settings_section_appearance))
+
+            SwitchRow(
+                icon = Icons.Filled.DarkMode,
+                title = stringResource(R.string.settings_dark_mode),
+                subtitle = stringResource(R.string.settings_dark_mode_subtitle),
+                checked = state.darkModeEnabled,
+                onCheckedChange = { viewModel.setDarkModeEnabled(it) }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // ── 3. NOTIFICATIONS ───────────────────────────────────────────────
             SectionHeader(stringResource(R.string.settings_section_notifications))
 
             SwitchRow(
@@ -278,7 +292,7 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // ── 3. PERMISSIONS ─────────────────────────────────────────────────
+            // ── 4. PERMISSIONS ─────────────────────────────────────────────────
             SectionHeader(stringResource(R.string.settings_section_permissions))
 
             val allGranted = state.accessibilityGranted && state.overlayGranted && state.usageStatsGranted
@@ -339,7 +353,7 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // ── 4. PRIVACY ─────────────────────────────────────────────────────
+            // ── 5. PRIVACY ─────────────────────────────────────────────────────
             SectionHeader(stringResource(R.string.settings_section_privacy))
 
             SettingsRow(
@@ -393,7 +407,7 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // ── 5. APP INFO ────────────────────────────────────────────────────
+            // ── 6. APP INFO ────────────────────────────────────────────────────
             SectionHeader(stringResource(R.string.settings_section_app_info))
 
             SettingsRow(

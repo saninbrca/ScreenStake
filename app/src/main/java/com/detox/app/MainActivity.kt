@@ -2,6 +2,7 @@ package com.detox.app
 
 import android.app.AppOpsManager
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.Process
 import androidx.activity.ComponentActivity
@@ -18,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.presentation.navigation.DetoxNavGraph
 import com.detox.app.presentation.navigation.Screen
+import com.detox.app.presentation.screens.settings.KEY_DARK_MODE
 import com.detox.app.service.UsageTrackingService
 import com.detox.app.ui.theme.DetoxTheme
 import com.google.firebase.auth.FirebaseAuth
@@ -26,6 +28,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
+
+private const val PREFS_NAME = "detox_settings"
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -37,15 +41,26 @@ class MainActivity : ComponentActivity() {
     lateinit var firebaseAuth: FirebaseAuth
 
     private var startDestination by mutableStateOf<String?>(null)
+    private var isDarkMode by mutableStateOf(false)
+
+    private lateinit var prefs: SharedPreferences
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == KEY_DARK_MODE) {
+            isDarkMode = prefs.getBoolean(KEY_DARK_MODE, false)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        isDarkMode = prefs.getBoolean(KEY_DARK_MODE, false)
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+
         lifecycleScope.launch {
             startDestination = determineStartDestination()
 
-            // Start tracking service if there are active challenges
             val activeChallenges = challengeRepository.getActiveChallenges().first()
             if (activeChallenges.isNotEmpty()) {
                 UsageTrackingService.start(this@MainActivity)
@@ -53,7 +68,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            DetoxTheme {
+            DetoxTheme(darkTheme = isDarkMode) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     startDestination?.let { destination ->
                         val navController = rememberNavController()
@@ -67,18 +82,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+    }
+
     private suspend fun determineStartDestination(): String {
         val currentUser = firebaseAuth.currentUser
         Timber.d("determineStartDestination: FirebaseAuth.currentUser isNull=%s uid=%s",
             currentUser == null, currentUser?.uid)
 
-        // Gate 1: must be authenticated
         if (currentUser == null) {
             Timber.d("No authenticated user → Auth screen")
             return Screen.Auth.route
         }
 
-        // Gate 2: must have permissions granted
         if (!hasUsageStatsPermission()) {
             Timber.d("User authenticated but permissions missing → Onboarding")
             return Screen.Onboarding.route

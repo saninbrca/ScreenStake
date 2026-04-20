@@ -41,6 +41,7 @@ private const val KEY_DAILY_REMINDER_HOUR = "daily_reminder_hour"
 private const val KEY_DAILY_REMINDER_MINUTE = "daily_reminder_minute"
 private const val KEY_CHALLENGE_UPDATES = "challenge_updates_enabled"
 private const val KEY_FRIEND_ALERTS = "friend_alerts_enabled"
+const val KEY_DARK_MODE = "dark_mode_enabled"
 
 data class SettingsState(
     val displayName: String = "",
@@ -54,6 +55,7 @@ data class SettingsState(
     val accessibilityGranted: Boolean = false,
     val overlayGranted: Boolean = false,
     val usageStatsGranted: Boolean = false,
+    val darkModeEnabled: Boolean = false,
     val isLoading: Boolean = false,
     val showDeleteConfirmDialog: Boolean = false
 )
@@ -91,7 +93,8 @@ class SettingsViewModel @Inject constructor(
                 dailyReminderHour = prefs.getInt(KEY_DAILY_REMINDER_HOUR, 20),
                 dailyReminderMinute = prefs.getInt(KEY_DAILY_REMINDER_MINUTE, 0),
                 challengeUpdatesEnabled = prefs.getBoolean(KEY_CHALLENGE_UPDATES, true),
-                friendAlertsEnabled = prefs.getBoolean(KEY_FRIEND_ALERTS, true)
+                friendAlertsEnabled = prefs.getBoolean(KEY_FRIEND_ALERTS, true),
+                darkModeEnabled = prefs.getBoolean(KEY_DARK_MODE, false)
             )
         }
         refreshPermissions()
@@ -277,6 +280,11 @@ class SettingsViewModel @Inject constructor(
     fun setFriendAlertsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_FRIEND_ALERTS, enabled).apply()
         _state.update { it.copy(friendAlertsEnabled = enabled) }
+    }
+
+    fun setDarkModeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DARK_MODE, enabled).apply()
+        _state.update { it.copy(darkModeEnabled = enabled) }
     }
 
     // ── Data Export ────────────────────────────────────────────────────────────

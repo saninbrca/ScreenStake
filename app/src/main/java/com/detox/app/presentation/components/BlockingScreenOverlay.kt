@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.detox.app.R
@@ -33,6 +34,8 @@ import com.detox.app.domain.usecase.DailyLimitStatus
 @Composable
 fun BlockingScreenOverlay(
     status: DailyLimitStatus,
+    /** Current consecutive-day streak (before today). Hidden when 0. */
+    streak: Int = 0,
     onOpenAnyway: () -> Unit,
     onSkip: () -> Unit
 ) {
@@ -159,6 +162,19 @@ fun BlockingScreenOverlay(
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
+
+                // Streak badge — shown above buttons when streak > 0
+                if (streak > 0) {
+                    Text(
+                        text = stringResource(R.string.streak_display, streak),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 Button(
                     onClick = onSkip,

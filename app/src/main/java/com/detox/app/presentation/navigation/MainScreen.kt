@@ -27,9 +27,7 @@ import com.detox.app.R
 import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCreateViewModel
 import com.detox.app.presentation.screens.activechallenge.ActiveChallengeScreen
 import com.detox.app.presentation.screens.appselection.AppSelectionScreen
-import com.detox.app.presentation.screens.blockwebsite.BlockWebsiteScreen
-import com.detox.app.presentation.screens.challengesetup.ChallengeSetupScreen
-import com.detox.app.presentation.screens.challengetype.ChallengeTypeScreen
+import com.detox.app.presentation.screens.challengecreation.ChallengeCreationScreen
 import com.detox.app.presentation.screens.challenges.ChallengesScreen
 import com.detox.app.presentation.screens.dashboard.DashboardScreen
 import com.detox.app.presentation.screens.friends.FriendsHubScreen
@@ -93,7 +91,7 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             composable(BottomNavTab.Dashboard.route) {
                 DashboardScreen(
                     onAddChallenge = {
-                        navController.navigate("challenge_type")
+                        navController.navigate("challenge_creation")
                     },
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
@@ -108,7 +106,7 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             composable(BottomNavTab.Challenges.route) {
                 ChallengesScreen(
                     onAddChallenge = {
-                        navController.navigate("challenge_type")
+                        navController.navigate("challenge_creation")
                     },
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
@@ -139,79 +137,18 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                 )
             }
 
-            // ── Challenge Type picker ───────────────────────────────────────────
-            composable("challenge_type") {
-                ChallengeTypeScreen(
-                    onBlockApp = {
-                        navController.navigate("app_selection")
-                    },
-                    onBlockWebsite = {
-                        navController.navigate("block_website")
-                    }
-                )
-            }
-
-            // ── App Selection ───────────────────────────────────────────────────
-            composable("app_selection") {
-                AppSelectionScreen(
-                    onAppsSelected = { packages, displayName ->
-                        val encodedPackages = URLEncoder.encode(packages.joinToString(","), "UTF-8")
-                        val encodedName = URLEncoder.encode(displayName, "UTF-8")
-                        navController.navigate(
-                            "challenge_setup?blockingType=APP&packageNames=$encodedPackages&displayName=$encodedName"
-                        )
-                    }
-                )
-            }
-
-            // ── Block Website ───────────────────────────────────────────────────
-            composable("block_website") {
-                BlockWebsiteScreen(
-                    onContinue = { blockedDomains, blockAdultContent ->
-                        val encodedDomains = URLEncoder.encode(blockedDomains.joinToString(","), "UTF-8")
-                        navController.navigate(
-                            "challenge_setup?blockingType=WEBSITE&blockedDomains=$encodedDomains&blockAdultContent=$blockAdultContent"
-                        )
-                    }
-                )
-            }
-
-            // ── Challenge Setup ─────────────────────────────────────────────────
-            composable(
-                route = "challenge_setup?blockingType={blockingType}&packageNames={packageNames}&displayName={displayName}&blockedDomains={blockedDomains}&blockAdultContent={blockAdultContent}",
-                arguments = listOf(
-                    navArgument("blockingType") {
-                        type = NavType.StringType
-                        defaultValue = "APP"
-                    },
-                    navArgument("packageNames") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                        nullable = true
-                    },
-                    navArgument("displayName") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                        nullable = true
-                    },
-                    navArgument("blockedDomains") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                        nullable = true
-                    },
-                    navArgument("blockAdultContent") {
-                        type = NavType.StringType
-                        defaultValue = "false"
-                    }
-                )
-            ) {
-                ChallengeSetupScreen(
-                    onChallengeCreated = {
+            // ── Challenge Creation wizard ───────────────────────────────────────
+            composable("challenge_creation") {
+                ChallengeCreationScreen(
+                    onFinished = {
                         navController.navigate(BottomNavTab.Dashboard.route) {
-                            popUpTo("challenge_type") { inclusive = true }
+                            popUpTo("challenge_creation") { inclusive = true }
                             launchSingleTop = true
                         }
-                    }
+                    },
+                    onDiscarded = {
+                        navController.popBackStack()
+                    },
                 )
             }
 

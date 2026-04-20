@@ -18,6 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.detox.app.R
 import com.detox.app.domain.model.DailyStats
@@ -94,8 +96,11 @@ fun ChallengeCard(
                             )
                             LimitType.TIME_WINDOW -> stringResource(R.string.challenge_card_time_window_limit)
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -103,8 +108,13 @@ fun ChallengeCard(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
+                    // Sentinel: durationDays >= 3650 means "no end date"
+                    val daysLabel = if (dailyStats.daysRemaining > 3650)
+                        stringResource(R.string.challenge_card_no_end_date)
+                    else
+                        stringResource(R.string.challenge_card_days_remaining, dailyStats.daysRemaining)
                     Text(
-                        text = stringResource(R.string.challenge_card_days_remaining, dailyStats.daysRemaining),
+                        text = daysLabel,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -160,20 +170,13 @@ fun ChallengeCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
 
-            // Website blocking / adult content summary lines
-            if (dailyStats.blockedDomains.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.challenge_card_vpn_active),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+            // Adult-content shield badge
             if (dailyStats.blockAdultContent) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = stringResource(R.string.challenge_card_adult_blocked),
                     style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.error
                 )
             }

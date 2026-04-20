@@ -133,9 +133,11 @@ fun AppSelectionScreen(
                             // Trackable apps — selectable with checkbox
                             if (state.trackableApps.isNotEmpty()) {
                                 items(state.trackableApps, key = { it.packageName }) { app ->
+                                    val conflictName = state.conflictingPackages[app.packageName]
                                     SelectableAppRow(
                                         app = app,
                                         isSelected = selectedPackages.contains(app.packageName),
+                                        conflictChallengeName = conflictName,
                                         onToggle = { viewModel.toggleSelection(app.packageName) }
                                     )
                                 }
@@ -164,6 +166,9 @@ fun AppSelectionScreen(
             // Bottom "Next" bar
             val successState = uiState as? AppSelectionUiState.Success
             if (successState != null) {
+                val hasConflictSelected = selectedPackages.any {
+                    successState.conflictingPackages.containsKey(it)
+                }
                 HorizontalDivider()
                 Column(modifier = Modifier.padding(16.dp)) {
                     Button(
@@ -176,7 +181,7 @@ fun AppSelectionScreen(
                             onAppsSelected(packages, primaryName)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = selectedPackages.isNotEmpty()
+                        enabled = selectedPackages.isNotEmpty() && !hasConflictSelected
                     ) {
                         Text(
                             if (selectedPackages.isEmpty())
@@ -195,20 +200,32 @@ fun AppSelectionScreen(
 private fun SelectableAppRow(
     app: AppUsageInfo,
     isSelected: Boolean,
+    conflictChallengeName: String?,
     onToggle: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Checkbox(
-            checked = isSelected,
-            onCheckedChange = { onToggle() }
-        )
-        AppUsageCard(
-            appUsageInfo = app,
-            onClick = onToggle,
-            modifier = Modifier.weight(1f)
-        )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggle() },
+                enabled = conflictChallengeName == null
+            )
+            AppUsageCard(
+                appUsageInfo = app,
+                onClick = { if (conflictChallengeName == null) onToggle() },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (conflictChallengeName != null) {
+            Text(
+                text = stringResource(R.string.app_selection_already_in_challenge, conflictChallengeName),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)
+            )
+        }
     }
 }

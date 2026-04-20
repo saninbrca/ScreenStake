@@ -6,6 +6,7 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.di.ApplicationScope
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.ThresholdFlags
 import com.detox.app.domain.repository.DailyLogRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -167,6 +168,63 @@ class DailyLogRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getThresholdFlags(challengeId: String, date: Long): Result<ThresholdFlags> {
+        return try {
+            Result.success(
+                dailyLogDao.getThresholdFlags(challengeId, date) ?: ThresholdFlags()
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun markThresholdNotified(
+        challengeId: String,
+        date: Long,
+        threshold: Int
+    ): Result<Unit> {
+        return try {
+            // Ensure a row exists so the UPDATE below has a target.
+            // INSERT OR IGNORE: a no-op if the row already exists.
+            val existing = dailyLogDao.getLogForDate(challengeId, date)
+            if (existing == null) {
+                dailyLogDao.insertOrIgnore(
+                    DailyLogEntity(
+                        id = UUID.randomUUID().toString(),
+                        challengeId = challengeId,
+                        date = date,
+                        totalMinutes = 0,
+                        openCount = 0,
+                        pointsEarned = 0,
+                        limitExceeded = false,
+                        moneyLostCents = 0
+                    )
+                )
+            }
+            when (threshold) {
+                50 -> dailyLogDao.markNotified50(challengeId, date)
+                75 -> dailyLogDao.markNotified75(challengeId, date)
+                90 -> dailyLogDao.markNotified90(challengeId, date)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getStreakForChallenge(challengeId: String, beforeDate: Long): Result<Int> {
+        return try {
+            val flags = dailyLogDao.getRecentLimitExceededFlags(challengeId, beforeDate)
+            var streak = 0
+            for (exceeded in flags) {
+                if (!exceeded) streak++ else break
+            }
+            Result.success(streak)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun DailyLogEntity.toDomain(): DailyLog = DailyLog(
         id = id,
         challengeId = challengeId,
@@ -179,7 +237,10 @@ class DailyLogRepositoryImpl @Inject constructor(
         budgetRemainingMinutes = budgetRemainingMinutes,
         pointsEarned = pointsEarned,
         limitExceeded = limitExceeded,
-        moneyLostCents = moneyLostCents
+        moneyLostCents = moneyLostCents,
+        notified50 = notified50,
+        notified75 = notified75,
+        notified90 = notified90,
     )
 
     private fun DailyLog.toEntity(): DailyLogEntity = DailyLogEntity(
@@ -194,6 +255,9 @@ class DailyLogRepositoryImpl @Inject constructor(
         budgetRemainingMinutes = budgetRemainingMinutes,
         pointsEarned = pointsEarned,
         limitExceeded = limitExceeded,
-        moneyLostCents = moneyLostCents
+        moneyLostCents = moneyLostCents,
+        notified50 = notified50,
+        notified75 = notified75,
+        notified90 = notified90,
     )
 }

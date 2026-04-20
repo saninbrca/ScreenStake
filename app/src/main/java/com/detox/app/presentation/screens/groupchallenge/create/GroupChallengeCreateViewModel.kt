@@ -24,7 +24,7 @@ data class GroupCreateFormState(
     val limitValueSessions: Int = 5,
     val sessionMinutes: Int = 5,
     val durationDays: Int = 7,
-    val buyInEuros: Int = 5,           // 1–50
+    val buyInEuros: Int = 10,          // 10–50
     val maxParticipants: Int = 5,      // 2–20
     val startDateMs: Long = 0L,
     val bonusEnabled: Boolean = false,
@@ -34,6 +34,7 @@ data class GroupCreateFormState(
     // Errors
     val packageNamesError: String? = null,
     val startDateError: String? = null,
+    val buyInEurosError: String? = null,
     val genericError: String? = null
 )
 
@@ -75,7 +76,11 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun setLimitValueSessions(v: Int) = _formState.update { it.copy(limitValueSessions = v.coerceIn(1, 100)) }
     fun setSessionMinutes(v: Int) = _formState.update { it.copy(sessionMinutes = v.coerceIn(1, 60)) }
     fun setDurationDays(v: Int) = _formState.update { it.copy(durationDays = v.coerceIn(1, 30)) }
-    fun setBuyInEuros(v: Int) = _formState.update { it.copy(buyInEuros = v.coerceIn(1, 50)) }
+    fun setBuyInEuros(v: Int) {
+        val clamped = v.coerceIn(10, 50)
+        val error = if (clamped < 10) "Minimum buy-in is €10" else null
+        _formState.update { it.copy(buyInEuros = clamped, buyInEurosError = error) }
+    }
     fun setMaxParticipants(v: Int) = _formState.update { it.copy(maxParticipants = v.coerceIn(2, 20)) }
     fun setBonusEnabled(v: Boolean) = _formState.update { it.copy(bonusEnabled = v) }
     fun setShowBonusTooltip(v: Boolean) = _formState.update { it.copy(showBonusTooltip = v) }
@@ -107,6 +112,10 @@ class GroupChallengeCreateViewModel @Inject constructor(
         }
         if (s.startDateMs == 0L || s.startDateError != null) {
             _formState.update { it.copy(startDateError = "Pick a valid start date (≥ 24 h from now)") }
+            valid = false
+        }
+        if (s.buyInEuros < 10) {
+            _formState.update { it.copy(buyInEurosError = "Minimum buy-in is €10") }
             valid = false
         }
         return valid

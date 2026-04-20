@@ -9,10 +9,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material.icons.Icons
@@ -35,7 +35,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
@@ -59,13 +58,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.LimitType
+import com.detox.app.presentation.components.StepperField
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import com.stripe.android.paymentsheet.rememberPaymentSheet
@@ -262,20 +261,20 @@ private fun Step1Settings(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         // ── Apps to block ───────────────────────────────────────────────────────
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.group_create_apps_label),
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             if (formState.packageNames.isNotEmpty()) {
                 Text(
                     text = formState.displayName + if (formState.packageNames.size > 1)
                         " +${formState.packageNames.size - 1} more" else "",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -294,25 +293,30 @@ private fun Step1Settings(
         }
 
         // ── Limit type ──────────────────────────────────────────────────────────
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 text = stringResource(R.string.challenge_setup_limit_type),
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Horizontal scrollable row — chips never wrap/stack
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+            ) {
                 listOf(LimitType.TIME, LimitType.SESSIONS, LimitType.TIME_BUDGET).forEach { type ->
                     FilterChip(
                         selected = formState.limitType == type,
                         onClick = { onLimitTypeChange(type) },
                         label = {
                             Text(
-                                when (type) {
+                                text = when (type) {
                                     LimitType.TIME -> stringResource(R.string.challenge_setup_time_limit)
                                     LimitType.SESSIONS -> stringResource(R.string.challenge_setup_session_limit)
                                     LimitType.TIME_BUDGET -> stringResource(R.string.challenge_setup_budget_limit)
                                     else -> ""
-                                }
+                                },
+                                maxLines = 1
                             )
                         }
                     )
@@ -321,32 +325,29 @@ private fun Step1Settings(
 
             when (formState.limitType) {
                 LimitType.TIME, LimitType.TIME_BUDGET -> {
-                    Text(
-                        text = "${formState.limitValueMinutes} min/day",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(
-                        value = formState.limitValueMinutes.toFloat(),
-                        onValueChange = { onLimitMinutesChange(it.toInt()) },
-                        valueRange = 5f..240f,
-                        steps = 46,
+                    StepperField(
+                        value = formState.limitValueMinutes,
+                        onValueChange = onLimitMinutesChange,
+                        label = stringResource(R.string.challenge_setup_minutes_field_label),
+                        suffix = "min",
+                        min = 5,
+                        max = 240,
+                        step = 5,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
                 LimitType.SESSIONS -> {
-                    Text(
-                        text = "${formState.limitValueSessions} opens/day",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(
-                        value = formState.limitValueSessions.toFloat(),
-                        onValueChange = { onLimitSessionsChange(it.toInt()) },
-                        valueRange = 1f..20f,
-                        steps = 18,
+                    StepperField(
+                        value = formState.limitValueSessions,
+                        onValueChange = onLimitSessionsChange,
+                        label = stringResource(R.string.challenge_setup_sessions_count_label),
+                        suffix = "opens/day",
+                        min = 1,
+                        max = 20,
+                        step = 1,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                // TIME_WINDOW is not offered in group challenges — no slider needed
                 LimitType.TIME_WINDOW -> Unit
             }
         }
@@ -355,18 +356,17 @@ private fun Step1Settings(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.challenge_setup_duration),
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                text = stringResource(R.string.challenge_setup_days, formState.durationDays),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Slider(
-                value = formState.durationDays.toFloat(),
-                onValueChange = { onDurationChange(it.toInt()) },
-                valueRange = 1f..30f,
-                steps = 28,
+            StepperField(
+                value = formState.durationDays,
+                onValueChange = onDurationChange,
+                label = "Duration",
+                suffix = "days",
+                min = 1,
+                max = 30,
+                step = 1,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -375,18 +375,18 @@ private fun Step1Settings(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.group_create_buy_in_label),
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                text = "€${formState.buyInEuros} per player",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Slider(
-                value = formState.buyInEuros.toFloat(),
-                onValueChange = { onBuyInChange(it.toInt()) },
-                valueRange = 1f..50f,
-                steps = 48,
+            StepperField(
+                value = formState.buyInEuros,
+                onValueChange = onBuyInChange,
+                label = stringResource(R.string.group_create_buy_in_field_label),
+                suffix = "€",
+                min = 10,
+                max = 50,
+                step = 1,
+                error = formState.buyInEurosError,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -395,18 +395,17 @@ private fun Step1Settings(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.group_create_max_participants_label),
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                text = "${formState.maxParticipants} players max",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Slider(
-                value = formState.maxParticipants.toFloat(),
-                onValueChange = { onMaxParticipantsChange(it.toInt()) },
-                valueRange = 2f..20f,
-                steps = 17,
+            StepperField(
+                value = formState.maxParticipants,
+                onValueChange = onMaxParticipantsChange,
+                label = "Max players",
+                suffix = "players",
+                min = 2,
+                max = 20,
+                step = 1,
                 modifier = Modifier.fillMaxWidth()
             )
         }

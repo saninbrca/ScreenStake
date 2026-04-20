@@ -27,6 +27,9 @@ object NotificationHelper {
     private const val NOTIF_ID_DAILY_REMINDER    = 4001
     // Per-app IDs derived from package name hash so each app gets its own slot
     private const val NOTIF_ID_USAGE_80_BASE     = 5000
+    private const val NOTIF_ID_USAGE_50_BASE     = 5100
+    private const val NOTIF_ID_USAGE_75_BASE     = 5200
+    private const val NOTIF_ID_USAGE_90_BASE     = 5300
     private const val NOTIF_ID_DAY_CONGRATS_BASE = 6000
     private const val NOTIF_ID_GROUP_BASE        = 7000
 
@@ -221,6 +224,52 @@ object NotificationHelper {
             Timber.d("80%% usage notification posted for $appName")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping 80%% usage notification")
+        }
+    }
+
+    /**
+     * Fired by [UsageTrackingService] when an app reaches a usage threshold (50 / 75 / 90 %).
+     * Each threshold is posted with its own notification ID so they stack in the shade
+     * rather than replacing each other.
+     *
+     * @param appName  human-readable app name shown in the notification title
+     * @param percent  threshold that was crossed: 50, 75 or 90
+     */
+    fun sendUsageThreshold(context: Context, appName: String, percent: Int) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        val (title, body, notifIdBase) = when (percent) {
+            50 -> Triple(
+                context.getString(R.string.notif_usage_50_title, appName),
+                context.getString(R.string.notif_usage_threshold_body),
+                NOTIF_ID_USAGE_50_BASE
+            )
+            75 -> Triple(
+                context.getString(R.string.notif_usage_75_title, appName),
+                context.getString(R.string.notif_usage_threshold_body),
+                NOTIF_ID_USAGE_75_BASE
+            )
+            90 -> Triple(
+                context.getString(R.string.notif_usage_90_title, appName),
+                context.getString(R.string.notif_usage_threshold_body),
+                NOTIF_ID_USAGE_90_BASE
+            )
+            else -> return
+        }
+
+        val notifId = notifIdBase + appName.hashCode()
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Usage threshold notification posted: $percent%% for $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping usage threshold notification")
         }
     }
 

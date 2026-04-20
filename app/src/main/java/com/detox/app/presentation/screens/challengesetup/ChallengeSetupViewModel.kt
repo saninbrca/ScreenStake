@@ -25,22 +25,25 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
-/** Maps common app package names to their associated web domain. */
-val APP_DOMAIN_MAP = mapOf(
-    "com.instagram.android" to "instagram.com",
-    "com.zhiliaoapp.musically" to "tiktok.com",
-    "com.twitter.android" to "twitter.com",
-    "com.reddit.frontpage" to "reddit.com",
-    "com.facebook.katana" to "facebook.com",
-    "com.snapchat.android" to "snapchat.com",
-    "com.google.android.youtube" to "youtube.com",
-    "com.netflix.mediaclient" to "netflix.com",
-    "tv.twitch.android.app" to "twitch.tv",
-    "com.threads.android" to "threads.net",
-    "com.discord" to "discord.com",
-    "com.pinterest" to "pinterest.com",
-    "com.linkedin.android" to "linkedin.com",
+/** Maps common app package names to their associated web domains (may be multiple). */
+val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
+    "com.instagram.android" to listOf("instagram.com"),
+    "com.zhiliaoapp.musically" to listOf("tiktok.com"),
+    "com.twitter.android" to listOf("twitter.com", "x.com"),
+    "com.reddit.frontpage" to listOf("reddit.com"),
+    "com.facebook.katana" to listOf("facebook.com"),
+    "com.snapchat.android" to listOf("snapchat.com"),
+    "com.google.android.youtube" to listOf("youtube.com"),
+    "com.netflix.mediaclient" to listOf("netflix.com"),
+    "tv.twitch.android.app" to listOf("twitch.tv"),
+    "com.threads.android" to listOf("threads.net"),
+    "com.discord" to listOf("discord.com"),
+    "com.pinterest" to listOf("pinterest.com"),
+    "com.linkedin.android" to listOf("linkedin.com"),
 )
+
+/** Sentinel value for "no end date" in Soft Mode: 100 years ≈ forever. */
+const val NO_END_DATE_DAYS = 36500
 
 data class ChallengeSetupFormState(
     val blockingType: BlockingType = BlockingType.APP,
@@ -66,6 +69,8 @@ data class ChallengeSetupFormState(
     val sessionMinutes: Int = 5,
     val dailyBudgetMinutes: Int = 39,
     val durationDays: Int = 7,
+    /** Soft Mode only: if true, challenge runs indefinitely (durationDays is set to NO_END_DATE_DAYS). */
+    val noEndDate: Boolean = false,
     val motivationText: String = "",
     val mode: ChallengeMode = ChallengeMode.SOFT,
     val amountEuros: Int = 10,
@@ -74,6 +79,7 @@ data class ChallengeSetupFormState(
     val limitSessionsError: String? = null,
     val sessionMinutesError: String? = null,
     val dailyBudgetMinutesError: String? = null,
+    val durationDaysError: String? = null,
 )
 
 sealed interface ChallengeSetupUiState {
@@ -116,7 +122,7 @@ class ChallengeSetupViewModel @Inject constructor(
                 val packageNamesStr = savedStateHandle.get<String>("packageNames") ?: ""
                 val packages = packageNamesStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
                 val displayName = savedStateHandle.get<String>("displayName") ?: ""
-                // Build domain toggles: one entry per package that has a known domain
+                // Build domain toggles: one entry per package that has known domains
                 val toggles = packages
                     .filter { APP_DOMAIN_MAP.containsKey(it) }
                     .associate { it to true }
@@ -169,22 +175,12 @@ class ChallengeSetupViewModel @Inject constructor(
         _formState.update { it.copy(limitType = limitType) }
 
     fun updateDailyBudgetMinutes(minutes: Int) {
-        val avg = _formState.value.avgDailyMinutes
-        val error = when {
-            minutes < 1 -> context.getString(R.string.challenge_setup_error_min_budget)
-            avg > 0 && minutes >= avg -> context.getString(R.string.challenge_setup_error_max_minutes, avg)
-            else -> null
-        }
+        val error = if (minutes < 5) context.getString(R.string.challenge_setup_error_min_budget) else null
         _formState.update { it.copy(dailyBudgetMinutes = minutes, dailyBudgetMinutesError = error) }
     }
 
     fun updateLimitMinutes(minutes: Int) {
-        val avg = _formState.value.avgDailyMinutes
-        val error = when {
-            minutes < 5 -> context.getString(R.string.challenge_setup_error_min_minutes)
-            avg > 0 && minutes >= avg -> context.getString(R.string.challenge_setup_error_max_minutes, avg)
-            else -> null
-        }
+        val error = if (minutes < 5) context.getString(R.string.challenge_setup_error_min_minutes) else null
         _formState.update { it.copy(limitMinutes = minutes, limitMinutesError = error) }
     }
 
@@ -194,7 +190,7 @@ class ChallengeSetupViewModel @Inject constructor(
     }
 
     fun updateSessionMinutes(minutes: Int) {
-        val error = if (minutes < 5) context.getString(R.string.challenge_setup_error_min_session_mins) else null
+        val error = if (minutes < 1) context.getString(R.string.challenge_setup_error_min_session_mins) else null
         _formState.update { it.copy(sessionMinutes = minutes, sessionMinutesError = error) }
     }
 
@@ -209,9 +205,46 @@ class ChallengeSetupViewModel @Inject constructor(
         }
     }
 
-    fun updateDurationDays(days: Int) = _formState.update { it.copy(durationDays = days) }
+    fun updateDurationDays(days: Int) {
+        val mode = _formState.value.mode
+        val error = if (mode == ChallengeMode.HARD && days < 14)
+            context.getString(R.string.challenge_setup_error_hard_mode_min_days)
+        else null
+        _formState.update { it.copy(durationDays = days, durationDaysError = error) }
+    }
+
+    fun updateNoEndDate(enabled: Boolean) {
+        _formState.update { form ->
+            form.copy(
+                noEndDate = enabled,
+                durationDays = if (enabled) NO_END_DATE_DAYS else 7,
+                durationDaysError = null
+            )
+        }
+    }
+
     fun updateMotivationText(text: String) = _formState.update { it.copy(motivationText = text) }
-    fun updateMode(mode: ChallengeMode) = _formState.update { it.copy(mode = mode) }
+
+    fun updateMode(mode: ChallengeMode) {
+        _formState.update { form ->
+            val newDuration = if (mode == ChallengeMode.HARD) {
+                // Hard Mode: clear no-end-date, enforce minimum 14 days
+                maxOf(14, if (form.noEndDate) 14 else form.durationDays)
+            } else {
+                form.durationDays
+            }
+            val durationError = if (mode == ChallengeMode.HARD && newDuration < 14)
+                context.getString(R.string.challenge_setup_error_hard_mode_min_days)
+            else null
+            form.copy(
+                mode = mode,
+                noEndDate = if (mode == ChallengeMode.HARD) false else form.noEndDate,
+                durationDays = newDuration,
+                durationDaysError = durationError
+            )
+        }
+    }
+
     fun updateAmountEuros(euros: Int) = _formState.update { it.copy(amountEuros = euros) }
 
     // ── Domain toggles (APP mode) ───────────────────────────────────────────────
@@ -268,7 +301,7 @@ class ChallengeSetupViewModel @Inject constructor(
         when (form.blockingType) {
             BlockingType.APP -> {
                 form.domainToggles.forEach { (pkg, enabled) ->
-                    if (enabled) APP_DOMAIN_MAP[pkg]?.let { domains.add(it) }
+                    if (enabled) APP_DOMAIN_MAP[pkg]?.let { domains.addAll(it) }
                 }
             }
             BlockingType.WEBSITE -> {
@@ -297,6 +330,15 @@ class ChallengeSetupViewModel @Inject constructor(
         if (!validateLimitFields(form)) {
             _uiState.value = ChallengeSetupUiState.Error(
                 context.getString(R.string.challenge_setup_error_fix_limits)
+            )
+            return
+        }
+
+        // Hard Mode: enforce minimum 14 days
+        if (form.mode == ChallengeMode.HARD && form.durationDays < 14) {
+            _formState.update { it.copy(durationDaysError = context.getString(R.string.challenge_setup_error_hard_mode_min_days)) }
+            _uiState.value = ChallengeSetupUiState.Error(
+                context.getString(R.string.challenge_setup_error_hard_mode_min_days)
             )
             return
         }
@@ -346,13 +388,14 @@ class ChallengeSetupViewModel @Inject constructor(
         viewModelScope.launch {
             val (limitMinutes, limitSessions) = resolveLimitValues(form)
             val (schedStart, schedEnd, days) = resolveSchedule(form)
+            val effectiveDurationDays = if (form.noEndDate) NO_END_DATE_DAYS else form.durationDays
             createChallengeUseCase(
                 appPackageName = form.packageNames.firstOrNull(),
                 appDisplayName = buildDisplayName(form),
                 limitType = form.limitType,
                 limitValueMinutes = limitMinutes,
                 limitValueSessions = limitSessions,
-                durationDays = form.durationDays,
+                durationDays = effectiveDurationDays,
                 customMotivation = form.motivationText.ifBlank { null },
                 mode = ChallengeMode.SOFT,
                 dailyBudgetMinutes = if (form.limitType == LimitType.TIME_BUDGET) form.dailyBudgetMinutes else null,

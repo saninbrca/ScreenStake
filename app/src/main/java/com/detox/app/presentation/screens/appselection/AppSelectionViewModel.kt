@@ -3,6 +3,7 @@ package com.detox.app.presentation.screens.appselection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.domain.model.AppUsageInfo
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,7 +18,9 @@ sealed interface AppSelectionUiState {
     data object Loading : AppSelectionUiState
     data class Success(
         val trackableApps: List<AppUsageInfo>,
-        val nonTrackableApps: List<AppUsageInfo>
+        val nonTrackableApps: List<AppUsageInfo>,
+        /** packageName → challenge display name for packages already in an active challenge. */
+        val conflictingPackages: Map<String, String> = emptyMap()
     ) : AppSelectionUiState
     data class Error(val message: String) : AppSelectionUiState
     data object NoPermission : AppSelectionUiState
@@ -26,7 +29,8 @@ sealed interface AppSelectionUiState {
 @HiltViewModel
 class AppSelectionViewModel @Inject constructor(
     private val getAddictiveAppsUseCase: GetAddictiveAppsUseCase,
-    private val usageStatsRepository: UsageStatsRepository
+    private val usageStatsRepository: UsageStatsRepository,
+    private val challengeRepository: ChallengeRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AppSelectionUiState>(AppSelectionUiState.Loading)
@@ -43,11 +47,21 @@ class AppSelectionViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.value = AppSelectionUiState.Loading
+
+            // Build conflict map: packageName → challenge display name
+            val conflicts = mutableMapOf<String, String>()
+            challengeRepository.getActiveChallengesList().getOrNull()?.forEach { challenge ->
+                challenge.appPackageNames.forEach { pkg ->
+                    conflicts[pkg] = challenge.appDisplayName
+                }
+            }
+
             getAddictiveAppsUseCase().fold(
                 onSuccess = { result ->
                     _uiState.value = AppSelectionUiState.Success(
                         trackableApps = result.trackableApps,
-                        nonTrackableApps = result.nonTrackableApps
+                        nonTrackableApps = result.nonTrackableApps,
+                        conflictingPackages = conflicts
                     )
                 },
                 onFailure = { error ->

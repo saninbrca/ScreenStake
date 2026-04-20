@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.PaymentIntentData
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.usecase.JoinGroupChallengeUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +34,8 @@ sealed interface GroupJoinUiState {
 @HiltViewModel
 class GroupChallengeJoinViewModel @Inject constructor(
     private val joinGroupChallengeUseCase: JoinGroupChallengeUseCase,
-    private val firebaseAuthService: FirebaseAuthService
+    private val firebaseAuthService: FirebaseAuthService,
+    private val challengeRepository: ChallengeRepository
 ) : ViewModel() {
 
     private val _codeInput = MutableStateFlow("")
@@ -82,6 +84,20 @@ class GroupChallengeJoinViewModel @Inject constructor(
             ?: "Anonymous"
         _uiState.value = GroupJoinUiState.ProcessingPayment
         viewModelScope.launch {
+            // Check for app conflicts before proceeding
+            val activeChallenges = challengeRepository.getActiveChallengesList().getOrNull().orEmpty()
+            val activePackages = activeChallenges.flatMap { it.appPackageNames }.toSet()
+            val conflictingPkg = groupChallenge.appPackageNames.firstOrNull { it in activePackages }
+            if (conflictingPkg != null) {
+                val conflictName = activeChallenges
+                    .firstOrNull { it.appPackageNames.contains(conflictingPkg) }
+                    ?.appDisplayName ?: conflictingPkg
+                _uiState.value = GroupJoinUiState.Error(
+                    "Already in an active challenge: '$conflictName'. Abandon it before joining."
+                )
+                return@launch
+            }
+
             joinGroupChallengeUseCase.initiatePayment(groupChallenge.groupId, userId, displayName)
                 .fold(
                     onSuccess = { joinData ->

@@ -36,7 +36,10 @@
       "Read(//c/Users/sanin/AppData/Roaming/firebase/**)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d.get\\(''''users'''',{}\\).values\\(\\)\\)[0].get\\(''''access_token'''',''''NO TOKEN''''\\)[:50]\\)\")",
       "Bash(node -e \":*)",
-      "Bash(grep -E '\\\\.\\(kt|java\\)$')"
+      "Bash(grep -E '\\\\.\\(kt|java\\)$')",
+      "Bash(firebase functions:log --limit 50)",
+      "Bash(npm --version)",
+      "Bash(firebase functions:delete createPaymentIntent capturePayment cancelOrRefundPayment createGroupChallenge joinGroupChallenge startGroupChallenge failParticipant completeGroupChallenge --region us-central1 --force)"
     ]
   }
 }

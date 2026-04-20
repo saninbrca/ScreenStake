@@ -119,6 +119,30 @@ object TrackedAppEventBus {
         _packageSchedules.value = schedules
     }
 
+    // ── Overlay visibility ─────────────────────────────────────────────────────
+
+    /** True while any overlay is visible in the WindowManager. Set by [OverlayManager]. */
+    private val _overlayVisible = MutableStateFlow(false)
+    val overlayVisible: StateFlow<Boolean> = _overlayVisible.asStateFlow()
+
+    /**
+     * Fires when the home screen (launcher) comes to the foreground while an overlay is visible.
+     * Emitted by [AppDetectionAccessibilityService]; consumed by [OverlayManager] to dismiss.
+     */
+    private val _homeDetectedEvents = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val homeDetectedEvents: SharedFlow<Unit> = _homeDetectedEvents.asSharedFlow()
+
+    fun setOverlayVisible(visible: Boolean) {
+        _overlayVisible.value = visible
+    }
+
+    fun emitHomeDetected() {
+        _homeDetectedEvents.tryEmit(Unit)
+    }
+
     fun clearFreePackages() {
         _freedPackagesToday.value = emptySet()
         _freedDomainsToday.value = emptySet()

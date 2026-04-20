@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -54,6 +55,8 @@ fun SessionIntentionOverlay(
     lastSessionEndedAt: Long?,
     /** The challenge's custom motivation text, or the default "Stay strong!" string. */
     motivationText: String,
+    /** Current consecutive-day streak (before today). Hidden when 0. */
+    streak: Int = 0,
     onYes: () -> Unit,
     onNo: () -> Unit
 ) {
@@ -152,11 +155,22 @@ fun SessionIntentionOverlay(
                 }
             }
 
-            // ── Bottom: action buttons ─────────────────────────────────────────
+            // ── Bottom: streak badge + action buttons ──────────────────────────
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (streak > 0) {
+                    Text(
+                        text = stringResource(R.string.streak_display, streak),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 Button(
                     onClick = onNo,
                     modifier = Modifier.fillMaxWidth(),

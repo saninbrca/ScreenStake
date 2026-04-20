@@ -9,12 +9,13 @@
     "logs": "firebase functions:log"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
+
   },
   "main": "lib/index.js",
   "dependencies": {
-    "firebase-admin": "^13.7.0",
-    "firebase-functions": "^7.2.3",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.6.0",
     "stripe": "^14.21.0"
   },
   "devDependencies": {
@@ -23,3 +24,4 @@
   },
   "private": true
 }
+

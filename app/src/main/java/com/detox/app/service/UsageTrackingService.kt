@@ -12,7 +12,9 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.detox.app.R
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.ThresholdFlags
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +27,14 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Calendar
 import javax.inject.Inject
+
+private data class ThresholdSpec(val percent: Int, val fraction: Float)
+
+private val USAGE_THRESHOLDS = listOf(
+    ThresholdSpec(50, 0.50f),
+    ThresholdSpec(75, 0.75f),
+    ThresholdSpec(90, 0.90f),
+)
 
 @AndroidEntryPoint
 class UsageTrackingService : Service() {
@@ -52,11 +62,10 @@ class UsageTrackingService : Service() {
     @Inject
     lateinit var usageStatsRepository: UsageStatsRepository
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    @Inject
+    lateinit var dailyLogRepository: DailyLogRepository
 
-    // Tracks which apps have already had their 80% notification fired today
-    // so we don't spam the user. Cleared at midnight along with the overlay state.
-    private val alerted80PercentApps = mutableSetOf<String>()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super.onCreate()
@@ -102,7 +111,6 @@ class UsageTrackingService : Service() {
 
         overlayManager.startListening(serviceScope)
         startUsagePolling()
-        scheduleMidnightAlertReset()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -118,22 +126,23 @@ class UsageTrackingService : Service() {
         Timber.d("UsageTrackingService destroyed")
     }
 
-    // ── 80% usage polling ──────────────────────────────────────────────────────
+    // ── Threshold usage polling ────────────────────────────────────────────────
 
     /**
-     * Checks every 15 minutes whether any active challenge has reached 80% of
-     * its daily limit.  Fires [NotificationHelper.sendUsage80Percent] at most
-     * once per app per calendar day — the [alerted80PercentApps] set is cleared
-     * at midnight by [scheduleMidnightAlertReset].
+     * Polls every 15 minutes to check whether any active TIME / TIME_BUDGET /
+     * SESSIONS challenge has crossed the 50 %, 75 %, or 90 % usage mark.
      *
-     * 15-minute granularity is a good trade-off: fine enough that the user gets
-     * warned before they hit 100%, coarse enough to avoid unnecessary wakeups.
-     * WorkManager is NOT used here because we need live access to the
-     * [UsageStatsRepository] already injected into the foreground service.
+     * "Fire once per day per threshold" is guaranteed by persisting the seen
+     * flags in [daily_logs] (notified50 / notified75 / notified90).  Because
+     * the flags are keyed by challengeId + calendar-day midnight timestamp they
+     * reset automatically the next day — no midnight coroutine needed.
+     *
+     * 15-minute granularity: fine enough that the user gets the 90 % warning
+     * before they hit 100 %, coarse enough to avoid excessive wakeups.
      */
     private fun startUsagePolling() {
         serviceScope.launch(Dispatchers.IO) {
-            Timber.d("UsageTrackingService: 80%% usage polling started (15-min interval)")
+            Timber.d("UsageTrackingService: threshold polling started (15-min interval, thresholds: 50/75/90%%)")
             while (isActive) {
                 delay(15 * 60 * 1_000L) // 15 minutes
                 checkUsageThresholds()
@@ -142,6 +151,8 @@ class UsageTrackingService : Service() {
     }
 
     private suspend fun checkUsageThresholds() {
+        val today = todayMidnightMs()
+
         val challenges = runCatching {
             challengeRepository.getActiveChallengesList().getOrThrow()
         }.getOrElse { e ->
@@ -150,17 +161,13 @@ class UsageTrackingService : Service() {
         }
 
         for (challenge in challenges) {
-            val appPkg = challenge.appPackageName ?: continue  // WEBSITE challenges have no package
-
-            if (alerted80PercentApps.contains(appPkg)) continue
+            val appPkg = challenge.appPackageName ?: continue  // WEBSITE-only challenges have no package
 
             val usage = runCatching {
                 usageStatsRepository.getTodayUsageForApp(appPkg)
             }.onFailure { e ->
                 Timber.w(e, "UsageTrackingService: could not get usage for $appPkg")
-            }.getOrNull()
-
-            if (usage == null) continue
+            }.getOrNull() ?: continue
 
             val usedFraction = when (challenge.limitType) {
                 LimitType.TIME -> {
@@ -172,51 +179,60 @@ class UsageTrackingService : Service() {
                     val maxSessions = challenge.limitValueSessions ?: 0
                     if (maxSessions > 0) usage.opens.toFloat() / maxSessions else 0f
                 }
-                // TIME_BUDGET: UsageStats minutes approximate budget consumption for 80% warning
                 LimitType.TIME_BUDGET -> {
                     val budget = challenge.dailyBudgetMinutes ?: 0
                     if (budget > 0) usage.minutes.toFloat() / budget else 0f
                 }
-                // TIME_WINDOW has no usage cap — 80% threshold never applies
+                // TIME_WINDOW has no usage cap — thresholds never apply
                 LimitType.TIME_WINDOW -> 0f
             }
 
+            if (usedFraction <= 0f) continue
+
             Timber.d(
-                "UsageTrackingService: ${challenge.appDisplayName} usage fraction = " +
-                        "${"%.0f".format(usedFraction * 100)}%%"
+                "UsageTrackingService: ${challenge.appDisplayName} " +
+                        "usage = ${"%.0f".format(usedFraction * 100)}%%"
             )
 
-            if (usedFraction >= 0.8f) {
-                Timber.d(
-                    "UsageTrackingService: 80%% threshold reached for " +
-                            "${challenge.appDisplayName} — posting notification"
-                )
-                NotificationHelper.createChannels(applicationContext)
-                NotificationHelper.sendUsage80Percent(applicationContext, challenge.appDisplayName)
-                alerted80PercentApps.add(appPkg)
+            // Read today's notification flags from DailyLog (persisted across restarts)
+            val flags = runCatching {
+                dailyLogRepository.getThresholdFlags(challenge.id, today).getOrThrow()
+            }.getOrElse { ThresholdFlags() }
+
+            // Check each threshold in ascending order so we post at most one new
+            // notification per poll cycle per challenge (the lowest unnotified one).
+            for ((percent, triggerFraction) in USAGE_THRESHOLDS) {
+                val alreadyNotified = when (percent) {
+                    50 -> flags.notified50
+                    75 -> flags.notified75
+                    else -> flags.notified90
+                }
+                if (!alreadyNotified && usedFraction >= triggerFraction) {
+                    Timber.d(
+                        "UsageTrackingService: $percent%% threshold reached for " +
+                                "${challenge.appDisplayName} — posting notification"
+                    )
+                    NotificationHelper.createChannels(applicationContext)
+                    NotificationHelper.sendUsageThreshold(
+                        applicationContext, challenge.appDisplayName, percent
+                    )
+                    dailyLogRepository.markThresholdNotified(challenge.id, today, percent)
+                    // Update local copy of flags so subsequent thresholds in THIS loop
+                    // iteration use the freshly updated state (avoids double-posting
+                    // 75 % immediately after 50 % in the same poll cycle).
+                    break
+                }
             }
         }
     }
 
-    /** Clears [alerted80PercentApps] at the stroke of midnight so the warning
-     *  can fire again the next day. */
-    private fun scheduleMidnightAlertReset() {
-        serviceScope.launch {
-            while (isActive) {
-                val now = System.currentTimeMillis()
-                val midnight = Calendar.getInstance().apply {
-                    add(Calendar.DAY_OF_MONTH, 1)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }.timeInMillis
-                delay(midnight - now)
-                Timber.d("UsageTrackingService: midnight — clearing 80%% alert set")
-                alerted80PercentApps.clear()
-            }
-        }
-    }
+    /** Returns the Unix timestamp for today's local midnight (00:00:00.000). */
+    private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(

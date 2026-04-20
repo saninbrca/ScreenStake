@@ -42,6 +42,7 @@
     <string name="app_selection_grant_permission">Grant Permission</string>
     <string name="app_selection_select_hint">Select at least one app</string>
     <string name="app_selection_next">Next (%1$d selected)</string>
+    <string name="app_selection_already_in_challenge">Already in an active challenge: \'%1$s\'</string>
 
     <!-- Challenge Setup -->
     <string name="challenge_setup_title">Set Up Challenge</string>
@@ -63,10 +64,13 @@
     <string name="challenge_setup_error_min_minutes">Minimum 5 minutes</string>
     <string name="challenge_setup_error_max_minutes">Must be below your average (%1$d min/day)</string>
     <string name="challenge_setup_error_min_sessions">Minimum 1 session</string>
-    <string name="challenge_setup_error_min_session_mins">Minimum 5 minutes per session</string>
+    <string name="challenge_setup_error_min_session_mins">Minimum 1 minute per session</string>
     <string name="challenge_setup_error_fix_limits">Please fix the highlighted fields before starting</string>
-    <string name="challenge_setup_error_min_budget">Budget must be at least 1 minute</string>
+    <string name="challenge_setup_error_min_budget">Minimum 5 minutes</string>
+    <string name="challenge_setup_error_hard_mode_min_days">Hard Mode requires minimum 14 days</string>
     <string name="challenge_setup_budget_field_label">Daily budget (minutes)</string>
+    <string name="challenge_setup_duration_field_label">Duration</string>
+    <string name="challenge_setup_no_end_date">No end date</string>
     <string name="challenge_setup_budget_summary">%1$s: choose your session duration each time, up to %2$d min/day total</string>
     <string name="challenge_setup_duration">Duration</string>
     <string name="challenge_setup_days">%1$d days</string>
@@ -87,6 +91,7 @@
     <string name="challenge_card_time_limit">Max %1$d min/day</string>
     <string name="challenge_card_session_limit">Max %1$d opens/day, %2$d min each</string>
     <string name="challenge_card_days_remaining">%1$d days left</string>
+    <string name="challenge_card_no_end_date">No end date</string>
     <string name="challenge_card_time_progress">%1$d of %2$d min</string>
     <string name="challenge_card_session_progress">%1$d of %2$d opens</string>
     <string name="challenge_card_points_today">+%1$d pts today</string>
@@ -102,8 +107,10 @@
     <!-- Limit Exceeded Overlay -->
     <string name="limit_exceeded_title">Limit Reached</string>
     <string name="limit_exceeded_message">You\'ve reached your limit. Do you really want to continue and risk your points?</string>
-    <string name="limit_exceeded_continue">Yes, continue</string>
-    <string name="limit_exceeded_stop">No, I\'ll stop</string>
+    <string name="limit_exceeded_continue">Continue anyway</string>
+    <string name="limit_exceeded_stop">Stay strong 💪</string>
+    <string name="limit_exceeded_time_used">%1$d / %2$d min used today</string>
+    <string name="streak_display">🔥 %1$d day streak</string>
 
     <!-- Notification -->
     <string name="notification_channel_name">Usage Tracking</string>
@@ -131,9 +138,15 @@
     <string name="notif_daily_reminder_title">Check your progress 📊</string>
     <string name="notif_daily_reminder_body">Don\'t forget to check your progress today</string>
 
-    <!-- 80% usage warning -->
+    <!-- 80% usage warning (legacy — kept for reference, superseded by 50/75/90 thresholds) -->
     <string name="notif_usage_80_title">Almost at your limit — %1$s</string>
     <string name="notif_usage_80_body">You\'ve used 80%% of your daily limit. Stay strong!</string>
+
+    <!-- Usage threshold warnings: 50 / 75 / 90 % -->
+    <string name="notif_usage_50_title">⚠️ Halfway through your limit for %1$s</string>
+    <string name="notif_usage_75_title">⚠️ 75%% of your limit used for %1$s</string>
+    <string name="notif_usage_90_title">🚨 Almost at your limit for %1$s!</string>
+    <string name="notif_usage_threshold_body">Stay strong — you\'ve got this!</string>
 
     <!-- Successful-day congratulations (from DailyEvaluationWorker) -->
     <string name="notif_day_congrats_title">Great job today! 🎉</string>
@@ -168,6 +181,7 @@
     <string name="active_challenge_mode_hard">HARD MODE</string>
     <string name="active_challenge_amount_at_stake">€%.2f at stake</string>
     <string name="active_challenge_end_date">Ends: %1$s</string>
+    <string name="active_challenge_adult_blocked">Adult content blocking active</string>
     <string name="active_challenge_abandon">Abandon Challenge</string>
     <string name="active_challenge_abandon_confirm_title">Abandon Challenge?</string>
     <string name="active_challenge_abandon_confirm_message">This will end the challenge without awarding points. You cannot undo this.</string>
@@ -180,7 +194,7 @@
     <!-- Limit Exceeded Overlay — Hard Mode -->
     <string name="limit_exceeded_hard_title">You\'ll lose €%.2f!</string>
     <string name="limit_exceeded_hard_message">Your daily limit is up. If you continue, your money will be charged immediately and the app will be locked for the rest of the day.</string>
-    <string name="limit_exceeded_hard_continue">Yes, lose my money</string>
+    <string name="limit_exceeded_hard_continue">Continue anyway</string>
     <!-- Hard Mode Lockout Overlay -->
     <string name="lockout_title">🔒 Locked for Today</string>
     <string name="lockout_subtitle">You exceeded your limit for %1$s. The app is locked until midnight.</string>
@@ -291,8 +305,7 @@
     <!-- Challenge Card — TIME_WINDOW + VPN/adult status lines -->
     <string name="challenge_card_time_window_limit">Time window only</string>
     <string name="challenge_card_time_window_progress">%1$d min used</string>
-    <string name="challenge_card_vpn_active">Website blocking: VPN active</string>
-    <string name="challenge_card_adult_blocked">Adult content: fully blocked</string>
+    <string name="challenge_card_adult_blocked">🛡️ Adult content blocked</string>
 
     <!-- Challenge Setup — TIME_WINDOW limit type -->
     <string name="challenge_setup_time_window_limit">Time Window</string>
@@ -340,10 +353,10 @@
     <string name="block_website_continue">Continue</string>
 
     <!-- Website Blocked Overlay -->
-    <string name="website_blocked_title">Website Blocked</string>
-    <string name="website_blocked_message">This site is blocked by your active challenge. Stay strong!</string>
+    <string name="website_blocked_title">🚫 Website blocked</string>
     <string name="website_blocked_go_back">Go back</string>
-    <string name="website_blocked_visit_anyway">Visit anyway (free for today)</string>
+    <string name="website_blocked_stay_strong">Stay strong 💪</string>
+    <string name="website_blocked_challenge_label">Part of your %1$s challenge</string>
 
     <!-- Budget Selection Overlay (TIME_BUDGET Stage 1) -->
     <string name="budget_overlay_title">Opening %1$s</string>
@@ -374,6 +387,8 @@
     <string name="group_create_apps_select">Select Apps…</string>
     <string name="group_create_apps_change">Change Apps</string>
     <string name="group_create_buy_in_label">Buy-In Per Player</string>
+    <string name="group_create_buy_in_field_label">Min. €10 per player</string>
+    <string name="group_create_buy_in_error">Minimum buy-in is €10</string>
     <string name="group_create_max_participants_label">Max Participants</string>
     <string name="group_create_start_date_label">Start Date (must be tomorrow or later)</string>
     <string name="group_create_start_date_hint">Pick a date…</string>
@@ -448,12 +463,6 @@
     <string name="notif_vpn_paused_title">Website blocking paused</string>
     <string name="notif_vpn_paused_text">Tap to restart website protection</string>
 
-    <!-- Profile — VPN status -->
-    <string name="profile_vpn_status">VPN Status</string>
-    <string name="profile_vpn_active">Active</string>
-    <string name="profile_vpn_inactive">Inactive</string>
-    <string name="profile_vpn_restart">Restart</string>
-
     <!-- Group Challenge — Detail screen -->
     <string name="group_detail_total_pot">Total pot: €%1$d</string>
     <string name="group_detail_share_code">Share Code</string>
@@ -468,6 +477,9 @@
     <string name="notif_group_completed_success_body">You completed the %1$s group challenge! €%2$d is being refunded.</string>
     <string name="notif_group_completed_failed_title">Challenge Over</string>
     <string name="notif_group_completed_failed_body">The %1$s group challenge has ended. Better luck next time!</string>
+
+    <!-- Challenge Setup — schedule time validation -->
+    <string name="challenge_setup_schedule_time_error">End time must be after start time</string>
 
     <!-- Settings screen -->
     <string name="settings_title">Settings</string>

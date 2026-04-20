@@ -76,23 +76,6 @@ fun AppUsageCard(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Row {
-                    Text(
-                        text = stringResource(R.string.app_selection_avg_daily_time, appUsageInfo.avgDailyMinutes),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "  \u2022  ",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = stringResource(R.string.app_selection_avg_daily_opens, appUsageInfo.avgDailyOpens),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))

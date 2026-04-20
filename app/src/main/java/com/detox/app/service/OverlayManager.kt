@@ -2,6 +2,7 @@ package com.detox.app.service
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
@@ -23,6 +24,7 @@ import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
@@ -53,11 +55,22 @@ class OverlayManager @Inject constructor(
     private val paymentRepository: PaymentRepository,
     private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
-    private val usageStatsRepository: UsageStatsRepository
+    private val usageStatsRepository: UsageStatsRepository,
+    private val challengeRepository: ChallengeRepository
 ) {
 
+    companion object {
+        const val SESSION_PREFS_NAME = "detox_session_timers"
+        const val SESSION_END_KEY_PREFIX = "session_end_"
+    }
+
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private val sessionPrefs: SharedPreferences =
+        context.getSharedPreferences(SESSION_PREFS_NAME, Context.MODE_PRIVATE)
     private var currentOverlayView: View? = null
+
+    /** True while an overlay is added to the WindowManager. Exposed for cross-component checks. */
+    val isOverlayVisible: Boolean get() = currentOverlayView != null
     private var listeningJob: Job? = null
     private val exceededAppsToday = mutableSetOf<String>()
 
@@ -133,6 +146,7 @@ class OverlayManager @Inject constructor(
 
     fun startListening(scope: CoroutineScope) {
         serviceScope = scope
+        restorePersistedSessionTimers(scope)
         listeningJob = scope.launch {
             TrackedAppEventBus.appOpenEvents.collect { packageName ->
                 handleAppOpen(packageName, scope)
@@ -146,17 +160,25 @@ class OverlayManager @Inject constructor(
             }
         }
 
-        // Cancel session and budget timers if the user navigates away from the tracked app
+        // Home button detected while overlay is visible — dismiss overlay (user chose to go home)
+        scope.launch {
+            TrackedAppEventBus.homeDetectedEvents.collect {
+                if (isOverlayVisible) {
+                    Timber.d("Overlay visible=$isOverlayVisible, hiding=home_button")
+                    dismissOverlay("home_button")
+                }
+            }
+        }
+
+        // Cancel budget timer if user navigates away; session timer persists across foreground changes
         foregroundListenerJob = scope.launch {
             TrackedAppEventBus.currentForegroundPackage.collect { current ->
                 val timed = sessionTimerPackage
                 if (timed != null && current != timed) {
                     Timber.d(
                         "OverlayManager: $timed left foreground (now: $current) " +
-                                "— cancelling session timer"
+                                "— session timer continues running in background"
                     )
-                    lastSessionEndedAt[timed] = System.currentTimeMillis()
-                    cancelSessionTimer()
                 }
                 val budgetTimed = budgetTimerPackage
                 if (budgetTimed != null && current != budgetTimed) {
@@ -194,7 +216,10 @@ class OverlayManager @Inject constructor(
     // ── Core dispatch ──────────────────────────────────────────────────────────
 
     private suspend fun handleAppOpen(packageName: String, scope: CoroutineScope) {
-        if (currentOverlayView != null) return
+        if (isOverlayVisible) {
+            Timber.d("Overlay visible=$isOverlayVisible, skipping new overlay for $packageName")
+            return
+        }
 
         // App freed for the rest of the day — user already accepted the consequence
         if (TrackedAppEventBus.freedPackagesToday.value.contains(packageName)) {
@@ -251,6 +276,16 @@ class OverlayManager @Inject constructor(
         val challenge = status.challenge
         val packageName = (challenge.appPackageName ?: "")
 
+        // If the user is returning to the app while a session is still running, let them in.
+        // Primary guard lives in AppDetectionAccessibilityService; this is the defensive fallback
+        // for paths that arrive here without going through the service (e.g. timer expiry re-check).
+        val sessionEndTime = sessionPrefs.getLong("$SESSION_END_KEY_PREFIX$packageName", 0L)
+        if (sessionEndTime > System.currentTimeMillis()) {
+            val remaining = sessionEndTime - System.currentTimeMillis()
+            Timber.d("User returned to $packageName, session remaining: ${remaining}ms")
+            return
+        }
+
         // After a Soft Mode failure the app opens freely for the rest of the day
         if (failedSessionAppsToday.contains(packageName)) {
             Timber.d("OverlayManager: session already failed for $packageName today — no overlay")
@@ -283,7 +318,7 @@ class OverlayManager @Inject constructor(
     }
 
     /** Stage 1 — Intention Check: shown on every conscious open while limit not yet reached. */
-    private fun showSessionIntentionOverlay(
+    private suspend fun showSessionIntentionOverlay(
         status: DailyLimitStatus,
         confirmedOpens: Int,
         scope: CoroutineScope
@@ -303,6 +338,8 @@ class OverlayManager @Inject constructor(
                     "\"$motivationText\" (custom=${challenge.customMotivation})"
         )
 
+        val streak = getStreak(challenge.id)
+
         val composeView = createSessionComposeView(
             onBack = {
                 Timber.d(
@@ -321,6 +358,7 @@ class OverlayManager @Inject constructor(
                     maxOpens = maxOpens,
                     lastSessionEndedAt = lastSessionEndedAt[(challenge.appPackageName ?: "")],
                     motivationText = motivationText,
+                    streak = streak,
                     onYes = {
                         val newCount =
                             consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0) + 1
@@ -375,7 +413,7 @@ class OverlayManager @Inject constructor(
     }
 
     /** Stage 2 — Limit Reached: shown when conscious opens have reached the daily limit. */
-    private fun showSessionLimitReachedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
+    private suspend fun showSessionLimitReachedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
         val isHard = challenge.mode == ChallengeMode.HARD
         val confirmedOpens = consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0)
@@ -384,6 +422,8 @@ class OverlayManager @Inject constructor(
                     "— $confirmedOpens/${challenge.limitValueSessions} conscious opens, " +
                     "mode=${challenge.mode}"
         )
+
+        val streak = getStreak(challenge.id)
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -401,6 +441,7 @@ class OverlayManager @Inject constructor(
                     appName = challenge.appDisplayName,
                     challengeMode = challenge.mode,
                     amountCents = challenge.amountCents,
+                    streak = streak,
                     onYesLose = {
                         Timber.d(
                             "OverlayManager: Stage 2 'Yes, I accept' tapped " +
@@ -486,13 +527,25 @@ class OverlayManager @Inject constructor(
         cancelSessionTimer()
         sessionTimerPackage = packageName
         val durationMs = durationMinutes * 60_000L
-        Timber.d("OverlayManager: session timer started for $packageName ($durationMinutes min)")
+        val endTimestamp = System.currentTimeMillis() + durationMs
+        sessionPrefs.edit().putLong("$SESSION_END_KEY_PREFIX$packageName", endTimestamp).apply()
+        Timber.d("OverlayManager: session timer started for $packageName ($durationMinutes min, ends at $endTimestamp)")
 
         sessionTimerJob = scope.launch {
-            delay(durationMs)
+            var remaining = endTimestamp - System.currentTimeMillis()
+            while (remaining > 0) {
+                val tick = minOf(remaining, 60_000L)
+                delay(tick)
+                remaining = endTimestamp - System.currentTimeMillis()
+                if (remaining > 0) {
+                    Timber.d("Session timer: ${remaining}ms remaining for $packageName")
+                }
+            }
+
             Timber.d("OverlayManager: session timer expired for $packageName")
             lastSessionEndedAt[packageName] = System.currentTimeMillis()
             sessionTimerPackage = null
+            sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$packageName").apply()
 
             if (currentOverlayView != null) {
                 Timber.d("OverlayManager: overlay already showing on timer expiry — skipping re-show")
@@ -515,7 +568,7 @@ class OverlayManager @Inject constructor(
                 }
             } else {
                 Timber.d(
-                    "OverlayManager: $packageName not in foreground on timer expiry — no re-show"
+                    "OverlayManager: $packageName not in foreground on timer expiry — overlay will show on next open"
                 )
             }
         }
@@ -526,8 +579,68 @@ class OverlayManager @Inject constructor(
             Timber.d("OverlayManager: session timer cancelled for $sessionTimerPackage")
             it.cancel()
         }
+        sessionTimerPackage?.let { pkg ->
+            sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$pkg").apply()
+        }
         sessionTimerJob = null
         sessionTimerPackage = null
+    }
+
+    /**
+     * On service (re)start, check SharedPreferences for any previously persisted session timer.
+     * If the end timestamp is still in the future, reschedule the coroutine with the remaining delay.
+     * If it already expired, the overlay will show naturally when the user next opens the tracked app.
+     */
+    private fun restorePersistedSessionTimers(scope: CoroutineScope) {
+        val now = System.currentTimeMillis()
+        val allPrefs = sessionPrefs.all
+        for ((key, value) in allPrefs) {
+            if (key.startsWith(SESSION_END_KEY_PREFIX) && value is Long) {
+                val packageName = key.removePrefix(SESSION_END_KEY_PREFIX)
+                val endTimestamp = value
+                val remaining = endTimestamp - now
+                if (remaining > 0) {
+                    Timber.d(
+                        "OverlayManager: restoring session timer for $packageName " +
+                                "(${remaining}ms remaining)"
+                    )
+                    sessionTimerPackage = packageName
+                    sessionTimerJob = scope.launch {
+                        var rem = endTimestamp - System.currentTimeMillis()
+                        while (rem > 0) {
+                            val tick = minOf(rem, 60_000L)
+                            delay(tick)
+                            rem = endTimestamp - System.currentTimeMillis()
+                            if (rem > 0) {
+                                Timber.d("Session timer: ${rem}ms remaining for $packageName")
+                            }
+                        }
+                        Timber.d("OverlayManager: restored session timer expired for $packageName")
+                        lastSessionEndedAt[packageName] = System.currentTimeMillis()
+                        sessionTimerPackage = null
+                        sessionPrefs.edit().remove(key).apply()
+
+                        val currentForeground = TrackedAppEventBus.currentForegroundPackage.value
+                        if (currentForeground == packageName && currentOverlayView == null) {
+                            val result = checkDailyLimitUseCase(packageName)
+                            if (result.isSuccess) handleSessionLimitApp(result.getOrThrow(), scope)
+                        } else {
+                            Timber.d(
+                                "OverlayManager: $packageName not in foreground after restored " +
+                                        "timer expiry — overlay will show on next open"
+                            )
+                        }
+                    }
+                } else {
+                    Timber.d(
+                        "OverlayManager: persisted session timer for $packageName already expired " +
+                                "(${-remaining}ms ago) — clearing"
+                    )
+                    sessionPrefs.edit().remove(key).apply()
+                    lastSessionEndedAt[packageName] = endTimestamp
+                }
+            }
+        }
     }
 
     /**
@@ -844,16 +957,35 @@ class OverlayManager @Inject constructor(
 
     // ── Website blocking overlay ───────────────────────────────────────────────
 
-    private fun showWebsiteBlockedOverlay(domain: String) {
+    private suspend fun showWebsiteBlockedOverlay(domain: String) {
         if (currentOverlayView != null) return
-        val composeView = createComposeView {
+
+        // Find which active challenge is responsible for blocking this domain
+        val challenges = challengeRepository.getActiveChallengesList().getOrElse { emptyList() }
+        val blockingChallenge = challenges.firstOrNull { domain in it.blockedDomains }
+
+        // Streak: how many consecutive completed days (before today) the user hasn't exceeded
+        val streak = blockingChallenge?.let { challenge ->
+            dailyLogRepository.getStreakForChallenge(challenge.id, todayMidnightMs()).getOrElse { 0 }
+        } ?: 0
+
+        val motivationText = blockingChallenge?.customMotivation?.takeIf { it.isNotBlank() }
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                dismissOverlay()
+                goHome()
+            }
+        ) {
             DetoxTheme {
                 com.detox.app.presentation.components.WebsiteBlockedOverlay(
                     domain = domain,
-                    onGoBack = { dismissOverlay() },
-                    onVisitAnyway = {
-                        TrackedAppEventBus.markDomainFreeForToday(domain)
+                    challengeName = blockingChallenge?.appDisplayName,
+                    streak = streak,
+                    motivationText = motivationText,
+                    onGoBack = {
                         dismissOverlay()
+                        goHome()
                     }
                 )
             }
@@ -862,17 +994,25 @@ class OverlayManager @Inject constructor(
     }
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
-        val composeView = createComposeView {
+        val streak = getStreak(status.challenge.id)
+        val composeView = createSessionComposeView(
+            onBack = {
+                analyticsService.logBlockingScreenAction("back_button")
+                dismissOverlay("back")
+                goHome()
+            }
+        ) {
             DetoxTheme {
                 BlockingScreenOverlay(
                     status = status,
+                    streak = streak,
                     onOpenAnyway = {
                         analyticsService.logBlockingScreenAction("opened_anyway")
-                        dismissOverlay()
+                        dismissOverlay("open_anyway")
                     },
                     onSkip = {
                         analyticsService.logBlockingScreenAction("skipped")
-                        dismissOverlay()
+                        dismissOverlay("skip")
                         goHome()
                     }
                 )
@@ -883,16 +1023,25 @@ class OverlayManager @Inject constructor(
 
     // ── Limit-exceeded overlay (time-limit challenges only) ────────────────────
 
-    private fun showLimitExceededOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
+    private suspend fun showLimitExceededOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
         val isHard = challenge.mode == ChallengeMode.HARD
+        val streak = getStreak(challenge.id)
 
-        val composeView = createComposeView {
+        val composeView = createSessionComposeView(
+            onBack = {
+                dismissOverlay("back")
+                goHome()
+            }
+        ) {
             DetoxTheme {
                 LimitExceededOverlay(
                     appName = challenge.appDisplayName,
                     challengeMode = challenge.mode,
                     amountCents = challenge.amountCents,
+                    todayMinutes = status.todayMinutes,
+                    limitMinutes = challenge.limitValueMinutes,
+                    streak = streak,
                     onContinue = {
                         if (isHard && challenge.stripePaymentIntentId != null) {
                             scope.launch { captureAndLock(status, scope) }
@@ -1000,13 +1149,18 @@ class OverlayManager @Inject constructor(
     }
 
     private fun showHardModeLockoutDirect(info: LockedAppInfo, scope: CoroutineScope) {
-        val composeView = createComposeView {
+        val composeView = createSessionComposeView(
+            onBack = {
+                dismissOverlay("back")
+                goHome()
+            }
+        ) {
             DetoxTheme {
                 HardModeLockoutOverlay(
                     appName = info.appName,
                     amountCents = info.amountCents,
                     onExitHome = {
-                        dismissOverlay()
+                        dismissOverlay("exit_home")
                         goHome()
                     }
                 )
@@ -1055,6 +1209,9 @@ class OverlayManager @Inject constructor(
             TrackedAppEventBus.clearFreePackages()
             sessionTimerJob?.cancel()
             sessionTimerJob = null
+            sessionTimerPackage?.let { pkg ->
+                sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$pkg").apply()
+            }
             sessionTimerPackage = null
             budgetTimerJob?.cancel()
             budgetTimerJob = null
@@ -1123,7 +1280,7 @@ class OverlayManager @Inject constructor(
      * - [challengeId] is used to attribute overlay-visible time for screen-time correction
      */
     private fun showOverlay(view: ComposeView, challengeId: String? = null) {
-        if (currentOverlayView != null) return
+        if (isOverlayVisible) return
 
         currentOverlayChallengeId = challengeId
         currentOverlayShownAt = System.currentTimeMillis()
@@ -1139,8 +1296,9 @@ class OverlayManager @Inject constructor(
         try {
             windowManager.addView(view, params)
             currentOverlayView = view
+            TrackedAppEventBus.setOverlayVisible(true)
             view.requestFocus()
-            Timber.d("OverlayManager: overlay shown (opaque, focusable, challengeId=$challengeId)")
+            Timber.d("Overlay visible=true, showing (challengeId=$challengeId)")
         } catch (e: Exception) {
             Timber.e(e, "OverlayManager: failed to show overlay")
         }
@@ -1150,7 +1308,9 @@ class OverlayManager @Inject constructor(
     private fun showSessionOverlay(view: ComposeView, challengeId: String? = null) =
         showOverlay(view, challengeId)
 
-    private fun dismissOverlay() {
+    private fun dismissOverlay(reason: String = "") {
+        val wasVisible = isOverlayVisible
+        Timber.d("Overlay visible=$wasVisible, hiding=${reason.ifEmpty { "unknown" }}")
         currentOverlayView?.let { view ->
             try {
                 windowManager.removeView(view)
@@ -1158,6 +1318,7 @@ class OverlayManager @Inject constructor(
                 Timber.e(e, "Failed to dismiss overlay")
             }
             currentOverlayView = null
+            TrackedAppEventBus.setOverlayVisible(false)
         }
 
         // Persist the duration this overlay was visible so usage-time calculations
@@ -1191,6 +1352,13 @@ class OverlayManager @Inject constructor(
         }
         context.startActivity(homeIntent)
     }
+
+    /**
+     * Returns the current streak for [challengeId]: consecutive completed days (before today)
+     * where the limit was NOT exceeded.  Returns 0 on any error.
+     */
+    private suspend fun getStreak(challengeId: String): Int =
+        dailyLogRepository.getStreakForChallenge(challengeId, todayMidnightMs()).getOrElse { 0 }
 
     private fun todayMidnightMs(): Long {
         return Calendar.getInstance().apply {

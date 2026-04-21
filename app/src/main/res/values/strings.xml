@@ -81,7 +81,11 @@
 
     <!-- Dashboard -->
     <string name="dashboard_title">Your Challenges</string>
+    <string name="dashboard_active_count">%d active challenges</string>
     <string name="dashboard_empty">No active challenges yet. Start one to take control of your screen time!</string>
+    <string name="dashboard_empty_title">No active challenges</string>
+    <string name="dashboard_empty_subtitle">Take control of your screen time and build better habits.</string>
+    <string name="dashboard_start_first">Start your first challenge 🚀</string>
     <string name="dashboard_add_challenge">Add Challenge</string>
 
     <!-- Points -->
@@ -219,6 +223,12 @@
     <string name="profile_logout_confirm_message">This will sign you out and clear your local data.</string>
     <string name="profile_logout_confirm_yes">Log Out</string>
     <string name="profile_logout_confirm_no">Cancel</string>
+    <string name="profile_member_since">Member since %1$s</string>
+    <string name="profile_stat_streak_label">Current streak</string>
+    <string name="profile_stat_completed_label">Challenges done</string>
+    <string name="profile_stat_apps_label">Apps blocked</string>
+    <string name="profile_active_challenges">Active Challenges</string>
+    <string name="profile_view_all">View all →</string>
 
     <!-- Challenges screen -->
     <string name="challenges_title">Challenges</string>
@@ -478,6 +488,10 @@
     <string name="notif_group_completed_failed_title">Challenge Over</string>
     <string name="notif_group_completed_failed_body">The %1$s group challenge has ended. Better luck next time!</string>
 
+    <!-- Group Challenge — manual start reminder notification -->
+    <string name="notif_group_start_reminder_title">Your group challenge hasn\'t started yet</string>
+    <string name="notif_group_start_reminder_body">Tap to start when everyone has joined</string>
+
     <!-- Challenge Setup — schedule time validation -->
     <string name="challenge_setup_schedule_time_error">End time must be after start time</string>
 
@@ -533,6 +547,7 @@
 
     <!-- Settings — App Info section -->
     <string name="settings_section_app_info">App Info</string>
+    <string name="settings_section_debug">Developer</string>
     <string name="settings_version">Version</string>
     <string name="settings_rate_app">Rate the App</string>
     <string name="settings_send_feedback">Send Feedback</string>

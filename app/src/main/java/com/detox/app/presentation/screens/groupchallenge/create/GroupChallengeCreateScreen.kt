@@ -100,7 +100,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -212,9 +211,11 @@ fun GroupChallengeCreateScreen(
                         onBuyInChange = viewModel::setBuyInEuros,
                     )
                     5 -> Step5StartDateAndBonus(
+                        startDateEnabled = formState.startDateEnabled,
                         startDateMs = formState.startDateMs,
                         startDateError = formState.startDateError,
                         bonusEnabled = formState.bonusEnabled,
+                        onStartDateEnabledToggle = viewModel::setStartDateEnabled,
                         onStartDateChange = viewModel::setStartDate,
                         onBonusToggle = viewModel::setBonusEnabled,
                     )
@@ -429,21 +430,19 @@ private fun GroupAppGridItem(
     onToggle: () -> Unit,
     dimmed: Boolean = false,
 ) {
-    val borderColor = when {
-        conflictChallengeName != null -> MaterialTheme.colorScheme.error
-        isSelected -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.outlineVariant
-    }
+    val isBusy = conflictChallengeName != null
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.outlineVariant
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .border(
-                width = if (isSelected || conflictChallengeName != null) 2.dp else 1.dp,
+                width = if (isSelected) 2.dp else 1.dp,
                 color = borderColor,
                 shape = MaterialTheme.shapes.small,
             )
-            .alpha(if (dimmed) 0.45f else 1f)
-            .clickable(enabled = !dimmed && conflictChallengeName == null, onClick = onToggle),
+            .alpha(if (dimmed || isBusy) 0.4f else 1f)
+            .clickable(enabled = !dimmed && !isBusy, onClick = onToggle),
         shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected)
@@ -503,7 +502,7 @@ private fun GroupAppGridItem(
                 Text(
                     text = "busy",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -767,7 +766,9 @@ private fun Step3LimitAndDuration(
             else -> Unit
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
         HorizontalDivider()
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "Duration",
@@ -864,26 +865,16 @@ private fun Step4BuyIn(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Step5StartDateAndBonus(
+    startDateEnabled: Boolean,
     startDateMs: Long,
     startDateError: String?,
     bonusEnabled: Boolean,
+    onStartDateEnabledToggle: (Boolean) -> Unit,
     onStartDateChange: (Long) -> Unit,
     onBonusToggle: (Boolean) -> Unit,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-    val tomorrowUtcMidnight = remember {
-        Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = tomorrowUtcMidnight,
-        selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis >= tomorrowUtcMidnight
-        },
-    )
+    val datePickerState = rememberDatePickerState()
     val sdf = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
 
     if (showDatePicker) {
@@ -916,28 +907,52 @@ private fun Step5StartDateAndBonus(
             fontWeight = FontWeight.Bold,
         )
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // ── Set start date toggle ────────────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
             Text(
-                text = "Start Date (tomorrow or later)",
+                text = "Set start date",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            OutlinedButton(
-                onClick = { showDatePicker = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+            Switch(checked = startDateEnabled, onCheckedChange = onStartDateEnabledToggle)
+        }
+
+        if (!startDateEnabled) {
+            Text(
+                text = "Challenge will start manually — tap \"Start Challenge\" in the group screen when everyone has joined.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (startDateEnabled) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (startDateMs > 0L) sdf.format(Date(startDateMs))
-                    else "Pick a date…"
+                    text = "Start Date",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
                 )
-            }
-            if (startDateError != null) {
-                Text(
-                    text = startDateError,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text(
+                        if (startDateMs > 0L) sdf.format(Date(startDateMs))
+                        else "Pick a date…"
+                    )
+                }
+                if (startDateError != null) {
+                    Text(
+                        text = startDateError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
 
@@ -1049,7 +1064,13 @@ private fun Step6Review(
                 ReviewRow("Limit", limitSummary)
                 ReviewRow("Duration", "${formState.durationDays} days")
                 ReviewRow("Buy-in", "€${formState.buyInEuros} per player")
-                ReviewRow("Start date", if (formState.startDateMs > 0L) sdf.format(Date(formState.startDateMs)) else "—")
+                ReviewRow(
+                    "Start",
+                    if (formState.startDateEnabled && formState.startDateMs > 0L)
+                        sdf.format(Date(formState.startDateMs))
+                    else
+                        "Manual start 🚀"
+                )
                 ReviewRow("Winner bonus", if (formState.bonusEnabled) "Enabled (10% of pot)" else "Disabled")
                 ReviewRow("Max players", "20")
 

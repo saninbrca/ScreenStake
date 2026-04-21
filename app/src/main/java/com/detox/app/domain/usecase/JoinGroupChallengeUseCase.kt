@@ -40,7 +40,7 @@ class JoinGroupChallengeUseCase @Inject constructor(
                 Result.failure(IllegalStateException("This challenge has already started or ended."))
             gc.participants.size >= gc.maxParticipants ->
                 Result.failure(IllegalStateException("This challenge is full (${gc.maxParticipants}/${gc.maxParticipants})."))
-            System.currentTimeMillis() >= gc.startDate ->
+            gc.startDate > 0L && System.currentTimeMillis() >= gc.startDate ->
                 Result.failure(IllegalStateException("The join window for this challenge has closed."))
             else -> Result.success(gc)
         }

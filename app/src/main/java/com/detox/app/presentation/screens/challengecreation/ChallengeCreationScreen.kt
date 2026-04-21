@@ -13,6 +13,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -311,7 +313,8 @@ private fun WizardHeader(
             progress = { progress },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(4.dp),
+                .height(6.dp),
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -326,13 +329,12 @@ private fun Step1ModeSelection(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
             text = "Choose your mode",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -340,7 +342,6 @@ private fun Step1ModeSelection(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(modifier = Modifier.height(4.dp))
 
         ModeCard(
             emoji = "🎯",
@@ -379,6 +380,7 @@ private fun ModeCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 100.dp)
             .border(width = 2.dp, color = borderColor, shape = MaterialTheme.shapes.medium)
             .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.medium,
@@ -393,20 +395,20 @@ private fun ModeCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = emoji, fontSize = 20.sp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = emoji, fontSize = 28.sp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -511,7 +513,7 @@ private fun AppsTabContent(
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(
                 text = "Select apps to track",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -719,7 +721,7 @@ private fun WebsitesTabContent(
     ) {
         Text(
             text = "Block websites",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -823,18 +825,16 @@ private fun AppGridItem(
     onToggle: () -> Unit,
     dimmed: Boolean = false,
 ) {
-    val borderColor = when {
-        conflictChallengeName != null -> MaterialTheme.colorScheme.error
-        isSelected -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.outlineVariant
-    }
+    val isBusy = conflictChallengeName != null
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.outlineVariant
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .border(width = if (isSelected || conflictChallengeName != null) 2.dp else 1.dp, color = borderColor, shape = MaterialTheme.shapes.small)
-            .alpha(if (dimmed) 0.45f else 1f)
-            .clickable(enabled = !dimmed && conflictChallengeName == null, onClick = onToggle),
+            .border(width = if (isSelected) 2.dp else 1.dp, color = borderColor, shape = MaterialTheme.shapes.small)
+            .alpha(if (dimmed || isBusy) 0.4f else 1f)
+            .clickable(enabled = !dimmed && !isBusy, onClick = onToggle),
         shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected)
@@ -894,7 +894,7 @@ private fun AppGridItem(
                 Text(
                     text = "busy",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -917,7 +917,7 @@ private fun Step3LimitType(
     ) {
         Text(
             text = "Set a limit type",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -988,20 +988,20 @@ private fun LimitTypeCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = emoji, fontSize = 20.sp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = emoji, fontSize = 24.sp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
                 )
                 Text(
                     text = description,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1036,7 +1036,7 @@ private fun Step4LimitValues(
     ) {
         Text(
             text = "Set your limit",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
 
@@ -1213,7 +1213,7 @@ private fun Step5Schedule(
     ) {
         Text(
             text = if (isRequired) "Set allowed hours" else "Usage schedule (optional)",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -1257,15 +1257,29 @@ private fun Step5Schedule(
         }
 
         Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             ALL_DAYS.forEach { day ->
-                FilterChip(
-                    selected = activeDays.contains(day),
-                    onClick = { onToggleDay(day) },
-                    label = { Text(DAY_LABELS[day] ?: day) },
-                )
+                val isSelected = activeDays.contains(day)
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onToggleDay(day) },
+                    shape = MaterialTheme.shapes.small,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        text = DAY_LABELS[day] ?: day,
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
 
@@ -1350,7 +1364,7 @@ private fun Step6Duration(
     ) {
         Text(
             text = "Challenge duration",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
 
@@ -1391,6 +1405,11 @@ private fun Step6Duration(
                 Switch(
                     checked = state.noEndDate,
                     onCheckedChange = onToggleNoEndDate,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        checkedBorderColor = MaterialTheme.colorScheme.primary,
+                    )
                 )
             }
         }
@@ -1445,7 +1464,7 @@ private fun Step7Confirm(
     ) {
         Text(
             text = "Review & start",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
 

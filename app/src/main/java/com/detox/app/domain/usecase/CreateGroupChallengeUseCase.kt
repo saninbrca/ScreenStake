@@ -1,12 +1,9 @@
 package com.detox.app.domain.usecase
 
 import com.detox.app.data.remote.firebase.CloudFunctionsService
-import com.detox.app.domain.model.GroupChallenge
-import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.GroupChallengeRepository
 import timber.log.Timber
-import java.util.Calendar
 import java.util.UUID
 import javax.inject.Inject
 
@@ -74,14 +71,6 @@ class CreateGroupChallengeUseCase @Inject constructor(
         if (maxParticipants !in 2..20) {
             return Result.failure(IllegalArgumentException("Participants must be between 2 and 20."))
         }
-        val tomorrowMidnight = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        if (startDateMs < tomorrowMidnight) {
-            return Result.failure(IllegalArgumentException("Start date must be tomorrow or later."))
-        }
         if (limitType != LimitType.TIME_BUDGET && limitValueMinutes <= 0) {
             return Result.failure(IllegalArgumentException("Time limit must be greater than 0."))
         }
@@ -123,31 +112,9 @@ class CreateGroupChallengeUseCase @Inject constructor(
         val creationData = cfResult.getOrThrow()
         val finalCode = creationData.code
 
-        // Save a minimal local copy so the detail screen can show something even if
-        // Firestore replication is slow. Participants list will be filled by the snapshot listener.
-        val groupChallenge = GroupChallenge(
-            groupId = groupId,
-            code = finalCode,
-            creatorUserId = creatorUserId,
-            appPackageNames = appPackageNames,
-            appDisplayName = appDisplayName,
-            limitType = limitType,
-            limitValueMinutes = limitValueMinutes,
-            limitValueSessions = limitValueSessions,
-            sessionDurationMinutes = sessionDurationMinutes,
-            durationDays = durationDays,
-            buyInCents = buyInCents,
-            maxParticipants = maxParticipants,
-            startDate = startDateMs,
-            endDate = endDateMs,
-            bonusEnabled = bonusEnabled,
-            status = GroupChallengeStatus.WAITING,
-            participants = emptyList()
-        )
-        groupChallengeRepository.saveGroupChallenge(groupChallenge)
-            .onFailure { Timber.w(it, "CreateGroupChallengeUseCase: local save failed (non-fatal)") }
-
         // Fetch the server-authoritative version (Source.SERVER) to populate Room
+        // NOTE: do NOT call saveGroupChallenge here — it would overwrite the Firestore document
+        // with participants=[] and erase the creator entry added by the Cloud Function.
         Timber.d("Group created: $groupId — fetching from Firestore")
         groupChallengeRepository.fetchAndCacheById(groupId)
             .onSuccess { fetched ->

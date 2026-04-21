@@ -204,4 +204,13 @@ class CloudFunctionsService @Inject constructor(
         Timber.e(e, "completeGroupChallenge failed — groupId=%s", groupId)
         Result.failure(e)
     }
+
+    suspend fun cancelGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("cancelGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("cancelGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "cancelGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
 }

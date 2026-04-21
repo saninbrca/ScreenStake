@@ -16,7 +16,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import com.detox.app.data.remote.firebase.CloudFunctionsService
+import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.presentation.navigation.DetoxNavGraph
 import com.detox.app.presentation.navigation.Screen
 import com.detox.app.presentation.screens.settings.KEY_DARK_MODE
@@ -36,6 +39,12 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var challengeRepository: ChallengeRepository
+
+    @Inject
+    lateinit var groupChallengeRepository: GroupChallengeRepository
+
+    @Inject
+    lateinit var cloudFunctionsService: CloudFunctionsService
 
     @Inject
     lateinit var firebaseAuth: FirebaseAuth
@@ -65,6 +74,10 @@ class MainActivity : ComponentActivity() {
             if (activeChallenges.isNotEmpty()) {
                 UsageTrackingService.start(this@MainActivity)
             }
+
+            if (firebaseAuth.currentUser != null) {
+                autoStartGroupChallenges()
+            }
         }
 
         setContent {
@@ -85,6 +98,47 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    private suspend fun autoStartGroupChallenges() {
+        val userId = firebaseAuth.currentUser?.uid ?: return
+        val now = System.currentTimeMillis()
+        try {
+            groupChallengeRepository.getGroupChallenges().first()
+                .filter { it.status == GroupChallengeStatus.WAITING && it.startDate > 0L && it.startDate <= now }
+                .forEach { gc ->
+                    if (gc.participants.size >= 2) {
+                        cloudFunctionsService.startGroupChallenge(gc.groupId)
+                            .onSuccess {
+                                Timber.d("Auto-started group challenge: %s", gc.groupId)
+                                groupChallengeRepository.syncGroupChallengeToLocalTracking(gc, userId)
+                                    .onSuccess {
+                                        Timber.d(
+                                            "Group challenge %s started → synced to Room as ChallengeEntity",
+                                            gc.groupId
+                                        )
+                                    }
+                                    .onFailure { e ->
+                                        Timber.e(e, "Auto-start sync failed for group: %s", gc.groupId)
+                                    }
+                            }
+                            .onFailure { e -> Timber.e(e, "Auto-start failed for group: %s", gc.groupId) }
+                    } else {
+                        Timber.d("Auto-cancel group %s — only %d participant(s)", gc.groupId, gc.participants.size)
+                        cloudFunctionsService.cancelGroupChallenge(gc.groupId)
+                            .onSuccess {
+                                Timber.d("Auto-cancelled group challenge: %s", gc.groupId)
+                                com.detox.app.service.NotificationHelper.createChannels(this)
+                                com.detox.app.service.NotificationHelper.sendGroupChallengeCancelled(
+                                    this, gc.appDisplayName
+                                )
+                            }
+                            .onFailure { e -> Timber.e(e, "Auto-cancel failed for group: %s", gc.groupId) }
+                    }
+                }
+        } catch (e: Exception) {
+            Timber.e(e, "autoStartGroupChallenges failed")
+        }
     }
 
     private suspend fun determineStartDestination(): String {

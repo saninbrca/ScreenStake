@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,15 +26,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +61,16 @@ fun GroupChallengeDetailScreen(
     viewModel: GroupChallengeDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val startState by viewModel.startState.collectAsStateWithLifecycle()
+    val currentUserId = viewModel.currentUserId
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(startState) {
+        if (startState is StartChallengeState.Error) {
+            snackbarHostState.showSnackbar((startState as StartChallengeState.Error).message)
+            viewModel.clearStartError()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -72,7 +89,8 @@ fun GroupChallengeDetailScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         when (val state = uiState) {
             GroupDetailUiState.Loading -> {
@@ -101,6 +119,9 @@ fun GroupChallengeDetailScreen(
             is GroupDetailUiState.Success -> {
                 GroupDetailContent(
                     gc = state.groupChallenge,
+                    currentUserId = currentUserId,
+                    isStarting = startState is StartChallengeState.Loading,
+                    onStartChallenge = viewModel::startChallenge,
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -109,7 +130,13 @@ fun GroupChallengeDetailScreen(
 }
 
 @Composable
-private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier) {
+private fun GroupDetailContent(
+    gc: GroupChallenge,
+    currentUserId: String?,
+    isStarting: Boolean,
+    onStartChallenge: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
     val context = LocalContext.current
 
@@ -188,12 +215,18 @@ private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier
                     val dateInfo = when {
                         gc.status == GroupChallengeStatus.ACTIVE && daysLeft > 0 -> "$daysLeft days remaining"
                         gc.status == GroupChallengeStatus.WAITING -> {
-                            val diffMs = gc.startDate - System.currentTimeMillis()
-                            if (diffMs > 0) {
-                                val d = TimeUnit.MILLISECONDS.toDays(diffMs)
-                                val h = TimeUnit.MILLISECONDS.toHours(diffMs) % 24
-                                "Starts in ${d}d ${h}h"
-                            } else "Starts ${sdf.format(Date(gc.startDate))}"
+                            if (gc.startDate == 0L) {
+                                "Manual start — waiting for creator"
+                            } else {
+                                val diffMs = gc.startDate - System.currentTimeMillis()
+                                if (diffMs > 0) {
+                                    val d = TimeUnit.MILLISECONDS.toDays(diffMs)
+                                    val h = TimeUnit.MILLISECONDS.toHours(diffMs) % 24
+                                    "Starts in ${d}d ${h}h"
+                                } else {
+                                    "Starts ${sdf.format(Date(gc.startDate))}"
+                                }
+                            }
                         }
                         else -> "Ended ${sdf.format(Date(gc.endDate))}"
                     }
@@ -216,16 +249,44 @@ private fun GroupDetailContent(gc: GroupChallenge, modifier: Modifier = Modifier
                         )
                     }
 
-                    // Waiting state: participant count + needs info
+                    // Waiting state: participant count + start button for creator
                     if (gc.status == GroupChallengeStatus.WAITING) {
                         val joined = gc.participants.size
                         val max = gc.maxParticipants
                         Text(
-                            text = "$joined/$max joined${if (joined < 2) " — needs at least 2 to start" else ""}",
+                            text = "$joined/$max players joined",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (joined < 2) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+
+                        if (gc.creatorUserId == currentUserId) {
+                            val canStart = joined >= 2
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(
+                                onClick = onStartChallenge,
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = canStart && !isStarting,
+                            ) {
+                                if (isStarting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                } else {
+                                    Text("Start Challenge 🚀")
+                                }
+                            }
+                            if (!canStart) {
+                                Text(
+                                    text = "Need at least 2 players to start",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
                     }
                 }
             }

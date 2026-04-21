@@ -46,4 +46,10 @@ interface ChallengeDao {
     /** Returns the first Hard Mode challenge that completed successfully but whose overlay has not yet been shown. */
     @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'hard' AND completionShown = 0 LIMIT 1")
     suspend fun getUnshownCompletedHardChallenge(): ChallengeEntity?
+
+    @Query("SELECT COUNT(*) FROM challenges WHERE status = 'completed'")
+    suspend fun getCompletedCount(): Int
+
+    @Query("SELECT * FROM challenges")
+    suspend fun getAllChallengesList(): List<ChallengeEntity>
 }

@@ -8,6 +8,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.service.DailyReminderWorker
+import com.detox.app.service.GroupChallengeAutoStartWorker
 import com.detox.app.service.NotificationHelper
 import com.google.firebase.messaging.FirebaseMessaging
 import com.stripe.android.PaymentConfiguration
@@ -58,6 +59,7 @@ class DetoxApplication : Application(), Configuration.Provider {
 
         scheduleDailyEvaluation()
         scheduleDailyReminder()
+        scheduleGroupChallengeAutoStart()
     }
 
     private fun scheduleDailyEvaluation() {
@@ -151,9 +153,38 @@ class DetoxApplication : Application(), Configuration.Provider {
         )
     }
 
+    private fun scheduleGroupChallengeAutoStart() {
+        val now = Calendar.getInstance()
+        val target = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 1)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            if (!after(now)) add(Calendar.DAY_OF_YEAR, 1)
+        }
+        val initialDelayMs = target.timeInMillis - now.timeInMillis
+
+        val request = PeriodicWorkRequestBuilder<GroupChallengeAutoStartWorker>(24, TimeUnit.HOURS)
+            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
+            .addTag(TAG_GROUP_AUTO_START)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            WORK_NAME_GROUP_AUTO_START,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+        Timber.d(
+            "Group challenge auto-start scheduled — initial delay: ${initialDelayMs / 60_000} min " +
+                    "(fires at ~00:01)"
+        )
+    }
+
     companion object {
         const val TAG_DAILY_EVALUATION  = "daily_evaluation"
         const val TAG_DAILY_REMINDER    = "daily_reminder"
         const val WORK_NAME_DAILY_REMINDER = "daily_reminder"
+        const val TAG_GROUP_AUTO_START  = "group_auto_start"
+        const val WORK_NAME_GROUP_AUTO_START = "group_auto_start"
     }
 }

@@ -156,7 +156,9 @@ class GroupChallengeFirestoreService @Inject constructor(
                 ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
                 ?: emptyList()
 
+            Timber.d("Raw participants from Firestore: ${this.get("participants")}")
             val rawParticipants = d["participants"] as? List<Map<String, Any>> ?: emptyList()
+            Timber.d("Parsed rawParticipants count: ${rawParticipants.size}")
             val participants = rawParticipants.map { p ->
                 Participant(
                     userId = p["userId"] as? String ?: "",

@@ -1,7 +1,12 @@
 package com.detox.app.presentation.screens.groupchallenge.create
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
@@ -10,14 +15,16 @@ import com.detox.app.domain.usecase.CreateGroupChallengeUseCase
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
+import com.detox.app.service.GroupStartReminderWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.Calendar
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 const val GROUP_WIZARD_TOTAL_STEPS = 6
@@ -42,6 +49,7 @@ data class GroupCreateFormState(
     // Step 4 — buy-in
     val buyInEuros: Int = 10,
     // Step 5 — start date + bonus
+    val startDateEnabled: Boolean = false,
     val startDateMs: Long = 0L,
     val bonusEnabled: Boolean = false,
     // Step 6 — review (populated after creation)
@@ -71,6 +79,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
     private val getAddictiveAppsUseCase: GetAddictiveAppsUseCase,
     private val usageStatsRepository: UsageStatsRepository,
     private val challengeRepository: ChallengeRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _formState = MutableStateFlow(GroupCreateFormState())
@@ -175,14 +184,12 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     // ── Step 5 — start date + bonus ─────────────────────────────────────────────
 
+    fun setStartDateEnabled(v: Boolean) = _formState.update {
+        it.copy(startDateEnabled = v, startDateError = if (!v) null else it.startDateError)
+    }
+
     fun setStartDate(ms: Long) {
-        val tomorrowMidnight = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        val error = if (ms < tomorrowMidnight) "Start date must be tomorrow or later" else null
-        _formState.update { it.copy(startDateMs = ms, startDateError = error) }
+        _formState.update { it.copy(startDateMs = ms, startDateError = null) }
     }
 
     fun setBonusEnabled(v: Boolean) = _formState.update { it.copy(bonusEnabled = v) }
@@ -210,7 +217,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
             2 -> true
             3 -> s.durationError == null && s.durationDays >= 3
             4 -> s.buyInEuros >= 10
-            5 -> s.startDateMs > 0L && s.startDateError == null
+            5 -> !s.startDateEnabled || (s.startDateMs > 0L && s.startDateError == null)
             else -> true
         }
     }
@@ -232,7 +239,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
             }
             4 -> true
             5 -> {
-                if (s.startDateMs == 0L) {
+                if (s.startDateEnabled && s.startDateMs == 0L) {
                     _formState.update { it.copy(startDateError = "Pick a valid start date") }
                     false
                 } else true
@@ -271,7 +278,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 durationDays = s.durationDays,
                 buyInCents = s.buyInEuros * 100,
                 maxParticipants = MAX_PARTICIPANTS,
-                startDateMs = s.startDateMs,
+                startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
             )
             result.fold(
@@ -294,7 +301,22 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     fun onPaymentSuccess() {
         val state = _uiState.value as? GroupCreateUiState.AwaitingPayment ?: return
+        if (!_formState.value.startDateEnabled) {
+            scheduleStartReminder(state.groupId)
+        }
         _uiState.value = GroupCreateUiState.Created(groupId = state.groupId, code = state.code)
+    }
+
+    private fun scheduleStartReminder(groupId: String) {
+        val request = OneTimeWorkRequestBuilder<GroupStartReminderWorker>()
+            .setInitialDelay(24, TimeUnit.HOURS)
+            .setInputData(workDataOf(GroupStartReminderWorker.KEY_GROUP_ID to groupId))
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "group_start_reminder_$groupId",
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
     }
 
     fun onPaymentCancelled() {

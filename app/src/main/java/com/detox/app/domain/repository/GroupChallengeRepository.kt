@@ -29,4 +29,11 @@ interface GroupChallengeRepository {
      * Called when the group challenge ends.
      */
     suspend fun finishLocalGroupChallenge(groupId: String, succeeded: Boolean): Result<Unit>
+
+    /**
+     * Fetches all group challenges for [userId] from Firestore, upserts them into Room,
+     * and syncs [ChallengeEntity] rows for ACTIVE and finished challenges.
+     * Call this on FriendsHub open to keep the local cache fresh.
+     */
+    suspend fun refreshFromFirestore(userId: String): Result<Unit>
 }

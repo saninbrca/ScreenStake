@@ -309,6 +309,55 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
   } catch (e) { handleError("startGroupChallenge", e, res); }
 });
 
+// ── cancelGroupChallenge ───────────────────────────────────────────────────────
+
+export const cancelGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const userId = await requireAuth(req);
+    const { groupId } = req.body as { groupId: string };
+    if (!groupId) throw new HttpError(400, "groupId is required.");
+
+    const db = admin.firestore();
+    const docRef = db.collection("groupChallenges").doc(groupId);
+    const doc = await docRef.get();
+    if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+
+    const gc = doc.data()!;
+    if (gc["status"] === "cancelled") {
+      functions.logger.info("cancelGroupChallenge: already cancelled", { groupId });
+      res.json({ status: "cancelled" });
+      return;
+    }
+    if (gc["status"] !== "waiting") {
+      throw new HttpError(412, `Cannot cancel a challenge in status '${gc["status"]}'.`);
+    }
+    if (gc["creatorUserId"] !== userId) {
+      throw new HttpError(403, "Only the creator can cancel a group challenge.");
+    }
+
+    const participants: Array<{ userId: string; paymentIntentId: string }> = gc["participants"] ?? [];
+    const isImmediateCapture = ((gc["durationDays"] as number) ?? 7) > 7;
+
+    for (const p of participants) {
+      if (!p.paymentIntentId) continue;
+      try {
+        if (isImmediateCapture) {
+          await getStripe().refunds.create({ payment_intent: p.paymentIntentId });
+        } else {
+          await getStripe().paymentIntents.cancel(p.paymentIntentId);
+        }
+        functions.logger.info("cancelGroupChallenge: refunded", { groupId, userId: p.userId });
+      } catch (e) {
+        functions.logger.error("cancelGroupChallenge: refund/cancel failed", { groupId, userId: p.userId, error: e });
+      }
+    }
+
+    await docRef.update({ status: "cancelled" });
+    functions.logger.info("cancelGroupChallenge: cancelled", { groupId, participants: participants.length });
+    res.json({ status: "cancelled" });
+  } catch (e) { handleError("cancelGroupChallenge", e, res); }
+});
+
 // ── failParticipant ────────────────────────────────────────────────────────────
 
 export const failParticipant = functions.region(REGION).https.onRequest(async (req, res) => {

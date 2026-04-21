@@ -87,7 +87,7 @@ data class ChallengeCreationState(
     // Step 5
     val scheduleStart: String = "",
     val scheduleEnd: String = "",
-    val activeDays: Set<String> = emptySet(),
+    val activeDays: Set<String> = setOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"),
     // Step 6
     val durationDays: Int = 7,
     val noEndDate: Boolean = false,

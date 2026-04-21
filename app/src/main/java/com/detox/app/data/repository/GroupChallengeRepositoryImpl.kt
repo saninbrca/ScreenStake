@@ -134,6 +134,43 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun refreshFromFirestore(userId: String): Result<Unit> {
+        return try {
+            val challenges = firestoreService.fetchUserGroupChallenges(userId)
+            challenges.forEach { gc -> groupChallengeDao.upsert(gc.toEntity()) }
+
+            challenges
+                .filter { it.status == GroupChallengeStatus.ACTIVE }
+                .forEach { gc ->
+                    syncGroupChallengeToLocalTracking(gc, userId)
+                        .onFailure { e ->
+                            Timber.e(e, "GroupChallengeRepo: refreshFromFirestore sync failed for %s", gc.groupId)
+                        }
+                }
+
+            challenges
+                .filter { it.status == GroupChallengeStatus.COMPLETED || it.status == GroupChallengeStatus.CANCELLED }
+                .forEach { gc ->
+                    val participant = gc.participants.find { it.userId == userId }
+                    val succeeded = gc.status == GroupChallengeStatus.COMPLETED &&
+                            participant?.status?.name?.uppercase() != "FAILED"
+                    finishLocalGroupChallenge(gc.groupId, succeeded)
+                        .onFailure { e ->
+                            Timber.e(e, "GroupChallengeRepo: refreshFromFirestore finish failed for %s", gc.groupId)
+                        }
+                }
+
+            Timber.d(
+                "GroupChallengeRepo: refreshFromFirestore — synced %d challenge(s) for uid=%s",
+                challenges.size, userId
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeRepo: refreshFromFirestore failed uid=%s", userId)
+            Result.failure(e)
+        }
+    }
+
     override suspend fun finishLocalGroupChallenge(groupId: String, succeeded: Boolean): Result<Unit> {
         return try {
             val localChallengeId = "group_$groupId"

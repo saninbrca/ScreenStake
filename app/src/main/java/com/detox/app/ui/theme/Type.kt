@@ -2,27 +2,18 @@ package com.detox.app.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.Font
-import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
 
-private val provider = GoogleFont.Provider(
-    providerAuthority = "com.google.android.gms.fonts",
-    providerPackage = "com.google.android.gms",
-    certificates = R.array.com_google_android_gms_fonts_certs
-)
-
-private val poppins = GoogleFont("Poppins")
-
 val PoppinsFamily = FontFamily(
-    Font(googleFont = poppins, fontProvider = provider, weight = FontWeight.Normal),
-    Font(googleFont = poppins, fontProvider = provider, weight = FontWeight.Medium),
-    Font(googleFont = poppins, fontProvider = provider, weight = FontWeight.SemiBold),
-    Font(googleFont = poppins, fontProvider = provider, weight = FontWeight.Bold),
-    Font(googleFont = poppins, fontProvider = provider, weight = FontWeight.ExtraBold),
+    Font(R.font.poppins_regular, FontWeight.Normal),
+    Font(R.font.poppins_medium, FontWeight.Medium),
+    Font(R.font.poppins_semibold, FontWeight.SemiBold),
+    Font(R.font.poppins_bold, FontWeight.Bold),
+    Font(R.font.poppins_extrabold, FontWeight.ExtraBold),
 )
 
 val Typography = Typography(
@@ -107,6 +98,7 @@ val Typography = Typography(
         lineHeight = 20.sp,
         letterSpacing = 0.25.sp
     ),
+    // Caption: 12sp Regular
     bodySmall = TextStyle(
         fontFamily = PoppinsFamily,
         fontWeight = FontWeight.Normal,
@@ -129,7 +121,6 @@ val Typography = Typography(
         lineHeight = 16.sp,
         letterSpacing = 0.5.sp
     ),
-    // Caption: 12sp Regular
     labelSmall = TextStyle(
         fontFamily = PoppinsFamily,
         fontWeight = FontWeight.Normal,

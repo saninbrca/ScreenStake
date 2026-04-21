@@ -7,8 +7,10 @@ import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.BuildConfig
 import com.detox.app.DetoxApplication
 import com.detox.app.data.local.db.DetoxDatabase
@@ -285,6 +287,16 @@ class SettingsViewModel @Inject constructor(
     fun setDarkModeEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_DARK_MODE, enabled).apply()
         _state.update { it.copy(darkModeEnabled = enabled) }
+    }
+
+    // ── Debug ──────────────────────────────────────────────────────────────────
+
+    fun runEvaluationNow() {
+        Timber.d("Settings: manually triggering DailyEvaluationWorker")
+        val request = OneTimeWorkRequestBuilder<DailyEvaluationWorker>()
+            .addTag("manual_evaluation")
+            .build()
+        WorkManager.getInstance(context).enqueue(request)
     }
 
     // ── Data Export ────────────────────────────────────────────────────────────

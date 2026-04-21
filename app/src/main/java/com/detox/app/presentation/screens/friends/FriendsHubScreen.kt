@@ -1,5 +1,7 @@
 package com.detox.app.presentation.screens.friends
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -18,6 +22,7 @@ import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,12 +34,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.detox.app.BuildConfig
+import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
@@ -54,8 +65,10 @@ fun FriendsHubScreen(
     viewModel: FriendsHubViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val onForceStart: (String) -> Unit = { groupId -> viewModel.forceStartChallenge(groupId) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(title = { Text(stringResource(R.string.friends_hub_title)) })
         }
@@ -113,7 +126,7 @@ fun FriendsHubScreen(
                             SectionHeader(stringResource(R.string.friends_hub_active))
                         }
                         items(state.data.active) { gc ->
-                            GroupChallengeCard(gc, onClick = { onGroupChallengeClick(gc.groupId) })
+                            GroupChallengeCard(gc, onClick = { onGroupChallengeClick(gc.groupId) }, onForceStart = null)
                         }
                     }
 
@@ -123,7 +136,11 @@ fun FriendsHubScreen(
                             SectionHeader(stringResource(R.string.friends_hub_waiting))
                         }
                         items(state.data.waiting) { gc ->
-                            GroupChallengeCard(gc, onClick = { onGroupChallengeClick(gc.groupId) })
+                            GroupChallengeCard(
+                                gc,
+                                onClick = { onGroupChallengeClick(gc.groupId) },
+                                onForceStart = if (BuildConfig.DEBUG) onForceStart else null
+                            )
                         }
                     }
 
@@ -133,7 +150,7 @@ fun FriendsHubScreen(
                             SectionHeader(stringResource(R.string.friends_hub_history))
                         }
                         items(state.data.history) { gc ->
-                            GroupChallengeCard(gc, onClick = { onGroupChallengeClick(gc.groupId) })
+                            GroupChallengeCard(gc, onClick = { onGroupChallengeClick(gc.groupId) }, onForceStart = null)
                         }
                     }
 
@@ -175,11 +192,30 @@ private fun SectionHeader(title: String) {
 @Composable
 private fun GroupChallengeCard(
     groupChallenge: GroupChallenge,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onForceStart: ((String) -> Unit)?
 ) {
+    val context = LocalContext.current
+    val appIcon = remember(groupChallenge.appPackageNames) {
+        try {
+            val pkg = groupChallenge.appPackageNames.firstOrNull() ?: return@remember null
+            context.packageManager.getApplicationIcon(pkg).toBitmap(48, 48).asImageBitmap()
+        } catch (_: Exception) { null }
+    }
+    val isWaiting = groupChallenge.status == GroupChallengeStatus.WAITING
+    val leftBorderColor = MaterialTheme.colorScheme.primary
+
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isWaiting) Modifier.border(
+                    width = 4.dp,
+                    color = leftBorderColor,
+                    shape = MaterialTheme.shapes.medium
+                ) else Modifier
+            ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -188,11 +224,25 @@ private fun GroupChallengeCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = groupChallenge.appDisplayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (appIcon != null) {
+                        Image(
+                            painter = BitmapPainter(appIcon),
+                            contentDescription = groupChallenge.appDisplayName,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Text(
+                        text = groupChallenge.appDisplayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
                 StatusChip(groupChallenge.status)
             }
 
@@ -218,14 +268,20 @@ private fun GroupChallengeCard(
 
             // Start date countdown or formatted date
             val now = System.currentTimeMillis()
-            val diffMs = groupChallenge.startDate - now
-            val startInfo = if (groupChallenge.status == GroupChallengeStatus.WAITING && diffMs > 0) {
-                val days = TimeUnit.MILLISECONDS.toDays(diffMs)
-                val hours = TimeUnit.MILLISECONDS.toHours(diffMs) % 24
-                "Starts in ${days}d ${hours}h"
-            } else {
-                val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
-                "Started ${sdf.format(Date(groupChallenge.startDate))}"
+            val startInfo = when {
+                groupChallenge.status == GroupChallengeStatus.WAITING && groupChallenge.startDate == 0L ->
+                    "Manual start — waiting for creator"
+                groupChallenge.status == GroupChallengeStatus.WAITING && groupChallenge.startDate > now -> {
+                    val diffMs = groupChallenge.startDate - now
+                    val days = TimeUnit.MILLISECONDS.toDays(diffMs)
+                    val hours = TimeUnit.MILLISECONDS.toHours(diffMs) % 24
+                    "Starts in ${days}d ${hours}h"
+                }
+                groupChallenge.startDate == 0L -> "Started manually"
+                else -> {
+                    val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+                    "Started ${sdf.format(Date(groupChallenge.startDate))}"
+                }
             }
             Text(
                 text = startInfo,
@@ -239,6 +295,21 @@ private fun GroupChallengeCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // DEBUG-only force-start button (only for WAITING challenges)
+            if (onForceStart != null && groupChallenge.status == GroupChallengeStatus.WAITING) {
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = { onForceStart(groupChallenge.groupId) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    Text("Force Start (DEBUG)")
+                }
+            }
         }
     }
 }
@@ -246,13 +317,19 @@ private fun GroupChallengeCard(
 @Composable
 private fun StatusChip(status: GroupChallengeStatus) {
     val (label, color) = when (status) {
-        GroupChallengeStatus.WAITING -> "Waiting" to MaterialTheme.colorScheme.secondary
+        GroupChallengeStatus.WAITING -> "Waiting" to MaterialTheme.colorScheme.primary
         GroupChallengeStatus.ACTIVE -> "Active" to MaterialTheme.colorScheme.primary
         GroupChallengeStatus.COMPLETED -> "Done" to MaterialTheme.colorScheme.tertiary
         GroupChallengeStatus.CANCELLED -> "Cancelled" to MaterialTheme.colorScheme.error
     }
+    val isWaiting = status == GroupChallengeStatus.WAITING
     Card(
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.15f))
+        modifier = if (isWaiting) Modifier.border(1.dp, color, MaterialTheme.shapes.small) else Modifier,
+        shape = MaterialTheme.shapes.small,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isWaiting) MaterialTheme.colorScheme.background
+                else color.copy(alpha = 0.15f)
+        )
     ) {
         Text(
             text = label,

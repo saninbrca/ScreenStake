@@ -65,4 +65,7 @@ interface DailyLogDao {
      */
     @Query("SELECT limitExceeded FROM daily_logs WHERE challengeId = :challengeId AND date < :beforeDate ORDER BY date DESC LIMIT :limit")
     suspend fun getRecentLimitExceededFlags(challengeId: String, beforeDate: Long, limit: Int = 60): List<Boolean>
+
+    @Query("SELECT * FROM daily_logs ORDER BY date DESC LIMIT 90")
+    suspend fun getAllLogsOrderedByDateDesc(): List<DailyLogEntity>
 }

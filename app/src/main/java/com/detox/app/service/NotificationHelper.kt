@@ -349,6 +349,30 @@ object NotificationHelper {
     }
 
     /**
+     * Fired 24 h after a manual-start group challenge is created, reminding the creator
+     * to start the challenge once everyone has joined.
+     *
+     * @param groupId used to generate a stable, unique notification ID
+     */
+    fun sendGroupStartReminder(context: Context, groupId: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + groupId.hashCode() + 20
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_group_start_reminder_title))
+            .setContentText(context.getString(R.string.notif_group_start_reminder_body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group start reminder notification posted for groupId=%s", groupId)
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group start reminder")
+        }
+    }
+
+    /**
      * Fired at the end of a group challenge to inform the user of the result.
      *
      * @param appName     human-readable name of the tracked app

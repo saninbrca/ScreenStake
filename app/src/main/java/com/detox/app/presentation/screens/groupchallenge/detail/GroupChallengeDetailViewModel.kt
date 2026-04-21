@@ -3,6 +3,7 @@ package com.detox.app.presentation.screens.groupchallenge.detail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
@@ -22,18 +23,31 @@ sealed interface GroupDetailUiState {
     data class Error(val message: String) : GroupDetailUiState
 }
 
+sealed interface StartChallengeState {
+    data object Idle : StartChallengeState
+    data object Loading : StartChallengeState
+    data object Success : StartChallengeState
+    data class Error(val message: String) : StartChallengeState
+}
+
 @HiltViewModel
 class GroupChallengeDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val groupChallengeRepository: GroupChallengeRepository,
-    private val firebaseAuthService: FirebaseAuthService
+    private val firebaseAuthService: FirebaseAuthService,
+    private val cloudFunctionsService: CloudFunctionsService,
 ) : ViewModel() {
 
     private val groupId: String = requireNotNull(savedStateHandle["groupId"]) {
         "groupId nav arg is required for GroupChallengeDetailViewModel"
     }
 
+    val currentUserId: String? get() = firebaseAuthService.currentUserId()
+
     private val _uiState = MutableStateFlow<GroupDetailUiState>(GroupDetailUiState.Loading)
+
+    private val _startState = MutableStateFlow<StartChallengeState>(StartChallengeState.Idle)
+    val startState: StateFlow<StartChallengeState> = _startState.asStateFlow()
 
     /**
      * Live Firestore snapshot — updates in real time as participants join, fail, or succeed.
@@ -66,6 +80,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                             "GroupDetailVM: snapshot update for %s status=%s participants=%d",
                             gc.groupId, gc.status, gc.participants.size
                         )
+                        Timber.d("Participants count: %d", gc.participants.size)
                         retryScheduled = false
                         _uiState.value = GroupDetailUiState.Success(gc)
 
@@ -111,6 +126,24 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
         }
     }
+
+    fun startChallenge() {
+        if (_startState.value is StartChallengeState.Loading) return
+        _startState.value = StartChallengeState.Loading
+        viewModelScope.launch {
+            cloudFunctionsService.startGroupChallenge(groupId)
+                .onSuccess {
+                    Timber.d("GroupDetailVM: startGroupChallenge succeeded for %s", groupId)
+                    _startState.value = StartChallengeState.Success
+                }
+                .onFailure { e ->
+                    Timber.e(e, "GroupDetailVM: startGroupChallenge failed for %s", groupId)
+                    _startState.value = StartChallengeState.Error(e.message ?: "Failed to start challenge")
+                }
+        }
+    }
+
+    fun clearStartError() { _startState.value = StartChallengeState.Idle }
 
     private fun syncToLocalTracking(gc: GroupChallenge) {
         val userId = firebaseAuthService.currentUserId() ?: return

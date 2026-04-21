@@ -6,9 +6,14 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -35,16 +41,38 @@ import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoin
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
+import androidx.compose.material3.MaterialTheme
 
 private sealed class BottomNavTab(
     val route: String,
     val labelRes: Int,
-    val icon: ImageVector
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
 ) {
-    data object Dashboard : BottomNavTab("dashboard", R.string.nav_dashboard, Icons.Filled.Home)
-    data object Challenges : BottomNavTab("challenges", R.string.nav_challenges, Icons.Filled.List)
-    data object Friends : BottomNavTab("friends", R.string.nav_friends, Icons.Filled.Group)
-    data object Profile : BottomNavTab("profile", R.string.nav_profile, Icons.Filled.Person)
+    data object Dashboard : BottomNavTab(
+        route = "dashboard",
+        labelRes = R.string.nav_dashboard,
+        selectedIcon = Icons.Filled.Home,
+        unselectedIcon = Icons.Outlined.Home
+    )
+    data object Challenges : BottomNavTab(
+        route = "challenges",
+        labelRes = R.string.nav_challenges,
+        selectedIcon = Icons.Filled.List,
+        unselectedIcon = Icons.Outlined.List
+    )
+    data object Friends : BottomNavTab(
+        route = "friends",
+        labelRes = R.string.nav_friends,
+        selectedIcon = Icons.Filled.Group,
+        unselectedIcon = Icons.Outlined.Group
+    )
+    data object Profile : BottomNavTab(
+        route = "profile",
+        labelRes = R.string.nav_profile,
+        selectedIcon = Icons.Filled.Person,
+        unselectedIcon = Icons.Outlined.Person
+    )
 
     companion object {
         val all = listOf(Dashboard, Challenges, Friends, Profile)
@@ -58,11 +86,16 @@ fun MainScreen(onLoggedOut: () -> Unit) {
     val currentRoute = navBackStackEntry?.destination?.route
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground
+            ) {
                 BottomNavTab.all.forEach { tab ->
+                    val isSelected = currentRoute?.startsWith(tab.route) == true
                     NavigationBarItem(
-                        selected = currentRoute?.startsWith(tab.route) == true,
+                        selected = isSelected,
                         onClick = {
                             navController.navigate(tab.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -72,8 +105,26 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(tab.icon, contentDescription = null) },
-                        label = { Text(stringResource(tab.labelRes)) }
+                        icon = {
+                            Icon(
+                                imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                contentDescription = null
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = stringResource(tab.labelRes),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
             }
@@ -87,24 +138,18 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             // ── Dashboard tab ───────────────────────────────────────────────────
             composable(BottomNavTab.Dashboard.route) {
                 DashboardScreen(
-                    onAddChallenge = {
-                        navController.navigate("challenge_creation")
-                    },
+                    onAddChallenge = { navController.navigate("challenge_creation") },
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
                     },
-                    onOpenStats = {
-                        navController.navigate("statistics")
-                    }
+                    onOpenStats = { navController.navigate("statistics") }
                 )
             }
 
             // ── Challenges tab ──────────────────────────────────────────────────
             composable(BottomNavTab.Challenges.route) {
                 ChallengesScreen(
-                    onAddChallenge = {
-                        navController.navigate("challenge_creation")
-                    },
+                    onAddChallenge = { navController.navigate("challenge_creation") },
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
                     }
@@ -115,19 +160,24 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             composable(BottomNavTab.Profile.route) {
                 ProfileScreen(
                     onLoggedOut = onLoggedOut,
-                    onOpenSettings = { navController.navigate("settings") }
+                    onOpenSettings = { navController.navigate("settings") },
+                    onNavigateToChallenges = {
+                        navController.navigate(BottomNavTab.Challenges.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 )
             }
 
             // ── Friends / Group Challenges tab ──────────────────────────────────
             composable(BottomNavTab.Friends.route) {
                 FriendsHubScreen(
-                    onCreateGroupChallenge = {
-                        navController.navigate("group_create")
-                    },
-                    onJoinGroupChallenge = {
-                        navController.navigate("group_join")
-                    },
+                    onCreateGroupChallenge = { navController.navigate("group_create") },
+                    onJoinGroupChallenge = { navController.navigate("group_join") },
                     onGroupChallengeClick = { groupId ->
                         navController.navigate("group_detail/$groupId")
                     }
@@ -143,22 +193,16 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                             launchSingleTop = true
                         }
                     },
-                    onDiscarded = {
-                        navController.popBackStack()
-                    },
+                    onDiscarded = { navController.popBackStack() }
                 )
             }
 
             // ── Active Challenge Detail ──────────────────────────────────────────
             composable(
                 route = "active_challenge/{challengeId}",
-                arguments = listOf(
-                    navArgument("challengeId") { type = NavType.StringType }
-                )
+                arguments = listOf(navArgument("challengeId") { type = NavType.StringType })
             ) {
-                ActiveChallengeScreen(
-                    onBack = { navController.popBackStack() }
-                )
+                ActiveChallengeScreen(onBack = { navController.popBackStack() })
             }
 
             // ── Statistics ───────────────────────────────────────────────────────
@@ -174,7 +218,7 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                 )
             }
 
-            // ── Group Challenge — Create wizard (6-step, app selection embedded) ──
+            // ── Group Challenge — Create wizard ───────────────────────────────────
             composable("group_create") {
                 GroupChallengeCreateScreen(
                     onBack = { navController.popBackStack() },
@@ -183,7 +227,7 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                             popUpTo("group_create") { inclusive = true }
                             launchSingleTop = true
                         }
-                    },
+                    }
                 )
             }
 
@@ -203,13 +247,9 @@ fun MainScreen(onLoggedOut: () -> Unit) {
             // ── Group Challenge — Detail / Leaderboard ───────────────────────────
             composable(
                 route = "group_detail/{groupId}",
-                arguments = listOf(
-                    navArgument("groupId") { type = NavType.StringType }
-                )
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
-                GroupChallengeDetailScreen(
-                    onBack = { navController.popBackStack() }
-                )
+                GroupChallengeDetailScreen(onBack = { navController.popBackStack() })
             }
         }
     }

@@ -3,6 +3,7 @@ package com.detox.app.presentation.screens.settings
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import com.detox.app.BuildConfig
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -182,7 +184,8 @@ fun SettingsScreen(
                 }
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = androidx.compose.ui.graphics.Color.White
     ) { innerPadding ->
 
         if (state.isLoading) {
@@ -468,6 +471,22 @@ fun SettingsScreen(
                 }
             )
 
+            // ── 7. DEBUG (visible only in debug builds) ────────────────────────
+            if (BuildConfig.DEBUG) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                SectionHeader(stringResource(R.string.settings_section_debug))
+                val evalQueuedMsg = stringResource(R.string.profile_evaluation_queued)
+                SettingsRow(
+                    icon = Icons.Filled.PlayArrow,
+                    title = stringResource(R.string.profile_run_evaluation),
+                    subtitle = null,
+                    onClick = {
+                        viewModel.runEvaluationNow()
+                        scope.launch { snackbarHostState.showSnackbar(evalQueuedMsg) }
+                    }
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -502,7 +521,7 @@ private fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        color = MaterialTheme.colorScheme.surface
+        color = androidx.compose.ui.graphics.Color.White
     ) {
         Row(
             modifier = Modifier
@@ -545,7 +564,7 @@ private fun SwitchRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface
+        color = androidx.compose.ui.graphics.Color.White
     ) {
         Row(
             modifier = Modifier
@@ -594,7 +613,7 @@ private fun PermissionRow(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface
+        color = androidx.compose.ui.graphics.Color.White
     ) {
         Row(
             modifier = Modifier

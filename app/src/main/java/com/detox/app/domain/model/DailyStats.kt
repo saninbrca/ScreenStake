@@ -20,5 +20,10 @@ data class DailyStats(
     /** Custom + adult domains being blocked via VPN for this challenge. */
     val blockedDomains: List<String> = emptyList(),
     /** True when this challenge has adult-content blocking enabled. */
-    val blockAdultContent: Boolean = false
+    val blockAdultContent: Boolean = false,
+    val mode: ChallengeMode = ChallengeMode.SOFT,
+    val isGroup: Boolean = false,
+    val participantCount: Int = 0,
+    val maxParticipants: Int = 0,
+    val userRank: Int? = null,
 )

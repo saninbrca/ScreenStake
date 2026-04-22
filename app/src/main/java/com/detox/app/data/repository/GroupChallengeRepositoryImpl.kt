@@ -237,6 +237,15 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun updateParticipantStats(
+        groupId: String,
+        userId: String,
+        opensToday: Int,
+        timeUsedMinutes: Int
+    ) {
+        firestoreService.updateParticipantStats(groupId, userId, opensToday, timeUsedMinutes)
+    }
+
     // ── Entity ↔ Domain ─────────────────────────────────────────────────────────
 
     private fun GroupChallengeEntity.toDomain(): GroupChallenge {

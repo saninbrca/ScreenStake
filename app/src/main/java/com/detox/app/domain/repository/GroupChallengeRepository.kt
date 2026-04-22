@@ -56,4 +56,10 @@ interface GroupChallengeRepository {
      * Should be called when the user logs out.
      */
     fun stopSyncing()
+
+    /**
+     * Updates [userId]'s opensToday and timeUsedMinutes in the Firestore document
+     * for real-time leaderboard display. Fire-and-forget — failures are logged only.
+     */
+    suspend fun updateParticipantStats(groupId: String, userId: String, opensToday: Int, timeUsedMinutes: Int)
 }

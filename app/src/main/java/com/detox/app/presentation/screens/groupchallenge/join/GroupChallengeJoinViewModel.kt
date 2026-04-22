@@ -79,9 +79,11 @@ class GroupChallengeJoinViewModel @Inject constructor(
             _uiState.value = GroupJoinUiState.Error("Not signed in.")
             return
         }
-        val displayName = firebaseAuthService.currentUser()?.displayName
-            ?: firebaseAuthService.currentUser()?.email
-            ?: "Anonymous"
+        val displayName = firebaseAuthService.currentUser()?.let { user ->
+            user.displayName?.takeIf { it.isNotBlank() }
+                ?: user.email?.substringBefore('@')
+                ?: "Anonymous"
+        } ?: "Anonymous"
         _uiState.value = GroupJoinUiState.ProcessingPayment
         viewModelScope.launch {
             // Check for app conflicts before proceeding

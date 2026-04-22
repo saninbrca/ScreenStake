@@ -3,7 +3,7 @@ package com.detox.app.presentation.components
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -29,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -37,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.detox.app.R
+import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
 import com.detox.app.ui.theme.DetoxWarning
@@ -85,11 +89,29 @@ fun ChallengeCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AppIconImage(
-                    packageName = dailyStats.appPackageName,
-                    appName = dailyStats.appDisplayName,
-                    modifier = Modifier.size(48.dp)
-                )
+                // App icon with solo/group indicator badge at bottom-start
+                Box(modifier = Modifier.size(48.dp)) {
+                    AppIconImage(
+                        packageName = dailyStats.appPackageName,
+                        appName = dailyStats.appDisplayName,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .size(16.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        Icon(
+                            imageVector = if (dailyStats.isGroup) Icons.Filled.Group else Icons.Filled.Person,
+                            contentDescription = null,
+                            modifier = Modifier.padding(2.dp),
+                            tint = if (dailyStats.isGroup) Color(0xFF5C6BC0)
+                            else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -107,7 +129,9 @@ fun ChallengeCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        ModeBadge(dailyStats = dailyStats)
+                        Spacer(modifier = Modifier.width(4.dp))
                         DaysLeftBadge(daysRemaining = dailyStats.daysRemaining)
                     }
 
@@ -130,6 +154,31 @@ fun ChallengeCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    if (dailyStats.isGroup && dailyStats.maxParticipants > 0) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.challenge_card_participants,
+                                dailyStats.participantCount,
+                                dailyStats.maxParticipants
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF5C6BC0),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (dailyStats.isGroup && dailyStats.userRank != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.challenge_card_rank, dailyStats.userRank),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF5C6BC0),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
@@ -176,6 +225,27 @@ fun ChallengeCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ModeBadge(dailyStats: DailyStats) {
+    val (label, color) = when {
+        dailyStats.isGroup -> stringResource(R.string.challenge_card_badge_group) to Color(0xFF5C6BC0)
+        dailyStats.mode == ChallengeMode.HARD -> stringResource(R.string.challenge_card_badge_hard) to Color(0xFFB71C1C)
+        else -> stringResource(R.string.challenge_card_badge_soft) to Color(0xFF2E7D32)
+    }
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = color
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
     }
 }
 

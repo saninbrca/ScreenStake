@@ -40,7 +40,8 @@
       "Bash(firebase functions:log --limit 50)",
       "Bash(npm --version)",
       "Bash(firebase functions:delete createPaymentIntent capturePayment cancelOrRefundPayment createGroupChallenge joinGroupChallenge startGroupChallenge failParticipant completeGroupChallenge --region us-central1 --force)",
-      "Bash(./gradlew compileDebugKotlin)"
+      "Bash(./gradlew compileDebugKotlin)",
+      "Bash(./gradlew :app:compileDebugKotlin)"
     ]
   }
 }

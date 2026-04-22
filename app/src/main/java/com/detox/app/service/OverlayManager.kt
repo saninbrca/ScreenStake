@@ -21,11 +21,13 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.detox.app.R
 import com.detox.app.data.remote.firebase.AnalyticsService
+import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
@@ -56,7 +58,9 @@ class OverlayManager @Inject constructor(
     private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
     private val usageStatsRepository: UsageStatsRepository,
-    private val challengeRepository: ChallengeRepository
+    private val challengeRepository: ChallengeRepository,
+    private val groupChallengeRepository: GroupChallengeRepository,
+    private val firebaseAuthService: FirebaseAuthService,
 ) {
 
     companion object {
@@ -240,6 +244,26 @@ class OverlayManager @Inject constructor(
         }
 
         val status = result.getOrThrow()
+
+        // Update group challenge leaderboard stats in Firestore (fire-and-forget)
+        status.challenge.groupChallengeId?.let { groupId ->
+            val uid = firebaseAuthService.currentUserId()
+            if (uid != null) {
+                scope.launch {
+                    val todayUsage = usageStatsRepository.getTodayUsageForApp(packageName)
+                    val opensCount = when (status.challenge.limitType) {
+                        LimitType.SESSIONS -> consciousOpensToday.getOrDefault(packageName, 0)
+                        else -> todayUsage.opens
+                    }
+                    groupChallengeRepository.updateParticipantStats(
+                        groupId = groupId,
+                        userId = uid,
+                        opensToday = opensCount,
+                        timeUsedMinutes = todayUsage.minutes
+                    )
+                }
+            }
+        }
 
         // Session-limit challenges use the two-stage conscious-open flow
         if (status.challenge.limitType == LimitType.SESSIONS) {
@@ -749,6 +773,7 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 BudgetSelectionOverlay(
+                    packageName = packageName,
                     appName = challenge.appDisplayName,
                     remainingMinutes = remainingMinutes,
                     onStart = { selectedMinutes ->

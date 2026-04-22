@@ -148,6 +148,36 @@ class GroupChallengeFirestoreService @Inject constructor(
         }
     }
 
+    /**
+     * Updates a single participant's opensToday and timeUsedMinutes in Firestore by
+     * reading the current participants array, patching the matching entry, and writing it back.
+     */
+    suspend fun updateParticipantStats(
+        groupId: String,
+        userId: String,
+        opensToday: Int,
+        timeUsedMinutes: Int
+    ) {
+        try {
+            val docRef = collection.document(groupId)
+            val snapshot = docRef.get().await()
+            @Suppress("UNCHECKED_CAST")
+            val rawParticipants = snapshot.get("participants") as? List<Map<String, Any>> ?: return
+            val updated = rawParticipants.map { p ->
+                if ((p["userId"] as? String) == userId) {
+                    p.toMutableMap().apply {
+                        put("opensToday", opensToday.toLong())
+                        put("timeUsedMinutes", timeUsedMinutes.toLong())
+                    }
+                } else p
+            }
+            docRef.update("participants", updated).await()
+            Timber.d("Leaderboard updated for $userId: opens=$opensToday time=$timeUsedMinutes")
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeFirestore: updateParticipantStats failed groupId=%s uid=%s", groupId, userId)
+        }
+    }
+
     // ── Mapping helpers ─────────────────────────────────────────────────────────
 
     private fun GroupChallenge.toMap(): Map<String, Any?> = mapOf(
@@ -211,6 +241,21 @@ class GroupChallengeFirestoreService @Inject constructor(
                 )
             }
 
+            val createdAt = when (val raw = this.get("createdAt")) {
+                is com.google.firebase.Timestamp -> raw.toDate().time
+                is Long -> raw
+                else -> System.currentTimeMillis()
+            }
+            val endDateRaw = (d["endDate"] as? Long) ?: 0L
+            val endDateMs = when {
+                endDateRaw > 1_700_000_000_000L -> endDateRaw
+                endDateRaw < 365L * 24 * 60 * 60 * 1000 -> createdAt + endDateRaw
+                else -> createdAt + (7L * 24 * 60 * 60 * 1000)
+            }
+            Timber.d(
+                "endDateRaw=$endDateRaw type=${if (endDateRaw > 1_700_000_000_000L) "timestamp" else "duration"} finalEndDate=${java.util.Date(endDateMs)}"
+            )
+
             GroupChallenge(
                 groupId = d["groupId"] as? String ?: id,
                 code = d["code"] as? String ?: "",
@@ -227,7 +272,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                 buyInCents = (d["buyInCents"] as? Long)?.toInt() ?: 500,
                 maxParticipants = (d["maxParticipants"] as? Long)?.toInt() ?: 5,
                 startDate = (d["startDate"] as? Long) ?: 0L,
-                endDate = (d["endDate"] as? Long) ?: 0L,
+                endDate = endDateMs,
                 bonusEnabled = d["bonusEnabled"] as? Boolean ?: false,
                 status = runCatching {
                     GroupChallengeStatus.valueOf(

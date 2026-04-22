@@ -98,7 +98,9 @@ class CreateGroupChallengeUseCase @Inject constructor(
 
         val groupId = UUID.randomUUID().toString()
         val code = generateCode()
-        val endDateMs = startDateMs + durationDays.toLong() * 24 * 60 * 60 * 1000L
+        val baseMs = if (startDateMs > 0L) startDateMs else System.currentTimeMillis()
+        val endDateMs = baseMs + durationDays.toLong() * 24 * 60 * 60 * 1000L
+        Timber.d("endDate stored as: $endDateMs = ${java.util.Date(endDateMs)}")
 
         // Persist to Firestore via Cloud Function (validates code uniqueness,
         // creates Stripe PaymentIntent for creator, adds creator as first participant)

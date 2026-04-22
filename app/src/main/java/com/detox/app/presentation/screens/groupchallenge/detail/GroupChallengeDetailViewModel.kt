@@ -7,6 +7,7 @@ import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -15,11 +16,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.Calendar
 import javax.inject.Inject
 
 sealed interface GroupDetailUiState {
     data object Loading : GroupDetailUiState
-    data class Success(val groupChallenge: GroupChallenge) : GroupDetailUiState
+    data class Success(
+        val groupChallenge: GroupChallenge,
+        val myStreak: Int = 0,
+    ) : GroupDetailUiState
     data class Error(val message: String) : GroupDetailUiState
 }
 
@@ -36,6 +41,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
     private val firebaseAuthService: FirebaseAuthService,
     private val cloudFunctionsService: CloudFunctionsService,
+    private val dailyLogRepository: DailyLogRepository,
 ) : ViewModel() {
 
     private val groupId: String = requireNotNull(savedStateHandle["groupId"]) {
@@ -48,6 +54,9 @@ class GroupChallengeDetailViewModel @Inject constructor(
 
     private val _startState = MutableStateFlow<StartChallengeState>(StartChallengeState.Idle)
     val startState: StateFlow<StartChallengeState> = _startState.asStateFlow()
+
+    private val _nudgeEvent = MutableStateFlow<String?>(null)
+    val nudgeEvent: StateFlow<String?> = _nudgeEvent.asStateFlow()
 
     /**
      * Live Firestore snapshot — updates in real time as participants join, fail, or succeed.
@@ -82,7 +91,11 @@ class GroupChallengeDetailViewModel @Inject constructor(
                         )
                         Timber.d("Participants count: %d", gc.participants.size)
                         retryScheduled = false
-                        _uiState.value = GroupDetailUiState.Success(gc)
+                        val localChallengeId = "group_${gc.groupId}"
+                        val streak = dailyLogRepository
+                            .getStreakForChallenge(localChallengeId, todayMidnightMs())
+                            .getOrElse { 0 }
+                        _uiState.value = GroupDetailUiState.Success(gc, myStreak = streak)
 
                         // Sync to local Room when status transitions (once per transition)
                         if (gc.status != lastSyncedStatus) {
@@ -159,6 +172,20 @@ class GroupChallengeDetailViewModel @Inject constructor(
     }
 
     fun clearStartError() { _startState.value = StartChallengeState.Idle }
+
+    fun nudgeParticipant(targetUserId: String) {
+        viewModelScope.launch {
+            Timber.d("GroupDetailVM: nudge sent to $targetUserId in group $groupId")
+            _nudgeEvent.value = targetUserId
+        }
+    }
+
+    fun clearNudgeEvent() { _nudgeEvent.value = null }
+
+    private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 
     private fun syncToLocalTracking(gc: GroupChallenge) {
         val userId = firebaseAuthService.currentUserId() ?: return

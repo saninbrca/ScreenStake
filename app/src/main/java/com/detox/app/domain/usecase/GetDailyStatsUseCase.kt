@@ -1,17 +1,22 @@
 package com.detox.app.domain.usecase
 
+import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
+import com.google.firebase.auth.FirebaseAuth
 import java.util.Calendar
 import javax.inject.Inject
 
 class GetDailyStatsUseCase @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val usageStatsRepository: UsageStatsRepository,
-    private val dailyLogRepository: DailyLogRepository
+    private val dailyLogRepository: DailyLogRepository,
+    private val groupChallengeRepository: GroupChallengeRepository,
+    private val firebaseAuth: FirebaseAuth,
 ) {
     suspend operator fun invoke(): Result<List<DailyStats>> {
         return try {
@@ -27,8 +32,28 @@ class GetDailyStatsUseCase @Inject constructor(
             }.timeInMillis
 
             val stats = challenges.map { challenge ->
-                val daysRemaining = maxOf(0, ((challenge.endDate - now) / 86_400_000L).toInt())
+                val actualEndDate = if (challenge.endDate > 0L)
+                    challenge.startDate + (challenge.endDate * 86_400_000L) else 0L
+                val daysRemaining = if (actualEndDate > now)
+                    ((actualEndDate - now) / 86_400_000L).toInt().coerceAtLeast(0)
+                else Int.MAX_VALUE
                 val todayLog = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
+
+                // Resolve group metadata once for this challenge (null if solo).
+                val groupChallenge = challenge.groupChallengeId?.let {
+                    groupChallengeRepository.getGroupChallengeById(it)
+                }
+                val isGroup = groupChallenge != null
+                val participantCount = groupChallenge?.participants?.size ?: 0
+                val maxParticipants = groupChallenge?.maxParticipants ?: 0
+                val currentUid = firebaseAuth.currentUser?.uid
+                val userRank: Int? = if (isGroup && groupChallenge != null && currentUid != null) {
+                    val sorted = groupChallenge.participants.sortedBy { p ->
+                        if (challenge.limitType == LimitType.SESSIONS) p.opensToday
+                        else p.timeUsedMinutes
+                    }
+                    sorted.indexOfFirst { it.userId == currentUid }.takeIf { it >= 0 }?.plus(1)
+                } else null
 
                 // TIME_BUDGET: use budget columns from Room, not raw UsageStats.
                 if (challenge.limitType == LimitType.TIME_BUDGET) {
@@ -60,7 +85,12 @@ class GetDailyStatsUseCase @Inject constructor(
                         dailyBudgetMinutes = totalBudget,
                         budgetRemainingMinutes = budgetRemaining,
                         blockedDomains = challenge.blockedDomains,
-                        blockAdultContent = challenge.blockAdultContent
+                        blockAdultContent = challenge.blockAdultContent,
+                        mode = challenge.mode,
+                        isGroup = isGroup,
+                        participantCount = participantCount,
+                        maxParticipants = maxParticipants,
+                        userRank = userRank,
                     )
                 }
 
@@ -109,7 +139,12 @@ class GetDailyStatsUseCase @Inject constructor(
                     daysRemaining = daysRemaining,
                     moneyLostCents = moneyLostCents,
                     blockedDomains = challenge.blockedDomains,
-                    blockAdultContent = challenge.blockAdultContent
+                    blockAdultContent = challenge.blockAdultContent,
+                    mode = challenge.mode,
+                    isGroup = isGroup,
+                    participantCount = participantCount,
+                    maxParticipants = maxParticipants,
+                    userRank = userRank,
                 )
             }
 

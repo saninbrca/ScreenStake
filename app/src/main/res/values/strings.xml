@@ -184,13 +184,19 @@
     <string name="active_challenge_mode_soft">SOFT MODE</string>
     <string name="active_challenge_mode_hard">HARD MODE</string>
     <string name="active_challenge_amount_at_stake">€%.2f at stake</string>
-    <string name="active_challenge_end_date">Ends: %1$s</string>
+    <string name="active_challenge_end_date">Endet: %1$s</string>
+    <string name="active_challenge_no_end_date">Kein Enddatum</string>
+    <string name="active_challenge_streak">🔥 %1$d Tage Streak</string>
+    <string name="active_challenge_today_opens">Heute: %1$d/%2$d Opens</string>
     <string name="active_challenge_adult_blocked">Adult content blocking active</string>
     <string name="active_challenge_abandon">Abandon Challenge</string>
     <string name="active_challenge_abandon_confirm_title">Abandon Challenge?</string>
     <string name="active_challenge_abandon_confirm_message">This will end the challenge without awarding points. You cannot undo this.</string>
     <string name="active_challenge_abandon_confirm_yes">Yes, abandon</string>
     <string name="active_challenge_abandon_confirm_no">Keep going</string>
+    <string name="active_challenge_abandon_hard_message">Wenn du abbrichst verlierst du €%.2f sofort. Bist du sicher?</string>
+    <string name="active_challenge_abandon_hard_yes">Ja, Geld verlieren</string>
+    <string name="active_challenge_abandon_hard_no">Nein, weitermachen</string>
 
     <!-- Blocking Overlay — Hard Mode addition -->
     <string name="blocking_overlay_amount_stake">⚠ €%.2f at stake</string>
@@ -274,6 +280,12 @@
 
     <!-- Challenge card — Hard Mode payment captured -->
     <string name="challenge_card_payment_captured">Payment captured — €%.2f lost today</string>
+    <!-- Challenge card — mode / type badges -->
+    <string name="challenge_card_badge_hard">HARD</string>
+    <string name="challenge_card_badge_soft">SOFT</string>
+    <string name="challenge_card_badge_group">GROUP</string>
+    <string name="challenge_card_participants">%1$d/%2$d Spieler</string>
+    <string name="challenge_card_rank">Platz %1$d 🏆</string>
 
     <!-- Default motivation text when none is set by the user -->
     <string name="default_motivation_text">Stay strong!</string>
@@ -367,6 +379,14 @@
     <string name="website_blocked_go_back">Go back</string>
     <string name="website_blocked_stay_strong">Stay strong 💪</string>
     <string name="website_blocked_challenge_label">Part of your %1$s challenge</string>
+
+    <!-- Psychological friction buttons (SessionIntentionOverlay + BudgetSelectionOverlay) -->
+    <string name="stay_strong_button">Stark bleiben 💪</string>
+    <string name="open_anyway_button">Trotzdem öffnen</string>
+    <string name="open_anyway_hint">Wenn du wirklich willst…</string>
+    <string name="countdown_top_text">Letzte Chance umzukehren</string>
+    <string name="countdown_bottom_text">Öffnet automatisch in…</string>
+    <string name="countdown_cancel_button">Abbrechen ✋</string>
 
     <!-- Budget Selection Overlay (TIME_BUDGET Stage 1) -->
     <string name="budget_overlay_title">Opening %1$s</string>
@@ -544,6 +564,21 @@
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_dark_mode">Dark Mode</string>
     <string name="settings_dark_mode_subtitle">Switch to dark theme</string>
+
+    <!-- Group Challenge Detail — redesign strings -->
+    <string name="group_detail_end_date">Endet: %1$s</string>
+    <string name="group_detail_duration_fallback">%1$d Tage Challenge</string>
+    <string name="group_detail_active_participants">👥 %1$d/%2$d Teilnehmer aktiv</string>
+    <string name="group_detail_started_today">Gestartet heute</string>
+    <string name="group_detail_started_on">Gestartet: %1$s</string>
+    <string name="group_detail_my_status_title">Deine heutige Session</string>
+    <string name="group_detail_my_opens">Opens heute: %1$d/%2$d</string>
+    <string name="group_detail_my_time">Zeit heute: %1$d min</string>
+    <string name="group_detail_my_streak">🔥 %1$d Tage Streak</string>
+    <string name="group_detail_nudge">👀 Nerv ihn!</string>
+    <string name="group_detail_nudge_sent">Benachrichtigung gesendet!</string>
+    <string name="group_detail_opens_label">%1$d/%2$d Opens</string>
+    <string name="group_detail_time_label">%1$d min</string>
 
     <!-- Settings — App Info section -->
     <string name="settings_section_app_info">App Info</string>

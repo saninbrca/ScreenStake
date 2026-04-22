@@ -16,11 +16,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.detox.app.R
 
@@ -71,10 +77,12 @@ fun SessionIntentionOverlay(
         }
     }
 
+    var showCountdown by remember { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0D0D))   // fully opaque, nothing bleeds through
+            .background(Color(0xFF0D0D0D))
     ) {
         Column(
             modifier = Modifier
@@ -158,7 +166,7 @@ fun SessionIntentionOverlay(
             // ── Bottom: streak badge + action buttons ──────────────────────────
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (streak > 0) {
                     Text(
@@ -169,36 +177,60 @@ fun SessionIntentionOverlay(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
                 Button(
                     onClick = onNo,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
                     Text(
-                        text = stringResource(R.string.session_intention_no),
-                        style = MaterialTheme.typography.titleMedium
+                        text = stringResource(R.string.stay_strong_button),
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = stringResource(R.string.open_anyway_hint),
+                    fontSize = 10.sp,
+                    color = Color(0xFF9E9E9E),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                OutlinedButton(
-                    onClick = onYes,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Color.White.copy(alpha = 0.65f)
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.session_intention_yes),
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    TextButton(
+                        onClick = { showCountdown = true },
+                        modifier = Modifier.height(32.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF9E9E9E))
+                    ) {
+                        Text(
+                            text = stringResource(R.string.open_anyway_button),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
                 }
             }
+        }
+
+        if (showCountdown) {
+            CountdownScreen(
+                packageName = packageName,
+                onComplete = onYes,
+                onCancel = onNo
+            )
         }
     }
 }

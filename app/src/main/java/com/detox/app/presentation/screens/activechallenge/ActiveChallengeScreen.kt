@@ -10,12 +10,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
@@ -38,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -105,6 +105,7 @@ fun ActiveChallengeScreen(
                     ActiveChallengeContent(
                         challenge = state.challenge,
                         status = state.status,
+                        streak = state.streak,
                         onAbandon = { viewModel.abandonChallenge() }
                     )
                 }
@@ -117,34 +118,70 @@ fun ActiveChallengeScreen(
 private fun ActiveChallengeContent(
     challenge: Challenge,
     status: DailyLimitStatus?,
+    streak: Int,
     onAbandon: () -> Unit
 ) {
     var showAbandonDialog by remember { mutableStateOf(false) }
+    val isHardMode = challenge.mode == ChallengeMode.HARD
+    val darkGreen = Color(0xFF2E7D32)
 
     if (showAbandonDialog) {
-        AlertDialog(
-            onDismissRequest = { showAbandonDialog = false },
-            title = { Text(stringResource(R.string.active_challenge_abandon_confirm_title)) },
-            text = { Text(stringResource(R.string.active_challenge_abandon_confirm_message)) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showAbandonDialog = false
-                        onAbandon()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
+        if (isHardMode && challenge.amountCents != null) {
+            AlertDialog(
+                onDismissRequest = { showAbandonDialog = false },
+                title = { Text(stringResource(R.string.active_challenge_abandon_confirm_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.active_challenge_abandon_hard_message,
+                            challenge.amountCents / 100f
+                        )
                     )
-                ) {
-                    Text(stringResource(R.string.active_challenge_abandon_confirm_yes))
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { showAbandonDialog = false; onAbandon() }
+                    ) {
+                        Text(
+                            text = stringResource(R.string.active_challenge_abandon_hard_yes),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                dismissButton = {
+                    Button(
+                        onClick = { showAbandonDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = darkGreen)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.active_challenge_abandon_hard_no),
+                            color = Color.White
+                        )
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAbandonDialog = false }) {
-                    Text(stringResource(R.string.active_challenge_abandon_confirm_no))
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showAbandonDialog = false },
+                title = { Text(stringResource(R.string.active_challenge_abandon_confirm_title)) },
+                text = { Text(stringResource(R.string.active_challenge_abandon_confirm_message)) },
+                confirmButton = {
+                    Button(
+                        onClick = { showAbandonDialog = false; onAbandon() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text(stringResource(R.string.active_challenge_abandon_confirm_yes))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAbandonDialog = false }) {
+                        Text(stringResource(R.string.active_challenge_abandon_confirm_no))
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     Column(
@@ -164,40 +201,39 @@ private fun ActiveChallengeContent(
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f)
             )
-            AssistChip(
-                onClick = {},
-                label = {
-                    Text(
-                        text = if (challenge.mode == ChallengeMode.HARD) {
-                            stringResource(R.string.active_challenge_mode_hard)
-                        } else {
-                            stringResource(R.string.active_challenge_mode_soft)
-                        }
-                    )
-                },
-                colors = if (challenge.mode == ChallengeMode.HARD) {
-                    AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        labelColor = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                } else {
-                    AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            )
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (isHardMode) MaterialTheme.colorScheme.error else darkGreen
+            ) {
+                Text(
+                    text = if (isHardMode) stringResource(R.string.active_challenge_mode_hard)
+                    else stringResource(R.string.active_challenge_mode_soft),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
         }
 
-        // Hard Mode: amount at stake
-        if (challenge.mode == ChallengeMode.HARD && challenge.amountCents != null) {
+        // Hard Mode: amount at stake (dark green)
+        if (isHardMode && challenge.amountCents != null) {
             Text(
                 text = stringResource(
                     R.string.active_challenge_amount_at_stake,
                     challenge.amountCents / 100f
                 ),
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.error
+                color = darkGreen
+            )
+        }
+
+        // Streak row
+        if (streak > 0) {
+            Text(
+                text = stringResource(R.string.active_challenge_streak, streak),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -225,7 +261,20 @@ private fun ActiveChallengeContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        // Adult content blocking — dedicated row with shield icon
+        // Today's opens (SESSIONS only)
+        if (challenge.limitType == LimitType.SESSIONS && status != null) {
+            Text(
+                text = stringResource(
+                    R.string.active_challenge_today_opens,
+                    status.todayOpens,
+                    challenge.limitValueSessions ?: 0
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        // Adult content blocking
         if (challenge.blockAdultContent) {
             HorizontalDivider()
             Row(
@@ -291,11 +340,13 @@ private fun ActiveChallengeContent(
                 )
             }
 
-            Text(
-                text = progressLabel,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            if (challenge.limitType != LimitType.SESSIONS) {
+                Text(
+                    text = progressLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
             LinearProgressIndicator(
                 progress = { progressValue.coerceIn(0f, 1f) },
                 modifier = Modifier
@@ -307,16 +358,32 @@ private fun ActiveChallengeContent(
             )
         }
 
-        // End date
-        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-        Text(
-            text = stringResource(
-                R.string.active_challenge_end_date,
-                dateFormat.format(Date(challenge.endDate))
-            ),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        val now = System.currentTimeMillis()
+        if (challenge.endDate == 0L) {
+            Text(
+                text = stringResource(R.string.active_challenge_no_end_date),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            val endDateRaw = challenge.endDate
+            val actualEndDate = when {
+                endDateRaw > 1_700_000_000_000L -> endDateRaw
+                endDateRaw < 365L * 24 * 60 * 60 * 1000 -> challenge.startDate + (endDateRaw * 86_400_000L)
+                else -> challenge.startDate + (7L * 24 * 60 * 60 * 1000)
+            }
+            if (actualEndDate > now) {
+                val dateFormat = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
+                Text(
+                    text = stringResource(
+                        R.string.active_challenge_end_date,
+                        dateFormat.format(Date(actualEndDate))
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.weight(1f))
 

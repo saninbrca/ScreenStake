@@ -1,11 +1,21 @@
 package com.detox.app.presentation.navigation
 
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Home
@@ -15,6 +25,7 @@ import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -23,8 +34,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +64,7 @@ import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoin
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
+import timber.log.Timber
 
 private sealed class BottomNavTab(
     val route: String,
@@ -105,13 +117,13 @@ fun MainScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Column {
-                if (permissionMissing) {
-                    PermissionWarningBanner(onBeheben = onOpenPermissionSettings)
-                }
-                if (accessibilityMissing) {
-                    AccessibilityWarningBanner(onBeheben = onOpenAccessibilitySettings)
-                }
+            if (permissionMissing || accessibilityMissing) {
+                PermissionBanner(
+                    overlayMissing = permissionMissing,
+                    accessibilityMissing = accessibilityMissing,
+                    onOpenPermissionSettings = onOpenPermissionSettings,
+                    onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                )
             }
         },
         bottomBar = {
@@ -283,56 +295,91 @@ fun MainScreen(
 }
 
 @Composable
-private fun PermissionWarningBanner(onBeheben: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFD32F2F))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "⚠️ Overlay Permission fehlt — Challenge pausiert",
-                color = Color.White,
-                fontSize = 13.sp,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(
-                onClick = onBeheben,
-                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
-            ) {
-                Text("Beheben", fontWeight = FontWeight.Bold)
-            }
-        }
+private fun PermissionBanner(
+    overlayMissing: Boolean,
+    accessibilityMissing: Boolean,
+    onOpenPermissionSettings: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
+) {
+    LaunchedEffect(Unit) {
+        Timber.d("Critical permission banner shown")
     }
-}
 
-@Composable
-private fun AccessibilityWarningBanner(onBeheben: () -> Unit) {
+    val bodyText = when {
+        overlayMissing && accessibilityMissing ->
+            "Overlay + Accessibility fehlen.\nDein Geld wird eingezogen wenn du nicht sofort handelst!"
+        overlayMissing ->
+            "Overlay Permission wurde deaktiviert.\nDein Geld ist in Gefahr wenn du nicht sofort handelst!"
+        else ->
+            "Accessibility Service wurde deaktiviert.\nDein Geld ist in Gefahr wenn du nicht sofort handelst!"
+    }
+    val onBeheben = if (overlayMissing) onOpenPermissionSettings else onOpenAccessibilitySettings
+
+    val pulse = rememberInfiniteTransition(label = "bannerPulse")
+    val bgColor by pulse.animateColor(
+        initialValue = Color(0xFFD32F2F),
+        targetValue  = Color(0xFFB71C1C),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bgPulse"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFE65100))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .background(bgColor)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+        // Left accent stripe
+        Box(
+            modifier = Modifier
+                .width(6.dp)
+                .matchParentSize()
+                .background(Color(0xFF7F0000))
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "⚠️", fontSize = 32.sp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "🚨 ACHTUNG — Challenge in Gefahr!",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "⚠️ Accessibility Service auch deaktiviert",
+                text = bodyText,
                 color = Color.White,
-                fontSize = 13.sp,
-                modifier = Modifier.weight(1f)
+                fontSize = 14.sp,
+                modifier = Modifier.padding(start = 42.dp)
             )
-            TextButton(
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
                 onClick = onBeheben,
-                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color(0xFFD32F2F)
+                ),
+                contentPadding = PaddingValues(0.dp)
             ) {
-                Text("Beheben", fontWeight = FontWeight.Bold)
+                Text(
+                    text = "JETZT BEHEBEN →",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color(0xFFD32F2F)
+                )
             }
         }
     }

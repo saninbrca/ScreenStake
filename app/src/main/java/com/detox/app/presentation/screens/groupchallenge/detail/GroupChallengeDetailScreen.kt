@@ -1,6 +1,7 @@
 package com.detox.app.presentation.screens.groupchallenge.detail
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,10 +66,18 @@ fun GroupChallengeDetailScreen(
     val currentUserId = viewModel.currentUserId
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val context = LocalContext.current
     LaunchedEffect(startState) {
-        if (startState is StartChallengeState.Error) {
-            snackbarHostState.showSnackbar((startState as StartChallengeState.Error).message)
-            viewModel.clearStartError()
+        when (startState) {
+            is StartChallengeState.Success -> {
+                Toast.makeText(context, "Challenge started! App is now blocked.", Toast.LENGTH_LONG).show()
+                viewModel.clearStartError()
+            }
+            is StartChallengeState.Error -> {
+                snackbarHostState.showSnackbar((startState as StartChallengeState.Error).message)
+                viewModel.clearStartError()
+            }
+            else -> Unit
         }
     }
 

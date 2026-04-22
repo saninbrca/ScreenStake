@@ -36,4 +36,24 @@ interface GroupChallengeRepository {
      * Call this on FriendsHub open to keep the local cache fresh.
      */
     suspend fun refreshFromFirestore(userId: String): Result<Unit>
+
+    /**
+     * Returns the first active group challenge that includes [packageName], or null if none.
+     * Used by use cases to prevent duplicate challenges for the same app.
+     */
+    suspend fun getActiveGroupChallengeForApp(packageName: String): GroupChallenge?
+
+    /**
+     * Starts a long-lived Firestore snapshot listener for all of [userId]'s group challenges.
+     * Automatically syncs ACTIVE challenges to Room (so AccessibilityService can block apps)
+     * and deletes Room entries when challenges complete or are cancelled.
+     * Should be called when the user logs in.
+     */
+    fun startSyncingForUser(userId: String)
+
+    /**
+     * Cancels the background Firestore listener started by [startSyncingForUser].
+     * Should be called when the user logs out.
+     */
+    fun stopSyncing()
 }

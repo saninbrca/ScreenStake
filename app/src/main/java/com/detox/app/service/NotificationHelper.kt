@@ -2,6 +2,7 @@ package com.detox.app.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -32,6 +33,9 @@ object NotificationHelper {
     private const val NOTIF_ID_USAGE_90_BASE     = 5300
     private const val NOTIF_ID_DAY_CONGRATS_BASE = 6000
     private const val NOTIF_ID_GROUP_BASE        = 7000
+    private const val NOTIF_ID_PERMISSION_RESTORED    = 9001
+    private const val NOTIF_ID_PERMISSION_FAILED      = 9002
+    private const val NOTIF_ID_PERMISSION_WARNING_BASE = 9010  // 9010..9013 for levels 0-3
 
     /** Must be called before posting any notification — safe to call repeatedly. */
     fun createChannels(context: Context) {
@@ -294,6 +298,77 @@ object NotificationHelper {
             Timber.d("Day congratulations notification posted for $appName")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping congratulations notification")
+        }
+    }
+
+    // ── Overlay permission notifications ──────────────────────────────────────
+
+    fun sendPermissionWarning(context: Context, level: Int, actionIntent: PendingIntent) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val (title, body) = when (level) {
+            0 -> "⚠️ Deine Challenge ist in Gefahr!" to
+                    "Detox braucht eine Erlaubnis um dich zu schützen. Handle jetzt!"
+            1 -> "🚨 Deine Challenge pausiert!" to
+                    "Je länger du wartest, desto mehr riskierst du. Tippe hier um es zu beheben."
+            2 -> "⏰ Zeit läuft ab..." to
+                    "Deine Challenge und dein Einsatz sind in Gefahr. Handle JETZT bevor es zu spät ist!"
+            3 -> "🔴 Letzte Warnung!" to
+                    "Deine Challenge wird bald automatisch beendet. Öffne Detox sofort."
+            else -> return
+        }
+        val notifId = NOTIF_ID_PERMISSION_WARNING_BASE + level
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(actionIntent)
+            .addAction(0, "Jetzt beheben →", actionIntent)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Permission warning notification posted: level=$level")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping permission warning notification")
+        }
+    }
+
+    fun sendPermissionRestored(context: Context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("✅ Alles gut!")
+            .setContentText("Deine Challenge läuft weiter.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_PERMISSION_RESTORED, notification)
+            Timber.d("Permission restored notification posted")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping permission restored notification")
+        }
+    }
+
+    fun sendPermissionFailed(context: Context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("❌ Challenge fehlgeschlagen")
+            .setContentText("Die Overlay-Berechtigung war zu lange deaktiviert. Dein Einsatz wurde eingezogen.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "Die Overlay-Berechtigung war zu lange deaktiviert. Dein Einsatz wurde eingezogen."
+            ))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_PERMISSION_FAILED, notification)
+            Timber.d("Permission failed notification posted")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping permission failed notification")
         }
     }
 

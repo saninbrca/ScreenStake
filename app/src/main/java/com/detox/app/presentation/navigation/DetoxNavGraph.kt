@@ -16,7 +16,11 @@ sealed class Screen(val route: String) {
 @Composable
 fun DetoxNavGraph(
     navController: NavHostController,
-    startDestination: String = Screen.Auth.route
+    startDestination: String = Screen.Auth.route,
+    permissionMissing: Boolean = false,
+    accessibilityMissing: Boolean = false,
+    onOpenPermissionSettings: () -> Unit = {},
+    onOpenAccessibilitySettings: () -> Unit = {},
 ) {
     NavHost(
         navController = navController,
@@ -56,7 +60,11 @@ fun DetoxNavGraph(
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(Screen.Main.route) { inclusive = true }
                     }
-                }
+                },
+                permissionMissing = permissionMissing,
+                accessibilityMissing = accessibilityMissing,
+                onOpenPermissionSettings = onOpenPermissionSettings,
+                onOpenAccessibilitySettings = onOpenAccessibilitySettings,
             )
         }
     }

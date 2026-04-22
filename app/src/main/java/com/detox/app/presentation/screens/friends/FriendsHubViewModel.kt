@@ -49,10 +49,7 @@ class FriendsHubViewModel @Inject constructor(
                     FriendsHubUiData(
                         active = challenges.filter { it.status == GroupChallengeStatus.ACTIVE },
                         waiting = challenges.filter { it.status == GroupChallengeStatus.WAITING },
-                        history = challenges.filter {
-                            it.status == GroupChallengeStatus.COMPLETED ||
-                                it.status == GroupChallengeStatus.CANCELLED
-                        }
+                        history = challenges.filter { it.status == GroupChallengeStatus.COMPLETED }
                     )
                 )
             }

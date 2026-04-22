@@ -2,6 +2,7 @@ package com.detox.app.domain.usecase
 
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import timber.log.Timber
 import java.util.UUID
@@ -19,6 +20,7 @@ data class GroupChallengeCreatedData(
 
 class CreateGroupChallengeUseCase @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
+    private val challengeRepository: ChallengeRepository,
     private val cloudFunctionsService: CloudFunctionsService
 ) {
 
@@ -76,6 +78,22 @@ class CreateGroupChallengeUseCase @Inject constructor(
         }
         if (limitType == LimitType.SESSIONS && (limitValueSessions == null || limitValueSessions <= 0)) {
             return Result.failure(IllegalArgumentException("Session count must be greater than 0."))
+        }
+
+        // Cross-check: block if creator already has an active challenge for any of these apps
+        val activeChallenges = challengeRepository.getActiveChallengesList().getOrElse { emptyList() }
+        val activePackages = activeChallenges.flatMap { it.appPackageNames }.toSet()
+        val conflictPkg = appPackageNames.firstOrNull { it in activePackages }
+        if (conflictPkg != null) {
+            val conflictName = activeChallenges
+                .first { conflictPkg in it.appPackageNames }
+                .appDisplayName
+            return Result.failure(
+                IllegalStateException(
+                    "You already have an active challenge for $conflictName. " +
+                        "You cannot create this group challenge."
+                )
+            )
         }
 
         val groupId = UUID.randomUUID().toString()

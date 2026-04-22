@@ -6,10 +6,13 @@ import androidx.work.Configuration
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.service.DailyReminderWorker
 import com.detox.app.service.GroupChallengeAutoStartWorker
+import com.detox.app.service.PermissionCheckWorker
 import com.detox.app.service.NotificationHelper
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import com.stripe.android.PaymentConfiguration
 import dagger.hilt.android.HiltAndroidApp
@@ -23,6 +26,12 @@ class DetoxApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var firebaseAuth: FirebaseAuth
+
+    @Inject
+    lateinit var groupChallengeRepository: GroupChallengeRepository
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -60,6 +69,21 @@ class DetoxApplication : Application(), Configuration.Provider {
         scheduleDailyEvaluation()
         scheduleDailyReminder()
         scheduleGroupChallengeAutoStart()
+        schedulePermissionCheck()
+        startGroupChallengeSyncing()
+    }
+
+    private fun startGroupChallengeSyncing() {
+        firebaseAuth.addAuthStateListener { auth ->
+            val user = auth.currentUser
+            if (user != null) {
+                Timber.d("Auth state: signed in as %s — starting group challenge sync", user.uid)
+                groupChallengeRepository.startSyncingForUser(user.uid)
+            } else {
+                Timber.d("Auth state: signed out — stopping group challenge sync")
+                groupChallengeRepository.stopSyncing()
+            }
+        }
     }
 
     private fun scheduleDailyEvaluation() {
@@ -178,6 +202,17 @@ class DetoxApplication : Application(), Configuration.Provider {
             "Group challenge auto-start scheduled — initial delay: ${initialDelayMs / 60_000} min " +
                     "(fires at ~00:01)"
         )
+    }
+
+    private fun schedulePermissionCheck() {
+        val request = PeriodicWorkRequestBuilder<PermissionCheckWorker>(15, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            PermissionCheckWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+        Timber.d("Permission check worker scheduled (every 15 min)")
     }
 
     companion object {

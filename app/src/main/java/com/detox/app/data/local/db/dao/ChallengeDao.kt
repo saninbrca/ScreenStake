@@ -52,4 +52,7 @@ interface ChallengeDao {
 
     @Query("SELECT * FROM challenges")
     suspend fun getAllChallengesList(): List<ChallengeEntity>
+
+    @Query("DELETE FROM challenges WHERE id = :id")
+    suspend fun deleteById(id: String)
 }

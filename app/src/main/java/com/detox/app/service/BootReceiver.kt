@@ -4,9 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.DetoxApplication
 import timber.log.Timber
+import java.util.concurrent.TimeUnit
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -35,5 +37,14 @@ class BootReceiver : BroadcastReceiver() {
             // but applicationContext wasn't DetoxApplication (shouldn't happen).
             Timber.w("BootReceiver: applicationContext is not DetoxApplication — using REPLACE policy")
         }
+
+        // Ensure permission check worker survives reboots — KEEP so we don't reset
+        // any in-progress permissionLostAt timer that was already ticking.
+        wm.enqueueUniquePeriodicWork(
+            PermissionCheckWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<PermissionCheckWorker>(15, TimeUnit.MINUTES).build()
+        )
+        Timber.d("BootReceiver: permission check worker re-enqueued")
     }
 }

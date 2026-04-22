@@ -13,7 +13,9 @@ import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.GroupChallengeRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -30,6 +32,54 @@ class GroupChallengeRepositoryImpl @Inject constructor(
     private val firestoreService: GroupChallengeFirestoreService,
     @ApplicationScope private val appScope: CoroutineScope
 ) : GroupChallengeRepository {
+
+    private var syncJob: Job? = null
+    private val syncedStatuses = mutableMapOf<String, GroupChallengeStatus>()
+
+    override fun startSyncingForUser(userId: String) {
+        syncJob?.cancel()
+        syncedStatuses.clear()
+        syncJob = appScope.launch {
+            firestoreService.observeUserGroupChallenges(userId)
+                .catch { e -> Timber.e(e, "GroupChallengeRepo: global listener error uid=%s", userId) }
+                .collect { challenges ->
+                    challenges.forEach { gc ->
+                        if (gc.status == syncedStatuses[gc.groupId]) return@forEach
+                        syncedStatuses[gc.groupId] = gc.status
+                        when (gc.status) {
+                            GroupChallengeStatus.ACTIVE -> {
+                                groupChallengeDao.upsert(gc.toEntity())
+                                syncGroupChallengeToLocalTracking(gc, userId)
+                                Timber.d(
+                                    "Group challenge synced to Room: %s, app: %s",
+                                    gc.groupId, gc.appPackageNames
+                                )
+                            }
+                            GroupChallengeStatus.COMPLETED, GroupChallengeStatus.CANCELLED -> {
+                                val localId = "group_${gc.groupId}"
+                                challengeDao.deleteById(localId)
+                                Timber.d(
+                                    "GroupChallengeRepo: deleted local challenge %s (status=%s)",
+                                    localId, gc.status
+                                )
+                            }
+                            else -> Unit
+                        }
+                    }
+                }
+        }
+        Timber.d("GroupChallengeRepo: global listener started for uid=%s", userId)
+    }
+
+    override fun stopSyncing() {
+        syncJob?.cancel()
+        syncJob = null
+        syncedStatuses.clear()
+        Timber.d("GroupChallengeRepo: global listener stopped")
+    }
+
+    override suspend fun getActiveGroupChallengeForApp(packageName: String): GroupChallenge? =
+        groupChallengeDao.getActiveGroupChallengeForApp(packageName)?.toDomain()
 
     override fun getGroupChallenges(): Flow<List<GroupChallenge>> =
         groupChallengeDao.getAll().map { entities -> entities.map { it.toDomain() } }

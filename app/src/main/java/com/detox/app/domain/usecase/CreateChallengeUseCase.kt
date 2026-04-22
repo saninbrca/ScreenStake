@@ -6,6 +6,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
@@ -15,7 +16,8 @@ data class ChallengeCreationResult(
 )
 
 class CreateChallengeUseCase @Inject constructor(
-    private val challengeRepository: ChallengeRepository
+    private val challengeRepository: ChallengeRepository,
+    private val groupChallengeRepository: GroupChallengeRepository
 ) {
     suspend operator fun invoke(
         appPackageName: String?,
@@ -56,10 +58,24 @@ class CreateChallengeUseCase @Inject constructor(
         }
         if (blockingType == BlockingType.APP) {
             require(appPackageNames.isNotEmpty()) { "appPackageNames must not be empty for APP challenges" }
-            // Proof-of-addiction duplicate check only applies to app challenges
+            // Check for conflicting solo challenge (includes synced active group challenges)
             val existingChallenge = challengeRepository.getActiveChallengeForApp(appPackageNames.first())
             if (existingChallenge.isSuccess && existingChallenge.getOrNull() != null) {
-                return Result.failure(IllegalStateException("An active challenge already exists for this app"))
+                val name = existingChallenge.getOrNull()!!.appDisplayName
+                return Result.failure(
+                    IllegalStateException("You already have an active challenge for $name.")
+                )
+            }
+            // Also check group_challenges table directly (safety net for recently-started group challenges)
+            for (pkg in appPackageNames) {
+                val groupConflict = groupChallengeRepository.getActiveGroupChallengeForApp(pkg)
+                if (groupConflict != null) {
+                    return Result.failure(
+                        IllegalStateException(
+                            "You already have an active group challenge for ${groupConflict.appDisplayName}."
+                        )
+                    )
+                }
             }
         }
 

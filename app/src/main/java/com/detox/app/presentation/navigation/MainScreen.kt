@@ -1,5 +1,10 @@
 package com.detox.app.presentation.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
@@ -10,18 +15,25 @@ import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -41,7 +53,6 @@ import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoin
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
-import androidx.compose.material3.MaterialTheme
 
 private sealed class BottomNavTab(
     val route: String,
@@ -80,13 +91,29 @@ private sealed class BottomNavTab(
 }
 
 @Composable
-fun MainScreen(onLoggedOut: () -> Unit) {
+fun MainScreen(
+    onLoggedOut: () -> Unit,
+    permissionMissing: Boolean = false,
+    accessibilityMissing: Boolean = false,
+    onOpenPermissionSettings: () -> Unit = {},
+    onOpenAccessibilitySettings: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            Column {
+                if (permissionMissing) {
+                    PermissionWarningBanner(onBeheben = onOpenPermissionSettings)
+                }
+                if (accessibilityMissing) {
+                    AccessibilityWarningBanner(onBeheben = onOpenAccessibilitySettings)
+                }
+            }
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.background,
@@ -250,6 +277,62 @@ fun MainScreen(onLoggedOut: () -> Unit) {
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
                 GroupChallengeDetailScreen(onBack = { navController.popBackStack() })
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionWarningBanner(onBeheben: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFD32F2F))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "⚠️ Overlay Permission fehlt — Challenge pausiert",
+                color = Color.White,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = onBeheben,
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+            ) {
+                Text("Beheben", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccessibilityWarningBanner(onBeheben: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFE65100))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "⚠️ Accessibility Service auch deaktiviert",
+                color = Color.White,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = onBeheben,
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+            ) {
+                Text("Beheben", fontWeight = FontWeight.Bold)
             }
         }
     }

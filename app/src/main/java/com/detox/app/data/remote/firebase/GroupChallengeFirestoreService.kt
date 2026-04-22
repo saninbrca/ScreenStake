@@ -11,6 +11,7 @@ import com.google.firebase.firestore.Source
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
@@ -86,6 +87,40 @@ class GroupChallengeFirestoreService @Inject constructor(
                 trySend(gc)
             }
         awaitClose { registration.remove() }
+    }
+
+    /**
+     * Real-time listener for all group challenges where [userId] is the creator
+     * or a participant. Combines two Firestore snapshot listeners and deduplicates.
+     */
+    fun observeUserGroupChallenges(userId: String): Flow<List<GroupChallenge>> {
+        val asCreator = callbackFlow {
+            val reg = collection.whereEqualTo("creatorUserId", userId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Timber.e(error, "GroupChallengeFirestore: observeUserGroupChallenges(creator) error uid=%s", userId)
+                        close(error)
+                        return@addSnapshotListener
+                    }
+                    trySend(snapshot?.documents?.mapNotNull { it.toGroupChallenge() } ?: emptyList())
+                }
+            awaitClose { reg.remove() }
+        }
+        val asParticipant = callbackFlow {
+            val reg = collection.whereArrayContains("participantUserIds", userId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Timber.e(error, "GroupChallengeFirestore: observeUserGroupChallenges(participant) error uid=%s", userId)
+                        close(error)
+                        return@addSnapshotListener
+                    }
+                    trySend(snapshot?.documents?.mapNotNull { it.toGroupChallenge() } ?: emptyList())
+                }
+            awaitClose { reg.remove() }
+        }
+        return combine(asCreator, asParticipant) { a, b ->
+            (a + b).distinctBy { it.groupId }
+        }
     }
 
     /**

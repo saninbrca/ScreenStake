@@ -4,6 +4,7 @@ import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.PaymentIntentData
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import timber.log.Timber
 import javax.inject.Inject
@@ -16,6 +17,7 @@ data class JoinPaymentData(
 
 class JoinGroupChallengeUseCase @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
+    private val challengeRepository: ChallengeRepository,
     private val cloudFunctionsService: CloudFunctionsService
 ) {
 
@@ -42,7 +44,25 @@ class JoinGroupChallengeUseCase @Inject constructor(
                 Result.failure(IllegalStateException("This challenge is full (${gc.maxParticipants}/${gc.maxParticipants})."))
             gc.startDate > 0L && System.currentTimeMillis() >= gc.startDate ->
                 Result.failure(IllegalStateException("The join window for this challenge has closed."))
-            else -> Result.success(gc)
+            else -> {
+                // Cross-check: block if user already has an active challenge for any of these apps
+                val activeChallenges = challengeRepository.getActiveChallengesList().getOrElse { emptyList() }
+                val activePackages = activeChallenges.flatMap { it.appPackageNames }.toSet()
+                val conflictPkg = gc.appPackageNames.firstOrNull { it in activePackages }
+                if (conflictPkg != null) {
+                    val conflictName = activeChallenges
+                        .first { conflictPkg in it.appPackageNames }
+                        .appDisplayName
+                    Result.failure(
+                        IllegalStateException(
+                            "You already have an active challenge for $conflictName. " +
+                                "You cannot join this group challenge."
+                        )
+                    )
+                } else {
+                    Result.success(gc)
+                }
+            }
         }
     }
 

@@ -134,6 +134,21 @@ class GroupChallengeDetailViewModel @Inject constructor(
             cloudFunctionsService.startGroupChallenge(groupId)
                 .onSuccess {
                     Timber.d("GroupDetailVM: startGroupChallenge succeeded for %s", groupId)
+                    // Immediately sync to Room without waiting for the Firestore snapshot update
+                    val currentGc = (_uiState.value as? GroupDetailUiState.Success)?.groupChallenge
+                    val userId = firebaseAuthService.currentUserId()
+                    if (currentGc != null && userId != null) {
+                        val startDate = System.currentTimeMillis()
+                        val endDate = startDate + currentGc.durationDays * 24L * 60 * 60 * 1000
+                        val activeGc = currentGc.copy(
+                            status = GroupChallengeStatus.ACTIVE,
+                            startDate = startDate,
+                            endDate = endDate
+                        )
+                        groupChallengeRepository.syncGroupChallengeToLocalTracking(activeGc, userId)
+                            .onSuccess { Timber.d("GroupDetailVM: immediate Room sync done for group %s", groupId) }
+                            .onFailure { e -> Timber.e(e, "GroupDetailVM: immediate Room sync failed for group %s", groupId) }
+                    }
                     _startState.value = StartChallengeState.Success
                 }
                 .onFailure { e ->

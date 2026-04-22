@@ -2,20 +2,34 @@ package com.detox.app
 
 import android.app.AppOpsManager
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Bundle
 import android.os.Process
+import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import androidx.work.WorkManager
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
@@ -51,6 +65,11 @@ class MainActivity : ComponentActivity() {
 
     private var startDestination by mutableStateOf<String?>(null)
     private var isDarkMode by mutableStateOf(false)
+    private var hasActiveChallenge by mutableStateOf(false)
+    private var overlayMissing by mutableStateOf(false)
+    private var showPermissionBlock by mutableStateOf(false)
+    private var snackbarMessage by mutableStateOf<String?>(null)
+    private var accessibilityMissing by mutableStateOf(false)
 
     private lateinit var prefs: SharedPreferences
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -71,6 +90,7 @@ class MainActivity : ComponentActivity() {
             startDestination = determineStartDestination()
 
             val activeChallenges = challengeRepository.getActiveChallenges().first()
+            hasActiveChallenge = activeChallenges.isNotEmpty()
             if (activeChallenges.isNotEmpty()) {
                 UsageTrackingService.start(this@MainActivity)
             }
@@ -82,17 +102,60 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DetoxTheme(darkTheme = isDarkMode) {
+                val snackbarHostState = remember { SnackbarHostState() }
+
+                LaunchedEffect(snackbarMessage) {
+                    val msg = snackbarMessage ?: return@LaunchedEffect
+                    snackbarHostState.showSnackbar(msg)
+                    snackbarMessage = null
+                }
+
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    startDestination?.let { destination ->
-                        val navController = rememberNavController()
-                        DetoxNavGraph(
-                            navController = navController,
-                            startDestination = destination
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        startDestination?.let { destination ->
+                            val navController = rememberNavController()
+                            DetoxNavGraph(
+                                navController = navController,
+                                startDestination = destination,
+                                permissionMissing = overlayMissing && hasActiveChallenge,
+                                accessibilityMissing = accessibilityMissing,
+                                onOpenPermissionSettings = ::openPermissionSettings,
+                                onOpenAccessibilitySettings = ::openAccessibilitySettings,
+                            )
+                        }
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier.align(Alignment.BottomCenter)
                         )
                     }
                 }
+
+                if (showPermissionBlock) {
+                    BackHandler(enabled = true) { /* block back — user must fix permission */ }
+                    AlertDialog(
+                        onDismissRequest = {},
+                        title = { Text("🔴 Deine Challenge endet bald!") },
+                        text = {
+                            Text(
+                                "Die erforderliche Erlaubnis fehlt seit zu langer Zeit. " +
+                                "Behebe es jetzt oder deine Challenge wird automatisch beendet."
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = ::openPermissionSettings) {
+                                Text("Jetzt beheben")
+                            }
+                        }
+                    )
+                }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        trackPermissionIgnore()
+        checkPermissionState()
     }
 
     override fun onDestroy() {
@@ -158,6 +221,72 @@ class MainActivity : ComponentActivity() {
 
         Timber.d("Authenticated + permissions → Main")
         return Screen.Main.route
+    }
+
+    private fun checkPermissionState() {
+        val permPrefs = getSharedPreferences("detox_permission", Context.MODE_PRIVATE)
+        val lostAt = permPrefs.getLong("permissionLostAt", 0L)
+
+        if (lostAt > 0L && Settings.canDrawOverlays(this)) {
+            Timber.d("Permission restored: clearing all warnings")
+            permPrefs.edit().clear().apply()
+            val wm = WorkManager.getInstance(this)
+            listOf("permission_warning_0", "permission_warning_2", "permission_warning_6", "permission_warning_12")
+                .forEach { tag -> wm.cancelAllWorkByTag(tag) }
+            overlayMissing = false
+            showPermissionBlock = false
+            snackbarMessage = "✅ Perfekt! Deine Challenge läuft weiter."
+            UsageTrackingService.start(this)
+        } else if (lostAt > 0L && !Settings.canDrawOverlays(this)) {
+            overlayMissing = true
+            val elapsed = System.currentTimeMillis() - lostAt
+            if (elapsed >= 18 * 60 * 60 * 1000L) {
+                showPermissionBlock = true
+                Timber.d("Full screen block shown: elapsed=${elapsed / 3_600_000}h")
+            }
+        } else {
+            overlayMissing = false
+            showPermissionBlock = false
+        }
+
+        if (overlayMissing && hasActiveChallenge) {
+            Timber.d("Permission banner shown")
+        }
+
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: ""
+        val accessibilityOff = !enabledServices.contains(packageName)
+        accessibilityMissing = accessibilityOff && hasActiveChallenge
+        if (accessibilityMissing) {
+            Timber.d("Huawei accessibility also missing: showing second banner")
+        }
+    }
+
+    private fun openPermissionSettings() {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName")
+        )
+        startActivity(intent)
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    private fun trackPermissionIgnore() {
+        val permPrefs = getSharedPreferences("detox_permission", Context.MODE_PRIVATE)
+        if (!permPrefs.contains("permissionLostAt")) return
+        if (Settings.canDrawOverlays(this)) return
+
+        val elapsed = System.currentTimeMillis() - permPrefs.getLong("permissionLostAt", 0)
+        if (elapsed < 12 * 60 * 60 * 1000L) {
+            val ignored = permPrefs.getInt("userOpenedAndIgnored", 0)
+            permPrefs.edit().putInt("userOpenedAndIgnored", ignored + 1).apply()
+            Timber.d("User opened and ignored permission warning: count=${ignored + 1}")
+        }
     }
 
     private fun hasUsageStatsPermission(): Boolean {

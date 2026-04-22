@@ -24,4 +24,14 @@ interface GroupChallengeDao {
 
     @Query("UPDATE group_challenges SET participantsJson = :json WHERE groupId = :groupId")
     suspend fun updateParticipants(groupId: String, json: String)
+
+    @Query("""
+        SELECT * FROM group_challenges WHERE status = 'active' AND (
+            appPackageNames = :packageName OR
+            appPackageNames LIKE :packageName || ',%' OR
+            appPackageNames LIKE '%,' || :packageName OR
+            appPackageNames LIKE '%,' || :packageName || ',%'
+        ) LIMIT 1
+    """)
+    suspend fun getActiveGroupChallengeForApp(packageName: String): GroupChallengeEntity?
 }

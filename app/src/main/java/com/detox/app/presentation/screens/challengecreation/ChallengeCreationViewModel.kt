@@ -40,6 +40,21 @@ val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
     "com.linkedin.android"       to listOf("linkedin.com"),
 )
 
+/**
+ * Maps a URL path prefix → human-readable feature name.
+ * Used for PARTIAL_BLOCK: only the specific path is blocked, not the entire domain.
+ * The parent domain (before the first '/') must NOT already be in [blockedDomains] for
+ * the toggle to be shown — if the whole site is already blocked there is nothing to add.
+ */
+val FEATURE_BLOCK_MAP: Map<String, String> = mapOf(
+    "instagram.com/reels"    to "Instagram Reels",
+    "instagram.com/stories"  to "Instagram Stories",
+    "youtube.com/shorts"     to "YouTube Shorts",
+    "tiktok.com/foryou"      to "TikTok For You",
+    "facebook.com/watch"     to "Facebook Watch",
+    "twitter.com/i/timeline" to "Twitter Timeline",
+)
+
 const val NO_END_DATE_DAYS = 36500
 const val TOTAL_STEPS = 7
 
@@ -72,6 +87,8 @@ data class ChallengeCreationState(
     val manualDomainInput: String = "",
     val manualDomainError: String? = null,
     val blockAdultContent: Boolean = false,
+    /** URL path prefixes selected for partial (feature-level) blocking, e.g. "instagram.com/reels". */
+    val partialBlockDomains: Set<String> = emptySet(),
     // Step 3
     val limitType: LimitType? = null,
     // Step 4
@@ -251,6 +268,16 @@ class ChallengeCreationViewModel @Inject constructor(
     fun updateBlockAdultContent(enabled: Boolean) =
         _state.update { it.copy(blockAdultContent = enabled) }
 
+    fun togglePartialBlockDomain(path: String) {
+        _state.update { s ->
+            val updated = if (s.partialBlockDomains.contains(path))
+                s.partialBlockDomains - path
+            else
+                s.partialBlockDomains + path
+            s.copy(partialBlockDomains = updated)
+        }
+    }
+
     // ── Step 3: Limit type ────────────────────────────────────────────────────
 
     fun selectLimitType(type: LimitType) = _state.update { it.copy(limitType = type) }
@@ -344,7 +371,7 @@ class ChallengeCreationViewModel @Inject constructor(
             1 -> s.selectedMode != null
             2 -> when (s.activeTab) {
                 0 -> s.selectedApps.isNotEmpty() && s.selectedApps.none { conflicts.containsKey(it) }
-                1 -> s.manualDomains.isNotEmpty() || s.blockAdultContent
+                1 -> s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
                 else -> false
             }
             3 -> s.limitType != null
@@ -376,6 +403,8 @@ class ChallengeCreationViewModel @Inject constructor(
             s.manualDomains
         }
     }
+
+    private fun computePartialBlockDomains(): List<String> = _state.value.partialBlockDomains.toList()
 
     // ── Challenge creation ────────────────────────────────────────────────────
 
@@ -421,6 +450,7 @@ class ChallengeCreationViewModel @Inject constructor(
                 mode = ChallengeMode.SOFT,
                 appPackageNames = if (!isWebsiteTab) s.selectedApps.toList() else emptyList(),
                 blockedDomains = computeBlockedDomains(),
+                partialBlockDomains = computePartialBlockDomains(),
                 blockingType = if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE,
                 blockAdultContent = s.blockAdultContent,
                 scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
@@ -489,6 +519,7 @@ class ChallengeCreationViewModel @Inject constructor(
                 stripePaymentIntentId = paymentIntentId,
                 appPackageNames = if (!isWebsiteTab) s.selectedApps.toList() else emptyList(),
                 blockedDomains = computeBlockedDomains(),
+                partialBlockDomains = computePartialBlockDomains(),
                 blockingType = if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE,
                 blockAdultContent = s.blockAdultContent,
                 scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },

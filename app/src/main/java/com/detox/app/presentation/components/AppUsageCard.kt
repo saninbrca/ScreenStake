@@ -1,7 +1,5 @@
 package com.detox.app.presentation.components
 
-import android.graphics.drawable.Drawable
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,15 +14,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.ui.theme.DetoxGrayedOut
@@ -37,6 +35,7 @@ fun AppUsageCard(
     modifier: Modifier = Modifier
 ) {
     val alpha = if (appUsageInfo.isTrackable) 1f else 0.5f
+    val context = LocalContext.current
 
     Card(
         onClick = onClick,
@@ -57,13 +56,14 @@ fun AppUsageCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             appUsageInfo.icon?.let { drawable ->
-                val painter = remember(drawable) {
-                    BitmapPainter(drawable.toBitmap(48, 48).asImageBitmap())
-                }
-                Image(
-                    painter = painter,
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(drawable)
+                        .size(144)
+                        .build(),
                     contentDescription = appUsageInfo.appName,
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
+                    contentScale = ContentScale.Fit
                 )
             }
 
@@ -75,7 +75,6 @@ fun AppUsageCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-
             }
 
             Spacer(modifier = Modifier.width(8.dp))

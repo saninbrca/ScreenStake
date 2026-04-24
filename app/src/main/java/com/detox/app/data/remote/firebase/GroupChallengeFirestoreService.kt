@@ -172,7 +172,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                 } else p
             }
             docRef.update("participants", updated).await()
-            Timber.d("Leaderboard updated for $userId: opens=$opensToday time=$timeUsedMinutes")
+            Timber.d("Leaderboard updated: userId=$userId opens=$opensToday time=$timeUsedMinutes")
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeFirestore: updateParticipantStats failed groupId=%s uid=%s", groupId, userId)
         }
@@ -210,7 +210,8 @@ class GroupChallengeFirestoreService @Inject constructor(
             )
         },
         // Denormalised list for Firestore array-contains queries
-        "participantUserIds" to participants.map { it.userId }
+        "participantUserIds" to participants.map { it.userId },
+        "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null }
     )
 
     @Suppress("UNCHECKED_CAST")
@@ -227,7 +228,14 @@ class GroupChallengeFirestoreService @Inject constructor(
             val participants = rawParticipants.map { p ->
                 Participant(
                     userId = p["userId"] as? String ?: "",
-                    displayName = p["displayName"] as? String ?: "",
+                    displayName = run {
+                        val raw = p["displayName"] as? String ?: ""
+                        when {
+                            raw.isBlank() -> "Player"
+                            raw.contains('@') -> raw.substringBefore('@')
+                            else -> raw
+                        }
+                    },
                     paymentIntentId = p["paymentIntentId"] as? String ?: "",
                     amountCents = (p["amountCents"] as? Long)?.toInt() ?: 0,
                     status = runCatching {
@@ -279,7 +287,10 @@ class GroupChallengeFirestoreService @Inject constructor(
                         (d["status"] as? String ?: "waiting").uppercase()
                     )
                 }.getOrDefault(GroupChallengeStatus.WAITING),
-                participants = participants
+                participants = participants,
+                blockedDomains = (d["blockedDomains"] as? String)
+                    ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                    ?: emptyList()
             )
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeFirestore: failed to parse document %s", id)

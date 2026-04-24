@@ -36,6 +36,7 @@
     <string name="app_selection_not_enough_usage">Not enough usage data</string>
     <string name="app_selection_avg_daily_time">%1$d min/day</string>
     <string name="app_selection_avg_daily_opens">%1$d opens/day</string>
+    <string name="app_selection_usage_summary">%1$d min/day · %2$d opens/day</string>
     <string name="app_selection_loading">Analyzing your app usage\u2026</string>
     <string name="app_selection_error">Could not load usage data. Please make sure the Usage Data Access permission is granted.</string>
     <string name="app_selection_no_permission">Usage data permission is required to see your apps.</string>
@@ -235,6 +236,8 @@
     <string name="profile_stat_apps_label">Apps blocked</string>
     <string name="profile_active_challenges">Active Challenges</string>
     <string name="profile_view_all">View all →</string>
+    <string name="profile_recent_activity">Recent Activity</string>
+    <string name="profile_no_recent_activity">No completed challenges yet</string>
 
     <!-- Challenges screen -->
     <string name="challenges_title">Challenges</string>
@@ -407,8 +410,8 @@
     <string name="friends_hub_join">Join with Code</string>
     <string name="friends_hub_active">Active</string>
     <string name="friends_hub_waiting">Waiting to Start</string>
-    <string name="friends_hub_history">History</string>
-    <string name="friends_hub_empty">No group challenges yet.\nCreate one or join a friend\'s challenge!</string>
+    <string name="friends_hub_empty_title">Keine aktiven Group Challenges</string>
+    <string name="friends_hub_empty_subtitle">Erstelle eine Challenge oder tritt einer bei!</string>
 
     <!-- Group Challenge — Create flow -->
     <string name="group_create_title_step1">New Group Challenge</string>
@@ -579,6 +582,38 @@
     <string name="group_detail_nudge_sent">Benachrichtigung gesendet!</string>
     <string name="group_detail_opens_label">%1$d/%2$d Opens</string>
     <string name="group_detail_time_label">%1$d min</string>
+
+    <!-- Group Challenge Fail Overlay -->
+    <string name="group_fail_overlay_title">😔 Du hast die Group Challenge nicht geschafft</string>
+    <string name="group_fail_overlay_money">€%1$d wurden eingezogen</string>
+    <string name="group_fail_overlay_message">Deine Freunde spielen weiter — schau ihren Fortschritt an</string>
+    <string name="group_fail_overlay_leaderboard">Leaderboard ansehen</string>
+    <string name="group_fail_overlay_home">Zur Startseite</string>
+
+    <!-- Profile — History section -->
+    <string name="profile_history_title">Verlauf</string>
+    <string name="history_show_all">Alle anzeigen →</string>
+    <string name="history_result_success">✅ Erfolgreich</string>
+    <string name="history_result_failed">❌ Gefailed</string>
+    <string name="history_result_won">✅ Gewonnen</string>
+    <string name="history_result_eliminated">❌ Ausgeschieden</string>
+    <string name="history_result_running">⏳ Läuft noch</string>
+    <string name="history_players_won">%1$d von %2$d Spielern gewonnen</string>
+    <string name="history_duration_days">%1$d Tage</string>
+
+    <!-- History full screen -->
+    <string name="history_screen_title">Verlauf</string>
+    <string name="history_filter_all">Alle</string>
+    <string name="history_filter_solo">Solo</string>
+    <string name="history_filter_group">Gruppe</string>
+    <string name="history_filter_won">✅ Gewonnen</string>
+    <string name="history_filter_failed">❌ Gefailed</string>
+
+    <!-- Group Challenge Detail — failed user read-only banner -->
+    <string name="group_detail_failed_banner">Du bist ausgeschieden 😔</string>
+    <string name="group_detail_challenge_ends_on">Challenge endet am %1$s</string>
+    <string name="group_detail_winner">🏆 %1$s hat gewonnen!</string>
+    <string name="group_detail_total_prize">Gesamttopf: €%1$d</string>
 
     <!-- Settings — App Info section -->
     <string name="settings_section_app_info">App Info</string>

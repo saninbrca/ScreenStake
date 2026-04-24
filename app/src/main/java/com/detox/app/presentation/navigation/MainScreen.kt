@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import com.detox.app.service.TrackedAppEventBus
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -61,6 +62,7 @@ import com.detox.app.presentation.screens.friends.FriendsHubScreen
 import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCreateScreen
 import com.detox.app.presentation.screens.groupchallenge.detail.GroupChallengeDetailScreen
 import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoinScreen
+import com.detox.app.presentation.screens.history.HistoryScreen
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
@@ -113,6 +115,15 @@ fun MainScreen(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+
+    LaunchedEffect(Unit) {
+        TrackedAppEventBus.navigateToGroupDetail.collect { groupId ->
+            navController.navigate("group_detail/$groupId") {
+                launchSingleTop = true
+            }
+            TrackedAppEventBus.clearGroupDetailNavigation()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -208,6 +219,15 @@ fun MainScreen(
                             launchSingleTop = true
                             restoreState = true
                         }
+                    },
+                    onGroupChallengeClick = { groupId ->
+                        navController.navigate("group_detail/$groupId")
+                    },
+                    onSoloChallengeClick = { challengeId ->
+                        navController.navigate("active_challenge/$challengeId")
+                    },
+                    onShowAllHistory = {
+                        navController.navigate("history")
                     }
                 )
             }
@@ -289,6 +309,19 @@ fun MainScreen(
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
                 GroupChallengeDetailScreen(onBack = { navController.popBackStack() })
+            }
+
+            // ── Challenge History ─────────────────────────────────────────────────
+            composable("history") {
+                HistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    onGroupChallengeClick = { groupId ->
+                        navController.navigate("group_detail/$groupId")
+                    },
+                    onSoloChallengeClick = { challengeId ->
+                        navController.navigate("active_challenge/$challengeId")
+                    }
+                )
             }
         }
     }

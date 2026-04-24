@@ -139,6 +139,12 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             return
         }
 
+        // Skip packages whose group challenge the user already failed today
+        if (TrackedAppEventBus.failedPackagesToday.value.contains(packageName)) {
+            Timber.d("AppDetectionService: $packageName — user failed group challenge, skipping overlay")
+            return
+        }
+
         val trackedPackages = TrackedAppEventBus.trackedPackages.value
         if (trackedPackages.contains(packageName)) {
             Timber.d("Checking package=$packageName against challenge packages=${trackedPackages.toList()}")
@@ -256,23 +262,44 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
         Timber.d("URL detected: $url in $packageName → blocked=false")
 
-        // ── Custom blocked-domain check ───────────────────────────────────────
+        // ── Custom blocked-domain check (full domain) ─────────────────────────
         val customBlockedDomains = TrackedAppEventBus.blockedDomains.value
-        if (customBlockedDomains.isEmpty()) return
+        if (customBlockedDomains.isNotEmpty()) {
+            val matchedCustom = customBlockedDomains.firstOrNull { domain ->
+                url.contains(domain, ignoreCase = true)
+            }
+            if (matchedCustom != null) {
+                if (!TrackedAppEventBus.freedDomainsToday.value.contains(matchedCustom)) {
+                    val now = System.currentTimeMillis()
+                    if (matchedCustom != lastBlockedDomain || now - lastBlockedTimeMs >= 2_000L) {
+                        lastBlockedDomain = matchedCustom
+                        lastBlockedTimeMs = now
+                        Timber.d("Custom blocked domain=$matchedCustom detected in browser=$packageName url=$url")
+                        TrackedAppEventBus.emitUrlBlocked(matchedCustom)
+                    }
+                }
+                // Full domain takes priority — don't also fire partial block for same URL
+                return
+            }
+        }
 
-        val matchedCustom = customBlockedDomains.firstOrNull { domain ->
-            url.contains(domain, ignoreCase = true)
+        // ── Partial-block check (feature-level URL path) ──────────────────────
+        val partialBlockPaths = TrackedAppEventBus.partialBlockDomains.value
+        if (partialBlockPaths.isEmpty()) return
+
+        val matchedPath = partialBlockPaths.firstOrNull { path ->
+            url.contains(path, ignoreCase = true)
         } ?: return
 
-        if (TrackedAppEventBus.freedDomainsToday.value.contains(matchedCustom)) return
+        if (TrackedAppEventBus.freedDomainsToday.value.contains(matchedPath)) return
 
         val now = System.currentTimeMillis()
-        if (matchedCustom == lastBlockedDomain && now - lastBlockedTimeMs < 2_000L) return
-        lastBlockedDomain = matchedCustom
+        if (matchedPath == lastBlockedDomain && now - lastBlockedTimeMs < 2_000L) return
+        lastBlockedDomain = matchedPath
         lastBlockedTimeMs = now
 
-        Timber.d("Custom blocked domain=$matchedCustom detected in browser=$packageName url=$url")
-        TrackedAppEventBus.emitUrlBlocked(matchedCustom)
+        Timber.d("Partial block detected: $url matches $matchedPath in browser=$packageName")
+        TrackedAppEventBus.emitUrlBlocked(matchedPath)
     }
 
     /**

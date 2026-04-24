@@ -18,8 +18,10 @@ import androidx.work.WorkManager
 import com.detox.app.R
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.ThresholdFlags
+import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -70,6 +72,12 @@ class UsageTrackingService : Service() {
     @Inject
     lateinit var dailyLogRepository: DailyLogRepository
 
+    @Inject
+    lateinit var groupChallengeRepository: GroupChallengeRepository
+
+    @Inject
+    lateinit var firebaseAuthService: FirebaseAuthService
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
@@ -95,6 +103,11 @@ class UsageTrackingService : Service() {
                 TrackedAppEventBus.updateBlockedDomains(blockedDomains)
                 Timber.d("Updated blocked domains: $blockedDomains")
 
+                // Aggregate partial-block URL path prefixes for feature-level blocking
+                val partialBlockDomains = challenges.flatMap { it.partialBlockDomains }.toSet()
+                TrackedAppEventBus.updatePartialBlockDomains(partialBlockDomains)
+                Timber.d("Updated partial block paths: $partialBlockDomains")
+
                 // Notify AccessibilityService whether adult content blocking is needed.
                 // It reads this in-memory flag on every browser URL event — no Room query.
                 val adultBlockingActive = challenges.any { it.blockAdultContent }
@@ -116,6 +129,7 @@ class UsageTrackingService : Service() {
 
         overlayManager.startListening(serviceScope)
         startUsagePolling()
+        startGroupChallengeStatsPolling()
         startOverlayPermissionMonitoring()
     }
 
@@ -185,6 +199,40 @@ class UsageTrackingService : Service() {
                 wm.cancelAllWorkByTag(tag)
             }
         Timber.d("Warnings cancelled: permission restored")
+    }
+
+    // ── Group challenge leaderboard polling (60-second) ───────────────────────
+
+    private fun startGroupChallengeStatsPolling() {
+        serviceScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(60_000L)
+                updateGroupChallengeStats()
+            }
+        }
+    }
+
+    private suspend fun updateGroupChallengeStats() {
+        val uid = firebaseAuthService.currentUserId() ?: return
+        val challenges = runCatching {
+            challengeRepository.getActiveChallengesList().getOrThrow()
+        }.getOrElse { return }
+
+        for (challenge in challenges) {
+            val groupId = challenge.groupChallengeId ?: continue
+            val packageName = challenge.appPackageName ?: continue
+            val usage = runCatching {
+                usageStatsRepository.getTodayUsageForApp(packageName)
+            }.getOrNull() ?: continue
+
+            groupChallengeRepository.updateParticipantStats(
+                groupId = groupId,
+                userId = uid,
+                opensToday = usage.opens,
+                timeUsedMinutes = usage.minutes
+            )
+            Timber.d("Leaderboard updated: userId=$uid opens=${usage.opens} time=${usage.minutes}")
+        }
     }
 
     // ── Threshold usage polling ────────────────────────────────────────────────

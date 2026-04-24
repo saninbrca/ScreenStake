@@ -43,7 +43,9 @@ object DatabaseModule {
                 DetoxDatabase.MIGRATION_13_14,
                 DetoxDatabase.MIGRATION_14_15,
                 DetoxDatabase.MIGRATION_15_16,
-                DetoxDatabase.MIGRATION_16_17
+                DetoxDatabase.MIGRATION_16_17,
+                DetoxDatabase.MIGRATION_17_18,
+                DetoxDatabase.MIGRATION_18_19
             )
             .build()
     }

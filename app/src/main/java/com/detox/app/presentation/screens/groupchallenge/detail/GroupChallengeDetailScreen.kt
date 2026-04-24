@@ -140,11 +140,15 @@ fun GroupChallengeDetailScreen(
             }
 
             is GroupDetailUiState.Success -> {
+                val myParticipant = state.groupChallenge.participants
+                    .find { it.userId == currentUserId }
+                val isCurrentUserFailed = myParticipant?.status == ParticipantStatus.FAILED
                 GroupDetailContent(
                     gc = state.groupChallenge,
                     currentUserId = currentUserId,
                     myStreak = state.myStreak,
                     isStarting = startState is StartChallengeState.Loading,
+                    isCurrentUserFailed = isCurrentUserFailed,
                     onStartChallenge = viewModel::startChallenge,
                     onNudge = viewModel::nudgeParticipant,
                     modifier = Modifier.padding(innerPadding)
@@ -160,6 +164,7 @@ private fun GroupDetailContent(
     currentUserId: String?,
     myStreak: Int,
     isStarting: Boolean,
+    isCurrentUserFailed: Boolean = false,
     onStartChallenge: () -> Unit,
     onNudge: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -184,6 +189,11 @@ private fun GroupDetailContent(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ── Failed user banner ──────────────────────────────────────────────────
+        if (isCurrentUserFailed) {
+            item { FailedUserBanner(gc) }
+        }
+
         // ── Summary card ────────────────────────────────────────────────────────
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -262,6 +272,15 @@ private fun GroupDetailContent(
                         LimitType.TIME_WINDOW -> "Time window only"
                     }
                     Text(text = limitSummary, style = MaterialTheme.typography.bodyMedium)
+
+                    // Blocked websites
+                    if (gc.blockedDomains.isNotEmpty()) {
+                        Text(
+                            text = "🌐 Blocked: ${gc.blockedDomains.joinToString(", ")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
 
                     // End date (computed from startDate + durationDays)
                     if (endDateValid) {
@@ -377,6 +396,7 @@ private fun GroupDetailContent(
                 participant = participant,
                 gc = gc,
                 isCurrentUser = participant.userId == currentUserId,
+                isCurrentUserFailed = isCurrentUserFailed,
                 onNudge = { onNudge(participant.userId) }
             )
         }
@@ -397,6 +417,7 @@ private fun LeaderboardCard(
     participant: Participant,
     gc: GroupChallenge,
     isCurrentUser: Boolean,
+    isCurrentUserFailed: Boolean = false,
     onNudge: () -> Unit,
 ) {
     val rankEmoji = when (rank) {
@@ -485,8 +506,8 @@ private fun LeaderboardCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
 
-            // Nerv ihn! button — only for others while challenge is active
-            if (!isCurrentUser && gc.status == GroupChallengeStatus.ACTIVE
+            // Nerv ihn! button — only for others while challenge is active and current user has not failed
+            if (!isCurrentUser && !isCurrentUserFailed && gc.status == GroupChallengeStatus.ACTIVE
                 && participant.status == ParticipantStatus.ACTIVE) {
                 Button(
                     onClick = onNudge,
@@ -626,6 +647,64 @@ private fun StatusBadge(status: GroupChallengeStatus) {
             color = color,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
+    }
+}
+
+@Composable
+private fun FailedUserBanner(gc: GroupChallenge) {
+    val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
+    val endDateValid = gc.endDate > System.currentTimeMillis()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.group_detail_failed_banner),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            if (endDateValid) {
+                Text(
+                    text = stringResource(
+                        R.string.group_detail_challenge_ends_on,
+                        dateFmt.format(Date(gc.endDate))
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                )
+            }
+            if (gc.status == GroupChallengeStatus.COMPLETED) {
+                val winner = gc.participants
+                    .filter { it.status == ParticipantStatus.SUCCESS }
+                    .minByOrNull { it.timeUsedMinutes }
+                if (winner != null) {
+                    val name = winner.displayName.takeIf { it.isNotBlank() }
+                        ?: winner.userId.substringBefore('@')
+                    val pot = gc.participants.count { it.status == ParticipantStatus.FAILED } * gc.buyInCents / 100
+                    Text(
+                        text = stringResource(R.string.group_detail_winner, name),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    if (pot > 0) {
+                        Text(
+                            text = stringResource(R.string.group_detail_total_prize, pot),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -12,6 +12,7 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.service.TrackedAppEventBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -49,17 +50,27 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                         when (gc.status) {
                             GroupChallengeStatus.ACTIVE -> {
                                 groupChallengeDao.upsert(gc.toEntity())
-                                syncGroupChallengeToLocalTracking(gc, userId)
-                                Timber.d(
-                                    "Group challenge synced to Room: %s, app: %s",
-                                    gc.groupId, gc.appPackageNames
-                                )
+                                val myParticipant = gc.participants.find { it.userId == userId }
+                                if (myParticipant?.status == ParticipantStatus.FAILED) {
+                                    challengeDao.deleteById("group_${gc.groupId}")
+                                    Timber.d(
+                                        "GroupChallengeRepo: user %s FAILED group %s — deleted local challenge",
+                                        userId, gc.groupId
+                                    )
+                                } else {
+                                    syncGroupChallengeToLocalTracking(gc, userId)
+                                    Timber.d(
+                                        "Group challenge synced to Room: %s, app: %s",
+                                        gc.groupId, gc.appPackageNames
+                                    )
+                                }
                             }
                             GroupChallengeStatus.COMPLETED, GroupChallengeStatus.CANCELLED -> {
+                                groupChallengeDao.upsert(gc.toEntity())
                                 val localId = "group_${gc.groupId}"
                                 challengeDao.deleteById(localId)
                                 Timber.d(
-                                    "GroupChallengeRepo: deleted local challenge %s (status=%s)",
+                                    "GroupChallengeRepo: upserted group entity + deleted local challenge %s (status=%s)",
                                     localId, gc.status
                                 )
                             }
@@ -153,6 +164,14 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             }
 
             val localChallengeId = "group_${groupChallenge.groupId}"
+            if (userParticipant.status == ParticipantStatus.FAILED) {
+                challengeDao.deleteById(localChallengeId)
+                Timber.d(
+                    "GroupChallengeRepo: user %s already FAILED group %s — deleted local challenge",
+                    userId, groupChallenge.groupId
+                )
+                return Result.success(Unit)
+            }
             val entity = ChallengeEntity(
                 id = localChallengeId,
                 appPackageName = groupChallenge.appPackageNames.firstOrNull() ?: "",
@@ -170,7 +189,8 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 createdAt = System.currentTimeMillis(),
                 appPackageNames = groupChallenge.appPackageNames.joinToString(","),
                 sessionDurationMinutes = groupChallenge.sessionDurationMinutes,
-                groupChallengeId = groupChallenge.groupId
+                groupChallengeId = groupChallenge.groupId,
+                blockedDomains = groupChallenge.blockedDomains.joinToString(",").ifEmpty { null }
             )
             challengeDao.insertChallenge(entity)
             Timber.d(
@@ -192,10 +212,19 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             challenges
                 .filter { it.status == GroupChallengeStatus.ACTIVE }
                 .forEach { gc ->
-                    syncGroupChallengeToLocalTracking(gc, userId)
-                        .onFailure { e ->
-                            Timber.e(e, "GroupChallengeRepo: refreshFromFirestore sync failed for %s", gc.groupId)
-                        }
+                    val myParticipant = gc.participants.find { it.userId == userId }
+                    if (myParticipant?.status == ParticipantStatus.FAILED) {
+                        challengeDao.deleteById("group_${gc.groupId}")
+                        Timber.d(
+                            "GroupChallengeRepo: refreshFromFirestore — user %s FAILED group %s, deleted local challenge",
+                            userId, gc.groupId
+                        )
+                    } else {
+                        syncGroupChallengeToLocalTracking(gc, userId)
+                            .onFailure { e ->
+                                Timber.e(e, "GroupChallengeRepo: refreshFromFirestore sync failed for %s", gc.groupId)
+                            }
+                    }
                 }
 
             challenges
@@ -246,6 +275,27 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         firestoreService.updateParticipantStats(groupId, userId, opensToday, timeUsedMinutes)
     }
 
+    override suspend fun markParticipantFailedLocally(groupId: String, userId: String) {
+        val entity = groupChallengeDao.getById(groupId) ?: return
+        val updatedJson = runCatching {
+            val array = JSONArray(entity.participantsJson)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                if (obj.optString("userId") == userId) {
+                    obj.put("status", "failed")
+                }
+            }
+            array.toString()
+        }.getOrElse { entity.participantsJson }
+        groupChallengeDao.updateParticipants(groupId, updatedJson)
+
+        val packages = entity.appPackageNames
+            .split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        TrackedAppEventBus.markPackagesFailedForUser(packages)
+
+        Timber.d("User failed group $groupId — removing from active blocking")
+    }
+
     // ── Entity ↔ Domain ─────────────────────────────────────────────────────────
 
     private fun GroupChallengeEntity.toDomain(): GroupChallenge {
@@ -289,7 +339,10 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             bonusEnabled = bonusEnabled != 0,
             status = runCatching { GroupChallengeStatus.valueOf(status.uppercase()) }
                 .getOrDefault(GroupChallengeStatus.WAITING),
-            participants = participants
+            participants = participants,
+            blockedDomains = blockedDomains
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                ?: emptyList()
         )
     }
 
@@ -324,7 +377,8 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             endDate = endDate,
             bonusEnabled = if (bonusEnabled) 1 else 0,
             status = status.name.lowercase(),
-            participantsJson = array.toString()
+            participantsJson = array.toString(),
+            blockedDomains = blockedDomains.joinToString(",").ifEmpty { null }
         )
     }
 }

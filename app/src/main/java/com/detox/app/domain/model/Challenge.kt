@@ -22,6 +22,8 @@ data class Challenge(
     val dailyBudgetMinutes: Int? = null,
     /** All blocked domains (from presets + custom) for website blocking. */
     val blockedDomains: List<String> = emptyList(),
+    /** URL path prefixes for feature-level partial blocking, e.g. "instagram.com/reels". */
+    val partialBlockDomains: List<String> = emptyList(),
     /** Whether this challenge blocks an app or a website directly. */
     val blockingType: BlockingType = BlockingType.APP,
     /** Whether adult content domains are blocked alongside the main target. */

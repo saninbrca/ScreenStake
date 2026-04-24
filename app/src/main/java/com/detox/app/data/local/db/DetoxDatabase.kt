@@ -18,7 +18,7 @@ import com.detox.app.data.local.db.entity.GroupChallengeEntity
         DailyLogEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 17,
+    version = 19,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -258,6 +258,25 @@ abstract class DetoxDatabase : RoomDatabase() {
                     "ALTER TABLE daily_logs ADD COLUMN notified90 INTEGER NOT NULL DEFAULT 0"
                 )
                 Timber.d("DB migration 16→17: added notified50/75/90 threshold columns to daily_logs")
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE group_challenges ADD COLUMN blockedDomains TEXT DEFAULT NULL"
+                )
+                Timber.d("DB migration 17→18: added blockedDomains column to group_challenges")
+            }
+        }
+
+        /** Adds partial-block URL path column for feature-level blocking (e.g. Instagram Reels). */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE challenges ADD COLUMN partialBlockDomains TEXT DEFAULT NULL"
+                )
+                Timber.d("DB migration 18→19: added partialBlockDomains column to challenges")
             }
         }
 

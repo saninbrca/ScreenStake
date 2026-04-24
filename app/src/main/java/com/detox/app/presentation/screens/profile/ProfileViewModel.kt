@@ -7,6 +7,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.entity.ChallengeEntity
+import com.detox.app.data.local.db.entity.GroupChallengeEntity
 import com.detox.app.service.DailyEvaluationWorker
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,8 +21,27 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import timber.log.Timber
 import javax.inject.Inject
+
+sealed interface HistoryItem {
+    val sortDate: Long
+
+    data class Solo(val entity: ChallengeEntity) : HistoryItem {
+        override val sortDate: Long get() = entity.endDate
+    }
+
+    data class Group(
+        val entity: GroupChallengeEntity,
+        /** "won" | "eliminated" | "running" | "cancelled" */
+        val myResult: String,
+        val successCount: Int,
+        val totalCount: Int,
+    ) : HistoryItem {
+        override val sortDate: Long get() = entity.endDate
+    }
+}
 
 data class ProfileStats(
     val currentStreak: Int = 0,
@@ -43,6 +63,15 @@ class ProfileViewModel @Inject constructor(
     private val _stats = MutableStateFlow(ProfileStats())
     val stats: StateFlow<ProfileStats> = _stats.asStateFlow()
 
+    private val _recentChallenges = MutableStateFlow<List<ChallengeEntity>>(emptyList())
+    val recentChallenges: StateFlow<List<ChallengeEntity>> = _recentChallenges.asStateFlow()
+
+    private val _historyItems = MutableStateFlow<List<HistoryItem>>(emptyList())
+    val historyItems: StateFlow<List<HistoryItem>> = _historyItems.asStateFlow()
+
+    private val _allHistoryItems = MutableStateFlow<List<HistoryItem>>(emptyList())
+    val allHistoryItems: StateFlow<List<HistoryItem>> = _allHistoryItems.asStateFlow()
+
     val activeChallenges: StateFlow<List<ChallengeEntity>> =
         database.challengeDao().getActiveChallenges()
             .map { it.take(2) }
@@ -60,8 +89,62 @@ class ProfileViewModel @Inject constructor(
                 .toSet().size
             val streak = computeStreak()
             _stats.value = ProfileStats(streak, completedCount, appsBlocked)
+            _recentChallenges.value = database.challengeDao().getRecentFinishedChallenges()
+            loadHistoryItems()
         }
     }
+
+    private suspend fun loadHistoryItems() {
+        val userId = firebaseAuth.currentUser?.uid
+
+        val soloItems = database.challengeDao().getFinishedSoloChallenges()
+            .map { HistoryItem.Solo(it) }
+
+        val allGroupEntities = database.groupChallengeDao().getAllList()
+        val groupItems = allGroupEntities.mapNotNull { entity ->
+            val myStatus = userId?.let { getParticipantStatus(entity.participantsJson, it) }
+            val successCount = countParticipantsByStatus(entity.participantsJson, "success")
+            val totalCount = countParticipants(entity.participantsJson)
+
+            when {
+                entity.status == "cancelled" ->
+                    HistoryItem.Group(entity, "cancelled", successCount, totalCount)
+                entity.status == "completed" -> {
+                    val result = if (myStatus == "failed") "eliminated" else "won"
+                    HistoryItem.Group(entity, result, successCount, totalCount)
+                }
+                entity.status == "active" && myStatus == "failed" ->
+                    HistoryItem.Group(entity, "eliminated", successCount, totalCount)
+                else -> null
+            }
+        }
+
+        val sorted = (soloItems + groupItems).sortedByDescending { it.sortDate }
+        _allHistoryItems.value = sorted
+        _historyItems.value = sorted.take(3)
+    }
+
+    private fun getParticipantStatus(participantsJson: String, userId: String): String? {
+        return runCatching {
+            val array = JSONArray(participantsJson)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                if (obj.optString("userId") == userId) return obj.optString("status", null)
+            }
+            null
+        }.getOrNull()
+    }
+
+    private fun countParticipantsByStatus(participantsJson: String, status: String): Int =
+        runCatching {
+            val array = JSONArray(participantsJson)
+            (0 until array.length()).count { i ->
+                array.getJSONObject(i).optString("status") == status
+            }
+        }.getOrDefault(0)
+
+    private fun countParticipants(participantsJson: String): Int =
+        runCatching { JSONArray(participantsJson).length() }.getOrDefault(0)
 
     private suspend fun computeStreak(): Int {
         val logs = database.dailyLogDao().getAllLogsOrderedByDateDesc()

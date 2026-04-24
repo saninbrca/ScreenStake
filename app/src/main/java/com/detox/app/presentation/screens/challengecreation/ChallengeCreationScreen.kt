@@ -30,10 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -215,6 +211,7 @@ fun ChallengeCreationScreen(
                         manualDomainInput = state.manualDomainInput,
                         manualDomainError = state.manualDomainError,
                         blockAdultContent = state.blockAdultContent,
+                        partialBlockDomains = state.partialBlockDomains,
                         onSearchQueryChange = viewModel::updateSearchQuery,
                         onToggleApp = viewModel::toggleApp,
                         onReloadApps = viewModel::loadApps,
@@ -224,6 +221,7 @@ fun ChallengeCreationScreen(
                         onAddManualDomain = viewModel::addManualDomain,
                         onRemoveManualDomain = viewModel::removeManualDomain,
                         onBlockAdultContentChange = viewModel::updateBlockAdultContent,
+                        onTogglePartialBlock = viewModel::togglePartialBlockDomain,
                     )
                     3 -> Step3LimitType(
                         selected = state.limitType,
@@ -445,6 +443,7 @@ private fun Step2AppOrWebsite(
     manualDomainInput: String,
     manualDomainError: String?,
     blockAdultContent: Boolean,
+    partialBlockDomains: Set<String>,
     onSearchQueryChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
     onReloadApps: () -> Unit,
@@ -454,6 +453,7 @@ private fun Step2AppOrWebsite(
     onAddManualDomain: () -> Unit,
     onRemoveManualDomain: (String) -> Unit,
     onBlockAdultContentChange: (Boolean) -> Unit,
+    onTogglePartialBlock: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = activeTab) {
@@ -485,10 +485,12 @@ private fun Step2AppOrWebsite(
                 manualDomainInput = manualDomainInput,
                 manualDomainError = manualDomainError,
                 blockAdultContent = blockAdultContent,
+                partialBlockDomains = partialBlockDomains,
                 onManualDomainInputChange = onManualDomainInputChange,
                 onAddManualDomain = onAddManualDomain,
                 onRemoveManualDomain = onRemoveManualDomain,
                 onBlockAdultContentChange = onBlockAdultContentChange,
+                onTogglePartialBlock = onTogglePartialBlock,
             )
         }
     }
@@ -592,17 +594,14 @@ private fun AppsTabContent(
                 val nonTrackable = if (query.isEmpty()) appListState.nonTrackableApps
                     else appListState.nonTrackableApps.filter { it.appName.lowercase().contains(query) }
 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                LazyColumn(
+                    contentPadding = PaddingValues(vertical = 4.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(trackable, key = { it.packageName }) { app ->
                         val isSelected = selectedApps.contains(app.packageName)
                         val conflictName = appListState.conflictingPackages[app.packageName]
-                        AppGridItem(
+                        AppListRow(
                             app = app,
                             isSelected = isSelected,
                             conflictChallengeName = conflictName,
@@ -611,7 +610,7 @@ private fun AppsTabContent(
                     }
 
                     if (nonTrackable.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
+                        item {
                             Column {
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                 Text(
@@ -623,7 +622,7 @@ private fun AppsTabContent(
                             }
                         }
                         items(nonTrackable, key = { "${it.packageName}_nt" }) { app ->
-                            AppGridItem(
+                            AppListRow(
                                 app = app,
                                 isSelected = false,
                                 conflictChallengeName = null,
@@ -635,7 +634,7 @@ private fun AppsTabContent(
 
                     // Domain suggestions for selected apps that have known domains
                     if (domainToggles.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
+                        item {
                             DomainSuggestionsSection(
                                 domainToggles = domainToggles,
                                 appListState = appListState,
@@ -707,10 +706,12 @@ private fun WebsitesTabContent(
     manualDomainInput: String,
     manualDomainError: String?,
     blockAdultContent: Boolean,
+    partialBlockDomains: Set<String>,
     onManualDomainInputChange: (String) -> Unit,
     onAddManualDomain: () -> Unit,
     onRemoveManualDomain: (String) -> Unit,
     onBlockAdultContentChange: (Boolean) -> Unit,
+    onTogglePartialBlock: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -787,6 +788,54 @@ private fun WebsitesTabContent(
 
         HorizontalDivider()
 
+        // ── Block specific features (partial-block toggles) ────────────────────
+        // Only shown when the parent domain is NOT already fully blocked.
+        val visibleFeatures = FEATURE_BLOCK_MAP.filter { (path, _) ->
+            val parentDomain = path.substringBefore('/')
+            manualDomains.none { it.equals(parentDomain, ignoreCase = true) }
+        }
+        if (visibleFeatures.isNotEmpty()) {
+            Text(
+                text = "Block specific features",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "Block only certain sections of websites you haven't fully blocked.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            visibleFeatures.forEach { (path, featureName) ->
+                val isEnabled = partialBlockDomains.contains(path)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onTogglePartialBlock(path) }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "🚫 $featureName",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = path,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = { onTogglePartialBlock(path) },
+                    )
+                }
+            }
+            HorizontalDivider()
+        }
+
         // Adult content toggle
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -815,10 +864,10 @@ private fun WebsitesTabContent(
     }
 }
 
-// ── App grid item ─────────────────────────────────────────────────────────────
+// ── App list row ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun AppGridItem(
+private fun AppListRow(
     app: AppUsageInfo,
     isSelected: Boolean,
     conflictChallengeName: String?,
@@ -826,79 +875,55 @@ private fun AppGridItem(
     dimmed: Boolean = false,
 ) {
     val isBusy = conflictChallengeName != null
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.outlineVariant
-
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(width = if (isSelected) 2.dp else 1.dp, color = borderColor, shape = MaterialTheme.shapes.small)
+            .clickable(enabled = !dimmed && !isBusy, onClick = onToggle)
             .alpha(if (dimmed || isBusy) 0.4f else 1f)
-            .clickable(enabled = !dimmed && !isBusy, onClick = onToggle),
-        shape = MaterialTheme.shapes.small,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            else
-                MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        elevation = CardDefaults.cardElevation(2.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                app.icon?.let { drawable ->
-                    val painter = remember(drawable) {
-                        BitmapPainter(drawable.toBitmap(48, 48).asImageBitmap())
-                    }
-                    Image(
-                        painter = painter,
-                        contentDescription = app.appName,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .align(Alignment.Center),
-                    )
-                }
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .size(14.dp)
-                            .align(Alignment.TopEnd),
-                    )
-                }
+        app.icon?.let { drawable ->
+            val painter = remember(drawable) {
+                BitmapPainter(drawable.toBitmap(48, 48).asImageBitmap())
             }
+            Image(
+                painter = painter,
+                contentDescription = app.appName,
+                modifier = Modifier.size(48.dp),
+            )
+        } ?: Box(modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = app.appName,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
             )
             if (app.avgDailyMinutes > 0) {
                 Text(
-                    text = "${app.avgDailyMinutes}m",
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "${app.avgDailyMinutes} min/day · ${app.avgDailyOpens} opens/day",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (conflictChallengeName != null) {
+            if (isBusy) {
                 Text(
                     text = "busy",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
         }
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
+    HorizontalDivider()
 }
 
 // ── Step 3: Limit type ────────────────────────────────────────────────────────

@@ -37,6 +37,8 @@ data class GroupCreateFormState(
     val displayName: String = "",
     val searchQuery: String = "",
     val domainToggles: Map<String, Boolean> = emptyMap(),
+    val manualDomainInput: String = "",
+    val manualDomains: List<String> = emptyList(),
     // Step 2 — limit type
     val limitType: LimitType = LimitType.TIME,
     // Step 3 — limit value + duration
@@ -158,6 +160,31 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     fun updateSearchQuery(q: String) = _formState.update { it.copy(searchQuery = q) }
 
+    fun updateManualDomainInput(v: String) = _formState.update { it.copy(manualDomainInput = v) }
+
+    fun addManualDomain() {
+        val raw = _formState.value.manualDomainInput.trim().lowercase()
+            .removePrefix("https://").removePrefix("http://").trimEnd('/')
+        if (raw.isBlank() || !raw.contains('.')) return
+        val current = _formState.value.manualDomains
+        if (current.contains(raw)) {
+            _formState.update { it.copy(manualDomainInput = "") }
+            return
+        }
+        _formState.update { it.copy(manualDomains = current + raw, manualDomainInput = "") }
+    }
+
+    fun removeManualDomain(domain: String) =
+        _formState.update { it.copy(manualDomains = it.manualDomains - domain) }
+
+    fun computeBlockedDomains(): List<String> {
+        val s = _formState.value
+        val fromToggles = s.domainToggles
+            .filter { it.value }
+            .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
+        return (fromToggles + s.manualDomains).distinct()
+    }
+
     // ── Step 2 — limit type ─────────────────────────────────────────────────────
 
     fun setLimitType(type: LimitType) = _formState.update { it.copy(limitType = type) }
@@ -256,9 +283,11 @@ class GroupChallengeCreateViewModel @Inject constructor(
             _uiState.value = GroupCreateUiState.Error("Not signed in.")
             return
         }
-        val creatorName = firebaseAuthService.currentUser()?.displayName
-            ?: firebaseAuthService.currentUser()?.email
-            ?: "Unknown"
+        val creatorName = firebaseAuthService.currentUser()?.let { user ->
+            user.displayName?.takeIf { it.isNotBlank() }
+                ?: user.email?.substringBefore('@')
+                ?: "Unknown"
+        } ?: "Unknown"
 
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
@@ -280,6 +309,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 maxParticipants = MAX_PARTICIPANTS,
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
+                blockedDomains = computeBlockedDomains(),
             )
             result.fold(
                 onSuccess = { data ->

@@ -21,6 +21,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.detox.app.R
 import com.detox.app.data.remote.firebase.AnalyticsService
+import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyLog
@@ -34,6 +35,7 @@ import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.presentation.components.BlockingScreenOverlay
 import com.detox.app.presentation.components.BudgetSelectionOverlay
+import com.detox.app.presentation.components.GroupChallengeFailOverlay
 import com.detox.app.presentation.components.HardModeLockoutOverlay
 import com.detox.app.presentation.components.LimitExceededOverlay
 import com.detox.app.presentation.components.SessionIntentionOverlay
@@ -61,6 +63,7 @@ class OverlayManager @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val groupChallengeRepository: GroupChallengeRepository,
     private val firebaseAuthService: FirebaseAuthService,
+    private val cloudFunctionsService: CloudFunctionsService,
 ) {
 
     companion object {
@@ -115,6 +118,13 @@ class OverlayManager @Inject constructor(
      * Reset at midnight.
      */
     private val failedSessionAppsToday = mutableSetOf<String>()
+
+    /**
+     * Group challenge IDs for which the current user has already been marked as failed.
+     * Once a fail overlay is shown, no further overlays are shown for this group challenge.
+     * Reset at midnight.
+     */
+    private val failedGroupChallengeIds = mutableSetOf<String>()
 
     private var limitReachedTimerJob: Job? = null
     private var foregroundListenerJob: Job? = null
@@ -277,8 +287,17 @@ class OverlayManager @Inject constructor(
             return
         }
 
+        // Group challenge: no more overlays once user has already been failed
+        val groupChallengeId = status.challenge.groupChallengeId
+        if (groupChallengeId != null && failedGroupChallengeIds.contains(groupChallengeId)) {
+            return
+        }
+
         // Time-limit challenges keep the existing blocking + limit-exceeded flow
         when {
+            (status.limitExceeded || exceededAppsToday.contains(packageName)) && groupChallengeId != null -> {
+                handleGroupChallengeFail(status, groupChallengeId, packageName, scope)
+            }
             status.limitExceeded || exceededAppsToday.contains(packageName) ->
                 showLimitExceededOverlay(status, scope)
             else ->
@@ -1194,6 +1213,64 @@ class OverlayManager @Inject constructor(
         showOverlay(composeView, info.challengeId)
     }
 
+    // ── Group challenge fail overlay ───────────────────────────────────────────
+
+    /**
+     * Called when the current user exceeds their limit in a group challenge.
+     * Shows a full-screen fail overlay, calls the Cloud Function to capture their payment,
+     * updates the local Room status, and prevents any future overlays for this group.
+     */
+    private fun handleGroupChallengeFail(
+        status: DailyLimitStatus,
+        groupId: String,
+        packageName: String,
+        scope: CoroutineScope,
+    ) {
+        Timber.d("User failed group challenge %s — entering read only mode", groupId)
+        val challenge = status.challenge
+
+        failedGroupChallengeIds.add(groupId)
+        TrackedAppEventBus.markPackageFreeForToday(packageName)
+
+        scope.launch {
+            val userId = firebaseAuthService.currentUserId()
+            if (userId != null) {
+                cloudFunctionsService.failGroupParticipant(groupId, userId)
+                    .onSuccess { Timber.d("failGroupParticipant succeeded for group %s", groupId) }
+                    .onFailure { e -> Timber.e(e, "failGroupParticipant failed for group %s", groupId) }
+            }
+            // Mark the local shadow challenge as failed
+            groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded = false)
+                .onFailure { e -> Timber.e(e, "finishLocalGroupChallenge failed for group %s", groupId) }
+        }
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                dismissOverlay("back")
+                goHome()
+            }
+        ) {
+            DetoxTheme {
+                GroupChallengeFailOverlay(
+                    buyInCents = challenge.amountCents ?: 0,
+                    onLeaderboard = {
+                        dismissOverlay("leaderboard")
+                        TrackedAppEventBus.emitNavigateToGroupDetail(groupId)
+                        val launchIntent = context.packageManager
+                            .getLaunchIntentForPackage(context.packageName)
+                            ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP) }
+                        if (launchIntent != null) context.startActivity(launchIntent)
+                    },
+                    onGoHome = {
+                        dismissOverlay("go_home")
+                        goHome()
+                    }
+                )
+            }
+        }
+        showOverlay(composeView, challenge.id)
+    }
+
     // ── 5-minute re-trigger timer (time-limit Soft Mode) ──────────────────────
 
     private fun startLimitReachedTimer(packageName: String, scope: CoroutineScope) {
@@ -1230,6 +1307,7 @@ class OverlayManager @Inject constructor(
             consciousOpensToday.clear()
             lastSessionEndedAt.clear()
             failedSessionAppsToday.clear()
+            failedGroupChallengeIds.clear()
             budgetRemainingToday.clear()
             TrackedAppEventBus.clearFreePackages()
             sessionTimerJob?.cancel()

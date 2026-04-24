@@ -3,11 +3,13 @@ package com.detox.app.domain.usecase
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.google.firebase.auth.FirebaseAuth
+import timber.log.Timber
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -31,7 +33,8 @@ class GetDailyStatsUseCase @Inject constructor(
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
 
-            val stats = challenges.map { challenge ->
+            val currentUid = firebaseAuth.currentUser?.uid
+            val stats = challenges.mapNotNull { challenge ->
                 val actualEndDate = if (challenge.endDate > 0L)
                     challenge.startDate + (challenge.endDate * 86_400_000L) else 0L
                 val daysRemaining = if (actualEndDate > now)
@@ -43,10 +46,18 @@ class GetDailyStatsUseCase @Inject constructor(
                 val groupChallenge = challenge.groupChallengeId?.let {
                     groupChallengeRepository.getGroupChallengeById(it)
                 }
+
+                // Skip group challenges where the current user already failed
+                if (groupChallenge != null && currentUid != null) {
+                    val myParticipant = groupChallenge.participants.find { it.userId == currentUid }
+                    if (myParticipant?.status == ParticipantStatus.FAILED) {
+                        return@mapNotNull null
+                    }
+                }
+
                 val isGroup = groupChallenge != null
                 val participantCount = groupChallenge?.participants?.size ?: 0
                 val maxParticipants = groupChallenge?.maxParticipants ?: 0
-                val currentUid = firebaseAuth.currentUser?.uid
                 val userRank: Int? = if (isGroup && groupChallenge != null && currentUid != null) {
                     val sorted = groupChallenge.participants.sortedBy { p ->
                         if (challenge.limitType == LimitType.SESSIONS) p.opensToday
@@ -69,7 +80,7 @@ class GetDailyStatsUseCase @Inject constructor(
                     val moneyLostCents = todayLog?.moneyLostCents ?: 0
                     val limitExceeded = todayLog?.limitExceeded ?: (budgetUsed >= totalBudget)
 
-                    return@map DailyStats(
+                    return@mapNotNull DailyStats(
                         challengeId = challenge.id,
                         appDisplayName = challenge.appDisplayName,
                         appPackageName = challenge.appPackageName,
@@ -148,6 +159,7 @@ class GetDailyStatsUseCase @Inject constructor(
                 )
             }
 
+            Timber.d("Dashboard group challenges filtered: ${stats.size} active for user $currentUid")
             Result.success(stats)
         } catch (e: Exception) {
             Result.failure(e)

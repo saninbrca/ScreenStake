@@ -135,6 +135,11 @@ class ChallengeRepositoryImpl @Inject constructor(
             ?.map { it.trim() }
             ?.filter { it.isNotBlank() }
             ?: emptyList()
+        val partialDomains = partialBlockDomains
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
         return Challenge(
             id = id,
             appPackageName = packageNames.firstOrNull(),
@@ -153,6 +158,7 @@ class ChallengeRepositoryImpl @Inject constructor(
             createdAt = createdAt,
             dailyBudgetMinutes = dailyBudgetMinutes,
             blockedDomains = domains,
+            partialBlockDomains = partialDomains,
             blockingType = type,
             blockAdultContent = blockAdultContent != 0,
             scheduleStartTime = scheduleStartTime,
@@ -186,6 +192,7 @@ class ChallengeRepositoryImpl @Inject constructor(
         dailyBudgetMinutes = dailyBudgetMinutes,
         appPackageNames = appPackageNames.joinToString(",").ifEmpty { null },
         blockedDomains = blockedDomains.joinToString(",").ifEmpty { null },
+        partialBlockDomains = partialBlockDomains.joinToString(",").ifEmpty { null },
         blockingType = blockingType.name.lowercase(),
         blockAdultContent = if (blockAdultContent) 1 else 0,
         scheduleStartTime = scheduleStartTime,

@@ -42,4 +42,6 @@ data class ChallengeEntity(
     @androidx.room.ColumnInfo(name = "sessionDurationMinutes", defaultValue = "5") val sessionDurationMinutes: Int = 5,
     /** Non-null when this row was auto-created to locally track a group challenge. Stores the groupId. */
     @androidx.room.ColumnInfo(name = "groupChallengeId", defaultValue = "NULL") val groupChallengeId: String? = null,
+    /** Comma-separated URL path prefixes for feature-level partial blocking, e.g. "instagram.com/reels". */
+    @androidx.room.ColumnInfo(name = "partialBlockDomains", defaultValue = "NULL") val partialBlockDomains: String? = null,
 )

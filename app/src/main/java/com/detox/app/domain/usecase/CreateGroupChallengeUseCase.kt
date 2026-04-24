@@ -57,7 +57,8 @@ class CreateGroupChallengeUseCase @Inject constructor(
         buyInCents: Int,
         maxParticipants: Int,
         startDateMs: Long,
-        bonusEnabled: Boolean
+        bonusEnabled: Boolean,
+        blockedDomains: List<String> = emptyList(),
     ): Result<GroupChallengeCreatedData> {
 
         // ── Validation ──────────────────────────────────────────────────────────
@@ -120,7 +121,8 @@ class CreateGroupChallengeUseCase @Inject constructor(
             "startDate" to startDateMs,
             "endDate" to endDateMs,
             "bonusEnabled" to bonusEnabled,
-            "status" to "waiting"
+            "status" to "waiting",
+            "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null }
         )
 
         val cfResult = cloudFunctionsService.createGroupChallenge(groupId, code, groupDataMap)

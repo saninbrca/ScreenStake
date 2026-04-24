@@ -132,6 +132,9 @@ dependencies {
     // HTTP
     implementation(libs.okhttp)
 
+    // Image loading
+    implementation(libs.coil.compose)
+
     // Logging
     implementation(libs.timber)
 

@@ -22,10 +22,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -188,11 +186,16 @@ fun GroupChallengeCreateScreen(
                         selectedApps = formState.packageNames.toSet(),
                         searchQuery = formState.searchQuery,
                         domainToggles = formState.domainToggles,
+                        manualDomainInput = formState.manualDomainInput,
+                        manualDomains = formState.manualDomains,
                         packageNamesError = formState.packageNamesError,
                         onSearchQueryChange = viewModel::updateSearchQuery,
                         onToggleApp = viewModel::toggleApp,
                         onReloadApps = viewModel::loadApps,
                         onToggleDomain = viewModel::toggleDomain,
+                        onManualDomainInputChange = viewModel::updateManualDomainInput,
+                        onAddManualDomain = viewModel::addManualDomain,
+                        onRemoveManualDomain = viewModel::removeManualDomain,
                     )
                     2 -> Step2LimitType(
                         selected = formState.limitType,
@@ -287,11 +290,16 @@ private fun Step1AppSelection(
     selectedApps: Set<String>,
     searchQuery: String,
     domainToggles: Map<String, Boolean>,
+    manualDomainInput: String,
+    manualDomains: List<String>,
     packageNamesError: String?,
     onSearchQueryChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
     onReloadApps: () -> Unit,
     onToggleDomain: (String) -> Unit,
+    onManualDomainInputChange: (String) -> Unit,
+    onAddManualDomain: () -> Unit,
+    onRemoveManualDomain: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -366,17 +374,14 @@ private fun Step1AppSelection(
                 val nonTrackable = if (query.isEmpty()) appListState.nonTrackableApps
                     else appListState.nonTrackableApps.filter { it.appName.lowercase().contains(query) }
 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                LazyColumn(
+                    contentPadding = PaddingValues(vertical = 4.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(trackable, key = { it.packageName }) { app ->
                         val isSelected = selectedApps.contains(app.packageName)
                         val conflictName = appListState.conflictingPackages[app.packageName]
-                        GroupAppGridItem(
+                        GroupAppListRow(
                             app = app,
                             isSelected = isSelected,
                             conflictChallengeName = conflictName,
@@ -385,7 +390,7 @@ private fun Step1AppSelection(
                     }
 
                     if (nonTrackable.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
+                        item {
                             Column {
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                 Text(
@@ -397,7 +402,7 @@ private fun Step1AppSelection(
                             }
                         }
                         items(nonTrackable, key = { "${it.packageName}_nt" }) { app ->
-                            GroupAppGridItem(
+                            GroupAppListRow(
                                 app = app,
                                 isSelected = false,
                                 conflictChallengeName = null,
@@ -407,14 +412,17 @@ private fun Step1AppSelection(
                         }
                     }
 
-                    if (domainToggles.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            GroupDomainSuggestionsSection(
-                                domainToggles = domainToggles,
-                                appListState = appListState,
-                                onToggleDomain = onToggleDomain,
-                            )
-                        }
+                    item {
+                        GroupDomainSuggestionsSection(
+                            domainToggles = domainToggles,
+                            appListState = appListState,
+                            manualDomainInput = manualDomainInput,
+                            manualDomains = manualDomains,
+                            onToggleDomain = onToggleDomain,
+                            onManualDomainInputChange = onManualDomainInputChange,
+                            onAddManualDomain = onAddManualDomain,
+                            onRemoveManualDomain = onRemoveManualDomain,
+                        )
                     }
                 }
             }
@@ -423,7 +431,7 @@ private fun Step1AppSelection(
 }
 
 @Composable
-private fun GroupAppGridItem(
+private fun GroupAppListRow(
     app: AppUsageInfo,
     isSelected: Boolean,
     conflictChallengeName: String?,
@@ -431,127 +439,151 @@ private fun GroupAppGridItem(
     dimmed: Boolean = false,
 ) {
     val isBusy = conflictChallengeName != null
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.outlineVariant
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(
-                width = if (isSelected) 2.dp else 1.dp,
-                color = borderColor,
-                shape = MaterialTheme.shapes.small,
-            )
+            .clickable(enabled = !dimmed && !isBusy, onClick = onToggle)
             .alpha(if (dimmed || isBusy) 0.4f else 1f)
-            .clickable(enabled = !dimmed && !isBusy, onClick = onToggle),
-        shape = MaterialTheme.shapes.small,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            else
-                MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        elevation = CardDefaults.cardElevation(2.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                app.icon?.let { drawable ->
-                    val painter = remember(drawable) {
-                        BitmapPainter(drawable.toBitmap(48, 48).asImageBitmap())
-                    }
-                    Image(
-                        painter = painter,
-                        contentDescription = app.appName,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .align(Alignment.Center),
-                    )
-                }
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .size(14.dp)
-                            .align(Alignment.TopEnd),
-                    )
-                }
+        app.icon?.let { drawable ->
+            val painter = remember(drawable) {
+                BitmapPainter(drawable.toBitmap(48, 48).asImageBitmap())
             }
+            Image(
+                painter = painter,
+                contentDescription = app.appName,
+                modifier = Modifier.size(48.dp),
+            )
+        } ?: Box(modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = app.appName,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
             )
             if (app.avgDailyMinutes > 0) {
                 Text(
-                    text = "${app.avgDailyMinutes}m",
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "${app.avgDailyMinutes} min/day · ${app.avgDailyOpens} opens/day",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (conflictChallengeName != null) {
+            if (isBusy) {
                 Text(
                     text = "busy",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
         }
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
+    HorizontalDivider()
 }
 
 @Composable
 private fun GroupDomainSuggestionsSection(
     domainToggles: Map<String, Boolean>,
     appListState: AppListState,
+    manualDomainInput: String,
+    manualDomains: List<String>,
     onToggleDomain: (String) -> Unit,
+    onManualDomainInputChange: (String) -> Unit,
+    onAddManualDomain: () -> Unit,
+    onRemoveManualDomain: (String) -> Unit,
 ) {
     Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
         HorizontalDivider()
         Spacer(modifier = Modifier.height(8.dp))
+        if (domainToggles.isNotEmpty()) {
+            Text(
+                text = "Also block these websites?",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            domainToggles.forEach { (pkg, enabled) ->
+                val domains = APP_DOMAIN_MAP[pkg] ?: return@forEach
+                val appName = appListState.trackableApps
+                    .firstOrNull { it.packageName == pkg }?.appName ?: pkg
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleDomain(pkg) }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = enabled,
+                        onCheckedChange = { onToggleDomain(pkg) },
+                        modifier = Modifier.size(36.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Also block ${domains.joinToString(", ")}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = appName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
         Text(
-            text = "Also block these websites?",
+            text = "Additional websites to block",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
         Spacer(modifier = Modifier.height(4.dp))
-        domainToggles.forEach { (pkg, enabled) ->
-            val domains = APP_DOMAIN_MAP[pkg] ?: return@forEach
-            val appName = appListState.trackableApps
-                .firstOrNull { it.packageName == pkg }?.appName ?: pkg
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggleDomain(pkg) }
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = enabled,
-                    onCheckedChange = { onToggleDomain(pkg) },
-                    modifier = Modifier.size(36.dp),
-                )
-                Column(modifier = Modifier.weight(1f)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = manualDomainInput,
+                onValueChange = onManualDomainInputChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("e.g. reddit.com") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            )
+            Button(onClick = onAddManualDomain) { Text("Add") }
+        }
+        if (manualDomains.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            manualDomains.forEach { domain ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        text = "Also block ${domains.joinToString(", ")}",
+                        text = "🌐 $domain",
                         style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
                     )
-                    Text(
-                        text = appName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    TextButton(onClick = { onRemoveManualDomain(domain) }) {
+                        Text("✕", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }
@@ -1051,8 +1083,9 @@ private fun Step6Review(
                 val checkedDomains = formState.domainToggles.entries
                     .filter { it.value }
                     .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
-                if (checkedDomains.isNotEmpty()) {
-                    ReviewRow("+ Websites", checkedDomains.joinToString(", "))
+                val allBlockedDomains = (checkedDomains + formState.manualDomains).distinct()
+                if (allBlockedDomains.isNotEmpty()) {
+                    ReviewRow("+ Websites", allBlockedDomains.joinToString(", "))
                 }
 
                 val limitSummary = when (formState.limitType) {

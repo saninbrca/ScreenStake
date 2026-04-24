@@ -144,27 +144,25 @@ fun FriendsHubScreen(
                         }
                     }
 
-                    // ── History ─────────────────────────────────────────────────
-                    if (state.data.history.isNotEmpty()) {
-                        item {
-                            SectionHeader(stringResource(R.string.friends_hub_history))
-                        }
-                        items(state.data.history) { gc ->
-                            GroupChallengeCard(gc, onClick = { onGroupChallengeClick(gc.groupId) }, onForceStart = null)
-                        }
-                    }
-
                     // ── Empty state ─────────────────────────────────────────────
-                    if (state.data.active.isEmpty() && state.data.waiting.isEmpty() && state.data.history.isEmpty()) {
+                    if (state.data.active.isEmpty() && state.data.waiting.isEmpty()) {
                         item {
-                            Box(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 64.dp),
-                                contentAlignment = Alignment.Center
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = stringResource(R.string.friends_hub_empty),
+                                    text = stringResource(R.string.friends_hub_empty_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = stringResource(R.string.friends_hub_empty_subtitle),
                                     style = MaterialTheme.typography.bodyMedium,
                                     textAlign = TextAlign.Center,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -18,5 +18,6 @@ data class GroupChallenge(
     val endDate: Long,
     val bonusEnabled: Boolean,
     val status: GroupChallengeStatus,
-    val participants: List<Participant>
+    val participants: List<Participant>,
+    val blockedDomains: List<String> = emptyList(),
 )

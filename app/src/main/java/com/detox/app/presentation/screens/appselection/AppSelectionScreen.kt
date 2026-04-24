@@ -2,7 +2,7 @@ package com.detox.app.presentation.screens.appselection
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,12 +12,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -35,6 +40,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.presentation.components.AppUsageCard
@@ -46,7 +53,6 @@ fun AppSelectionScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedPackages by viewModel.selectedPackages.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(lifecycleOwner) {
@@ -104,6 +110,7 @@ fun AppSelectionScreen(
                     }
 
                     is AppSelectionUiState.NoPermission -> {
+                        val context = LocalContext.current
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -127,10 +134,8 @@ fun AppSelectionScreen(
 
                     is AppSelectionUiState.Success -> {
                         LazyColumn(
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            contentPadding = PaddingValues(vertical = 8.dp)
                         ) {
-                            // Trackable apps — selectable with checkbox
                             if (state.trackableApps.isNotEmpty()) {
                                 items(state.trackableApps, key = { it.packageName }) { app ->
                                     val conflictName = state.conflictingPackages[app.packageName]
@@ -143,7 +148,6 @@ fun AppSelectionScreen(
                                 }
                             }
 
-                            // Non-trackable apps — shown dimmed, not selectable
                             if (state.nonTrackableApps.isNotEmpty()) {
                                 item {
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -151,11 +155,15 @@ fun AppSelectionScreen(
                                         text = stringResource(R.string.app_selection_not_enough_usage),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                                     )
                                 }
                                 items(state.nonTrackableApps, key = { it.packageName }) { app ->
-                                    AppUsageCard(appUsageInfo = app, onClick = {})
+                                    AppUsageCard(
+                                        appUsageInfo = app,
+                                        onClick = {},
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                    )
                                 }
                             }
                         }
@@ -163,7 +171,6 @@ fun AppSelectionScreen(
                 }
             }
 
-            // Bottom "Next" bar
             val successState = uiState as? AppSelectionUiState.Success
             if (successState != null) {
                 val hasConflictSelected = selectedPackages.any {
@@ -203,29 +210,75 @@ private fun SelectableAppRow(
     conflictChallengeName: String?,
     onToggle: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val context = LocalContext.current
+    val enabled = conflictChallengeName == null
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onToggle() }
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = { onToggle() },
-                enabled = conflictChallengeName == null
-            )
-            AppUsageCard(
-                appUsageInfo = app,
-                onClick = { if (conflictChallengeName == null) onToggle() },
-                modifier = Modifier.weight(1f)
-            )
+            app.icon?.let { drawable ->
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(drawable)
+                        .size(144)
+                        .build(),
+                    contentDescription = app.appName,
+                    modifier = Modifier.size(48.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } ?: Box(modifier = Modifier.size(48.dp))
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.appName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(
+                        R.string.app_selection_usage_summary,
+                        app.avgDailyMinutes,
+                        app.avgDailyOpens
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            } else {
+                Box(modifier = Modifier.size(24.dp))
+            }
         }
+
         if (conflictChallengeName != null) {
             Text(
                 text = stringResource(R.string.app_selection_already_in_challenge, conflictChallengeName),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)
+                modifier = Modifier.padding(start = 76.dp, bottom = 8.dp)
             )
         }
+
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
     }
 }

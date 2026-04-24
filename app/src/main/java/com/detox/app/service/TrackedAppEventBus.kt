@@ -61,6 +61,13 @@ object TrackedAppEventBus {
     val blockedDomains: StateFlow<Set<String>> = _blockedDomains.asStateFlow()
 
     /**
+     * URL path prefixes for feature-level (PARTIAL_BLOCK) blocking aggregated across challenges,
+     * e.g. "instagram.com/reels". Checked after full-domain matches in the AccessibilityService.
+     */
+    private val _partialBlockDomains = MutableStateFlow<Set<String>>(emptySet())
+    val partialBlockDomains: StateFlow<Set<String>> = _partialBlockDomains.asStateFlow()
+
+    /**
      * Fires when the AccessibilityService detects a blocked domain in a browser address bar.
      * Carries the matched domain string.
      */
@@ -107,6 +114,10 @@ object TrackedAppEventBus {
         _blockedDomains.value = domains
     }
 
+    fun updatePartialBlockDomains(paths: Set<String>) {
+        _partialBlockDomains.value = paths
+    }
+
     fun emitUrlBlocked(domain: String) {
         _urlBlockedEvents.tryEmit(domain)
     }
@@ -143,8 +154,42 @@ object TrackedAppEventBus {
         _homeDetectedEvents.tryEmit(Unit)
     }
 
+    // ── Group-challenge fail set ───────────────────────────────────────────────
+
+    /**
+     * Packages whose group challenge the current user has already failed today.
+     * No overlay is shown for these — the app is unblocked for the rest of the day.
+     */
+    private val _failedPackagesToday = MutableStateFlow<Set<String>>(emptySet())
+    val failedPackagesToday: StateFlow<Set<String>> = _failedPackagesToday.asStateFlow()
+
+    fun markPackagesFailedForUser(packages: Set<String>) {
+        _failedPackagesToday.value = _failedPackagesToday.value + packages
+    }
+
     fun clearFreePackages() {
         _freedPackagesToday.value = emptySet()
         _freedDomainsToday.value = emptySet()
+        _failedPackagesToday.value = emptySet()
+    }
+
+    // ── In-app navigation requests from overlay ────────────────────────────────
+
+    /**
+     * Fires when the user taps "Leaderboard ansehen" on the group challenge fail overlay.
+     * Replay=1 so the event survives the brief delay before MainScreen collects it.
+     */
+    private val _navigateToGroupDetail = MutableSharedFlow<String>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val navigateToGroupDetail: SharedFlow<String> = _navigateToGroupDetail.asSharedFlow()
+
+    fun emitNavigateToGroupDetail(groupId: String) {
+        _navigateToGroupDetail.tryEmit(groupId)
+    }
+
+    fun clearGroupDetailNavigation() {
+        _navigateToGroupDetail.resetReplayCache()
     }
 }

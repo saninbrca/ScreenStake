@@ -285,6 +285,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setDarkModeEnabled(enabled: Boolean) {
+        Timber.d("Dark mode toggled: $enabled")
         prefs.edit().putBoolean(KEY_DARK_MODE, enabled).apply()
         _state.update { it.copy(darkModeEnabled = enabled) }
     }

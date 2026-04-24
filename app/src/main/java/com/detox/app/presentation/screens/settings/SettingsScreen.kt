@@ -185,7 +185,7 @@ fun SettingsScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = androidx.compose.ui.graphics.Color.White
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
 
         if (state.isLoading) {
@@ -521,7 +521,7 @@ private fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        color = androidx.compose.ui.graphics.Color.White
+        color = MaterialTheme.colorScheme.surface
     ) {
         Row(
             modifier = Modifier
@@ -564,7 +564,7 @@ private fun SwitchRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = androidx.compose.ui.graphics.Color.White
+        color = MaterialTheme.colorScheme.surface
     ) {
         Row(
             modifier = Modifier
@@ -613,7 +613,7 @@ private fun PermissionRow(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = androidx.compose.ui.graphics.Color.White
+        color = MaterialTheme.colorScheme.surface
     ) {
         Row(
             modifier = Modifier

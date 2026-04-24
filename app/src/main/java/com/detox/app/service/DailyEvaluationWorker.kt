@@ -14,6 +14,7 @@ import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.google.firebase.crashlytics.FirebaseCrashlytics
@@ -34,6 +35,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val analyticsService: AnalyticsService,
     private val cloudFunctionsService: CloudFunctionsService,
     private val firebaseAuthService: FirebaseAuthService,
+    private val groupChallengeRepository: GroupChallengeRepository,
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -496,6 +498,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             .onFailure { e ->
                                 Timber.e(e, "DailyEvaluationWorker: failed to update local shadow status for %s", challenge.id)
                             }
+                        // Update local GroupChallengeEntity participant status + stop blocking
+                        groupChallengeRepository.markParticipantFailedLocally(groupId, userId)
                     }
                     .onFailure { e ->
                         Timber.e(e, "DailyEvaluationWorker: failGroupParticipant failed — groupId=%s userId=%s", groupId, userId)

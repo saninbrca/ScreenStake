@@ -2,6 +2,7 @@ package com.detox.app.presentation.screens.profile
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -42,10 +44,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
@@ -60,12 +62,16 @@ fun ProfileScreen(
     onLoggedOut: () -> Unit,
     onOpenSettings: () -> Unit = {},
     onNavigateToChallenges: () -> Unit = {},
+    onGroupChallengeClick: (String) -> Unit = {},
+    onSoloChallengeClick: (String) -> Unit = {},
+    onShowAllHistory: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val stats by viewModel.stats.collectAsStateWithLifecycle()
-    val activeChallenges by viewModel.activeChallenges.collectAsStateWithLifecycle()
+    val recentChallenges by viewModel.recentChallenges.collectAsStateWithLifecycle()
+    val historyItems by viewModel.historyItems.collectAsStateWithLifecycle()
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -100,11 +106,13 @@ fun ProfileScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = Color.White
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -117,8 +125,15 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // ── Avatar ────────────────────────────────────────────────────────
-            val initial = (viewModel.displayName ?: viewModel.userEmail)
-                ?.firstOrNull()?.uppercaseChar()?.toString() ?: ""
+            val initials = viewModel.displayName
+                ?.split(" ")
+                ?.filter { it.isNotBlank() }
+                ?.take(2)
+                ?.mapNotNull { it.firstOrNull()?.uppercaseChar() }
+                ?.joinToString("")
+                ?.takeIf { it.isNotEmpty() }
+                ?: viewModel.userEmail?.firstOrNull()?.uppercaseChar()?.toString()
+                ?: ""
 
             Box(
                 modifier = Modifier
@@ -127,18 +142,18 @@ fun ProfileScreen(
                     .background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center
             ) {
-                if (initial.isNotEmpty()) {
+                if (initials.isNotEmpty()) {
                     Text(
-                        text = initial,
+                        text = initials,
                         style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         fontWeight = FontWeight.Bold
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Filled.Person,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(40.dp)
                     )
                 }
@@ -146,14 +161,32 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Display name
+            val nameToShow = viewModel.displayName
+                ?: viewModel.userEmail?.substringBefore("@")
+                ?: stringResource(R.string.profile_unknown_email)
             Text(
-                text = viewModel.displayName
-                    ?: viewModel.userEmail
-                    ?: stringResource(R.string.profile_unknown_email),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
+                text = nameToShow,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground
             )
 
+            // Email (shown separately if display name is available)
+            viewModel.userEmail?.let { email ->
+                if (viewModel.displayName != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = email,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Member since
             viewModel.memberSinceMs?.let { ms ->
                 val dateStr = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date(ms))
                 Spacer(modifier = Modifier.height(4.dp))
@@ -188,39 +221,87 @@ fun ProfileScreen(
                 )
             }
 
-            // ── Active Challenges Preview ──────────────────────────────────────
-            if (activeChallenges.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
+            // ── Verlauf (History) ─────────────────────────────────────────────
+            Spacer(modifier = Modifier.height(24.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(R.string.profile_active_challenges),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    TextButton(onClick = onNavigateToChallenges) {
-                        Text(stringResource(R.string.profile_view_all))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.profile_history_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                if (historyItems.isNotEmpty()) {
+                    TextButton(
+                        onClick = onShowAllHistory,
+                        modifier = Modifier.wrapContentWidth()
+                    ) {
+                        Text(
+                            text = stringResource(R.string.history_show_all),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
+            }
 
-                activeChallenges.forEach { challenge ->
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (historyItems.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.profile_no_recent_activity),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                )
+            } else {
+                historyItems.forEach { item ->
+                    when (item) {
+                        is HistoryItem.Solo -> {
+                            SoloHistoryRow(
+                                challenge = item.entity,
+                                onClick = { onSoloChallengeClick(item.entity.id) }
+                            )
+                        }
+                        is HistoryItem.Group -> {
+                            GroupHistoryRow(
+                                item = item,
+                                onClick = { onGroupChallengeClick(item.entity.groupId) }
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-                    ActiveChallengePreviewCard(challenge = challenge)
                 }
             }
 
             Spacer(modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.height(24.dp))
 
+            // ── Settings ──────────────────────────────────────────────────────
+            OutlinedButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
+            ) {
+                Text(stringResource(R.string.profile_settings))
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // ── Log Out ───────────────────────────────────────────────────────
             OutlinedButton(
                 onClick = { showLogoutDialog = true },
                 modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, Color.Gray),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.onSurface
                 )
@@ -234,7 +315,7 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun StatCard(value: String, label: String, modifier: Modifier = Modifier) {
+internal fun StatCard(value: String, label: String, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -261,22 +342,114 @@ private fun StatCard(value: String, label: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun ActiveChallengePreviewCard(challenge: ChallengeEntity) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+internal fun SoloHistoryRow(challenge: ChallengeEntity, onClick: () -> Unit = {}) {
+    val isCompleted = challenge.status == "completed"
+    val resultLabel = if (isCompleted) stringResource(R.string.history_result_success)
+    else stringResource(R.string.history_result_failed)
+    val dateStr = SimpleDateFormat("d. MMM yyyy", Locale.getDefault()).format(Date(challenge.endDate))
+    val startDate = if (challenge.startDate > 0) challenge.startDate else challenge.createdAt
+    val durationDays = ((challenge.endDate - startDate) / 86_400_000).coerceAtLeast(1)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Text(text = "📱", style = MaterialTheme.typography.bodyLarge)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp)
+            ) {
                 Text(
                     text = challenge.appDisplayName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = challenge.mode.replaceFirstChar { it.uppercase() },
+                    text = challenge.mode.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(text = resultLabel, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = dateStr,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(R.string.history_duration_days, durationDays),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun GroupHistoryRow(item: HistoryItem.Group, onClick: () -> Unit) {
+    val entity = item.entity
+    val resultLabel = when (item.myResult) {
+        "won" -> stringResource(R.string.history_result_won)
+        "eliminated" -> stringResource(R.string.history_result_eliminated)
+        "cancelled" -> "⚠️ Abgebrochen"
+        else -> stringResource(R.string.history_result_running)
+    }
+    val dateStr = SimpleDateFormat("d. MMM yyyy", Locale.getDefault()).format(Date(entity.endDate))
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = "👥", style = MaterialTheme.typography.bodyLarge)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp)
+            ) {
+                Text(
+                    text = entity.appDisplayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (item.totalCount > 0) {
+                    Text(
+                        text = stringResource(
+                            R.string.history_players_won,
+                            item.successCount,
+                            item.totalCount
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(text = resultLabel, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = dateStr,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

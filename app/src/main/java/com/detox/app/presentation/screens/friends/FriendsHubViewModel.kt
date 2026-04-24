@@ -6,6 +6,7 @@ import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.GroupChallengeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -19,8 +20,7 @@ import javax.inject.Inject
 
 data class FriendsHubUiData(
     val active: List<GroupChallenge>,
-    val waiting: List<GroupChallenge>,
-    val history: List<GroupChallenge>
+    val waiting: List<GroupChallenge>
 )
 
 sealed interface FriendsHubUiState {
@@ -45,11 +45,22 @@ class FriendsHubViewModel @Inject constructor(
     val uiState: StateFlow<FriendsHubUiState> =
         groupChallengeRepository.getGroupChallenges()
             .map { challenges ->
+                val uid = userId
+                val filtered = challenges.filter { gc ->
+                    val myParticipant = gc.participants.find { it.userId == uid }
+                    myParticipant != null &&
+                    myParticipant.status == ParticipantStatus.ACTIVE &&
+                    (gc.status == GroupChallengeStatus.WAITING || gc.status == GroupChallengeStatus.ACTIVE)
+                }
+
+                val active = filtered.filter { it.status == GroupChallengeStatus.ACTIVE }
+                val waiting = filtered.filter { it.status == GroupChallengeStatus.WAITING }
+
+                Timber.d("Friends filter: input=${challenges.size} output=${filtered.size}")
                 FriendsHubUiState.Success(
                     FriendsHubUiData(
-                        active = challenges.filter { it.status == GroupChallengeStatus.ACTIVE },
-                        waiting = challenges.filter { it.status == GroupChallengeStatus.WAITING },
-                        history = challenges.filter { it.status == GroupChallengeStatus.COMPLETED }
+                        active = active,
+                        waiting = waiting
                     )
                 )
             }
@@ -74,7 +85,10 @@ class FriendsHubViewModel @Inject constructor(
             viewModelScope.launch {
                 groupChallengeRepository.getGroupChallenges().collect { challenges ->
                     val waitingIds = challenges
-                        .filter { it.status == GroupChallengeStatus.WAITING }
+                        .filter { gc ->
+                            gc.status == GroupChallengeStatus.WAITING &&
+                            gc.participants.any { it.userId == uid }
+                        }
                         .map { it.groupId }
                         .toSet()
 

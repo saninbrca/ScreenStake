@@ -171,6 +171,9 @@ class FirestoreService @Inject constructor(
                         createdAt = d["createdAt"] as? Long ?: 0L,
                         dailyBudgetMinutes = (d["dailyBudgetMinutes"] as? Long)?.toInt(),
                         blockedDomains = domains,
+                        partialBlockDomains = (d["partialBlockDomains"] as? String)
+                            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                            ?: emptyList(),
                         blockingType = runCatching {
                             BlockingType.valueOf(
                                 (d["blockingType"] as? String ?: "app").uppercase()
@@ -287,6 +290,7 @@ class FirestoreService @Inject constructor(
         "createdAt" to createdAt,
         "dailyBudgetMinutes" to dailyBudgetMinutes,
         "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
+        "partialBlockDomains" to partialBlockDomains.joinToString(",").ifEmpty { null },
         "blockingType" to blockingType.name.lowercase(),
         "blockAdultContent" to blockAdultContent,
         "scheduleStartTime" to scheduleStartTime,

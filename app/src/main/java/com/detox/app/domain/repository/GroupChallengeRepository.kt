@@ -62,4 +62,11 @@ interface GroupChallengeRepository {
      * for real-time leaderboard display. Fire-and-forget — failures are logged only.
      */
     suspend fun updateParticipantStats(groupId: String, userId: String, opensToday: Int, timeUsedMinutes: Int)
+
+    /**
+     * Updates the local [GroupChallengeEntity] to mark [userId]'s participant status as "failed",
+     * then adds the challenge's app packages to [TrackedAppEventBus.failedPackagesToday] so the
+     * AccessibilityService stops showing the overlay for those apps immediately.
+     */
+    suspend fun markParticipantFailedLocally(groupId: String, userId: String)
 }

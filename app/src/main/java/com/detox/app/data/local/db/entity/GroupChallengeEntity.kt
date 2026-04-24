@@ -26,5 +26,7 @@ data class GroupChallengeEntity(
     @ColumnInfo(defaultValue = "0") val bonusEnabled: Int,
     @ColumnInfo(defaultValue = "waiting") val status: String,
     /** JSON array of participant objects. */
-    @ColumnInfo(defaultValue = "[]") val participantsJson: String
+    @ColumnInfo(defaultValue = "[]") val participantsJson: String,
+    /** Comma-separated blocked website domains. */
+    @ColumnInfo(name = "blockedDomains", defaultValue = "NULL") val blockedDomains: String? = null,
 )

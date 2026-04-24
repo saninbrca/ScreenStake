@@ -34,4 +34,10 @@ interface GroupChallengeDao {
         ) LIMIT 1
     """)
     suspend fun getActiveGroupChallengeForApp(packageName: String): GroupChallengeEntity?
+
+    @Query("SELECT * FROM group_challenges WHERE status IN (:statuses) ORDER BY endDate DESC")
+    suspend fun getByStatus(statuses: List<String>): List<GroupChallengeEntity>
+
+    @Query("SELECT * FROM group_challenges ORDER BY endDate DESC")
+    suspend fun getAllList(): List<GroupChallengeEntity>
 }

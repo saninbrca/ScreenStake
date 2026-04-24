@@ -55,4 +55,10 @@ interface ChallengeDao {
 
     @Query("DELETE FROM challenges WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') ORDER BY endDate DESC LIMIT 3")
+    suspend fun getRecentFinishedChallenges(): List<ChallengeEntity>
+
+    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') AND (groupChallengeId IS NULL OR groupChallengeId = '') ORDER BY endDate DESC")
+    suspend fun getFinishedSoloChallenges(): List<ChallengeEntity>
 }

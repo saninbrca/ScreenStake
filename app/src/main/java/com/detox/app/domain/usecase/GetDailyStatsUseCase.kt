@@ -35,11 +35,8 @@ class GetDailyStatsUseCase @Inject constructor(
 
             val currentUid = firebaseAuth.currentUser?.uid
             val stats = challenges.mapNotNull { challenge ->
-                val actualEndDate = if (challenge.endDate > 0L)
+                val soloEndDateMs = if (challenge.endDate > 0L)
                     challenge.startDate + (challenge.endDate * 86_400_000L) else 0L
-                val daysRemaining = if (actualEndDate > now)
-                    ((actualEndDate - now) / 86_400_000L).toInt().coerceAtLeast(0)
-                else Int.MAX_VALUE
                 val todayLog = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
                 Timber.d("DailyLog for ${challenge.id} date=$today: $todayLog")
 
@@ -47,6 +44,16 @@ class GetDailyStatsUseCase @Inject constructor(
                 val groupChallenge = challenge.groupChallengeId?.let {
                     groupChallengeRepository.getGroupChallengeById(it)
                 }
+
+                val effectiveEndDateMs = if (groupChallenge != null && groupChallenge.endDate > 0L)
+                    groupChallenge.endDate
+                else soloEndDateMs
+                val daysRemaining = when {
+                    effectiveEndDateMs <= 0L -> Int.MAX_VALUE
+                    effectiveEndDateMs > now -> ((effectiveEndDateMs - now) / 86_400_000L).toInt().coerceAtLeast(0)
+                    else -> 0
+                }
+                Timber.d("Challenge ${challenge.id} endDate=$effectiveEndDateMs remaining=$daysRemaining days")
 
                 // Skip group challenges where the current user already failed
                 if (groupChallenge != null && currentUid != null) {

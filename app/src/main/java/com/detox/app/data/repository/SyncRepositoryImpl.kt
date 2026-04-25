@@ -10,6 +10,7 @@ import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.repository.SyncRepository
 import timber.log.Timber
+import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,6 +45,38 @@ class SyncRepositoryImpl @Inject constructor(
                             "challenge=${challenge.id}"
                 )
                 logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
+            }
+
+            // 3. Fetch today's dailyLog entries from the flat Firestore collection and upsert
+            //    consciousOpens into Room — restores session-limit state after reinstalls.
+            val startOfToday = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val todayLogs = firestoreService.fetchTodayDailyLogs(userId, startOfToday)
+            todayLogs.forEach { data ->
+                val challengeId = data["challengeId"] as? String ?: return@forEach
+                val date = data["date"] as? Long ?: return@forEach
+                val opens = (data["consciousOpens"] as? Long)?.toInt() ?: return@forEach
+                val existing = dailyLogDao.getLogForDate(challengeId, date)
+                if (existing != null) {
+                    dailyLogDao.insertDailyLog(existing.copy(consciousOpens = opens))
+                } else {
+                    dailyLogDao.insertDailyLog(
+                        DailyLogEntity(
+                            id = "${challengeId}_${date}",
+                            challengeId = challengeId,
+                            date = date,
+                            totalMinutes = 0,
+                            openCount = 0,
+                            consciousOpens = opens,
+                            pointsEarned = 0,
+                            limitExceeded = false,
+                            moneyLostCents = 0
+                        )
+                    )
+                }
+                Timber.d("DailyLog synced from Firestore: opens=$opens for $challengeId")
             }
 
             Timber.d("SyncRepository: sync completed")

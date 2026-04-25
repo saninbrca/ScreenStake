@@ -236,6 +236,57 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    /**
+     * Merges only the consciousOpens field into the flat dailyLogs collection at
+     * users/{userId}/dailyLogs/{challengeId}_{date}. Used for cross-reinstall persistence
+     * of conscious-open counts so the overlay session limit survives app reinstalls.
+     */
+    suspend fun updateDailyLogConsciousOpens(
+        userId: String,
+        challengeId: String,
+        date: Long,
+        consciousOpens: Int
+    ) {
+        try {
+            firestore
+                .collection("users").document(userId)
+                .collection("dailyLogs").document("${challengeId}_${date}")
+                .set(
+                    mapOf(
+                        "challengeId" to challengeId,
+                        "date" to date,
+                        "consciousOpens" to consciousOpens,
+                        "updatedAt" to System.currentTimeMillis()
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                .await()
+            Timber.d("DailyLog: consciousOpens=$consciousOpens synced to Firestore for $challengeId")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to sync consciousOpens to Firestore for $challengeId")
+        }
+    }
+
+    /**
+     * Fetches flat dailyLog entries written by [updateDailyLogConsciousOpens] for today,
+     * keyed by {challengeId}_{date}. Used by [SyncRepositoryImpl] on startup to restore
+     * consciousOpens into Room after a reinstall.
+     */
+    suspend fun fetchTodayDailyLogs(userId: String, startOfToday: Long): List<Map<String, Any>> {
+        return try {
+            val snapshot = firestore
+                .collection("users").document(userId)
+                .collection("dailyLogs")
+                .whereGreaterThanOrEqualTo("date", startOfToday)
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { it.data }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to fetch today's dailyLogs from Firestore for uid=$userId")
+            emptyList()
+        }
+    }
+
     // ── Account deletion ──────────────────────────────────────────────────────
 
     /**

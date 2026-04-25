@@ -251,20 +251,23 @@ private fun ModeBadge(dailyStats: DailyStats) {
 
 @Composable
 private fun DaysLeftBadge(daysRemaining: Int) {
-    val label = if (daysRemaining > 3650)
-        stringResource(R.string.challenge_card_no_end_date)
-    else
-        stringResource(R.string.challenge_card_days_remaining, daysRemaining)
+    if (daysRemaining == Int.MAX_VALUE) return
+
+    val (label, badgeColor) = when {
+        daysRemaining <= 0 -> stringResource(R.string.challenge_card_ends_today) to Color(0xFFE65100)
+        daysRemaining == 1 -> stringResource(R.string.challenge_card_tomorrow) to MaterialTheme.colorScheme.primary
+        else -> stringResource(R.string.challenge_card_days_left, daysRemaining) to MaterialTheme.colorScheme.primary
+    }
 
     Surface(
         shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.primary
+        color = badgeColor
     ) {
         Text(
             text = label,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimary
+            color = Color.White
         )
     }
 }

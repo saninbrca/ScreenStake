@@ -96,7 +96,10 @@
     <string name="challenge_card_time_limit">Max %1$d min/day</string>
     <string name="challenge_card_session_limit">Max %1$d opens/day, %2$d min each</string>
     <string name="challenge_card_days_remaining">%1$d days left</string>
-    <string name="challenge_card_no_end_date">No end date</string>
+    <string name="challenge_card_no_end_date">Kein Enddatum</string>
+    <string name="challenge_card_ends_today">Endet heute</string>
+    <string name="challenge_card_tomorrow">Morgen</string>
+    <string name="challenge_card_days_left">Noch %1$d Tage</string>
     <string name="challenge_card_time_progress">%1$d of %2$d min</string>
     <string name="challenge_card_session_progress">%1$d of %2$d opens</string>
     <string name="challenge_card_points_today">+%1$d pts today</string>

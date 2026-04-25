@@ -83,6 +83,11 @@ class DailyLogRepositoryImpl @Inject constructor(
                 )
             }
             dailyLogDao.insertDailyLog(updated)
+            appScope.launch {
+                firebaseAuthService.currentUserId()?.let { uid ->
+                    firestoreService.updateDailyLogConsciousOpens(uid, challengeId, date, count)
+                }
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

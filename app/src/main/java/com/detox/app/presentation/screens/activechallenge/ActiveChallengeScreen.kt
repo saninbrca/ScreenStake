@@ -49,9 +49,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.DailyLimitStatus
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -344,30 +342,21 @@ private fun ActiveChallengeContent(
         }
 
         val now = System.currentTimeMillis()
-        if (challenge.endDate == 0L) {
-            Text(
-                text = stringResource(R.string.active_challenge_no_end_date),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
+        if (challenge.endDate > 0L) {
             val endDateRaw = challenge.endDate
-            val actualEndDate = when {
-                endDateRaw > 1_700_000_000_000L -> endDateRaw
-                endDateRaw < 365L * 24 * 60 * 60 * 1000 -> challenge.startDate + (endDateRaw * 86_400_000L)
-                else -> challenge.startDate + (7L * 24 * 60 * 60 * 1000)
+            val endDateMs = challenge.startDate + (endDateRaw * 24L * 60L * 60L * 1000L)
+            val remainingDays = ((endDateMs - now) / (24L * 60 * 60 * 1000)).toInt()
+            Timber.d("Challenge ${challenge.id} endDate=$endDateMs remaining=$remainingDays days")
+            val (endText, endColor) = when {
+                remainingDays <= 0 -> stringResource(R.string.challenge_card_ends_today) to Color(0xFFE65100)
+                remainingDays == 1 -> stringResource(R.string.challenge_card_tomorrow) to MaterialTheme.colorScheme.onSurfaceVariant
+                else -> stringResource(R.string.challenge_card_days_left, remainingDays) to MaterialTheme.colorScheme.onSurfaceVariant
             }
-            if (actualEndDate > now) {
-                val dateFormat = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
-                Text(
-                    text = stringResource(
-                        R.string.active_challenge_end_date,
-                        dateFormat.format(Date(actualEndDate))
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = endText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = endColor
+            )
         }
 
         Spacer(modifier = Modifier.weight(1f))

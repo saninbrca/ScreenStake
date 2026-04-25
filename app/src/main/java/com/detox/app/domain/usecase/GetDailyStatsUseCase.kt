@@ -41,6 +41,7 @@ class GetDailyStatsUseCase @Inject constructor(
                     ((actualEndDate - now) / 86_400_000L).toInt().coerceAtLeast(0)
                 else Int.MAX_VALUE
                 val todayLog = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
+                Timber.d("DailyLog for ${challenge.id} date=$today: $todayLog")
 
                 // Resolve group metadata once for this challenge (null if solo).
                 val groupChallenge = challenge.groupChallengeId?.let {
@@ -115,12 +116,14 @@ class GetDailyStatsUseCase @Inject constructor(
                 val overlayPausedMinutes = (overlayPausedMs / 60_000L).toInt()
                 val adjustedMinutes = maxOf(0, todayUsage.minutes - overlayPausedMinutes)
 
-                // For session-limit challenges, use the Room-persisted conscious opens so the
-                // progress bar reflects only deliberate "Yes, open it" taps.
-                val todayOpens: Int = when (challenge.limitType) {
-                    LimitType.SESSIONS -> dailyLogRepository
-                        .getConsciousOpens(challenge.id, today)
-                        .getOrElse { todayUsage.opens }
+                // For session-limit challenges, use conscious opens from:
+                //   - Group challenges: Firestore-synced participant.opensToday (ground truth)
+                //   - Solo challenges: Room-persisted consciousOpens from DailyLog
+                val todayOpens: Int = when {
+                    challenge.limitType == LimitType.SESSIONS && isGroup && currentUid != null ->
+                        groupChallenge?.participants?.find { it.userId == currentUid }?.opensToday ?: 0
+                    challenge.limitType == LimitType.SESSIONS ->
+                        dailyLogRepository.getConsciousOpens(challenge.id, today).getOrElse { 0 }
                     else -> todayUsage.opens
                 }
 
@@ -135,6 +138,15 @@ class GetDailyStatsUseCase @Inject constructor(
                 }
 
                 val moneyLostCents = todayLog?.moneyLostCents ?: 0
+
+                val progressLog = when (challenge.limitType) {
+                    LimitType.SESSIONS -> {
+                        val max = challenge.limitValueSessions ?: 1
+                        if (max > 0) todayOpens.toFloat() / max else 0f
+                    }
+                    else -> if (challenge.limitValueMinutes > 0) adjustedMinutes.toFloat() / challenge.limitValueMinutes else 0f
+                }
+                Timber.d("Dashboard: challengeId=${challenge.id} opensToday=$todayOpens timeToday=$adjustedMinutes progress=$progressLog")
 
                 DailyStats(
                     challengeId = challenge.id,

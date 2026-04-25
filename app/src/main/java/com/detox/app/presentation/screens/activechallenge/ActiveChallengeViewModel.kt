@@ -6,9 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeStatus
+import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
-import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
 import java.util.Calendar
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,7 +33,6 @@ sealed interface ActiveChallengeUiState {
 class ActiveChallengeViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val challengeRepository: ChallengeRepository,
-    private val checkDailyLimitUseCase: CheckDailyLimitUseCase,
     private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
 ) : ViewModel() {
@@ -59,11 +58,44 @@ class ActiveChallengeViewModel @Inject constructor(
                             _uiState.value = ActiveChallengeUiState.Error("Challenge not found")
                             return@launch
                         }
-                        // Also load today's limit status for live progress display
-                        val status = checkDailyLimitUseCase(challenge.appPackageName ?: "")
-                            .getOrNull()
+                        val today = todayMidnightMs()
+                        val todayLog = dailyLogRepository.getLogForDate(challengeId, today).getOrNull()
+                        Timber.d("DailyLog for $challengeId date=$today: $todayLog")
+                        val opensToday = todayLog?.consciousOpens ?: 0
+                        val timeToday = todayLog?.totalMinutes ?: 0
+                        val budgetUsed = todayLog?.budgetUsedMinutes ?: 0
+
+                        val progress = when (challenge.limitType) {
+                            LimitType.SESSIONS -> {
+                                val max = challenge.limitValueSessions ?: 1
+                                if (max > 0) opensToday.toFloat() / max else 0f
+                            }
+                            LimitType.TIME_BUDGET -> {
+                                val budget = challenge.dailyBudgetMinutes ?: 1
+                                if (budget > 0) budgetUsed.toFloat() / budget else 0f
+                            }
+                            else -> {
+                                if (challenge.limitValueMinutes > 0) timeToday.toFloat() / challenge.limitValueMinutes else 0f
+                            }
+                        }
+                        Timber.d("Dashboard card: opens=$opensToday time=$timeToday progress=$progress")
+
+                        val status = DailyLimitStatus(
+                            challenge = challenge,
+                            todayMinutes = if (challenge.limitType == LimitType.TIME_BUDGET) budgetUsed else timeToday,
+                            todayOpens = opensToday,
+                            limitExceeded = todayLog?.limitExceeded ?: false,
+                            remainingMinutes = when (challenge.limitType) {
+                                LimitType.TIME -> maxOf(0, challenge.limitValueMinutes - timeToday)
+                                LimitType.SESSIONS -> maxOf(0, (challenge.limitValueSessions ?: 0) * challenge.limitValueMinutes - timeToday)
+                                LimitType.TIME_BUDGET -> todayLog?.budgetRemainingMinutes ?: (challenge.dailyBudgetMinutes ?: 0)
+                                LimitType.TIME_WINDOW -> 0
+                            },
+                            remainingOpens = if (challenge.limitType == LimitType.SESSIONS)
+                                maxOf(0, (challenge.limitValueSessions ?: 0) - opensToday) else null
+                        )
                         val streak = dailyLogRepository
-                            .getStreakForChallenge(challengeId, todayMidnightMs())
+                            .getStreakForChallenge(challengeId, today)
                             .getOrElse { 0 }
                         _uiState.value = ActiveChallengeUiState.Success(challenge, status, streak)
                     },

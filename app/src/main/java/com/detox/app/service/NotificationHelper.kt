@@ -4,7 +4,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.detox.app.R
@@ -36,6 +38,8 @@ object NotificationHelper {
     private const val NOTIF_ID_PERMISSION_RESTORED    = 9001
     private const val NOTIF_ID_PERMISSION_FAILED      = 9002
     private const val NOTIF_ID_PERMISSION_WARNING_BASE = 9010  // 9010..9013 for levels 0-3
+    private const val NOTIF_ID_ACCESSIBILITY_LOST     = 9020
+    private const val NOTIF_ID_ACCESSIBILITY_RESTORED = 9021
 
     /** Must be called before posting any notification — safe to call repeatedly. */
     fun createChannels(context: Context) {
@@ -372,6 +376,63 @@ object NotificationHelper {
         }
     }
 
+    // ── Accessibility service notifications ───────────────────────────────────
+
+    fun sendAccessibilityLost(context: Context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val baseBody = context.getString(R.string.notif_accessibility_lost_body)
+        val body = if (Build.MANUFACTURER.equals("HUAWEI", ignoreCase = true)) {
+            "$baseBody\n${context.getString(R.string.notif_accessibility_huawei_hint)}"
+        } else {
+            baseBody
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_accessibility_lost_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .addAction(0, context.getString(R.string.notif_accessibility_fix_action), pendingIntent)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_ACCESSIBILITY_LOST, notification)
+            Timber.d("Accessibility lost notification posted")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping accessibility lost notification")
+        }
+    }
+
+    fun sendAccessibilityRestored(context: Context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val body = if (Build.MANUFACTURER.equals("HUAWEI", ignoreCase = true)) {
+            "${context.getString(R.string.notif_accessibility_restored_body)}\n${context.getString(R.string.notif_accessibility_huawei_hint)}"
+        } else {
+            context.getString(R.string.notif_accessibility_restored_body)
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_accessibility_restored_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_ACCESSIBILITY_RESTORED, notification)
+            Timber.d("Accessibility restored notification posted")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping accessibility restored notification")
+        }
+    }
+
     // ── Group Challenge notifications ──────────────────────────────────────────
 
     /**
@@ -484,6 +545,40 @@ object NotificationHelper {
             Timber.d("Group challenge completed notification posted: $appName succeeded=$succeeded refund=${refundCents / 100}€")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping group completed notification")
+        }
+    }
+
+    fun sendPayoutReceived(context: Context, amountCents: Int) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val euros = amountCents / 100
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_payout_received_title))
+            .setContentText(context.getString(R.string.notif_payout_received_body, euros))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_GROUP_BASE + 50, notification)
+            Timber.d("Payout received notification posted: €$euros")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping payout notification")
+        }
+    }
+
+    fun showTauntNotification(context: Context, message: String) {
+        val notifId = 9030
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Taunt notification posted: $message")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping taunt notification")
         }
     }
 }

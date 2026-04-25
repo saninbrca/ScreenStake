@@ -8,6 +8,7 @@ interface DailyLogRepository {
     suspend fun insertDailyLog(log: DailyLog): Result<Unit>
     suspend fun getLogForDate(challengeId: String, date: Long): Result<DailyLog?>
     fun getLogsForChallenge(challengeId: String): Flow<List<DailyLog>>
+    fun observeLogsForDate(date: Long): Flow<List<DailyLog>>
     suspend fun getConsciousOpens(challengeId: String, date: Long): Result<Int>
     suspend fun upsertConsciousOpens(challengeId: String, date: Long, count: Int): Result<Unit>
     suspend fun getOverlayPausedMs(challengeId: String, date: Long): Result<Long>

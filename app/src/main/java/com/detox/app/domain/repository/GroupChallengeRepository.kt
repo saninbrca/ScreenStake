@@ -1,6 +1,7 @@
 package com.detox.app.domain.repository
 
 import com.detox.app.domain.model.GroupChallenge
+import com.detox.app.domain.model.Taunt
 import kotlinx.coroutines.flow.Flow
 
 interface GroupChallengeRepository {
@@ -64,9 +65,37 @@ interface GroupChallengeRepository {
     suspend fun updateParticipantStats(groupId: String, userId: String, opensToday: Int, timeUsedMinutes: Int)
 
     /**
+     * Updates only timeUsedMinutes for [userId] in the Firestore leaderboard.
+     * Does NOT touch opensToday. Used by background polling in UsageTrackingService.
+     */
+    suspend fun updateParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int)
+
+    /**
+     * Atomically increments [userId]'s opensToday by 1 in the Firestore document.
+     * Must only be called when the user consciously taps "Ja, öffnen" in the overlay.
+     */
+    suspend fun incrementParticipantOpensToday(groupId: String, userId: String)
+
+    /**
      * Updates the local [GroupChallengeEntity] to mark [userId]'s participant status as "failed",
      * then adds the challenge's app packages to [TrackedAppEventBus.failedPackagesToday] so the
      * AccessibilityService stops showing the overlay for those apps immediately.
      */
     suspend fun markParticipantFailedLocally(groupId: String, userId: String)
+
+    // ── Taunts ─────────────────────────────────────────────────────────────────
+
+    suspend fun sendTaunt(
+        groupId: String,
+        fromUserId: String,
+        fromDisplayName: String,
+        toUserId: String,
+        message: String,
+    ): Result<Unit>
+
+    suspend fun countTauntsToday(groupId: String, fromUserId: String, toUserId: String): Int
+
+    fun observeUnshownTaunts(groupId: String, toUserId: String): Flow<List<Taunt>>
+
+    suspend fun markTauntShown(groupId: String, tauntId: String): Result<Unit>
 }

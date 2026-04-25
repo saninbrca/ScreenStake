@@ -1,5 +1,7 @@
 package com.detox.app.presentation.screens.profile
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +22,9 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -37,13 +42,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -72,6 +82,62 @@ fun ProfileScreen(
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val recentChallenges by viewModel.recentChallenges.collectAsStateWithLifecycle()
     val historyItems by viewModel.historyItems.collectAsStateWithLifecycle()
+    val payoutState by viewModel.payoutState.collectAsStateWithLifecycle()
+    val pendingPayoutCents by viewModel.pendingPayoutCents.collectAsStateWithLifecycle()
+    val payoutClaimState by viewModel.payoutClaimState.collectAsStateWithLifecycle()
+    val ibanData by viewModel.ibanData.collectAsStateWithLifecycle()
+    val ibanSaveState by viewModel.ibanSaveState.collectAsStateWithLifecycle()
+    var ibanEditing by remember { mutableStateOf(false) }
+    var ibanInput by remember { mutableStateOf("") }
+    var ibanNameInput by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.refreshOnResume()
+        }
+    }
+
+    LaunchedEffect(ibanData) {
+        if (ibanData != null && !ibanEditing) {
+            ibanInput = ibanData!!.iban
+            ibanNameInput = ibanData!!.name
+        }
+    }
+
+    LaunchedEffect(ibanSaveState) {
+        when (ibanSaveState) {
+            is IbanSaveState.Success -> {
+                ibanEditing = false
+                snackbarHostState.showSnackbar(context.getString(R.string.profile_iban_saved))
+                viewModel.clearIbanSaveState()
+            }
+            is IbanSaveState.Error -> {
+                snackbarHostState.showSnackbar((ibanSaveState as IbanSaveState.Error).message)
+                viewModel.clearIbanSaveState()
+            }
+            else -> Unit
+        }
+    }
+
+    LaunchedEffect(payoutClaimState) {
+        when (val s = payoutClaimState) {
+            is PayoutClaimState.Success -> {
+                if (s.transferredCents > 0) {
+                    snackbarHostState.showSnackbar(
+                        context.getString(R.string.profile_payout_claimed, s.transferredCents / 100)
+                    )
+                }
+                viewModel.clearPayoutClaimState()
+            }
+            is PayoutClaimState.Error -> {
+                snackbarHostState.showSnackbar(s.message)
+                viewModel.clearPayoutClaimState()
+            }
+            else -> Unit
+        }
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -277,6 +343,174 @@ fun ProfileScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            // ── 💰 Auszahlung (IBAN) ─────────────────────────────────────────
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = stringResource(R.string.profile_iban_section_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (ibanData != null && !ibanEditing) {
+                        Text(
+                            text = "IBAN: ${ibanData!!.iban}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.profile_iban_holder_label, ibanData!!.name),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                ibanInput = ibanData!!.iban
+                                ibanNameInput = ibanData!!.name
+                                ibanEditing = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        ) {
+                            Text(stringResource(R.string.profile_iban_edit_button))
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = ibanInput,
+                            onValueChange = { ibanInput = it },
+                            label = { Text("IBAN") },
+                            placeholder = { Text("AT61 1904 3002 3457 3201") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = ibanNameInput,
+                            onValueChange = { ibanNameInput = it },
+                            label = { Text(stringResource(R.string.profile_iban_holder_field)) },
+                            placeholder = { Text("Max Mustermann") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Button(
+                            onClick = { viewModel.saveIban(ibanInput, ibanNameInput) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = ibanInput.isNotBlank() && ibanNameInput.isNotBlank()
+                                    && ibanSaveState !is IbanSaveState.Loading
+                        ) {
+                            if (ibanSaveState is IbanSaveState.Loading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Text(stringResource(R.string.profile_iban_save_button))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 💰 Auszahlungen ───────────────────────────────────────────────
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = stringResource(R.string.profile_payout_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when (payoutState) {
+                        is PayoutState.Loading -> {
+                            Text(
+                                text = stringResource(R.string.profile_payout_loading),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        is PayoutState.Active -> {
+                            Text(
+                                text = stringResource(R.string.profile_payout_connected),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.profile_payout_active),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (pendingPayoutCents > 0) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = stringResource(
+                                        R.string.profile_payout_pending,
+                                        pendingPayoutCents / 100
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Button(
+                                    onClick = { viewModel.claimPendingPayouts() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = payoutClaimState !is PayoutClaimState.Loading
+                                ) {
+                                    if (payoutClaimState is PayoutClaimState.Loading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    } else {
+                                        Text(stringResource(R.string.profile_payout_claim_button))
+                                    }
+                                }
+                            }
+                        }
+                        is PayoutState.NotConnected, is PayoutState.OnboardingIncomplete -> {
+                            Text(
+                                text = stringResource(R.string.profile_payout_cta_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = {
+                                    viewModel.startOnboarding(
+                                        onUrl = { url ->
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            )
+                                        },
+                                        onError = {}
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.profile_payout_connect_button))
+                            }
+                        }
+                    }
                 }
             }
 

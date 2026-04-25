@@ -19,11 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -83,8 +81,8 @@ private sealed class BottomNavTab(
     data object Challenges : BottomNavTab(
         route = "challenges",
         labelRes = R.string.nav_challenges,
-        selectedIcon = Icons.Filled.List,
-        unselectedIcon = Icons.Outlined.List
+        selectedIcon = Icons.Filled.Home,
+        unselectedIcon = Icons.Outlined.Home
     )
     data object Friends : BottomNavTab(
         route = "friends",
@@ -100,7 +98,7 @@ private sealed class BottomNavTab(
     )
 
     companion object {
-        val all = listOf(Dashboard, Challenges, Friends, Profile)
+        val all = listOf(Dashboard, Friends, Profile)
     }
 }
 
@@ -117,6 +115,7 @@ fun MainScreen(
     val currentRoute = navBackStackEntry?.destination?.route
 
     LaunchedEffect(Unit) {
+        Timber.d("Challenges tab removed from bottom nav")
         TrackedAppEventBus.navigateToGroupDetail.collect { groupId ->
             navController.navigate("group_detail/$groupId") {
                 launchSingleTop = true
@@ -308,7 +307,18 @@ fun MainScreen(
                 route = "group_detail/{groupId}",
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
-                GroupChallengeDetailScreen(onBack = { navController.popBackStack() })
+                GroupChallengeDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onNavigateToProfile = {
+                        navController.navigate(BottomNavTab.Profile.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
 
             // ── Challenge History ─────────────────────────────────────────────────

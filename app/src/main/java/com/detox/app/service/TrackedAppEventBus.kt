@@ -154,6 +154,28 @@ object TrackedAppEventBus {
         _homeDetectedEvents.tryEmit(Unit)
     }
 
+    // ── Group challenge session limit info ────────────────────────────────────
+
+    /**
+     * Maps each tracked package name to the current session-limit state for its active
+     * group challenge. Populated by [UsageTrackingService] from Firestore participant data
+     * and incremented by [OverlayManager] on every conscious "Ja öffnen" tap.
+     * Read synchronously by [AppDetectionAccessibilityService] on every app-open event.
+     */
+    data class GroupSessionInfo(val opensToday: Int, val limitValueSessions: Int)
+
+    private val _groupSessionInfos = MutableStateFlow<Map<String, GroupSessionInfo>>(emptyMap())
+    val groupSessionInfos: StateFlow<Map<String, GroupSessionInfo>> = _groupSessionInfos.asStateFlow()
+
+    fun updateGroupSessionInfos(infos: Map<String, GroupSessionInfo>) {
+        _groupSessionInfos.value = infos
+    }
+
+    fun incrementGroupSessionOpens(packageName: String) {
+        val current = _groupSessionInfos.value[packageName] ?: return
+        _groupSessionInfos.value = _groupSessionInfos.value + (packageName to current.copy(opensToday = current.opensToday + 1))
+    }
+
     // ── Group-challenge fail set ───────────────────────────────────────────────
 
     /**

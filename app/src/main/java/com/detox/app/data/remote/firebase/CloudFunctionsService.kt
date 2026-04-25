@@ -213,4 +213,46 @@ class CloudFunctionsService @Inject constructor(
         Timber.e(e, "cancelGroupChallenge failed — groupId=%s", groupId)
         Result.failure(e)
     }
+
+    // ── Stripe Connect ─────────────────────────────────────────────────────────
+
+    data class ConnectedAccountStatus(
+        val hasAccount: Boolean,
+        val chargesEnabled: Boolean,
+        val payoutsEnabled: Boolean
+    )
+
+    data class PendingPayoutResult(val transferred: Int, val skipped: Int)
+
+    suspend fun claimPendingPayouts(): Result<PendingPayoutResult> = try {
+        val response = callFunction("claimPendingPayouts", emptyMap())
+        val transferred = (response["transferred"] as? Number)?.toInt() ?: 0
+        val skipped = (response["skipped"] as? Number)?.toInt() ?: 0
+        Timber.d("claimPendingPayouts: transferred=%d skipped=%d", transferred, skipped)
+        Result.success(PendingPayoutResult(transferred, skipped))
+    } catch (e: Exception) {
+        Timber.e(e, "claimPendingPayouts failed")
+        Result.failure(e)
+    }
+
+    suspend fun createConnectedAccount(): Result<String> = try {
+        val response = callFunction("createConnectedAccount", emptyMap())
+        val url = response["url"] as String
+        Timber.d("createConnectedAccount: onboarding url obtained")
+        Result.success(url)
+    } catch (e: Exception) {
+        Timber.e(e, "createConnectedAccount failed")
+        Result.failure(e)
+    }
+
+    suspend fun getConnectedAccountStatus(): Result<ConnectedAccountStatus> = try {
+        val response = callFunction("getConnectedAccountStatus", emptyMap())
+        val hasAccount = response["hasAccount"] as? Boolean ?: false
+        val chargesEnabled = response["chargesEnabled"] as? Boolean ?: false
+        val payoutsEnabled = response["payoutsEnabled"] as? Boolean ?: false
+        Result.success(ConnectedAccountStatus(hasAccount, chargesEnabled, payoutsEnabled))
+    } catch (e: Exception) {
+        Timber.e(e, "getConnectedAccountStatus failed")
+        Result.failure(e)
+    }
 }

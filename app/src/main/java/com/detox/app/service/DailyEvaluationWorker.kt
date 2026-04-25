@@ -526,8 +526,11 @@ class DailyEvaluationWorker @AssistedInject constructor(
         }
 
         // End-of-challenge: call completeGroupChallenge CF so it can run payout logic.
-        // The CF is idempotent — it checks the current status before doing any work.
-        if (now >= challenge.endDate) {
+        // The CF guards itself with endDate, but we also check locally to avoid spurious calls.
+        val endDate = challenge.endDate
+        val expired = endDate > 0L && now >= endDate
+        Timber.d("Group challenge check: endDate=%d now=%d expired=%b", endDate, now, expired)
+        if (expired) {
             Timber.d(
                 "DailyEvaluationWorker: group %s endDate reached — calling completeGroupChallenge",
                 groupId

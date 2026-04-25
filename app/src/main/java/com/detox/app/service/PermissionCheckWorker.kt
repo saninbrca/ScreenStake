@@ -33,6 +33,7 @@ class PermissionCheckWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        checkAccessibilityPermission()
 
         if (Settings.canDrawOverlays(applicationContext)) {
             if (prefs.contains(KEY_LOST_AT)) {
@@ -108,6 +109,35 @@ class PermissionCheckWorker @AssistedInject constructor(
                 .onFailure { e ->
                     Timber.e(e, "PermissionCheckWorker: status update failed for ${challenge.id}")
                 }
+        }
+    }
+
+    private suspend fun checkAccessibilityPermission() {
+        val accessibilityEnabled = Settings.Secure.getString(
+            applicationContext.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )?.contains(applicationContext.packageName) == true
+
+        Timber.d("Accessibility check: enabled=$accessibilityEnabled")
+
+        val accessibilityPrefs = applicationContext.getSharedPreferences("detox_accessibility", Context.MODE_PRIVATE)
+
+        if (!accessibilityEnabled) {
+            val hasActive = challengeRepository.getActiveChallengesList()
+                .getOrElse { emptyList() }.isNotEmpty()
+            if (hasActive && !accessibilityPrefs.contains("accessibilityLostAt")) {
+                accessibilityPrefs.edit().putLong("accessibilityLostAt", System.currentTimeMillis()).apply()
+                NotificationHelper.createChannels(applicationContext)
+                NotificationHelper.sendAccessibilityLost(applicationContext)
+                Timber.d("Accessibility lost — notification sent, timer started")
+            }
+        } else {
+            if (accessibilityPrefs.contains("accessibilityLostAt")) {
+                accessibilityPrefs.edit().clear().apply()
+                NotificationHelper.createChannels(applicationContext)
+                NotificationHelper.sendAccessibilityRestored(applicationContext)
+                Timber.d("Accessibility restored — cleared timer")
+            }
         }
     }
 

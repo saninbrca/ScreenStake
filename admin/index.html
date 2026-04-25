@@ -1,0 +1,663 @@
+<!-- ADMIN PASSWORD: admin123 -->
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detox Admin — Payouts</title>
+  <!--
+    SETUP (one-time):
+    1. Update Firestore rules to allow the admin Firebase account:
+         match /payoutRequests/{doc} {
+           allow read, write: if request.auth != null
+                              && request.auth.token.email == "sanin.brica@gmail.com";
+         }
+         match /users/{uid} {
+           allow write: if request.auth != null
+                        && request.auth.token.email == "sanin.brica@gmail.com";
+         }
+    2. Open this file in Chrome and log in with your Firebase account password.
+  -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #252836;
+      --border:    #2e3247;
+      --text:      #e2e8f0;
+      --muted:     #718096;
+      --green:     #48bb78;
+      --red:       #fc8181;
+      --yellow:    #f6e05e;
+      --blue:      #63b3ed;
+      --accent:    #667eea;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Login ── */
+    #login-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 24px;
+    }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 48px 40px;
+      width: 360px;
+      text-align: center;
+    }
+    .login-card h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    .login-card p  { color: var(--muted); font-size: 0.875rem; margin-bottom: 28px; }
+    .login-card input {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      margin-bottom: 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .login-card input:focus { border-color: var(--accent); }
+    .login-card .error { color: var(--red); font-size: 0.8rem; min-height: 18px; margin-bottom: 8px; }
+
+    /* ── Shared button ── */
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:hover  { opacity: 0.88; }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary { background: var(--accent); color: #fff; width: 100%; padding: 12px; font-size: 0.95rem; }
+    .btn-green   { background: #2f7d5e; color: var(--green); }
+    .btn-red     { background: #7d2f2f; color: var(--red); }
+    .btn-ghost   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Dashboard ── */
+    #dashboard-view { display: none; flex-direction: column; min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 1.1rem; color: var(--text); }
+    header span { font-size: 0.8rem; color: var(--muted); }
+
+    main { padding: 28px; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+    /* ── Stats ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .stat-card .value { font-size: 1.75rem; font-weight: 700; }
+    .stat-card .value.green  { color: var(--green); }
+    .stat-card .value.yellow { color: var(--yellow); }
+    .stat-card .value.blue   { color: var(--blue); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      background: var(--surface);
+      padding: 4px;
+      border-radius: 10px;
+      width: fit-content;
+    }
+    .tab {
+      background: transparent;
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 8px 20px;
+      font-size: 0.875rem;
+    }
+    .tab.active { background: var(--accent); color: #fff; }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .table-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .table-header h2 { font-size: 0.95rem; }
+    .refresh-btn {
+      background: var(--surface2);
+      color: var(--muted);
+      padding: 6px 14px;
+      font-size: 0.8rem;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: var(--surface2); }
+    th {
+      text-align: left;
+      padding: 12px 16px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    td {
+      padding: 13px 16px;
+      font-size: 0.875rem;
+      border-top: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tr:hover td { background: var(--surface2); }
+
+    .iban { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; color: var(--blue); }
+    .amount { font-weight: 700; color: var(--green); }
+    .date { color: var(--muted); font-size: 0.8rem; }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-pending { background: #7d6b2f; color: var(--yellow); }
+    .badge-paid    { background: #2f7d5e; color: var(--green); }
+    .badge-rejected{ background: #7d2f2f; color: var(--red); }
+
+    .action-btns { display: flex; gap: 8px; }
+
+    .empty {
+      padding: 48px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+
+    .loading {
+      padding: 48px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .spinner {
+      display: inline-block;
+      width: 24px; height: 24px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 28px; right: 28px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 20px;
+      font-size: 0.875rem;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none;
+      max-width: 320px;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.success { border-left: 3px solid var(--green); }
+    #toast.error   { border-left: 3px solid var(--red); }
+
+    /* ── Confirm modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      width: 380px;
+    }
+    .modal h3 { font-size: 1.1rem; margin-bottom: 10px; }
+    .modal p  { color: var(--muted); font-size: 0.875rem; margin-bottom: 24px; line-height: 1.5; }
+    .modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="login-view">
+  <div class="login-card">
+    <h1>🔒 Detox Admin</h1>
+    <p>Payout Management Dashboard</p>
+    <input type="password" id="pw-input" placeholder="Firebase-Passwort" autocomplete="current-password">
+    <div class="error" id="login-error"></div>
+    <button class="btn-primary" id="login-btn" onclick="login()">Einloggen</button>
+  </div>
+</div>
+
+<!-- ── DASHBOARD ── -->
+<div id="dashboard-view">
+  <header>
+    <h1>💰 Detox Payouts</h1>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span id="last-refresh"></span>
+      <button class="btn-ghost" onclick="logout()" style="padding:6px 14px;font-size:0.8rem">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Ausstehend</div>
+        <div class="value yellow" id="stat-pending-count">—</div>
+        <div style="font-size:0.8rem;color:var(--muted);margin-top:4px" id="stat-pending-sum"></div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Ausstehender Betrag</div>
+        <div class="value yellow" id="stat-pending-eur">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Bezahlt (dieser Monat)</div>
+        <div class="value green" id="stat-paid-month">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Bezahlt gesamt</div>
+        <div class="value blue" id="stat-paid-total">—</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('pending', this)">⏳ Ausstehend</button>
+      <button class="tab" onclick="switchTab('paid', this)">✅ Bezahlt</button>
+    </div>
+
+    <!-- Pending tab -->
+    <div id="tab-pending">
+      <div class="table-wrap">
+        <div class="table-header">
+          <h2>Ausstehende Auszahlungen</h2>
+          <button class="refresh-btn" onclick="loadAll()">↻ Aktualisieren</button>
+        </div>
+        <div id="pending-content"><div class="loading"><div class="spinner"></div><br>Lade…</div></div>
+      </div>
+    </div>
+
+    <!-- Paid tab -->
+    <div id="tab-paid" style="display:none">
+      <div class="table-wrap">
+        <div class="table-header">
+          <h2>Bezahlte Auszahlungen</h2>
+          <button class="refresh-btn" onclick="loadAll()">↻ Aktualisieren</button>
+        </div>
+        <div id="paid-content"><div class="loading"><div class="spinner"></div><br>Lade…</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ── CONFIRM MODAL ── -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <p id="modal-body"></p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Abbrechen</button>
+      <button id="modal-confirm-btn" onclick="confirmAction()">Bestätigen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div id="toast"></div>
+
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+  // ── Config ────────────────────────────────────────────────────────────────────
+  const ADMIN_EMAIL = 'sanin.brica@gmail.com';
+
+  firebase.initializeApp({
+    apiKey:     'AIzaSyBIwyv_HXFLnXGxE5XFcwHr2Na4SWeVZQo',
+    authDomain: 'detox-33208.firebaseapp.com',
+    projectId:  'detox-33208',
+  });
+
+  const auth = firebase.auth();
+  const db   = firebase.firestore();
+
+  // ── Auth ──────────────────────────────────────────────────────────────────────
+  async function login() {
+    const pw  = document.getElementById('pw-input').value.trim();
+    const btn = document.getElementById('login-btn');
+    const err = document.getElementById('login-error');
+    if (!pw) { err.textContent = 'Bitte Passwort eingeben.'; return; }
+    err.textContent = '';
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      await auth.signInWithEmailAndPassword(ADMIN_EMAIL, pw);
+      // onAuthStateChanged will call showDashboard()
+    } catch (e) {
+      err.textContent = 'Login fehlgeschlagen: ' + (e.code === 'auth/wrong-password' ? 'Falsches Passwort.' : e.message);
+      btn.disabled = false;
+      btn.textContent = 'Einloggen';
+    }
+  }
+
+  function logout() {
+    auth.signOut();
+    document.getElementById('dashboard-view').style.display = 'none';
+    document.getElementById('login-view').style.display = 'flex';
+    document.getElementById('pw-input').value = '';
+    const btn = document.getElementById('login-btn');
+    btn.disabled = false;
+    btn.textContent = 'Einloggen';
+  }
+
+  auth.onAuthStateChanged(user => {
+    if (user && user.email === ADMIN_EMAIL) {
+      showDashboard();
+    }
+  });
+
+  document.getElementById('pw-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') login();
+  });
+
+  function showDashboard() {
+    document.getElementById('login-view').style.display = 'none';
+    const d = document.getElementById('dashboard-view');
+    d.style.display = 'flex';
+    loadAll();
+  }
+
+  // ── Data & state ──────────────────────────────────────────────────────────────
+  let pendingDocs   = [];
+  let paidDocs      = [];
+  let pendingAction = null;
+
+  function snapToDocs(snapshot) {
+    return snapshot.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        ...data,
+        createdAt:  data.createdAt?.toDate?.()  ?? null,
+        paidAt:     data.paidAt?.toDate?.()     ?? null,
+        rejectedAt: data.rejectedAt?.toDate?.() ?? null,
+      };
+    });
+  }
+
+  async function loadAll() {
+    document.getElementById('last-refresh').textContent = 'Lade…';
+    try {
+      const [pendingSnap, paidSnap] = await Promise.all([
+        db.collection('payoutRequests').where('status', '==', 'pending').orderBy('createdAt', 'desc').get(),
+        db.collection('payoutRequests').where('status', '==', 'paid').orderBy('paidAt', 'desc').get(),
+      ]);
+      pendingDocs = snapToDocs(pendingSnap);
+      paidDocs    = snapToDocs(paidSnap);
+      renderStats();
+      renderPending();
+      renderPaid();
+      document.getElementById('last-refresh').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-AT');
+    } catch (e) {
+      showToast('Fehler beim Laden: ' + e.message, 'error');
+      document.getElementById('last-refresh').textContent = 'Fehler';
+    }
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────────
+  function renderStats() {
+    const pendingSum = pendingDocs.reduce((s, d) => s + (d.amountCents || 0), 0);
+    document.getElementById('stat-pending-count').textContent = pendingDocs.length;
+    document.getElementById('stat-pending-eur').textContent = eur(pendingSum);
+
+    const paidTotal = paidDocs.reduce((s, d) => s + (d.amountCents || 0), 0);
+    document.getElementById('stat-paid-total').textContent = eur(paidTotal);
+
+    const now = new Date();
+    const thisMonth = paidDocs.filter(d => {
+      const t = d.paidAt;
+      return t instanceof Date && t.getMonth() === now.getMonth() && t.getFullYear() === now.getFullYear();
+    });
+    document.getElementById('stat-paid-month').textContent = eur(thisMonth.reduce((s, d) => s + (d.amountCents || 0), 0));
+  }
+
+  // ── Render tables ─────────────────────────────────────────────────────────────
+  function eur(cents) {
+    return '€' + (cents / 100).toFixed(2).replace('.', ',');
+  }
+
+  function fmtDate(d) {
+    if (!(d instanceof Date) || isNaN(d)) return '—';
+    return d.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: '2-digit' })
+           + ' ' + d.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function maskIban(iban) {
+    if (!iban || iban.length < 8) return iban || '—';
+    return iban.substring(0, 6) + '•••' + iban.slice(-4);
+  }
+
+  function renderPending() {
+    const el = document.getElementById('pending-content');
+    if (pendingDocs.length === 0) {
+      el.innerHTML = '<div class="empty">✅ Keine ausstehenden Auszahlungen</div>';
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th><th>IBAN</th><th>Betrag</th><th>Group ID</th><th>Datum</th><th>Aktion</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pendingDocs.map(d => `
+            <tr>
+              <td><strong>${esc(d.payoutName || d.displayName || '—')}</strong><br>
+                  <span style="font-size:0.75rem;color:var(--muted)">${esc(d.userId || '')}</span></td>
+              <td><span class="iban">${esc(maskIban(d.iban))}</span>
+                  <button onclick="copyIban('${esc(d.iban || '')}', this)"
+                          title="Kopieren"
+                          style="margin-left:8px;background:transparent;color:var(--muted);padding:2px 6px;font-size:0.75rem;border:1px solid var(--border)">📋</button></td>
+              <td><span class="amount">${eur(d.amountCents || 0)}</span></td>
+              <td class="date">${esc((d.groupId || '').substring(0, 12))}…</td>
+              <td class="date">${fmtDate(d.createdAt)}</td>
+              <td>
+                <div class="action-btns">
+                  <button class="btn-green" onclick="confirmPaid('${d.id}', '${esc(d.payoutName || d.displayName || '')}', ${d.amountCents || 0}, '${d.userId || ''}')">✅ Bezahlt</button>
+                  <button class="btn-red"   onclick="confirmReject('${d.id}', '${esc(d.payoutName || d.displayName || '')}')">❌ Ablehnen</button>
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function renderPaid() {
+    const el = document.getElementById('paid-content');
+    if (paidDocs.length === 0) {
+      el.innerHTML = '<div class="empty">Noch keine bezahlten Auszahlungen</div>';
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th><th>IBAN</th><th>Betrag</th><th>Group ID</th><th>Erstellt</th><th>Bezahlt am</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${paidDocs.map(d => `
+            <tr>
+              <td><strong>${esc(d.payoutName || d.displayName || '—')}</strong></td>
+              <td><span class="iban">${esc(maskIban(d.iban))}</span></td>
+              <td><span class="amount">${eur(d.amountCents || 0)}</span></td>
+              <td class="date">${esc((d.groupId || '').substring(0, 12))}…</td>
+              <td class="date">${fmtDate(d.createdAt)}</td>
+              <td class="date">${fmtDate(d.paidAt)}</td>
+              <td><span class="badge badge-paid">bezahlt</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────────────
+  function confirmPaid(id, name, cents, userId) {
+    showModal(
+      `✅ Als bezahlt markieren?`,
+      `${name} · ${eur(cents)}\n\nDies markiert die Auszahlung als erledigt und benachrichtigt den Nutzer.`,
+      { type: 'paid', id, userId, cents }
+    );
+  }
+
+  function confirmReject(id, name) {
+    showModal(
+      `❌ Auszahlung ablehnen?`,
+      `${name}\n\nDie Anfrage wird als abgelehnt markiert.`,
+      { type: 'rejected', id }
+    );
+  }
+
+  async function confirmAction() {
+    if (!pendingAction) return;
+    const btn = document.getElementById('modal-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    try {
+      const { type, id, userId, cents } = pendingAction;
+      if (type === 'paid') {
+        await db.collection('payoutRequests').doc(id).update({ status: 'paid', paidAt: new Date() });
+        if (userId) {
+          db.collection('users').doc(userId).update({
+            lastPayoutPaidAt: new Date(),
+            lastPayoutAmountCents: cents,
+          }).catch(() => {});
+        }
+        showToast('✅ Als bezahlt markiert', 'success');
+      } else {
+        await db.collection('payoutRequests').doc(id).update({ status: 'rejected', rejectedAt: new Date() });
+        showToast('❌ Abgelehnt', 'success');
+      }
+      closeModal();
+      await loadAll();
+    } catch (e) {
+      showToast('Fehler: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Bestätigen';
+    }
+  }
+
+  function copyIban(iban, btn) {
+    navigator.clipboard.writeText(iban).then(() => {
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = '📋'; }, 1500);
+    });
+  }
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────────
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-pending').style.display = name === 'pending' ? 'block' : 'none';
+    document.getElementById('tab-paid').style.display    = name === 'paid'    ? 'block' : 'none';
+  }
+
+  // ── Modal ─────────────────────────────────────────────────────────────────────
+  function showModal(title, body, action) {
+    pendingAction = action;
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').textContent  = body;
+    const btn = document.getElementById('modal-confirm-btn');
+    btn.className = action.type === 'paid' ? 'btn-green' : 'btn-red';
+    btn.textContent = action.type === 'paid' ? '✅ Bestätigen' : '❌ Ablehnen';
+    btn.disabled = false;
+    document.getElementById('modal').classList.add('show');
+  }
+
+  function closeModal() {
+    pendingAction = null;
+    document.getElementById('modal').classList.remove('show');
+  }
+
+  document.getElementById('modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  // ── Toast ─────────────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `show ${type}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = ''; }, 3000);
+  }
+
+  // ── Utils ─────────────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>

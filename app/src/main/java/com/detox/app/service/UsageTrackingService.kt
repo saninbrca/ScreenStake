@@ -16,6 +16,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.R
+import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.ThresholdFlags
 import com.detox.app.data.remote.firebase.FirebaseAuthService
@@ -128,8 +129,10 @@ class UsageTrackingService : Service() {
         }
 
         overlayManager.startListening(serviceScope)
+        overlayManager.startTauntListening(serviceScope)
         startUsagePolling()
         startGroupChallengeStatsPolling()
+        startGroupSessionLimitTracking()
         startOverlayPermissionMonitoring()
     }
 
@@ -153,6 +156,37 @@ class UsageTrackingService : Service() {
             while (isActive) {
                 delay(60_000L)
                 checkOverlayPermission()
+                checkAccessibilityPermission()
+            }
+        }
+    }
+
+    private suspend fun checkAccessibilityPermission() {
+        val accessibilityEnabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )?.contains(packageName) == true
+
+        Timber.d("Accessibility check: enabled=$accessibilityEnabled")
+
+        val prefs = getSharedPreferences("detox_accessibility", MODE_PRIVATE)
+
+        if (!accessibilityEnabled) {
+            val hasActive = runCatching {
+                challengeRepository.getActiveChallengesList().getOrThrow().isNotEmpty()
+            }.getOrElse { false }
+            if (hasActive && !prefs.contains("accessibilityLostAt")) {
+                prefs.edit().putLong("accessibilityLostAt", System.currentTimeMillis()).apply()
+                NotificationHelper.createChannels(applicationContext)
+                NotificationHelper.sendAccessibilityLost(applicationContext)
+                Timber.d("Accessibility lost — notification sent, timer started")
+            }
+        } else {
+            if (prefs.contains("accessibilityLostAt")) {
+                prefs.edit().clear().apply()
+                NotificationHelper.createChannels(applicationContext)
+                NotificationHelper.sendAccessibilityRestored(applicationContext)
+                Timber.d("Accessibility restored — cleared timer")
             }
         }
     }
@@ -212,6 +246,36 @@ class UsageTrackingService : Service() {
         }
     }
 
+    /**
+     * Observes active group challenges and keeps [TrackedAppEventBus.groupSessionInfos] in sync
+     * with each participant's current [Participant.opensToday] from Firestore.
+     * This gives [AppDetectionAccessibilityService] a synchronous, DB-free path to check whether
+     * the session limit is already reached before emitting the app-open event.
+     */
+    private fun startGroupSessionLimitTracking() {
+        val uid = firebaseAuthService.currentUserId() ?: return
+        serviceScope.launch {
+            groupChallengeRepository.getGroupChallenges().collect { groupChallenges ->
+                val infos = groupChallenges
+                    .filter { gc ->
+                        gc.status == GroupChallengeStatus.ACTIVE &&
+                            gc.limitType == LimitType.SESSIONS &&
+                            (gc.limitValueSessions ?: 0) > 0
+                    }
+                    .flatMap { gc ->
+                        val opensToday = gc.participants.find { it.userId == uid }?.opensToday ?: 0
+                        val limit = gc.limitValueSessions!!
+                        gc.appPackageNames.map { pkg ->
+                            pkg to TrackedAppEventBus.GroupSessionInfo(opensToday, limit)
+                        }
+                    }
+                    .toMap()
+                TrackedAppEventBus.updateGroupSessionInfos(infos)
+                Timber.d("GroupSessionInfos updated: $infos")
+            }
+        }
+    }
+
     private suspend fun updateGroupChallengeStats() {
         val uid = firebaseAuthService.currentUserId() ?: return
         val challenges = runCatching {
@@ -225,13 +289,12 @@ class UsageTrackingService : Service() {
                 usageStatsRepository.getTodayUsageForApp(packageName)
             }.getOrNull() ?: continue
 
-            groupChallengeRepository.updateParticipantStats(
+            groupChallengeRepository.updateParticipantTimeUsed(
                 groupId = groupId,
                 userId = uid,
-                opensToday = usage.opens,
                 timeUsedMinutes = usage.minutes
             )
-            Timber.d("Leaderboard updated: userId=$uid opens=${usage.opens} time=${usage.minutes}")
+            Timber.d("Leaderboard time updated: userId=$uid time=${usage.minutes}")
         }
     }
 

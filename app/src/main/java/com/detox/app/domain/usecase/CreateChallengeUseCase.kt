@@ -112,6 +112,9 @@ class CreateChallengeUseCase @Inject constructor(
         )
 
         Timber.d(
+            "Creating challenge: limitValueSessions=$limitValueSessions sessionDurationMinutes=$sessionDurationMinutes"
+        )
+        Timber.d(
             "CreateChallengeUseCase: type=$blockingType domains=$blockedDomains adult=$blockAdultContent"
         )
 

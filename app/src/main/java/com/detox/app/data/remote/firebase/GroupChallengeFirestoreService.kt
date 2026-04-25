@@ -5,6 +5,7 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.Taunt
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
+import java.util.Calendar
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -161,8 +164,8 @@ class GroupChallengeFirestoreService @Inject constructor(
         try {
             val docRef = collection.document(groupId)
             val snapshot = docRef.get().await()
-            @Suppress("UNCHECKED_CAST")
-            val rawParticipants = snapshot.get("participants") as? List<Map<String, Any>> ?: return
+            val rawParticipants = parseRawParticipants(snapshot.get("participants"))
+            if (rawParticipants.isEmpty()) return
             val updated = rawParticipants.map { p ->
                 if ((p["userId"] as? String) == userId) {
                     p.toMutableMap().apply {
@@ -176,6 +179,154 @@ class GroupChallengeFirestoreService @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeFirestore: updateParticipantStats failed groupId=%s uid=%s", groupId, userId)
         }
+    }
+
+    /**
+     * Updates only timeUsedMinutes for a participant, leaving opensToday untouched.
+     * Used by the 60-second leaderboard polling in UsageTrackingService.
+     */
+    suspend fun updateParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) {
+        try {
+            val docRef = collection.document(groupId)
+            val snapshot = docRef.get().await()
+            val rawParticipants = parseRawParticipants(snapshot.get("participants"))
+            if (rawParticipants.isEmpty()) return
+            val index = rawParticipants.indexOfFirst { (it["userId"] as? String) == userId }
+            if (index < 0) return
+            val updated = rawParticipants.toMutableList()
+            updated[index] = updated[index].toMutableMap().apply {
+                put("timeUsedMinutes", timeUsedMinutes.toLong())
+            }
+            docRef.update("participants", updated).await()
+            Timber.d("Leaderboard time updated: groupId=$groupId userId=$userId time=$timeUsedMinutes")
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeFirestore: updateParticipantTimeUsed failed groupId=%s uid=%s", groupId, userId)
+        }
+    }
+
+    /**
+     * Increments opensToday by 1 for the given participant by reading the full participants array,
+     * patching the matching entry, and writing the entire array back. This avoids dot-notation
+     * partial updates that cause Firestore snapshots to return incomplete participant objects.
+     */
+    suspend fun incrementParticipantOpensToday(groupId: String, userId: String) {
+        try {
+            val docRef = collection.document(groupId)
+            val snapshot = docRef.get().await()
+            val rawParticipants = parseRawParticipants(snapshot.get("participants"))
+            if (rawParticipants.isEmpty()) return
+            val index = rawParticipants.indexOfFirst { (it["userId"] as? String) == userId }
+            if (index < 0) {
+                Timber.w("GroupChallengeFirestore: incrementParticipantOpensToday — userId=$userId not found in group=$groupId")
+                return
+            }
+            val updated = rawParticipants.toMutableList()
+            val current = updated[index]
+            val currentOpens = (current["opensToday"] as? Long)?.toInt() ?: 0
+            updated[index] = current.toMutableMap().apply {
+                put("opensToday", (currentOpens + 1).toLong())
+            }
+            docRef.update("participants", updated).await()
+            Timber.d("Group opensToday incremented: $groupId user=$userId")
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeFirestore: incrementParticipantOpensToday failed groupId=%s uid=%s", groupId, userId)
+        }
+    }
+
+    // ── Taunts ──────────────────────────────────────────────────────────────────
+
+    private fun tauntsRef(groupId: String) = collection.document(groupId).collection("taunts")
+
+    suspend fun sendTaunt(
+        groupId: String,
+        fromUserId: String,
+        fromDisplayName: String,
+        toUserId: String,
+        message: String,
+    ) {
+        val tauntId = UUID.randomUUID().toString()
+        tauntsRef(groupId).document(tauntId)
+            .set(
+                mapOf(
+                    "fromUserId" to fromUserId,
+                    "fromDisplayName" to fromDisplayName,
+                    "toUserId" to toUserId,
+                    "message" to message,
+                    "createdAt" to System.currentTimeMillis(),
+                    "shown" to false,
+                )
+            )
+            .await()
+        Timber.d("Taunt sent: $tauntId from=$fromUserId to=$toUserId group=$groupId")
+    }
+
+    suspend fun countTauntsToday(groupId: String, fromUserId: String, toUserId: String): Int {
+        return try {
+            val todayMidnight = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val snapshot = tauntsRef(groupId)
+                .whereEqualTo("fromUserId", fromUserId)
+                .get().await()
+            snapshot.documents.count { doc ->
+                doc.getString("toUserId") == toUserId &&
+                    (doc.getLong("createdAt") ?: 0L) >= todayMidnight
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to count taunts in group $groupId")
+            0
+        }
+    }
+
+    fun observeUnshownTaunts(groupId: String, toUserId: String): Flow<List<Taunt>> = callbackFlow {
+        val reg = tauntsRef(groupId)
+            .whereEqualTo("toUserId", toUserId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Timber.e(error, "Taunt listener error group=$groupId")
+                    return@addSnapshotListener
+                }
+                val taunts = snapshot?.documents?.mapNotNull { doc ->
+                    try {
+                        val shown = doc.getBoolean("shown") ?: false
+                        if (shown) return@mapNotNull null
+                        Taunt(
+                            id = doc.id,
+                            fromUserId = doc.getString("fromUserId") ?: "",
+                            fromDisplayName = doc.getString("fromDisplayName") ?: "",
+                            toUserId = doc.getString("toUserId") ?: "",
+                            message = doc.getString("message") ?: "",
+                            createdAt = doc.getLong("createdAt") ?: 0L,
+                            shown = false,
+                        )
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to parse taunt ${doc.id}")
+                        null
+                    }
+                } ?: emptyList()
+                trySend(taunts)
+            }
+        awaitClose { reg.remove() }
+    }
+
+    suspend fun markTauntShown(groupId: String, tauntId: String) {
+        try {
+            tauntsRef(groupId).document(tauntId).update("shown", true).await()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to mark taunt $tauntId shown")
+        }
+    }
+
+    // ── Parsing helpers ─────────────────────────────────────────────────────────
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseRawParticipants(raw: Any?): List<Map<String, Any>> = when (raw) {
+        is List<*> -> raw as List<Map<String, Any>>
+        is Map<*, *> -> (raw as Map<*, Map<String, Any>>).values.toList()
+        else -> emptyList()
+    }.also { list ->
+        Timber.d("Participants parsed: count=${list.size} type=${raw?.javaClass?.simpleName}")
     }
 
     // ── Mapping helpers ─────────────────────────────────────────────────────────
@@ -223,8 +374,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                 ?: emptyList()
 
             Timber.d("Raw participants from Firestore: ${this.get("participants")}")
-            val rawParticipants = d["participants"] as? List<Map<String, Any>> ?: emptyList()
-            Timber.d("Parsed rawParticipants count: ${rawParticipants.size}")
+            val rawParticipants = parseRawParticipants(d["participants"])
             val participants = rawParticipants.map { p ->
                 Participant(
                     userId = p["userId"] as? String ?: "",
@@ -245,7 +395,9 @@ class GroupChallengeFirestoreService @Inject constructor(
                     }.getOrDefault(ParticipantStatus.ACTIVE),
                     opensToday = (p["opensToday"] as? Long)?.toInt() ?: 0,
                     timeUsedMinutes = (p["timeUsedMinutes"] as? Long)?.toInt() ?: 0,
-                    joinedAt = (p["joinedAt"] as? Long) ?: 0L
+                    joinedAt = (p["joinedAt"] as? Long) ?: 0L,
+                    payoutStatus = p["payoutStatus"] as? String ?: "",
+                    finalPayout = (p["finalPayout"] as? Long)?.toInt() ?: 0,
                 )
             }
 
@@ -254,15 +406,14 @@ class GroupChallengeFirestoreService @Inject constructor(
                 is Long -> raw
                 else -> System.currentTimeMillis()
             }
-            val endDateRaw = (d["endDate"] as? Long) ?: 0L
-            val endDateMs = when {
-                endDateRaw > 1_700_000_000_000L -> endDateRaw
-                endDateRaw < 365L * 24 * 60 * 60 * 1000 -> createdAt + endDateRaw
-                else -> createdAt + (7L * 24 * 60 * 60 * 1000)
-            }
-            Timber.d(
-                "endDateRaw=$endDateRaw type=${if (endDateRaw > 1_700_000_000_000L) "timestamp" else "duration"} finalEndDate=${java.util.Date(endDateMs)}"
-            )
+            val startDate = (d.get("startDate") as? Number)?.toLong() ?: createdAt
+            val endDate = (d.get("endDate") as? Number)?.toLong()
+                ?: (startDate + 7L * 24 * 60 * 60 * 1000)
+
+            val now = System.currentTimeMillis()
+            val progress = if (endDate > startDate) (now - startDate).toFloat() / (endDate - startDate).toFloat() else 0f
+            val remainingMs = endDate - now
+            Timber.d("startDate=${java.util.Date(startDate)} endDate=${java.util.Date(endDate)} progress=$progress remaining=${remainingMs / 86400000}days")
 
             GroupChallenge(
                 groupId = d["groupId"] as? String ?: id,
@@ -279,8 +430,8 @@ class GroupChallengeFirestoreService @Inject constructor(
                 durationDays = (d["durationDays"] as? Long)?.toInt() ?: 7,
                 buyInCents = (d["buyInCents"] as? Long)?.toInt() ?: 500,
                 maxParticipants = (d["maxParticipants"] as? Long)?.toInt() ?: 5,
-                startDate = (d["startDate"] as? Long) ?: 0L,
-                endDate = endDateMs,
+                startDate = startDate,
+                endDate = endDate,
                 bonusEnabled = d["bonusEnabled"] as? Boolean ?: false,
                 status = runCatching {
                     GroupChallengeStatus.valueOf(
@@ -288,6 +439,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                     )
                 }.getOrDefault(GroupChallengeStatus.WAITING),
                 participants = participants,
+                perWinnerBonus = (d["perWinnerBonus"] as? Long)?.toInt() ?: 0,
                 blockedDomains = (d["blockedDomains"] as? String)
                     ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
                     ?: emptyList()

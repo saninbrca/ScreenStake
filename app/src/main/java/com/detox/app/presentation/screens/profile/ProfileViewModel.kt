@@ -8,8 +8,11 @@ import androidx.work.WorkManager
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.GroupChallengeEntity
+import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.service.DailyEvaluationWorker
+import com.detox.app.service.NotificationHelper
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import timber.log.Timber
@@ -49,10 +53,35 @@ data class ProfileStats(
     val appsBlocked: Int = 0
 )
 
+sealed interface PayoutState {
+    object Loading : PayoutState
+    object NotConnected : PayoutState
+    object OnboardingIncomplete : PayoutState
+    object Active : PayoutState
+}
+
+sealed interface PayoutClaimState {
+    object Idle : PayoutClaimState
+    object Loading : PayoutClaimState
+    data class Success(val transferredCents: Int) : PayoutClaimState
+    data class Error(val message: String) : PayoutClaimState
+}
+
+data class IbanData(val iban: String, val name: String)
+
+sealed interface IbanSaveState {
+    object Idle : IbanSaveState
+    object Loading : IbanSaveState
+    object Success : IbanSaveState
+    data class Error(val message: String) : IbanSaveState
+}
+
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
     private val database: DetoxDatabase,
+    private val cloudFunctionsService: CloudFunctionsService,
+    private val firestore: FirebaseFirestore,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -71,6 +100,21 @@ class ProfileViewModel @Inject constructor(
 
     private val _allHistoryItems = MutableStateFlow<List<HistoryItem>>(emptyList())
     val allHistoryItems: StateFlow<List<HistoryItem>> = _allHistoryItems.asStateFlow()
+
+    private val _payoutState = MutableStateFlow<PayoutState>(PayoutState.Loading)
+    val payoutState: StateFlow<PayoutState> = _payoutState.asStateFlow()
+
+    private val _pendingPayoutCents = MutableStateFlow(0)
+    val pendingPayoutCents: StateFlow<Int> = _pendingPayoutCents.asStateFlow()
+
+    private val _payoutClaimState = MutableStateFlow<PayoutClaimState>(PayoutClaimState.Idle)
+    val payoutClaimState: StateFlow<PayoutClaimState> = _payoutClaimState.asStateFlow()
+
+    private val _ibanData = MutableStateFlow<IbanData?>(null)
+    val ibanData: StateFlow<IbanData?> = _ibanData.asStateFlow()
+
+    private val _ibanSaveState = MutableStateFlow<IbanSaveState>(IbanSaveState.Idle)
+    val ibanSaveState: StateFlow<IbanSaveState> = _ibanSaveState.asStateFlow()
 
     val activeChallenges: StateFlow<List<ChallengeEntity>> =
         database.challengeDao().getActiveChallenges()
@@ -92,7 +136,111 @@ class ProfileViewModel @Inject constructor(
             _recentChallenges.value = database.challengeDao().getRecentFinishedChallenges()
             loadHistoryItems()
         }
+        viewModelScope.launch { refreshPayoutState() }
+        viewModelScope.launch { fetchPendingPayouts() }
+        viewModelScope.launch { fetchIban() }
     }
+
+    private suspend fun fetchIban() {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        runCatching {
+            firestore.collection("users").document(uid).get().await()
+        }.onSuccess { doc ->
+            val iban = doc.getString("payoutIban")?.takeIf { it.isNotBlank() } ?: return@onSuccess
+            val name = doc.getString("payoutName") ?: ""
+            _ibanData.value = IbanData(iban, name)
+        }
+    }
+
+    fun saveIban(iban: String, name: String) {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        if (_ibanSaveState.value is IbanSaveState.Loading) return
+        _ibanSaveState.value = IbanSaveState.Loading
+        viewModelScope.launch {
+            runCatching {
+                firestore.collection("users").document(uid)
+                    .set(
+                        mapOf("payoutIban" to iban.trim(), "payoutName" to name.trim()),
+                        com.google.firebase.firestore.SetOptions.merge()
+                    ).await()
+            }.onSuccess {
+                _ibanData.value = IbanData(iban.trim(), name.trim())
+                _ibanSaveState.value = IbanSaveState.Success
+            }.onFailure { e ->
+                _ibanSaveState.value = IbanSaveState.Error(e.message ?: "Fehler beim Speichern")
+            }
+        }
+    }
+
+    fun clearIbanSaveState() { _ibanSaveState.value = IbanSaveState.Idle }
+
+    private suspend fun refreshPayoutState() {
+        cloudFunctionsService.getConnectedAccountStatus()
+            .onSuccess { status ->
+                _payoutState.value = when {
+                    !status.hasAccount -> PayoutState.NotConnected
+                    status.chargesEnabled && status.payoutsEnabled -> PayoutState.Active
+                    else -> PayoutState.OnboardingIncomplete
+                }
+                Timber.d(
+                    "Payout UI: connectedAccount=%s pending=%d",
+                    status.hasAccount,
+                    _pendingPayoutCents.value
+                )
+            }
+            .onFailure { _payoutState.value = PayoutState.NotConnected }
+    }
+
+    private suspend fun fetchPendingPayouts() {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        runCatching {
+            val snap = firestore.collection("users").document(uid)
+                .collection("pendingPayouts").get().await()
+            snap.documents.sumOf { (it.getLong("amount") ?: 0L).toInt() }
+        }.onSuccess { total ->
+            _pendingPayoutCents.value = total
+            Timber.d("Payout UI: pending=%d cents", total)
+        }
+    }
+
+    fun refreshOnResume() {
+        viewModelScope.launch {
+            refreshPayoutState()
+            fetchPendingPayouts()
+        }
+    }
+
+    fun startOnboarding(onUrl: (String) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            cloudFunctionsService.createConnectedAccount()
+                .onSuccess { url ->
+                    onUrl(url)
+                    refreshPayoutState()
+                }
+                .onFailure { onError(it.message ?: "Unknown error") }
+        }
+    }
+
+    fun claimPendingPayouts() {
+        if (_payoutClaimState.value is PayoutClaimState.Loading) return
+        _payoutClaimState.value = PayoutClaimState.Loading
+        viewModelScope.launch {
+            cloudFunctionsService.claimPendingPayouts()
+                .onSuccess { result ->
+                    if (result.transferred > 0) {
+                        NotificationHelper.sendPayoutReceived(context, result.transferred)
+                    }
+                    _pendingPayoutCents.value = 0
+                    _payoutClaimState.value = PayoutClaimState.Success(result.transferred)
+                    refreshPayoutState()
+                }
+                .onFailure { e ->
+                    _payoutClaimState.value = PayoutClaimState.Error(e.message ?: "Fehler")
+                }
+        }
+    }
+
+    fun clearPayoutClaimState() { _payoutClaimState.value = PayoutClaimState.Idle }
 
     private suspend fun loadHistoryItems() {
         val userId = firebaseAuth.currentUser?.uid

@@ -53,6 +53,9 @@ class DailyLogRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun observeLogsForDate(date: Long): Flow<List<DailyLog>> =
+        dailyLogDao.observeLogsForDate(date).map { entities -> entities.map { it.toDomain() } }
+
     override suspend fun getConsciousOpens(challengeId: String, date: Long): Result<Int> {
         return try {
             Result.success(dailyLogDao.getConsciousOpens(challengeId, date))
@@ -101,26 +104,24 @@ class DailyLogRepositoryImpl @Inject constructor(
      */
     override suspend fun addOverlayPausedMs(challengeId: String, date: Long, additionalMs: Long): Result<Unit> {
         return try {
-            val existing = dailyLogDao.getLogForDate(challengeId, date)
-            if (existing != null) {
-                dailyLogDao.addOverlayPausedMs(challengeId, date, additionalMs)
-            } else {
-                // Row doesn't exist yet — insert a placeholder so the UPDATE has a target.
-                dailyLogDao.insertDailyLog(
-                    DailyLogEntity(
-                        id = UUID.randomUUID().toString(),
-                        challengeId = challengeId,
-                        date = date,
-                        totalMinutes = 0,
-                        openCount = 0,
-                        consciousOpens = 0,
-                        overlayPausedMs = additionalMs,
-                        pointsEarned = 0,
-                        limitExceeded = false,
-                        moneyLostCents = 0
-                    )
+            // INSERT OR IGNORE ensures the row exists without overwriting any column that another
+            // concurrent write (e.g. upsertConsciousOpens) may have already set.
+            // The subsequent SQL UPDATE then atomically adds only to overlayPausedMs.
+            dailyLogDao.insertOrIgnore(
+                DailyLogEntity(
+                    id = UUID.randomUUID().toString(),
+                    challengeId = challengeId,
+                    date = date,
+                    totalMinutes = 0,
+                    openCount = 0,
+                    consciousOpens = 0,
+                    overlayPausedMs = 0,
+                    pointsEarned = 0,
+                    limitExceeded = false,
+                    moneyLostCents = 0
                 )
-            }
+            )
+            dailyLogDao.addOverlayPausedMs(challengeId, date, additionalMs)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

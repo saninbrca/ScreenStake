@@ -303,7 +303,7 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
       return;
     }
 
-    await docRef.update({ status: "active" });
+    await docRef.update({ status: "active", startDate: Date.now() });
     functions.logger.info("startGroupChallenge: activated", { groupId, participants: participants.length });
     res.json({ status: "active" });
   } catch (e) { handleError("startGroupChallenge", e, res); }
@@ -412,59 +412,281 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
     if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
 
     const gc = doc.data()!;
+
+    if (gc["status"] === "completed") {
+      functions.logger.info("completeGroupChallenge: already completed", { groupId });
+      res.json({ success: true, reason: "already_completed" });
+      return;
+    }
+
     const participants: Array<Record<string, unknown>> = gc["participants"] ?? [];
-    const bonusEnabled: boolean = gc["bonusEnabled"] ?? false;
+    const buyInCents: number = (gc["buyInCents"] as number) ?? 0;
     const isImmediateCapture = ((gc["durationDays"] as number) ?? 7) > 7;
 
-    const succeeded = participants.filter((p) => p["status"] !== "failed");
+    const endDate: number = typeof gc["endDate"] === "number"
+      ? gc["endDate"]
+      : (gc["endDate"] as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
+    const now = Date.now();
+    const expired = endDate > 0 && endDate <= now;
+    const allFailed = participants.length > 0 && participants.every((p) => p["status"] === "failed");
 
-    functions.logger.info("completeGroupChallenge: payout start", {
+    functions.logger.info(`Group challenge check: endDate=${endDate} now=${now} expired=${expired}`, { groupId, allFailed });
+
+    if (!expired && !allFailed) {
+      functions.logger.info("completeGroupChallenge: endDate not yet reached and not all participants failed — skipping", { groupId, endDate, now });
+      res.json({ success: false, reason: "not_expired" });
+      return;
+    }
+
+    const failedParticipants = participants.filter((p) => p["status"] === "failed");
+    const successParticipants = participants.filter((p) => p["status"] === "active");
+
+    // ── Pot calculation ──────────────────────────────────────────────────────
+    const failedPot = failedParticipants.reduce((sum, p) => sum + ((p["amountCents"] as number) ?? buyInCents), 0);
+    const appFee = Math.floor(failedPot * 0.10);
+    const distributablePot = failedPot - appFee;
+    const perWinnerBonus = successParticipants.length > 0
+      ? Math.floor(distributablePot / successParticipants.length)
+      : 0;
+
+    functions.logger.info("completeGroupChallenge: pot calculation", {
       groupId,
-      failed: participants.length - succeeded.length,
-      succeeded: succeeded.length,
-      bonusEnabled,
-      isImmediateCapture,
+      totalPot: participants.length * buyInCents,
+      failedPot,
+      appFee,
+      perWinnerBonus,
+      winners: successParticipants.length,
+      losers: failedParticipants.length,
     });
 
-    let bestPerformer: Record<string, unknown> | null = null;
-    if (bonusEnabled && succeeded.length > 0) {
-      bestPerformer = succeeded.reduce((best, p) => {
-        const pOpens = (p["opensToday"] as number) ?? 0;
-        const bestOpens = (best["opensToday"] as number) ?? 0;
-        if (pOpens < bestOpens) return p;
-        if (pOpens === bestOpens) {
-          return ((p["timeUsedMinutes"] as number) ?? 0) < ((best["timeUsedMinutes"] as number) ?? 0) ? p : best;
-        }
-        return best;
-      });
-    }
+    functions.logger.info(
+      `Group complete: winners=${successParticipants.length} losers=${failedParticipants.length}`
+    );
+    functions.logger.info(
+      `Total pot: ${participants.length * buyInCents} appFee: ${appFee} perWinner: ${perWinnerBonus}`
+    );
 
-    for (const p of succeeded) {
-      try {
-        const pid = p["paymentIntentId"] as string;
-        if (!pid) continue;
-        if (isImmediateCapture) {
-          await getStripe().refunds.create({ payment_intent: pid });
-        } else {
-          const pi = await getStripe().paymentIntents.retrieve(pid);
-          if (pi.status === "requires_capture") await getStripe().paymentIntents.cancel(pid);
-        }
-        if (bonusEnabled && p === bestPerformer) {
-          functions.logger.info("completeGroupChallenge: best performer bonus (Stripe Connect needed)", { groupId, userId: p["userId"] });
-        }
-      } catch (e) {
-        functions.logger.error("completeGroupChallenge: process winner failed", { groupId, userId: p["userId"], error: e });
+    // ── Process winners ──────────────────────────────────────────────────────
+    const updatedParticipants = await Promise.all(participants.map(async (p) => {
+      if (p["status"] === "failed") {
+        return { ...p, status: "failed", payoutStatus: "lost", finalPayout: 0 };
       }
-    }
+
+      const userId = p["userId"] as string;
+      const pid = p["paymentIntentId"] as string;
+
+      // Refund own buy-in
+      if (pid) {
+        try {
+          if (isImmediateCapture) {
+            await getStripe().refunds.create({ payment_intent: pid });
+          } else {
+            const pi = await getStripe().paymentIntents.retrieve(pid);
+            if (pi.status === "requires_capture") await getStripe().paymentIntents.cancel(pid);
+          }
+        } catch (e) {
+          functions.logger.error("completeGroupChallenge: refund failed", { groupId, userId, error: e });
+        }
+      }
+
+      // No bonus pot to distribute
+      if (perWinnerBonus <= 0) {
+        return { ...p, status: "success", payoutStatus: "completed", finalPayout: buyInCents };
+      }
+
+      // Look up connected account
+      let connectedAccountId: string | undefined;
+      try {
+        const userDoc = await db.collection("users").doc(userId).get();
+        connectedAccountId = userDoc.data()?.stripeConnectedAccountId as string | undefined;
+      } catch (e) {
+        functions.logger.error("completeGroupChallenge: user lookup failed", { groupId, userId, error: e });
+      }
+
+      if (!connectedAccountId) {
+        // Store pending payout for later
+        try {
+          await db.collection("users").doc(userId)
+            .collection("pendingPayouts").add({
+              amount: perWinnerBonus,
+              currency: "eur",
+              groupId,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+          functions.logger.error("completeGroupChallenge: pendingPayout write failed", { groupId, userId, error: e });
+        }
+        return { ...p, status: "success", payoutStatus: "pending_payout", finalPayout: buyInCents + perWinnerBonus };
+      }
+
+      // Verify payouts are enabled before transferring
+      try {
+        const account = await getStripe().accounts.retrieve(connectedAccountId);
+        if (!account.payouts_enabled) {
+          await db.collection("users").doc(userId)
+            .collection("pendingPayouts").add({
+              amount: perWinnerBonus,
+              currency: "eur",
+              groupId,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          return { ...p, status: "success", payoutStatus: "pending_payout", finalPayout: buyInCents + perWinnerBonus };
+        }
+
+        await getStripe().transfers.create({
+          amount: perWinnerBonus,
+          currency: "eur",
+          destination: connectedAccountId,
+          description: `Detox Group Challenge winnings - ${groupId}`,
+        });
+        functions.logger.info(`Transfer sent to ${userId}: ${perWinnerBonus}`);
+        return { ...p, status: "success", payoutStatus: "completed", finalPayout: buyInCents + perWinnerBonus };
+      } catch (e) {
+        functions.logger.error("completeGroupChallenge: transfer failed", { groupId, userId, error: e });
+        // Fall back to pending so money isn't lost
+        try {
+          await db.collection("users").doc(userId)
+            .collection("pendingPayouts").add({
+              amount: perWinnerBonus,
+              currency: "eur",
+              groupId,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (_) { /* best effort */ }
+        return { ...p, status: "success", payoutStatus: "pending_payout", finalPayout: buyInCents + perWinnerBonus };
+      }
+    }));
 
     await docRef.update({
       status: "completed",
-      participants: participants.map((p) => p["status"] === "failed" ? p : { ...p, status: "success" }),
+      completedAt: Date.now(),
+      appFeeCollected: appFee,
+      perWinnerBonus,
+      participants: updatedParticipants,
     });
 
     functions.logger.info("completeGroupChallenge: completed", { groupId });
     res.json({ success: true });
   } catch (e) { handleError("completeGroupChallenge", e, res); }
+});
+
+// ── claimPendingPayouts ───────────────────────────────────────────────────────
+
+export const claimPendingPayouts = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const userId = await requireAuth(req);
+    const db = admin.firestore();
+
+    const userDoc = await db.collection("users").doc(userId).get();
+    const accountId = userDoc.data()?.stripeConnectedAccountId as string | undefined;
+
+    if (!accountId) {
+      res.json({ transferred: 0, skipped: 0, reason: "no_account" });
+      return;
+    }
+
+    const account = await getStripe().accounts.retrieve(accountId);
+    if (!account.payouts_enabled) {
+      res.json({ transferred: 0, skipped: 0, reason: "onboarding_incomplete" });
+      return;
+    }
+
+    const pendingSnap = await db.collection("users").doc(userId)
+      .collection("pendingPayouts").get();
+
+    if (pendingSnap.empty) {
+      res.json({ transferred: 0, skipped: 0, reason: "none_pending" });
+      return;
+    }
+
+    let transferred = 0;
+    let skipped = 0;
+
+    for (const doc of pendingSnap.docs) {
+      const payout = doc.data();
+      const amount = payout.amount as number;
+      const groupId = payout.groupId as string;
+      try {
+        await getStripe().transfers.create({
+          amount,
+          currency: "eur",
+          destination: accountId,
+          description: `Detox Group Challenge winnings - ${groupId}`,
+        });
+        await doc.ref.delete();
+        transferred += amount;
+        functions.logger.info(`Transfer sent to ${userId}: ${amount}`);
+      } catch (e) {
+        functions.logger.error("claimPendingPayouts: transfer failed", { userId, amount, error: e });
+        skipped += amount;
+      }
+    }
+
+    res.json({ transferred, skipped });
+  } catch (e) { handleError("claimPendingPayouts", e, res); }
+});
+
+// ── createConnectedAccount ────────────────────────────────────────────────────
+
+export const createConnectedAccount = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const userId = await requireAuth(req);
+    const db = admin.firestore();
+    const userRef = db.collection("users").doc(userId);
+    const userDoc = await userRef.get();
+    let accountId = userDoc.data()?.stripeConnectedAccountId as string | undefined;
+
+    if (!accountId) {
+      const account = await getStripe().accounts.create({
+        type: "express",
+        country: "AT",
+        business_type: "individual",
+        capabilities: {
+          transfers: { requested: true },
+          card_payments: { requested: false },
+        },
+        settings: {
+          payouts: {
+            schedule: { interval: "manual" },
+          },
+        },
+      });
+      accountId = account.id;
+      await userRef.set({ stripeConnectedAccountId: accountId }, { merge: true });
+      functions.logger.info(`Connected account created: ${accountId} for user ${userId}`);
+    }
+
+    const link = await getStripe().accountLinks.create({
+      account: accountId,
+      refresh_url: "https://detox-33208.web.app/reauth",
+      return_url: "https://detox-33208.web.app/return",
+      type: "account_onboarding",
+    });
+
+    res.json({ url: link.url, accountId });
+  } catch (e) { handleError("createConnectedAccount", e, res); }
+});
+
+// ── getConnectedAccountStatus ─────────────────────────────────────────────────
+
+export const getConnectedAccountStatus = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const userId = await requireAuth(req);
+    const userDoc = await admin.firestore().collection("users").doc(userId).get();
+    const accountId = userDoc.data()?.stripeConnectedAccountId as string | undefined;
+
+    if (!accountId) {
+      res.json({ hasAccount: false, chargesEnabled: false, payoutsEnabled: false });
+      return;
+    }
+
+    const account = await getStripe().accounts.retrieve(accountId);
+    res.json({
+      hasAccount: true,
+      chargesEnabled: account.charges_enabled,
+      payoutsEnabled: account.payouts_enabled,
+    });
+  } catch (e) { handleError("getConnectedAccountStatus", e, res); }
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

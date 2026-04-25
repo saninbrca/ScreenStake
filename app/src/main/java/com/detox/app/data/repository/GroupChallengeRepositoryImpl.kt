@@ -11,6 +11,7 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.Taunt
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.service.TrackedAppEventBus
 import kotlinx.coroutines.CoroutineScope
@@ -180,7 +181,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 limitType = groupChallenge.limitType.name.lowercase(),
                 limitValueMinutes = groupChallenge.limitValueMinutes,
                 limitValueSessions = groupChallenge.limitValueSessions,
-                startDate = groupChallenge.startDate,
+                startDate = if (groupChallenge.startDate > 0L) groupChallenge.startDate else System.currentTimeMillis(),
                 endDate = groupChallenge.endDate,
                 amountCents = groupChallenge.buyInCents,
                 stripePaymentIntentId = userParticipant.paymentIntentId,
@@ -275,6 +276,14 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         firestoreService.updateParticipantStats(groupId, userId, opensToday, timeUsedMinutes)
     }
 
+    override suspend fun updateParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) {
+        firestoreService.updateParticipantTimeUsed(groupId, userId, timeUsedMinutes)
+    }
+
+    override suspend fun incrementParticipantOpensToday(groupId: String, userId: String) {
+        firestoreService.incrementParticipantOpensToday(groupId, userId)
+    }
+
     override suspend fun markParticipantFailedLocally(groupId: String, userId: String) {
         val entity = groupChallengeDao.getById(groupId) ?: return
         val updatedJson = runCatching {
@@ -294,6 +303,36 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         TrackedAppEventBus.markPackagesFailedForUser(packages)
 
         Timber.d("User failed group $groupId — removing from active blocking")
+    }
+
+    // ── Taunts ─────────────────────────────────────────────────────────────────
+
+    override suspend fun sendTaunt(
+        groupId: String,
+        fromUserId: String,
+        fromDisplayName: String,
+        toUserId: String,
+        message: String,
+    ): Result<Unit> = try {
+        firestoreService.sendTaunt(groupId, fromUserId, fromDisplayName, toUserId, message)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "GroupChallengeRepo: sendTaunt failed group=%s", groupId)
+        Result.failure(e)
+    }
+
+    override suspend fun countTauntsToday(groupId: String, fromUserId: String, toUserId: String): Int =
+        firestoreService.countTauntsToday(groupId, fromUserId, toUserId)
+
+    override fun observeUnshownTaunts(groupId: String, toUserId: String): Flow<List<Taunt>> =
+        firestoreService.observeUnshownTaunts(groupId, toUserId)
+
+    override suspend fun markTauntShown(groupId: String, tauntId: String): Result<Unit> = try {
+        firestoreService.markTauntShown(groupId, tauntId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "GroupChallengeRepo: markTauntShown failed tauntId=%s", tauntId)
+        Result.failure(e)
     }
 
     // ── Entity ↔ Domain ─────────────────────────────────────────────────────────

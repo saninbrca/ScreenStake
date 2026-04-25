@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -25,6 +26,7 @@ import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
@@ -40,6 +42,7 @@ import com.detox.app.presentation.components.HardModeLockoutOverlay
 import com.detox.app.presentation.components.LimitExceededOverlay
 import com.detox.app.presentation.components.SessionIntentionOverlay
 import com.detox.app.presentation.components.SessionLimitReachedOverlay
+import com.detox.app.presentation.components.TauntOverlay
 import com.detox.app.ui.theme.DetoxTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -145,6 +148,11 @@ class OverlayManager @Inject constructor(
     private var budgetTimerPackage: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // ── Taunt overlay (non-blocking, shown on top of any app) ─────────────────
+    private var tauntOverlayView: View? = null
+    private val tauntListenerJobs = mutableMapOf<String, Job>()
+    private val processedTauntIds = mutableSetOf<String>()
+
     // ── Overlay time tracking (screen-time attribution) ────────────────────────
 
     /** Retained from [startListening] so [dismissOverlay] can launch persistence coroutines. */
@@ -223,8 +231,12 @@ class OverlayManager @Inject constructor(
         budgetTimerPackage = null
         foregroundListenerJob?.cancel()
         foregroundListenerJob = null
+        tauntListenerJobs.values.forEach { it.cancel() }
+        tauntListenerJobs.clear()
+        processedTauntIds.clear()
         serviceScope = null
         dismissOverlay()
+        dismissTauntOverlay()
     }
 
     // ── Core dispatch ──────────────────────────────────────────────────────────
@@ -254,26 +266,6 @@ class OverlayManager @Inject constructor(
         }
 
         val status = result.getOrThrow()
-
-        // Update group challenge leaderboard stats in Firestore (fire-and-forget)
-        status.challenge.groupChallengeId?.let { groupId ->
-            val uid = firebaseAuthService.currentUserId()
-            if (uid != null) {
-                scope.launch {
-                    val todayUsage = usageStatsRepository.getTodayUsageForApp(packageName)
-                    val opensCount = when (status.challenge.limitType) {
-                        LimitType.SESSIONS -> consciousOpensToday.getOrDefault(packageName, 0)
-                        else -> todayUsage.opens
-                    }
-                    groupChallengeRepository.updateParticipantStats(
-                        groupId = groupId,
-                        userId = uid,
-                        opensToday = opensCount,
-                        timeUsedMinutes = todayUsage.minutes
-                    )
-                }
-            }
-        }
 
         // Session-limit challenges use the two-stage conscious-open flow
         if (status.challenge.limitType == LimitType.SESSIONS) {
@@ -335,14 +327,18 @@ class OverlayManager @Inject constructor(
             return
         }
 
-        // Lazy-load persisted count from Room on first access per day
+        // Use in-memory Firestore count (fast path) or fall back to Room lazy-load
         if (!consciousOpensToday.containsKey(packageName)) {
-            val today = todayMidnightMs()
-            val persisted = dailyLogRepository.getConsciousOpens(challenge.id, today).getOrElse { 0 }
-            consciousOpensToday[packageName] = persisted
-            Timber.d(
-                "OverlayManager: loaded consciousOpens=$persisted for $packageName from Room"
-            )
+            val busOpens = TrackedAppEventBus.groupSessionInfos.value[packageName]?.opensToday
+            if (busOpens != null) {
+                consciousOpensToday[packageName] = busOpens
+                Timber.d("OverlayManager: loaded consciousOpens=$busOpens for $packageName from TrackedAppEventBus")
+            } else {
+                val today = todayMidnightMs()
+                val persisted = dailyLogRepository.getConsciousOpens(challenge.id, today).getOrElse { 0 }
+                consciousOpensToday[packageName] = persisted
+                Timber.d("OverlayManager: loaded consciousOpens=$persisted for $packageName from Room")
+            }
         }
 
         val confirmedOpens = consciousOpensToday.getOrDefault(packageName, 0)
@@ -411,16 +407,17 @@ class OverlayManager @Inject constructor(
                                     "consciousOpens=$newCount/$maxOpens for ${challenge.appDisplayName}"
                         )
 
-                        // Persist the updated count so it survives a service restart
-                        scope.launch {
-                            val today = todayMidnightMs()
-                            dailyLogRepository.upsertConsciousOpens(challenge.id, today, newCount)
-                                .onFailure { e ->
-                                    Timber.e(
-                                        e,
-                                        "OverlayManager: failed to persist consciousOpens for ${challenge.id}"
-                                    )
+                        // Keep in-memory event bus in sync so AccessibilityService can check synchronously
+                        TrackedAppEventBus.incrementGroupSessionOpens(challenge.appPackageName ?: "")
+
+                        // Atomically increment opensToday in Firestore — only on conscious "Ja, öffnen" tap
+                        challenge.groupChallengeId?.let { groupId ->
+                            val uid = firebaseAuthService.currentUserId()
+                            if (uid != null) {
+                                scope.launch {
+                                    groupChallengeRepository.incrementParticipantOpensToday(groupId, uid)
                                 }
+                            }
                         }
 
                         dismissOverlay()
@@ -567,12 +564,31 @@ class OverlayManager @Inject constructor(
         challengeId: String,
         scope: CoroutineScope
     ) {
+        val effectiveDuration = maxOf(1, durationMinutes)
+        Timber.d("Session timer started: ${effectiveDuration}min for $packageName")
+
+        // Persist consciousOpens here — after dismissOverlay() has already fired its own
+        // coroutine — so both writes are never racing on a missing row at the same time.
+        val countToSave = consciousOpensToday.getOrDefault(packageName, 0)
+        if (countToSave > 0) {
+            scope.launch {
+                val today = todayMidnightMs()
+                dailyLogRepository.upsertConsciousOpens(challengeId, today, countToSave)
+                    .onSuccess {
+                        Timber.d("DailyLog: consciousOpens incremented for $challengeId = $countToSave")
+                    }
+                    .onFailure { e ->
+                        Timber.e(e, "OverlayManager: failed to persist consciousOpens for $challengeId")
+                    }
+            }
+        }
+
         cancelSessionTimer()
         sessionTimerPackage = packageName
-        val durationMs = durationMinutes * 60_000L
+        val durationMs = effectiveDuration * 60_000L
         val endTimestamp = System.currentTimeMillis() + durationMs
         sessionPrefs.edit().putLong("$SESSION_END_KEY_PREFIX$packageName", endTimestamp).apply()
-        Timber.d("OverlayManager: session timer started for $packageName ($durationMinutes min, ends at $endTimestamp)")
+        Timber.d("OverlayManager: session timer started for $packageName ($effectiveDuration min, ends at $endTimestamp)")
 
         sessionTimerJob = scope.launch {
             var remaining = endTimestamp - System.currentTimeMillis()
@@ -1321,6 +1337,87 @@ class OverlayManager @Inject constructor(
             budgetTimerPackage = null
             scheduleMidnightReset()
         }, delay)
+    }
+
+    // ── Taunt listener + overlay ───────────────────────────────────────────────
+
+    fun startTauntListening(scope: CoroutineScope) {
+        val userId = firebaseAuthService.currentUserId() ?: return
+        scope.launch {
+            groupChallengeRepository.getGroupChallenges().collect { all ->
+                val activeGroupIds = all.filter { gc ->
+                    gc.status == GroupChallengeStatus.ACTIVE &&
+                        gc.participants.any { it.userId == userId }
+                }.map { it.groupId }.toSet()
+
+                // Start a listener for each newly active group challenge
+                activeGroupIds.filter { !tauntListenerJobs.containsKey(it) }.forEach { groupId ->
+                    tauntListenerJobs[groupId] = scope.launch {
+                        groupChallengeRepository.observeUnshownTaunts(groupId, userId)
+                            .collect { taunts ->
+                                taunts.filter { it.id !in processedTauntIds }.forEach { taunt ->
+                                    processedTauntIds.add(taunt.id)
+                                    Timber.d("Taunt received from ${taunt.fromDisplayName}, showing overlay")
+                                    val inTrackedApp = TrackedAppEventBus.currentForegroundPackage.value in
+                                        TrackedAppEventBus.trackedPackages.value
+                                    if (inTrackedApp) {
+                                        showTauntOverlay(taunt.message)
+                                    } else {
+                                        NotificationHelper.showTauntNotification(context, taunt.message)
+                                    }
+                                    scope.launch {
+                                        groupChallengeRepository.markTauntShown(groupId, taunt.id)
+                                    }
+                                }
+                            }
+                    }
+                }
+
+                // Cancel listeners for challenges that are no longer active
+                tauntListenerJobs.keys.filter { it !in activeGroupIds }.forEach { groupId ->
+                    tauntListenerJobs.remove(groupId)?.cancel()
+                }
+            }
+        }
+    }
+
+    private fun showTauntOverlay(message: String) {
+        mainHandler.post {
+            dismissTauntOverlay()
+            val composeView = createComposeView {
+                DetoxTheme {
+                    TauntOverlay(
+                        message = message,
+                        onDismiss = { mainHandler.post { dismissTauntOverlay() } },
+                    )
+                }
+            }
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP
+            }
+            try {
+                windowManager.addView(composeView, params)
+                tauntOverlayView = composeView
+                Timber.d("Taunt overlay shown")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to show taunt overlay")
+                tauntOverlayView = null
+            }
+        }
+    }
+
+    private fun dismissTauntOverlay() {
+        tauntOverlayView?.let { view ->
+            try { windowManager.removeView(view) } catch (_: Exception) {}
+            tauntOverlayView = null
+        }
     }
 
     // ── WindowManager helpers ──────────────────────────────────────────────────

@@ -1118,9 +1118,9 @@ private fun Step4LimitValues(
                     onValueChange = onUpdateSessionDuration,
                     label = "Per session",
                     suffix = "min",
-                    min = 5,
+                    min = 1,
                     max = 120,
-                    step = 5,
+                    step = 1,
                     error = state.sessionMinutesError,
                     modifier = Modifier.fillMaxWidth(),
                 )

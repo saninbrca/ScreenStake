@@ -177,6 +177,20 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                 return
             }
 
+            // Synchronous group-challenge session-limit check — no DB query, no coroutine
+            val sessionInfo = TrackedAppEventBus.groupSessionInfos.value[packageName]
+            if (sessionInfo != null) {
+                val exceeded = sessionInfo.opensToday >= sessionInfo.limitValueSessions
+                Timber.d(
+                    "Group challenge limit check: opens=${sessionInfo.opensToday} " +
+                            "limit=${sessionInfo.limitValueSessions} exceeded=$exceeded"
+                )
+                if (exceeded) {
+                    TrackedAppEventBus.emitAppOpen(packageName)
+                    return
+                }
+            }
+
             TrackedAppEventBus.emitAppOpen(packageName)
         }
     }

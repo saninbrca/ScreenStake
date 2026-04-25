@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
 import com.detox.app.domain.usecase.SyncUserDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,8 +13,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.Calendar
 import javax.inject.Inject
 
 sealed interface DashboardUiState {
@@ -29,7 +32,8 @@ sealed interface DashboardUiState {
 class DashboardViewModel @Inject constructor(
     private val getDailyStatsUseCase: GetDailyStatsUseCase,
     private val syncUserDataUseCase: SyncUserDataUseCase,
-    private val challengeRepository: ChallengeRepository
+    private val challengeRepository: ChallengeRepository,
+    private val dailyLogRepository: DailyLogRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
@@ -49,28 +53,17 @@ class DashboardViewModel @Inject constructor(
             .onFailure { e -> Timber.w(e, "Dashboard: sync failed (offline?)") }
     }
 
+    init {
+        observeDailyLogChanges()
+    }
+
     fun loadStats() {
         viewModelScope.launch {
             _uiState.value = DashboardUiState.Loading
             // Wait for the one-shot sync to finish before reading Room.
             // If it already completed this is a no-op.
             syncJob.join()
-            getDailyStatsUseCase().fold(
-                onSuccess = { stats ->
-                    if (stats.isEmpty()) {
-                        _uiState.value = DashboardUiState.Empty
-                    } else {
-                        _uiState.value = DashboardUiState.Success(
-                            activeChallenges = stats
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.value = DashboardUiState.Error(
-                        error.message ?: "Failed to load stats"
-                    )
-                }
-            )
+            refreshStats()
             // Check if there is a Hard Mode challenge completed since last app open
             challengeRepository.getUnshownCompletedHardChallenge()
                 .onSuccess { challenge ->
@@ -83,6 +76,47 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Observes today's DailyLog rows in Room.  Whenever a conscious open is persisted
+     * (or any other intra-day write happens), Room emits a new list and we re-query stats
+     * without showing a Loading spinner — the existing data stays visible while it updates.
+     * [drop(1)] skips the initial emission because [loadStats] already handles the first load.
+     */
+    private fun observeDailyLogChanges() {
+        val today = todayMidnightMs()
+        viewModelScope.launch {
+            dailyLogRepository.observeLogsForDate(today)
+                .drop(1)
+                .collect { logs ->
+                    Timber.d("Dashboard: DailyLog changed (${logs.size} rows for today) — refreshing stats")
+                    logs.forEach { log ->
+                        Timber.d("Reading DailyLog for ${log.challengeId} date=$today: opens=${log.consciousOpens}")
+                    }
+                    refreshStats()
+                }
+        }
+    }
+
+    private suspend fun refreshStats() {
+        getDailyStatsUseCase().fold(
+            onSuccess = { stats ->
+                Timber.d("Dashboard loaded: ${stats.size} challenges, first challenge opens=${stats.firstOrNull()?.todayOpens}")
+                if (stats.isEmpty()) {
+                    _uiState.value = DashboardUiState.Empty
+                } else {
+                    _uiState.value = DashboardUiState.Success(
+                        activeChallenges = stats
+                    )
+                }
+            },
+            onFailure = { error ->
+                _uiState.value = DashboardUiState.Error(
+                    error.message ?: "Failed to load stats"
+                )
+            }
+        )
+    }
+
     /** Called when the user taps "Start New Challenge" on the success overlay. */
     fun dismissCompletionOverlay() {
         val challenge = _completedChallenge.value ?: return
@@ -92,4 +126,11 @@ class DashboardViewModel @Inject constructor(
                 .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for ${challenge.id}") }
         }
     }
+
+    private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 }

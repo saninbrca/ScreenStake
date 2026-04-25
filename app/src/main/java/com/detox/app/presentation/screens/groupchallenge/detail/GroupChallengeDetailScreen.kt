@@ -1,6 +1,7 @@
 package com.detox.app.presentation.screens.groupchallenge.detail
 
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,9 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,17 +64,19 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupChallengeDetailScreen(
     onBack: () -> Unit,
+    onNavigateToProfile: () -> Unit = {},
     viewModel: GroupChallengeDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val startState by viewModel.startState.collectAsStateWithLifecycle()
     val nudgeEvent by viewModel.nudgeEvent.collectAsStateWithLifecycle()
+    val winDialogInfo by viewModel.winDialogInfo.collectAsStateWithLifecycle()
     val currentUserId = viewModel.currentUserId
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -92,10 +97,48 @@ fun GroupChallengeDetailScreen(
     }
 
     LaunchedEffect(nudgeEvent) {
-        if (nudgeEvent != null) {
-            snackbarHostState.showSnackbar(context.getString(R.string.group_detail_nudge_sent))
+        val msg = nudgeEvent
+        if (msg != null) {
+            snackbarHostState.showSnackbar(msg)
             viewModel.clearNudgeEvent()
         }
+    }
+
+    winDialogInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissWinDialog() },
+            title = {
+                Text(
+                    text = if (info.bonusCents > 0)
+                        "🎉 Du hast €${info.bonusCents / 100} gewonnen!"
+                    else
+                        "🎉 Du hast gewonnen!"
+                )
+            },
+            text = {
+                Text(
+                    text = if (info.hasIban)
+                        "Dein Gewinn wird an deine hinterlegte IBAN überwiesen (1–2 Werktage)."
+                    else
+                        "Hinterlege deine IBAN um deinen Gewinn zu erhalten."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissWinDialog() }) {
+                    Text("OK")
+                }
+            },
+            dismissButton = if (!info.hasIban) {
+                {
+                    TextButton(onClick = {
+                        viewModel.dismissWinDialog()
+                        onNavigateToProfile()
+                    }) {
+                        Text("Jetzt IBAN eingeben")
+                    }
+                }
+            } else null
+        )
     }
 
     Scaffold(
@@ -176,6 +219,24 @@ private fun GroupDetailContent(
     val endDateValid = gc.endDate > cal2024 && gc.endDate > now
     val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
     val startFmt = SimpleDateFormat("dd. MMM", Locale.getDefault())
+
+    val remainingMs = gc.endDate - now
+    val remainingDays = remainingMs / (24L * 60 * 60 * 1000)
+    val remainingHours = (remainingMs % (24L * 60 * 60 * 1000)) / (60 * 60 * 1000)
+    val endTimeStr = remember(gc.endDate) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(gc.endDate))
+    }
+    val remainingLabel = when {
+        remainingMs <= 0 -> "Abgelaufen"
+        remainingDays > 1 -> "Noch $remainingDays Tage"
+        remainingDays == 1L -> "Endet morgen"
+        remainingHours > 0 -> "Endet heute um $endTimeStr Uhr"
+        else -> "Abgelaufen"
+    }
+
+    LaunchedEffect(gc.endDate) {
+        Timber.d("endDate=${gc.endDate} remaining=${remainingDays}d ${remainingHours}h")
+    }
 
     val sorted = gc.participants.sortedWith(
         compareBy<Participant> { it.status == ParticipantStatus.FAILED }
@@ -282,13 +343,21 @@ private fun GroupDetailContent(
                         )
                     }
 
-                    // End date (computed from startDate + durationDays)
+                    // End date + remaining time
                     if (endDateValid) {
                         Text(
                             text = stringResource(R.string.group_detail_end_date, dateFmt.format(Date(gc.endDate))),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (gc.status == GroupChallengeStatus.ACTIVE) {
+                            Text(
+                                text = remainingLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     } else {
                         Text(
                             text = stringResource(R.string.group_detail_duration_fallback, gc.durationDays),
@@ -368,7 +437,29 @@ private fun GroupDetailContent(
 
         // ── Result summary (COMPLETED / CANCELLED) ──────────────────────────────
         if (gc.status == GroupChallengeStatus.COMPLETED || gc.status == GroupChallengeStatus.CANCELLED) {
-            item { ResultSummaryCard(gc) }
+            item {
+                ResultSummaryCard(
+                    gc = gc,
+                    currentUserId = currentUserId,
+                    onConnectBank = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://detox-33208.web.app/connect"))
+                        )
+                    }
+                )
+            }
+            if (gc.status == GroupChallengeStatus.COMPLETED) {
+                val myParticipantResult = gc.participants.find { it.userId == currentUserId }
+                if (myParticipantResult != null && myParticipantResult.status != ParticipantStatus.FAILED) {
+                    item { PayoutResultCard(participant = myParticipantResult, gc = gc, onConnectBank = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://detox-33208.web.app/connect"))
+                        )
+                    }) }
+                }
+            }
         }
 
         // ── Leaderboard ─────────────────────────────────────────────────────────
@@ -430,20 +521,15 @@ private fun LeaderboardCard(
         .takeIf { it.isNotBlank() }
         ?: participant.userId.substringBefore('@').ifBlank { participant.userId }
 
-    val limitMax = when (gc.limitType) {
-        LimitType.SESSIONS -> (gc.limitValueSessions ?: 1).toFloat()
-        else -> gc.limitValueMinutes.toFloat()
-    }
     val progress = when (gc.limitType) {
-        LimitType.SESSIONS -> if (limitMax > 0) participant.opensToday / limitMax else 0f
-        else -> if (limitMax > 0) participant.timeUsedMinutes / limitMax else 0f
-    }.coerceIn(0f, 1f)
-
-    val progressColor = when (participant.status) {
-        ParticipantStatus.FAILED -> MaterialTheme.colorScheme.error
-        ParticipantStatus.SUCCESS -> Color(0xFF2E7D32)
-        ParticipantStatus.ACTIVE -> if (progress > 0.8f) MaterialTheme.colorScheme.error
-        else MaterialTheme.colorScheme.primary
+        LimitType.SESSIONS -> {
+            val limit = gc.limitValueSessions ?: 0
+            if (limit > 0) (participant.opensToday.toFloat() / limit.toFloat()).coerceIn(0f, 1f) else 0f
+        }
+        else -> {
+            val limit = gc.limitValueMinutes ?: 0
+            if (limit > 0) (participant.timeUsedMinutes.toFloat() / limit.toFloat()).coerceIn(0f, 1f) else 0f
+        }
     }
 
     Card(
@@ -481,17 +567,18 @@ private fun LeaderboardCard(
 
                 // Stats
                 Column(horizontalAlignment = Alignment.End) {
-                    val opensLabel = if (gc.limitType == LimitType.SESSIONS) {
-                        stringResource(R.string.group_detail_opens_label, participant.opensToday, gc.limitValueSessions ?: 0)
-                    } else {
-                        "${participant.opensToday} opens"
+                    when (gc.limitType) {
+                        LimitType.SESSIONS -> Text(
+                            text = stringResource(R.string.group_detail_opens_label, participant.opensToday, gc.limitValueSessions ?: 0),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        else -> Text(
+                            text = stringResource(R.string.group_detail_time_label, participant.timeUsedMinutes, gc.limitValueMinutes ?: 0),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    Text(text = opensLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        text = stringResource(R.string.group_detail_time_label, participant.timeUsedMinutes),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
 
@@ -502,7 +589,7 @@ private fun LeaderboardCard(
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
-                color = progressColor,
+                color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
 
@@ -586,16 +673,23 @@ private fun ParticipantStatusBadge(status: ParticipantStatus) {
 }
 
 @Composable
-private fun ResultSummaryCard(gc: GroupChallenge) {
+private fun ResultSummaryCard(
+    gc: GroupChallenge,
+    currentUserId: String?,
+    onConnectBank: () -> Unit,
+) {
     val failedCount = gc.participants.count { it.status == ParticipantStatus.FAILED }
     val succeededCount = gc.participants.count { it.status == ParticipantStatus.SUCCESS }
-    val potCents = failedCount * gc.buyInCents
+    val myParticipant = gc.participants.find { it.userId == currentUserId }
+    val iWon = myParticipant?.status == ParticipantStatus.SUCCESS
+    val iLost = myParticipant?.status == ParticipantStatus.FAILED
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = when {
                 gc.status == GroupChallengeStatus.CANCELLED -> MaterialTheme.colorScheme.errorContainer
+                iLost -> MaterialTheme.colorScheme.errorContainer
                 failedCount == 0 -> MaterialTheme.colorScheme.tertiaryContainer
                 succeededCount == 0 -> MaterialTheme.colorScheme.errorContainer
                 else -> MaterialTheme.colorScheme.secondaryContainer
@@ -605,26 +699,86 @@ private fun ResultSummaryCard(gc: GroupChallenge) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 text = when {
-                    gc.status == GroupChallengeStatus.CANCELLED -> "⚠️ Challenge Cancelled"
-                    failedCount == 0 -> "🎉 Everyone Succeeded!"
-                    succeededCount == 0 -> "💸 Everyone Failed"
-                    else -> "🏁 Challenge Complete"
+                    gc.status == GroupChallengeStatus.CANCELLED -> "⚠️ Challenge Abgebrochen"
+                    iLost -> "😔 Du hast verloren"
+                    iWon -> "🎉 Du hast gewonnen!"
+                    failedCount == 0 -> "🎉 Alle haben gewonnen!"
+                    succeededCount == 0 -> "💸 Alle haben verloren"
+                    else -> "🏁 Challenge beendet"
                 },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             when {
                 gc.status == GroupChallengeStatus.CANCELLED ->
-                    Text("Not enough players joined. All buy-ins refunded.", style = MaterialTheme.typography.bodyMedium)
+                    Text("Zu wenige Spieler. Alle Einsätze werden zurückgebucht.", style = MaterialTheme.typography.bodyMedium)
+                iLost -> {
+                    val lostCents = myParticipant?.amountCents ?: gc.buyInCents
+                    Text(
+                        "€${lostCents / 100} wurden eingezogen.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 failedCount == 0 ->
-                    Text("All $succeededCount participants stayed within their limits. Full refunds incoming!", style = MaterialTheme.typography.bodyMedium)
+                    Text("Alle $succeededCount Teilnehmer im Limit. Einsätze werden zurückgebucht!", style = MaterialTheme.typography.bodyMedium)
                 succeededCount == 0 ->
-                    Text("All $failedCount participants exceeded their limits. All buy-ins captured.", style = MaterialTheme.typography.bodyMedium)
+                    Text("Alle $failedCount Teilnehmer haben das Limit überschritten.", style = MaterialTheme.typography.bodyMedium)
                 else -> {
-                    Text("$succeededCount succeeded · $failedCount eliminated", style = MaterialTheme.typography.bodyMedium)
-                    if (potCents > 0) {
-                        Text("Pot of €${potCents / 100} from failed participants distributed to winners", style = MaterialTheme.typography.bodySmall)
+                    Text("$succeededCount gewonnen · $failedCount ausgeschieden", style = MaterialTheme.typography.bodyMedium)
+                    if (gc.perWinnerBonus > 0) {
+                        Text(
+                            "Bonus pro Gewinner: €${gc.perWinnerBonus / 100}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PayoutResultCard(
+    participant: Participant,
+    gc: GroupChallenge,
+    onConnectBank: () -> Unit,
+) {
+    val bonus = gc.perWinnerBonus
+    val buyIn = participant.amountCents
+    val isPending = participant.payoutStatus == "pending_payout"
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (bonus > 0) {
+                Text(
+                    text = "🎉 Du hast gewonnen! +€${bonus / 100} Bonus",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = "Dein Einsatz (€${buyIn / 100}) wird zurückgebucht",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (bonus > 0) {
+                if (isPending) {
+                    Text(
+                        text = "⚠️ Verbinde dein Bankkonto um €${bonus / 100} zu erhalten",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Button(onClick = onConnectBank, modifier = Modifier.fillMaxWidth()) {
+                        Text("Bankkonto verbinden")
+                    }
+                } else {
+                    Text(
+                        text = "Bonus (€${bonus / 100}) wird auf dein Bankkonto überwiesen",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }

@@ -14,3 +14,11 @@
 .cxx
 local.properties
 /functions/.env
+google-services.json
+/app/google-services.json
+*.keystore
+*.jks
+/functions/node_modules
+firebase-debug.log
+firebase-debug.*.log
+.firebase/

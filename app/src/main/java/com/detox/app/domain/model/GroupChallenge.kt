@@ -20,4 +20,6 @@ data class GroupChallenge(
     val status: GroupChallengeStatus,
     val participants: List<Participant>,
     val blockedDomains: List<String> = emptyList(),
+    /** Bonus transferred to each winner in cents (set after completion). */
+    val perWinnerBonus: Int = 0,
 )

@@ -20,7 +20,8 @@ import javax.inject.Inject
 
 data class FriendsHubUiData(
     val active: List<GroupChallenge>,
-    val waiting: List<GroupChallenge>
+    val waiting: List<GroupChallenge>,
+    val currentUserId: String?
 )
 
 sealed interface FriendsHubUiState {
@@ -60,7 +61,8 @@ class FriendsHubViewModel @Inject constructor(
                 FriendsHubUiState.Success(
                     FriendsHubUiData(
                         active = active,
-                        waiting = waiting
+                        waiting = waiting,
+                        currentUserId = uid
                     )
                 )
             }

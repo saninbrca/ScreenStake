@@ -7,14 +7,18 @@ import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.domain.model.Participant
+import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import java.util.Calendar
 import javax.inject.Inject
@@ -35,6 +39,12 @@ sealed interface StartChallengeState {
     data class Error(val message: String) : StartChallengeState
 }
 
+data class WinDialogInfo(
+    val bonusCents: Int,
+    val groupId: String,
+    val hasIban: Boolean,
+)
+
 @HiltViewModel
 class GroupChallengeDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -42,6 +52,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
     private val firebaseAuthService: FirebaseAuthService,
     private val cloudFunctionsService: CloudFunctionsService,
     private val dailyLogRepository: DailyLogRepository,
+    private val firestore: FirebaseFirestore,
 ) : ViewModel() {
 
     private val groupId: String = requireNotNull(savedStateHandle["groupId"]) {
@@ -55,8 +66,26 @@ class GroupChallengeDetailViewModel @Inject constructor(
     private val _startState = MutableStateFlow<StartChallengeState>(StartChallengeState.Idle)
     val startState: StateFlow<StartChallengeState> = _startState.asStateFlow()
 
+    /** Emits a snackbar message string — either a success confirmation or an error/rate-limit message. */
     private val _nudgeEvent = MutableStateFlow<String?>(null)
     val nudgeEvent: StateFlow<String?> = _nudgeEvent.asStateFlow()
+
+    private val _winDialogInfo = MutableStateFlow<WinDialogInfo?>(null)
+    val winDialogInfo: StateFlow<WinDialogInfo?> = _winDialogInfo.asStateFlow()
+
+    private var winDialogShown = false
+
+    /** In-memory taunt count per target userId for the current session. */
+    private val tauntCountsToday = mutableMapOf<String, Int>()
+
+    private val tauntMessages = listOf(
+        "👀 %s schaut zu!",
+        "😂 %s hat dich erwischt!",
+        "💪 %s sagt: Bleib stark!",
+        "🐔 %s nennt dich einen Feigling!",
+        "🔥 %s: Du verlierst deinen Streak!",
+        "😈 %s lacht über dich!",
+    )
 
     /**
      * Live Firestore snapshot — updates in real time as participants join, fail, or succeed.
@@ -174,13 +203,83 @@ class GroupChallengeDetailViewModel @Inject constructor(
     fun clearStartError() { _startState.value = StartChallengeState.Idle }
 
     fun nudgeParticipant(targetUserId: String) {
+        val fromUserId = currentUserId ?: return
+        val fromDisplayName = firebaseAuthService.currentUser()?.displayName
+            ?.takeIf { it.isNotBlank() }
+            ?: fromUserId.substringBefore('@')
+
         viewModelScope.launch {
-            Timber.d("GroupDetailVM: nudge sent to $targetUserId in group $groupId")
-            _nudgeEvent.value = targetUserId
+            val cachedCount = tauntCountsToday.getOrElse(targetUserId) {
+                groupChallengeRepository.countTauntsToday(groupId, fromUserId, targetUserId)
+                    .also { tauntCountsToday[targetUserId] = it }
+            }
+
+            if (cachedCount >= 3) {
+                _nudgeEvent.value = "Du hast heute schon 3x genervt 😄"
+                return@launch
+            }
+
+            val message = tauntMessages.random().format(fromDisplayName)
+            groupChallengeRepository.sendTaunt(groupId, fromUserId, fromDisplayName, targetUserId, message)
+                .onSuccess {
+                    tauntCountsToday[targetUserId] = cachedCount + 1
+                    _nudgeEvent.value = "Taunt gesendet! 👀"
+                    Timber.d("GroupDetailVM: taunt sent to $targetUserId in group $groupId")
+                }
+                .onFailure { e ->
+                    Timber.e(e, "GroupDetailVM: sendTaunt failed to $targetUserId")
+                    _nudgeEvent.value = "Fehler beim Senden 😢"
+                }
         }
     }
 
     fun clearNudgeEvent() { _nudgeEvent.value = null }
+
+    private fun triggerWinDialog(gc: GroupChallenge, participant: Participant?) {
+        viewModelScope.launch {
+            val uid = firebaseAuthService.currentUserId() ?: return@launch
+            val hasIban = runCatching {
+                val doc = firestore.collection("users").document(uid).get().await()
+                !doc.getString("payoutIban").isNullOrBlank()
+            }.getOrDefault(false)
+
+            _winDialogInfo.value = WinDialogInfo(
+                bonusCents = gc.perWinnerBonus,
+                groupId = gc.groupId,
+                hasIban = hasIban,
+            )
+
+            if (hasIban && gc.perWinnerBonus > 0 && participant != null) {
+                writePayoutRequest(gc, participant, uid)
+            }
+        }
+    }
+
+    private suspend fun writePayoutRequest(gc: GroupChallenge, participant: Participant, uid: String) {
+        runCatching {
+            val userDoc = firestore.collection("users").document(uid).get().await()
+            val iban = userDoc.getString("payoutIban") ?: return
+            val payoutName = userDoc.getString("payoutName") ?: ""
+            val displayName = firebaseAuthService.currentUser()?.displayName ?: ""
+            firestore.collection("payoutRequests").add(
+                mapOf(
+                    "userId" to uid,
+                    "displayName" to displayName,
+                    "iban" to iban,
+                    "payoutName" to payoutName,
+                    "amountCents" to gc.perWinnerBonus,
+                    "groupId" to gc.groupId,
+                    "status" to "pending",
+                    "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+                )
+            ).await()
+            Timber.d("GroupDetailVM: payoutRequest written for uid=%s groupId=%s amount=%d", uid, gc.groupId, gc.perWinnerBonus)
+        }.onFailure { e ->
+            Timber.e(e, "GroupDetailVM: writePayoutRequest failed for groupId=%s", gc.groupId)
+        }
+    }
+
+    fun dismissWinDialog() { _winDialogInfo.value = null }
 
     private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
@@ -199,11 +298,14 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
                 GroupChallengeStatus.COMPLETED -> {
                     Timber.d("GroupDetailVM: status → COMPLETED for %s — finalising local challenge", groupId)
-                    // Check if current user succeeded or failed
                     val participant = gc.participants.find { it.userId == userId }
                     val succeeded = participant?.status?.name?.uppercase() != "FAILED"
                     groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded)
                         .onFailure { e -> Timber.e(e, "GroupDetailVM: finishLocalGroupChallenge failed") }
+                    if (succeeded && !winDialogShown) {
+                        winDialogShown = true
+                        triggerWinDialog(gc, participant)
+                    }
                 }
                 GroupChallengeStatus.CANCELLED -> {
                     Timber.d("GroupDetailVM: status → CANCELLED for %s — finalising local challenge as failed", groupId)

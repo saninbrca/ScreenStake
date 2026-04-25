@@ -65,7 +65,7 @@
     <string name="challenge_setup_error_min_minutes">Minimum 5 minutes</string>
     <string name="challenge_setup_error_max_minutes">Must be below your average (%1$d min/day)</string>
     <string name="challenge_setup_error_min_sessions">Minimum 1 session</string>
-    <string name="challenge_setup_error_min_session_mins">Minimum 1 minute per session</string>
+    <string name="challenge_setup_error_min_session_mins">Minimum 1 Minute pro Session</string>
     <string name="challenge_setup_error_fix_limits">Please fix the highlighted fields before starting</string>
     <string name="challenge_setup_error_min_budget">Minimum 5 minutes</string>
     <string name="challenge_setup_error_hard_mode_min_days">Hard Mode requires minimum 14 days</string>
@@ -234,6 +234,23 @@
     <string name="profile_stat_streak_label">Current streak</string>
     <string name="profile_stat_completed_label">Challenges done</string>
     <string name="profile_stat_apps_label">Apps blocked</string>
+    <string name="profile_iban_section_title">💰 Auszahlung</string>
+    <string name="profile_iban_holder_field">Kontoinhaber</string>
+    <string name="profile_iban_holder_label">Kontoinhaber: %1$s</string>
+    <string name="profile_iban_save_button">Speichern</string>
+    <string name="profile_iban_edit_button">Bearbeiten</string>
+    <string name="profile_iban_saved">IBAN gespeichert ✅</string>
+    <string name="profile_payout_title">💰 Auszahlungen</string>
+    <string name="profile_payout_loading">Wird geladen…</string>
+    <string name="profile_payout_connect_button">Jetzt verbinden 🏦</string>
+    <string name="profile_payout_cta_hint">Verbinde dein Bankkonto um Gewinne zu erhalten</string>
+    <string name="profile_payout_connected">✅ Bankkonto verbunden</string>
+    <string name="profile_payout_active">Auszahlungen aktiv</string>
+    <string name="profile_payout_pending">⏳ Ausstehende Auszahlung: €%1$d</string>
+    <string name="profile_payout_claim_button">Jetzt auszahlen</string>
+    <string name="profile_payout_claimed">€%1$d wurden auf dein Bankkonto überwiesen!</string>
+    <string name="notif_payout_received_title">💰 Auszahlung erhalten</string>
+    <string name="notif_payout_received_body">€%1$d wurden auf dein Bankkonto überwiesen!</string>
     <string name="profile_active_challenges">Active Challenges</string>
     <string name="profile_view_all">View all →</string>
     <string name="profile_recent_activity">Recent Activity</string>
@@ -581,7 +598,7 @@
     <string name="group_detail_nudge">👀 Nerv ihn!</string>
     <string name="group_detail_nudge_sent">Benachrichtigung gesendet!</string>
     <string name="group_detail_opens_label">%1$d/%2$d Opens</string>
-    <string name="group_detail_time_label">%1$d min</string>
+    <string name="group_detail_time_label">%1$d/%2$d min</string>
 
     <!-- Group Challenge Fail Overlay -->
     <string name="group_fail_overlay_title">😔 Du hast die Group Challenge nicht geschafft</string>
@@ -614,6 +631,14 @@
     <string name="group_detail_challenge_ends_on">Challenge endet am %1$s</string>
     <string name="group_detail_winner">🏆 %1$s hat gewonnen!</string>
     <string name="group_detail_total_prize">Gesamttopf: €%1$d</string>
+
+    <!-- Accessibility service lost/restored notifications -->
+    <string name="notif_accessibility_lost_title">⚠️ Accessibility Service deaktiviert!</string>
+    <string name="notif_accessibility_lost_body">Deine Challenge kann Apps nicht mehr sperren. Tippe um es zu beheben.</string>
+    <string name="notif_accessibility_fix_action">Jetzt beheben →</string>
+    <string name="notif_accessibility_restored_title">✅ Accessibility Service aktiv</string>
+    <string name="notif_accessibility_restored_body">Deine Challenge kann Apps wieder sperren.</string>
+    <string name="notif_accessibility_huawei_hint">Huawei: Einstellungen → Apps → Detox → Autostart → Aktivieren</string>
 
     <!-- Settings — App Info section -->
     <string name="settings_section_app_info">App Info</string>

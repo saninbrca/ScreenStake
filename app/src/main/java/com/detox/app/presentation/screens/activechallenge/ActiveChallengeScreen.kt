@@ -261,19 +261,6 @@ private fun ActiveChallengeContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        // Today's opens (SESSIONS only)
-        if (challenge.limitType == LimitType.SESSIONS && status != null) {
-            Text(
-                text = stringResource(
-                    R.string.active_challenge_today_opens,
-                    status.todayOpens,
-                    challenge.limitValueSessions ?: 0
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-        }
-
         // Adult content blocking
         if (challenge.blockAdultContent) {
             HorizontalDivider()
@@ -340,13 +327,11 @@ private fun ActiveChallengeContent(
                 )
             }
 
-            if (challenge.limitType != LimitType.SESSIONS) {
-                Text(
-                    text = progressLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
+            Text(
+                text = progressLabel,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             LinearProgressIndicator(
                 progress = { progressValue.coerceIn(0f, 1f) },
                 modifier = Modifier

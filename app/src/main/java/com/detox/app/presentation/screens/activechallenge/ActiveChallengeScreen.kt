@@ -343,9 +343,14 @@ private fun ActiveChallengeContent(
 
         val now = System.currentTimeMillis()
         if (challenge.endDate > 0L) {
-            val endDateRaw = challenge.endDate
-            val endDateMs = challenge.startDate + (endDateRaw * 24L * 60L * 60L * 1000L)
-            val remainingDays = ((endDateMs - now) / (24L * 60 * 60 * 1000)).toInt()
+            Timber.d("endDate type: ${if (challenge.endDate > 1700000000000L) "timestamp" else "days"} value=${challenge.endDate}")
+            val endDateMs = if (challenge.endDate > 1700000000000L) {
+                challenge.endDate // already a timestamp
+            } else {
+                challenge.startDate + (challenge.endDate * 24L * 60L * 60L * 1000L)
+            }
+            val remainingMs = endDateMs - now
+            val remainingDays = (remainingMs / (24L * 60 * 60 * 1000)).toInt()
             Timber.d("Challenge ${challenge.id} endDate=$endDateMs remaining=$remainingDays days")
             val (endText, endColor) = when {
                 remainingDays <= 0 -> stringResource(R.string.challenge_card_ends_today) to Color(0xFFE65100)

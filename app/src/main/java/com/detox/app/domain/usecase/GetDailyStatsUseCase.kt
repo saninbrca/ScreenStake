@@ -35,8 +35,13 @@ class GetDailyStatsUseCase @Inject constructor(
 
             val currentUid = firebaseAuth.currentUser?.uid
             val stats = challenges.mapNotNull { challenge ->
-                val soloEndDateMs = if (challenge.endDate > 0L)
-                    challenge.startDate + (challenge.endDate * 86_400_000L) else 0L
+                Timber.d("Challenge endDate raw: id=${challenge.id} startDate=${challenge.startDate} endDate=${challenge.endDate}")
+                Timber.d("endDate type: ${if (challenge.endDate > 1700000000000L) "timestamp" else "days"} value=${challenge.endDate}")
+                val soloEndDateMs = when {
+                    challenge.endDate <= 0L -> 0L
+                    challenge.endDate > 1700000000000L -> challenge.endDate // already a Unix timestamp (ms)
+                    else -> challenge.startDate + (challenge.endDate * 24L * 60L * 60L * 1000L)
+                }
                 val todayLog = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
                 Timber.d("DailyLog for ${challenge.id} date=$today: $todayLog")
 

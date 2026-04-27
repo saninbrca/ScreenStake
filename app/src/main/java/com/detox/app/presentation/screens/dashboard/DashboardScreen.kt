@@ -45,6 +45,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.presentation.components.ChallengeCard
+import timber.log.Timber
 
 @Composable
 fun DashboardScreen(
@@ -270,7 +271,13 @@ private fun HardModeSuccessOverlay(
     challenge: Challenge,
     onStartNewChallenge: () -> Unit
 ) {
-    val durationDays = ((challenge.endDate - challenge.startDate) / 86_400_000L).toInt()
+    Timber.d("endDate type: ${if (challenge.endDate > 1700000000000L) "timestamp" else "days"} value=${challenge.endDate}")
+    val endDateMs = if (challenge.endDate > 1700000000000L) {
+        challenge.endDate // already a timestamp
+    } else {
+        challenge.startDate + (challenge.endDate * 24L * 60L * 60L * 1000L)
+    }
+    val durationDays = ((endDateMs - challenge.startDate) / 86_400_000L).toInt()
     val amountEuros = (challenge.amountCents ?: 0) / 100
 
     Box(

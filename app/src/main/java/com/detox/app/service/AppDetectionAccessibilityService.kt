@@ -14,6 +14,10 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
     private var lastDetectedPackage: String? = null
 
+    /** Tracks the last foreground package across ALL event types (including CONTENT_CHANGED).
+     *  Used to detect Recents-based foreground transitions where STATE_CHANGED may not fire. */
+    private var lastForegroundPackage: String? = null
+
     /** Launcher/home packages — used to detect Home button press. Resolved once and cached. */
     private val launcherPackages: Set<String> by lazy {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
@@ -83,6 +87,29 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
         /** Text fragments that indicate Chrome/Edge incognito mode in the window title. */
         private val INCOGNITO_INDICATORS = listOf("incognito", "private", "privat")
+
+        // Temporary allow-list: package -> elapsedRealtime expiry (ms).
+        // Populated by OverlayManager when the user explicitly confirms an open
+        // ("Ja, öffnen", "Continue", etc.). While entry is live, the
+        // accessibility service skips ALL blocking logic for that package so
+        // the app can actually launch without being slammed back home.
+        private val allowedPackages = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private const val ALLOW_DURATION_MS = 5_000L
+
+        fun allowTemporarily(packageName: String) {
+            allowedPackages[packageName] =
+                android.os.SystemClock.elapsedRealtime() + ALLOW_DURATION_MS
+            Timber.d("AccessibilityService: allowTemporarily $packageName for ${ALLOW_DURATION_MS}ms")
+        }
+
+        private fun isCurrentlyAllowed(packageName: String): Boolean {
+            val expiry = allowedPackages[packageName] ?: return false
+            if (android.os.SystemClock.elapsedRealtime() > expiry) {
+                allowedPackages.remove(packageName)
+                return false
+            }
+            return true
+        }
     }
 
     override fun onServiceConnected() {
@@ -97,6 +124,11 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         // Ignore self and system UI
         if (packageName == applicationContext.packageName) return
         if (packageName == "com.android.systemui") return
+
+        // Temporary allow-list: skip ALL blocking logic for this package while
+        // the user-granted window is live. Populated by OverlayManager whenever
+        // the user explicitly confirms an "open" action (Ja, öffnen / Continue).
+        if (isCurrentlyAllowed(packageName)) return
 
         // ── Browser URL monitoring ────────────────────────────────────────────
         if (BROWSER_PACKAGES.contains(packageName)) {
@@ -117,11 +149,38 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         }
 
+        // Secondary trigger: CONTENT_CHANGED from a tracked non-browser package whose foreground
+        // identity changed. Handles Recents-based re-entry where STATE_CHANGED doesn't always fire
+        // (the user was last in the blocked app, so STATE_CHANGED is deduplicated).
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            val trackedPackages = TrackedAppEventBus.trackedPackages.value
+            if (trackedPackages.contains(packageName) &&
+                packageName != lastForegroundPackage &&
+                !TrackedAppEventBus.overlayVisible.value &&
+                !isCurrentlyAllowed(packageName) &&
+                !TrackedAppEventBus.freedPackagesToday.value.contains(packageName) &&
+                !TrackedAppEventBus.failedPackagesToday.value.contains(packageName)) {
+                lastForegroundPackage = packageName
+                lastDetectedPackage = packageName
+                TrackedAppEventBus.updateForegroundPackage(packageName)
+                val scheduleInfo = TrackedAppEventBus.packageSchedules.value[packageName]
+                if (scheduleInfo == null || isWithinActiveSchedule(scheduleInfo)) {
+                    Timber.d("AppDetectionService: CONTENT_CHANGED foreground transition to $packageName — triggering overlay")
+                    TrackedAppEventBus.emitAppOpen(packageName)
+                }
+            }
+            return
+        }
+
+        // We register for VIEW_FOCUSED / WINDOWS_CHANGED / CONTENT_CHANGED in
+        // accessibility_service_config.xml for fast detection latency, but the
+        // main app-open detection runs only on the canonical STATE_CHANGED.
         if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         // Avoid duplicate events for the same app
         if (packageName == lastDetectedPackage) return
         lastDetectedPackage = packageName
+        lastForegroundPackage = packageName
 
         // Always track foreground package so OverlayManager knows which app is visible
         TrackedAppEventBus.updateForegroundPackage(packageName)
@@ -147,6 +206,18 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
         val trackedPackages = TrackedAppEventBus.trackedPackages.value
         if (trackedPackages.contains(packageName)) {
+            Timber.d("Package matched: $packageName")
+            Timber.d("isOverlayVisible=${TrackedAppEventBus.overlayVisible.value}")
+            Timber.d("failedPackagesToday=${TrackedAppEventBus.failedPackagesToday.value}")
+            val _sessionPrefsForLog = applicationContext.getSharedPreferences(OverlayManager.SESSION_PREFS_NAME, Context.MODE_PRIVATE)
+            val _nowForLog = System.currentTimeMillis()
+            val _activeSessionPackage = _sessionPrefsForLog.all
+                .filter { (k, v) -> k.startsWith(OverlayManager.SESSION_END_KEY_PREFIX) && (v as? Long ?: 0L) > _nowForLog }
+                .keys
+                .map { it.removePrefix(OverlayManager.SESSION_END_KEY_PREFIX) }
+            Timber.d("activeSessionPackage=$_activeSessionPackage")
+            val _sessionEndTimeForLog = _sessionPrefsForLog.getLong("${OverlayManager.SESSION_END_KEY_PREFIX}$packageName", 0L)
+            Timber.d("sessionEndTime=$_sessionEndTimeForLog now=$_nowForLog")
             Timber.d("Checking package=$packageName against challenge packages=${trackedPackages.toList()}")
 
             // Overlay already visible — do not emit a second app-open event
@@ -186,11 +257,13 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                             "limit=${sessionInfo.limitValueSessions} exceeded=$exceeded"
                 )
                 if (exceeded) {
+                    Timber.d("Overlay shown directly over $packageName (no home action)")
                     TrackedAppEventBus.emitAppOpen(packageName)
                     return
                 }
             }
 
+            Timber.d("Overlay shown directly over $packageName (no home action)")
             TrackedAppEventBus.emitAppOpen(packageName)
         }
     }
@@ -224,7 +297,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
             Timber.d("Incognito/private mode detected in $packageName — adult blocking active, sending to home")
             showBlockedToast()
-            goHome()
+            performGlobalAction(GLOBAL_ACTION_HOME)
         }
     }
 
@@ -352,7 +425,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
     // ── Actions ───────────────────────────────────────────────────────────────
 
-    /** Sends the user to the Android launcher immediately. */
+    /** Sends the user to the launcher (used by browser-side adult/blocked-domain blocking). */
     private fun goHome() {
         val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)

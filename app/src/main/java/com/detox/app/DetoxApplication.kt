@@ -1,7 +1,13 @@
 package com.detox.app
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Application
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
 import androidx.hilt.work.HiltWorkerFactory
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -12,6 +18,7 @@ import com.detox.app.service.DailyReminderWorker
 import com.detox.app.service.GroupChallengeAutoStartWorker
 import com.detox.app.service.PermissionCheckWorker
 import com.detox.app.service.NotificationHelper
+import com.detox.app.service.ServiceWatchdogWorker
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import com.stripe.android.PaymentConfiguration
@@ -70,6 +77,8 @@ class DetoxApplication : Application(), Configuration.Provider {
         scheduleDailyReminder()
         scheduleGroupChallengeAutoStart()
         schedulePermissionCheck()
+        scheduleServiceWatchdog()
+        observeAppForeground()
         startGroupChallengeSyncing()
     }
 
@@ -213,6 +222,49 @@ class DetoxApplication : Application(), Configuration.Provider {
             request
         )
         Timber.d("Permission check worker scheduled (every 15 min)")
+    }
+
+    /**
+     * Watches app process foreground transitions. Whenever the user brings Detox
+     * to the foreground we re-check whether our AccessibilityService is still
+     * enabled — Huawei's battery optimization may have disabled it while we were
+     * backgrounded. If a challenge is active and the service is gone, post a
+     * notification so the user can re-enable it from the system settings.
+     */
+    private fun observeAppForeground() {
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                val running = isAccessibilityServiceRunning()
+                if (running) return
+                Timber.w("DetoxApplication: accessibility service not running on foreground")
+                NotificationHelper.createChannels(this@DetoxApplication)
+                NotificationHelper.sendAccessibilityLost(this@DetoxApplication)
+            }
+        })
+    }
+
+    private fun isAccessibilityServiceRunning(): Boolean {
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+            ?: return false
+        val targetClass =
+            "com.detox.app.service.AppDetectionAccessibilityService"
+        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_GENERIC)
+            .any { info ->
+                info.resolveInfo?.serviceInfo?.let { si ->
+                    si.packageName == packageName && si.name == targetClass
+                } == true
+            }
+    }
+
+    private fun scheduleServiceWatchdog() {
+        val request = PeriodicWorkRequestBuilder<ServiceWatchdogWorker>(15, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            ServiceWatchdogWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+        Timber.d("Service watchdog worker scheduled (every 15 min)")
     }
 
     companion object {

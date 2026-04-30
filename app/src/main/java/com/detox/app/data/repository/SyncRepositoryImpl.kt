@@ -8,6 +8,7 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.SyncRepository
 import timber.log.Timber
 import java.util.Calendar
@@ -19,7 +20,8 @@ class SyncRepositoryImpl @Inject constructor(
     private val firestoreService: FirestoreService,
     private val firebaseAuthService: FirebaseAuthService,
     private val challengeDao: ChallengeDao,
-    private val dailyLogDao: DailyLogDao
+    private val dailyLogDao: DailyLogDao,
+    private val groupChallengeRepository: GroupChallengeRepository,
 ) : SyncRepository {
 
     override suspend fun syncUserData(): Result<Unit> {
@@ -47,7 +49,12 @@ class SyncRepositoryImpl @Inject constructor(
                 logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
             }
 
-            // 3. Fetch today's dailyLog entries from the flat Firestore collection and upsert
+            // 3. Sync group challenge statuses from Firestore → Room so stale 'active' records
+            //    (from cancelled/completed group challenges) don't block app selection.
+            groupChallengeRepository.refreshFromFirestore(userId)
+                .onFailure { e -> Timber.w(e, "SyncRepository: group challenge status sync failed") }
+
+            // 4. Fetch today's dailyLog entries from the flat Firestore collection and upsert
             //    consciousOpens into Room — restores session-limit state after reinstalls.
             val startOfToday = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)

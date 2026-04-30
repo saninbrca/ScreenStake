@@ -9,9 +9,12 @@ import androidx.work.WorkerParameters
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
+import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
 
 @HiltWorker
@@ -20,6 +23,7 @@ class PermissionCheckWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val challengeRepository: ChallengeRepository,
     private val cloudFunctionsService: CloudFunctionsService,
+    private val groupChallengeRepository: GroupChallengeRepository,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -34,6 +38,7 @@ class PermissionCheckWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         checkAccessibilityPermission()
+        checkExpiredGroupChallenges()
 
         if (Settings.canDrawOverlays(applicationContext)) {
             if (prefs.contains(KEY_LOST_AT)) {
@@ -143,5 +148,20 @@ class PermissionCheckWorker @AssistedInject constructor(
 
     private fun cancelPermissionWarnings() {
         WorkManager.getInstance(applicationContext).cancelUniqueWork("permission_warnings")
+    }
+
+    private suspend fun checkExpiredGroupChallenges() {
+        val now = System.currentTimeMillis()
+        val groups = runCatching { groupChallengeRepository.getGroupChallenges().first() }
+            .getOrElse {
+                Timber.w(it, "checkExpiredGroupChallenges: failed to load group challenges")
+                return
+            }
+        groups
+            .filter { it.status == GroupChallengeStatus.ACTIVE && it.endDate in 1..now }
+            .forEach { gc ->
+                Timber.d("Group challenge expired: ${gc.groupId} endDate=${gc.endDate} now=$now")
+                cloudFunctionsService.completeGroupChallenge(gc.groupId)
+            }
     }
 }

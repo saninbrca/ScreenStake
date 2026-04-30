@@ -193,7 +193,7 @@
     <string name="active_challenge_streak">🔥 %1$d Tage Streak</string>
     <string name="active_challenge_today_opens">Heute: %1$d/%2$d Opens</string>
     <string name="active_challenge_adult_blocked">Adult content blocking active</string>
-    <string name="active_challenge_abandon">Abandon Challenge</string>
+    <string name="active_challenge_abandon">Challenge aufgeben</string>
     <string name="active_challenge_abandon_confirm_title">Abandon Challenge?</string>
     <string name="active_challenge_abandon_confirm_message">This will end the challenge without awarding points. You cannot undo this.</string>
     <string name="active_challenge_abandon_confirm_yes">Yes, abandon</string>
@@ -320,14 +320,33 @@
     <string name="session_intention_yes">Yes, open it</string>
     <string name="session_intention_no">No, go back</string>
 
-    <!-- Session Limit Reached Overlay (Stage 2 — session-limit challenges) -->
+    <!-- Session Limit Reached Overlay (Stage 2 — all limit types) -->
+    <string name="overlay_limit_reached_header">Limit erreicht 🔒</string>
     <string name="session_limit_reached_title">You have reached your limit for today.</string>
     <string name="session_limit_reached_message">Do you still want to continue?</string>
     <string name="session_limit_reached_consequence_soft">You will lose all points for today.</string>
     <string name="session_limit_reached_consequence_hard">€%.2f will be captured from your card.</string>
     <string name="session_limit_reached_yes_soft">Yes, I accept — lose points</string>
+    <string name="session_limit_reached_yes_soft_lose">Ja, ich akzeptiere — Challenge verlieren</string>
     <string name="session_limit_reached_yes_hard">Yes, I accept — charge my card</string>
     <string name="session_limit_reached_no">No, stop</string>
+
+    <!-- Soft Mode fail confirmation dialog -->
+    <string name="soft_fail_dialog_title">Bist du sicher?</string>
+    <string name="soft_fail_dialog_message">Deine Challenge wird als gescheitert markiert.</string>
+    <string name="soft_fail_dialog_confirm">Ja, Challenge beenden</string>
+    <string name="soft_fail_dialog_cancel">Nein, zurück</string>
+
+    <!-- Soft Mode fail result screen -->
+    <string name="soft_fail_result_title">Du hast %1$d Tage durchgehalten! 💪</string>
+    <string name="soft_fail_result_subtitle">Möchtest du eine neue Challenge starten?</string>
+    <string name="soft_fail_result_new_challenge">Neue Challenge 🚀</string>
+    <string name="soft_fail_result_home">Zur Startseite</string>
+
+    <!-- Streak chip / row formats -->
+    <string name="streak_overlay_format">🔥 %1$d Tage Streak</string>
+    <string name="streak_overlay_zero">Erster Tag — fang stark an! 💪</string>
+    <string name="streak_detail_format">🔥 Streak: %1$d Tage</string>
 
     <!-- Statistics screen -->
     <string name="stats_title">Statistics</string>

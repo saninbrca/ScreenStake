@@ -63,6 +63,7 @@ import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoin
 import com.detox.app.presentation.screens.history.HistoryScreen
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
+import com.detox.app.presentation.screens.softfail.SoftFailResultScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
 import timber.log.Timber
 
@@ -121,6 +122,15 @@ fun MainScreen(
                 launchSingleTop = true
             }
             TrackedAppEventBus.clearGroupDetailNavigation()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        TrackedAppEventBus.navigateToSoftFailResult.collect { (challengeId, streak) ->
+            navController.navigate("soft_fail_result/$challengeId/$streak") {
+                launchSingleTop = true
+            }
+            TrackedAppEventBus.clearSoftFailResultNavigation()
         }
     }
 
@@ -318,6 +328,36 @@ fun MainScreen(
                             restoreState = true
                         }
                     }
+                )
+            }
+
+            // ── Soft Mode fail result ─────────────────────────────────────────────
+            composable(
+                route = "soft_fail_result/{challengeId}/{streak}",
+                arguments = listOf(
+                    navArgument("challengeId") { type = NavType.StringType },
+                    navArgument("streak") { type = NavType.IntType },
+                )
+            ) { backStackEntry ->
+                val streak = backStackEntry.arguments?.getInt("streak") ?: 0
+                SoftFailResultScreen(
+                    daysHeld = streak,
+                    onNewChallenge = {
+                        navController.navigate("challenge_creation") {
+                            popUpTo(BottomNavTab.Dashboard.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                    onHome = {
+                        navController.navigate(BottomNavTab.Dashboard.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                                inclusive = false
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                 )
             }
 

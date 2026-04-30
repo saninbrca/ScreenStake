@@ -96,7 +96,11 @@ class MainActivity : ComponentActivity() {
             }
 
             if (firebaseAuth.currentUser != null) {
+                firebaseAuth.currentUser?.uid?.let { uid ->
+                    groupChallengeRepository.refreshFromFirestore(uid)
+                }
                 autoStartGroupChallenges()
+                checkExpiredGroupChallenges()
             }
         }
 
@@ -156,6 +160,24 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         trackPermissionIgnore()
         checkPermissionState()
+        if (firebaseAuth.currentUser != null) {
+            lifecycleScope.launch { checkExpiredGroupChallenges() }
+        }
+    }
+
+    private suspend fun checkExpiredGroupChallenges() {
+        val now = System.currentTimeMillis()
+        val groups = runCatching { groupChallengeRepository.getGroupChallenges().first() }
+            .getOrElse {
+                Timber.w(it, "MainActivity: failed to load group challenges for end-date check")
+                return
+            }
+        groups
+            .filter { it.status == GroupChallengeStatus.ACTIVE && it.endDate in 1..now }
+            .forEach { gc ->
+                Timber.d("Group challenge expired: ${gc.groupId} endDate=${gc.endDate} now=$now")
+                cloudFunctionsService.completeGroupChallenge(gc.groupId)
+            }
     }
 
     override fun onDestroy() {

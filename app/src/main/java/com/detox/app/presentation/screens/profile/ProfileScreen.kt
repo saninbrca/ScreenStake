@@ -60,8 +60,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.data.local.db.entity.ChallengeEntity
+import com.detox.app.service.TrackedAppEventBus
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -530,6 +532,32 @@ fun ProfileScreen(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            if (BuildConfig.DEBUG) {
+                OutlinedButton(
+                    onClick = {
+                        val target = TrackedAppEventBus.trackedPackages.value.firstOrNull()
+                        if (target == null) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "No tracked packages — start a challenge first",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            timber.log.Timber.d("Blocking chain: TEST start pkg=$target t0=${android.os.SystemClock.elapsedRealtime()}")
+                            TrackedAppEventBus.emitAppOpen(target)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Text("Test Blocking (DEBUG)")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // ── Log Out ───────────────────────────────────────────────────────
             OutlinedButton(

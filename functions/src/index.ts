@@ -282,7 +282,7 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
       return;
     }
 
-    const participants: Array<{ userId: string; paymentIntentId: string }> = gc["participants"] ?? [];
+    const participants = parseParticipants<{ userId: string; paymentIntentId: string }>(gc["participants"]);
     const isImmediateCapture = (gc["durationDays"] ?? 7) > 7;
 
     if (participants.length < 2) {
@@ -335,7 +335,7 @@ export const cancelGroupChallenge = functions.region(REGION).https.onRequest(asy
       throw new HttpError(403, "Only the creator can cancel a group challenge.");
     }
 
-    const participants: Array<{ userId: string; paymentIntentId: string }> = gc["participants"] ?? [];
+    const participants = parseParticipants<{ userId: string; paymentIntentId: string }>(gc["participants"]);
     const isImmediateCapture = ((gc["durationDays"] as number) ?? 7) > 7;
 
     for (const p of participants) {
@@ -372,7 +372,7 @@ export const failParticipant = functions.region(REGION).https.onRequest(async (r
     if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
 
     const gc = doc.data()!;
-    const participants: Array<Record<string, unknown>> = gc["participants"] ?? [];
+    const participants = parseParticipants(gc["participants"]);
     const isImmediateCapture = ((gc["durationDays"] as number) ?? 7) > 7;
 
     const updatedParticipants = participants.map((p) =>
@@ -419,7 +419,7 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
       return;
     }
 
-    const participants: Array<Record<string, unknown>> = gc["participants"] ?? [];
+    const participants = parseParticipants(gc["participants"]);
     const buyInCents: number = (gc["buyInCents"] as number) ?? 0;
     const isImmediateCapture = ((gc["durationDays"] as number) ?? 7) > 7;
 
@@ -690,6 +690,14 @@ export const getConnectedAccountStatus = functions.region(REGION).https.onReques
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+// Firestore can return the participants field as an Array OR a Map/Object when
+// arrayRemove+arrayUnion partial snapshots occur. This normalises both cases.
+function parseParticipants<T = Record<string, unknown>>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  if (raw !== null && typeof raw === "object") return Object.values(raw) as T[];
+  return [];
+}
 
 async function getOrCreateStripeCustomer(userId: string): Promise<string> {
   const userDoc = await admin.firestore().collection("users").doc(userId).get();

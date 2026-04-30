@@ -214,4 +214,22 @@ object TrackedAppEventBus {
     fun clearGroupDetailNavigation() {
         _navigateToGroupDetail.resetReplayCache()
     }
+
+    /**
+     * Fires when a Soft Mode challenge has just been marked FAILED from an overlay.
+     * Payload is (challengeId, streakDays). Replay=1 so the event survives until MainScreen is up.
+     */
+    private val _navigateToSoftFailResult = MutableSharedFlow<Pair<String, Int>>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val navigateToSoftFailResult: SharedFlow<Pair<String, Int>> = _navigateToSoftFailResult.asSharedFlow()
+
+    fun emitNavigateToSoftFailResult(challengeId: String, streak: Int) {
+        _navigateToSoftFailResult.tryEmit(challengeId to streak)
+    }
+
+    fun clearSoftFailResultNavigation() {
+        _navigateToSoftFailResult.resetReplayCache()
+    }
 }

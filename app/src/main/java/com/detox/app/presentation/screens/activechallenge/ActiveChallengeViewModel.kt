@@ -10,6 +10,7 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.usecase.DailyLimitStatus
+import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import java.util.Calendar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,7 @@ class ActiveChallengeViewModel @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
+    private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
 ) : ViewModel() {
 
     private val challengeId: String = savedStateHandle.get<String>("challengeId") ?: ""
@@ -94,9 +96,7 @@ class ActiveChallengeViewModel @Inject constructor(
                             remainingOpens = if (challenge.limitType == LimitType.SESSIONS)
                                 maxOf(0, (challenge.limitValueSessions ?: 0) - opensToday) else null
                         )
-                        val streak = dailyLogRepository
-                            .getStreakForChallenge(challengeId, today)
-                            .getOrElse { 0 }
+                        val streak = getChallengeStreakUseCase(challenge)
                         _uiState.value = ActiveChallengeUiState.Success(challenge, status, streak)
                     },
                     onFailure = { e ->

@@ -26,7 +26,7 @@ interface GroupChallengeDao {
     suspend fun updateParticipants(groupId: String, json: String)
 
     @Query("""
-        SELECT * FROM group_challenges WHERE status = 'active' AND (
+        SELECT * FROM group_challenges WHERE status IN ('active', 'waiting') AND (
             appPackageNames = :packageName OR
             appPackageNames LIKE :packageName || ',%' OR
             appPackageNames LIKE '%,' || :packageName OR

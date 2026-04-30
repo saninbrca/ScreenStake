@@ -238,11 +238,21 @@ private fun GroupDetailContent(
         Timber.d("endDate=${gc.endDate} remaining=${remainingDays}d ${remainingHours}h")
     }
 
-    val sorted = gc.participants.sortedWith(
-        compareBy<Participant> { it.status == ParticipantStatus.FAILED }
-            .thenBy { it.opensToday }
-            .thenBy { it.timeUsedMinutes }
-    )
+    // Sort: ACTIVE participants first (ascending opensToday — fewer opens = leader),
+    // then FAILED participants (descending opensToday — most-failed at the very bottom).
+    val sorted = gc.participants.sortedWith(Comparator { a, b ->
+        val aFailed = a.status == ParticipantStatus.FAILED
+        val bFailed = b.status == ParticipantStatus.FAILED
+        when {
+            aFailed != bFailed -> if (aFailed) 1 else -1
+            aFailed -> b.opensToday.compareTo(a.opensToday)
+            else -> {
+                val byOpens = a.opensToday.compareTo(b.opensToday)
+                if (byOpens != 0) byOpens else a.timeUsedMinutes.compareTo(b.timeUsedMinutes)
+            }
+        }
+    })
+    Timber.d("Leaderboard sorted: ${sorted.map { "${it.displayName}:${it.status}" }}")
     val myParticipant = gc.participants.find { it.userId == currentUserId }
 
     LazyColumn(

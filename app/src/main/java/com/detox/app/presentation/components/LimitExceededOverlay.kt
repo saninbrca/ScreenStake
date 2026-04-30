@@ -4,15 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,12 +33,10 @@ fun LimitExceededOverlay(
     limitMinutes: Int = 0,
     /** Current consecutive-day streak (before today). Hidden when 0. */
     streak: Int = 0,
-    onContinue: () -> Unit,
     onStop: () -> Unit
 ) {
     @Suppress("KotlinConstantConditions")
     val isHardMode = challengeMode == ChallengeMode.HARD && amountCents != null
-    // Solid opaque background — nothing bleeds through from the app underneath.
     val bgColor = if (isHardMode) Color(0xFF1A0000) else Color(0xFF0D0D0D)
     val accentColor = if (isHardMode) Color(0xFFFF4444) else MaterialTheme.colorScheme.primary
 
@@ -81,7 +76,6 @@ fun LimitExceededOverlay(
                     textAlign = TextAlign.Center
                 )
 
-                // Time used vs limit
                 if (limitMinutes > 0) {
                     Text(
                         text = stringResource(R.string.limit_exceeded_time_used, todayMinutes, limitMinutes),
@@ -106,60 +100,30 @@ fun LimitExceededOverlay(
             }
 
             // ── Middle: streak badge ───────────────────────────────────────────────
-            if (streak > 0) {
-                Text(
-                    text = stringResource(R.string.streak_display, streak),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-            } else {
-                Spacer(modifier = Modifier.height(1.dp))
-            }
+            Text(
+                text = if (streak > 0) {
+                    stringResource(R.string.streak_overlay_format, streak)
+                } else {
+                    stringResource(R.string.streak_overlay_zero)
+                },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
 
-            // ── Bottom: action buttons ─────────────────────────────────────────────
-            Column(
+            // ── Bottom: single action button ──────────────────────────────────────
+            Button(
+                onClick = onStop,
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF2E7D32)
+                )
             ) {
-                Button(
-                    onClick = onStop,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.limit_exceeded_stop),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                OutlinedButton(
-                    onClick = onContinue,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = if (isHardMode) {
-                        ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    } else {
-                        ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White.copy(alpha = 0.65f)
-                        )
-                    }
-                ) {
-                    Text(
-                        text = if (isHardMode) {
-                            stringResource(R.string.limit_exceeded_hard_continue)
-                        } else {
-                            stringResource(R.string.limit_exceeded_continue)
-                        },
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.stay_strong_button),
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
         }
     }

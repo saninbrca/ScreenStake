@@ -226,14 +226,12 @@ private fun ActiveChallengeContent(
             )
         }
 
-        // Streak row
-        if (streak > 0) {
-            Text(
-                text = stringResource(R.string.active_challenge_streak, streak),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-        }
+        // Streak row — always shown, uses challenge.startDate for no-end-date challenges
+        Text(
+            text = stringResource(R.string.streak_detail_format, streak),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground
+        )
 
         // Limit info
         val limitText = when (challenge.limitType) {

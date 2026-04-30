@@ -24,7 +24,10 @@ import com.detox.app.R
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.di.ApplicationScope
+import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
+import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
@@ -35,6 +38,7 @@ import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
+import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.presentation.components.BlockingScreenOverlay
 import com.detox.app.presentation.components.BudgetSelectionOverlay
 import com.detox.app.presentation.components.GroupChallengeFailOverlay
@@ -67,6 +71,8 @@ class OverlayManager @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
     private val firebaseAuthService: FirebaseAuthService,
     private val cloudFunctionsService: CloudFunctionsService,
+    private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) {
 
     companion object {
@@ -146,6 +152,14 @@ class OverlayManager @Inject constructor(
 
     /** Package currently being counted down for a budget session. */
     private var budgetTimerPackage: String? = null
+
+    // Budget session tracking — set when a session starts, cleared on exit or timer expiry.
+    // Budget is deducted from actual elapsed time (on exit) or selected time (on expiry),
+    // NOT upfront when the user selects a duration.
+    private var budgetSessionStartTimeMs: Long? = null
+    private var budgetSessionSelectedMinutes: Int = 0
+    private var budgetSessionChallengeId: String? = null
+    private var budgetSessionTotalBudget: Int = 0
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // ── Taunt overlay (non-blocking, shown on top of any app) ─────────────────
@@ -182,12 +196,17 @@ class OverlayManager @Inject constructor(
             }
         }
 
-        // Home button detected while overlay is visible — dismiss overlay (user chose to go home)
+        // Home button detected while overlay is visible — dismiss overlay (user chose to go home).
+        // Guard: ignore events fired <1s after the overlay appeared to avoid Recents animation
+        // race where the launcher fires a state-changed event right after the overlay opens.
         scope.launch {
             TrackedAppEventBus.homeDetectedEvents.collect {
-                if (isOverlayVisible) {
+                val shownAt = currentOverlayShownAt
+                if (isOverlayVisible && (shownAt == null || System.currentTimeMillis() - shownAt > 1_000L)) {
                     Timber.d("Overlay visible=$isOverlayVisible, hiding=home_button")
                     dismissOverlay("home_button")
+                } else if (isOverlayVisible) {
+                    Timber.d("OverlayManager: home detected <1s after overlay shown — ignoring (Recents animation race)")
                 }
             }
         }
@@ -206,8 +225,9 @@ class OverlayManager @Inject constructor(
                 if (budgetTimed != null && current != budgetTimed) {
                     Timber.d(
                         "OverlayManager: $budgetTimed left foreground (now: $current) " +
-                                "— cancelling budget timer (budget already deducted)"
+                                "— writing partial budget session and cancelling timer"
                     )
+                    writePartialBudgetSession(budgetTimed)
                     budgetTimerJob?.cancel()
                     budgetTimerJob = null
                     budgetTimerPackage = null
@@ -219,6 +239,8 @@ class OverlayManager @Inject constructor(
     }
 
     fun stopListening() {
+        // Persist any in-progress budget session before jobs are cancelled
+        budgetTimerPackage?.let { writePartialBudgetSession(it) }
         listeningJob?.cancel()
         listeningJob = null
         limitReachedTimerJob?.cancel()
@@ -242,8 +264,10 @@ class OverlayManager @Inject constructor(
     // ── Core dispatch ──────────────────────────────────────────────────────────
 
     private suspend fun handleAppOpen(packageName: String, scope: CoroutineScope) {
+        val tEnter = android.os.SystemClock.elapsedRealtime()
+        Timber.d("Blocking chain: handleAppOpen entered pkg=$packageName")
         if (isOverlayVisible) {
-            Timber.d("Overlay visible=$isOverlayVisible, skipping new overlay for $packageName")
+            Timber.d("Overlay visible=$isOverlayVisible, skipping new overlay for $packageName (after ${android.os.SystemClock.elapsedRealtime() - tEnter}ms)")
             return
         }
 
@@ -327,17 +351,27 @@ class OverlayManager @Inject constructor(
             return
         }
 
-        // Use in-memory Firestore count (fast path) or fall back to Room lazy-load
-        if (!consciousOpensToday.containsKey(packageName)) {
+        // Source of truth for opensToday:
+        //  - Group challenges: read from Firestore participants (live, authoritative)
+        //  - Solo challenges: in-memory map → TrackedAppEventBus → DailyLog (fallback chain)
+        val isGroup = challenge.groupChallengeId != null
+        if (isGroup) {
+            val groupId = challenge.groupChallengeId!!
+            val uid = firebaseAuthService.currentUserId()
+            val gc = groupChallengeRepository.getGroupChallengeById(groupId)
+            val opens = gc?.participants?.firstOrNull { it.userId == uid }?.opensToday ?: 0
+            consciousOpensToday[packageName] = opens
+            Timber.d("Group overlay: opensToday=$opens from Firestore (groupId=$groupId)")
+        } else if (!consciousOpensToday.containsKey(packageName)) {
             val busOpens = TrackedAppEventBus.groupSessionInfos.value[packageName]?.opensToday
             if (busOpens != null) {
                 consciousOpensToday[packageName] = busOpens
-                Timber.d("OverlayManager: loaded consciousOpens=$busOpens for $packageName from TrackedAppEventBus")
+                Timber.d("Group overlay: opensToday=$busOpens from DailyLog (TrackedAppEventBus fast-path)")
             } else {
                 val today = todayMidnightMs()
                 val persisted = dailyLogRepository.getConsciousOpens(challenge.id, today).getOrElse { 0 }
                 consciousOpensToday[packageName] = persisted
-                Timber.d("OverlayManager: loaded consciousOpens=$persisted for $packageName from Room")
+                Timber.d("Group overlay: opensToday=$persisted from DailyLog")
             }
         }
 
@@ -377,7 +411,7 @@ class OverlayManager @Inject constructor(
                     "\"$motivationText\" (custom=${challenge.customMotivation})"
         )
 
-        val streak = getStreak(challenge.id)
+        val streak = getStreak(challenge)
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -420,6 +454,9 @@ class OverlayManager @Inject constructor(
                             }
                         }
 
+                        challenge.appPackageName?.let {
+                            AppDetectionAccessibilityService.allowTemporarily(it)
+                        }
                         dismissOverlay()
 
                         // Always start the session timer — Stage 2 is shown on the NEXT open
@@ -455,15 +492,12 @@ class OverlayManager @Inject constructor(
     /** Stage 2 — Limit Reached: shown when conscious opens have reached the daily limit. */
     private suspend fun showSessionLimitReachedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
-        val isHard = challenge.mode == ChallengeMode.HARD
         val confirmedOpens = consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0)
         Timber.d(
             "OverlayManager: Stage 2 shown for ${challenge.appDisplayName} " +
                     "— $confirmedOpens/${challenge.limitValueSessions} conscious opens, " +
                     "mode=${challenge.mode}"
         )
-
-        val streak = getStreak(challenge.id)
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -477,65 +511,9 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
-                    packageName = (challenge.appPackageName ?: ""),
-                    appName = challenge.appDisplayName,
-                    challengeMode = challenge.mode,
-                    amountCents = challenge.amountCents,
-                    streak = streak,
-                    onYesLose = {
-                        Timber.d(
-                            "OverlayManager: Stage 2 'Yes, I accept' tapped " +
-                                    "for ${challenge.appDisplayName} (mode=${challenge.mode})"
-                        )
-                        // Mark package as free immediately — no more overlays for the rest of the day
-                        failedSessionAppsToday.add((challenge.appPackageName ?: ""))
-                        TrackedAppEventBus.markPackageFreeForToday((challenge.appPackageName ?: ""))
-
-                        if (isHard && challenge.stripePaymentIntentId != null) {
-                            // Hard Mode: capture payment only — app opens freely (no lockout)
-                            analyticsService.logLimitExceeded("hard_session", (challenge.appPackageName ?: ""))
-                            Timber.d(
-                                "OverlayManager: Hard session FAILED — payment captured, " +
-                                        "${challenge.appDisplayName} opens freely for rest of day"
-                            )
-                            scope.launch {
-                                paymentRepository.capturePayment(challenge.stripePaymentIntentId)
-                                    .onSuccess {
-                                        Timber.d(
-                                            "OverlayManager: payment captured for Hard session fail: " +
-                                                    "${challenge.appDisplayName}"
-                                        )
-                                    }
-                                    .onFailure { e ->
-                                        Timber.e(
-                                            e,
-                                            "OverlayManager: payment capture failed for Hard session fail: " +
-                                                    "${challenge.id}"
-                                        )
-                                    }
-                                writeDailyLogForHardCapture(
-                                    challengeId = challenge.id,
-                                    packageName = (challenge.appPackageName ?: ""),
-                                    amountCents = challenge.amountCents ?: 0
-                                )
-                            }
-                            dismissOverlay()
-                        } else {
-                            // Soft Mode: write DailyLog (points = 0), app opens freely rest of day
-                            analyticsService.logLimitExceeded("soft_session", (challenge.appPackageName ?: ""))
-                            Timber.d(
-                                "OverlayManager: Soft session FAILED — " +
-                                        "${challenge.appDisplayName} opens freely for rest of day"
-                            )
-                            scope.launch {
-                                writeDailyLogForSessionFailed(challenge.id, (challenge.appPackageName ?: ""))
-                            }
-                            dismissOverlay()
-                        }
-                    },
                     onNo = {
                         Timber.d(
-                            "OverlayManager: Stage 2 'No, stop' tapped " +
+                            "OverlayManager: Stage 2 'Stark bleiben' tapped " +
                                     "— going home for ${challenge.appDisplayName}"
                         )
                         dismissOverlay()
@@ -812,28 +790,14 @@ class OverlayManager @Inject constructor(
                     appName = challenge.appDisplayName,
                     remainingMinutes = remainingMinutes,
                     onStart = { selectedMinutes ->
-                        val newRemaining = maxOf(0, remainingMinutes - selectedMinutes)
-                        budgetRemainingToday[packageName] = newRemaining
-                        val totalBudget = challenge.dailyBudgetMinutes ?: 0
-                        val usedSoFar = totalBudget - newRemaining
                         Timber.d(
-                            "OverlayManager: Budget selected: ${selectedMinutes}min, " +
-                                    "remaining: ${newRemaining}min, timer started " +
-                                    "for ${challenge.appDisplayName}"
+                            "OverlayManager: Budget session starting: ${selectedMinutes}min " +
+                                    "for ${challenge.appDisplayName} (remaining before=${remainingMinutes}min)"
                         )
-                        scope.launch {
-                            val today = todayMidnightMs()
-                            dailyLogRepository.updateBudgetState(
-                                challengeId = challenge.id,
-                                date = today,
-                                used = usedSoFar,
-                                remaining = newRemaining
-                            ).onFailure { e ->
-                                Timber.e(
-                                    e, "OverlayManager: failed to persist budget state " +
-                                            "for ${challenge.id}"
-                                )
-                            }
+                        // allowTemporarily so the service dedup doesn't block the app re-entering
+                        // after overlay dismiss (budget deduction happens on exit, not here).
+                        challenge.appPackageName?.let {
+                            AppDetectionAccessibilityService.allowTemporarily(it)
                         }
                         dismissOverlay()
                         startBudgetTimer(packageName, selectedMinutes, challenge, scope)
@@ -859,7 +823,6 @@ class OverlayManager @Inject constructor(
      */
     private fun showBudgetExhaustedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
-        val isHard = challenge.mode == ChallengeMode.HARD
         Timber.d(
             "OverlayManager: BudgetExhausted overlay for ${challenge.appDisplayName} " +
                     "(mode=${challenge.mode})"
@@ -873,39 +836,6 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
-                    packageName = (challenge.appPackageName ?: ""),
-                    appName = challenge.appDisplayName,
-                    challengeMode = challenge.mode,
-                    amountCents = challenge.amountCents,
-                    onYesLose = {
-                        failedSessionAppsToday.add((challenge.appPackageName ?: ""))
-                        TrackedAppEventBus.markPackageFreeForToday((challenge.appPackageName ?: ""))
-
-                        if (isHard && challenge.stripePaymentIntentId != null) {
-                            analyticsService.logLimitExceeded("hard_budget", (challenge.appPackageName ?: ""))
-                            scope.launch {
-                                paymentRepository.capturePayment(challenge.stripePaymentIntentId)
-                                    .onSuccess {
-                                        Timber.d(
-                                            "OverlayManager: payment captured for Hard budget " +
-                                                    "exhausted: ${challenge.appDisplayName}"
-                                        )
-                                    }
-                                    .onFailure { e ->
-                                        Timber.e(
-                                            e,
-                                            "OverlayManager: payment capture failed for ${challenge.id}"
-                                        )
-                                    }
-                                writeDailyLogForBudgetExhausted(challenge)
-                            }
-                            dismissOverlay()
-                        } else {
-                            analyticsService.logLimitExceeded("soft_budget", (challenge.appPackageName ?: ""))
-                            scope.launch { writeDailyLogForBudgetExhausted(challenge) }
-                            dismissOverlay()
-                        }
-                    },
                     onNo = {
                         dismissOverlay()
                         goHome()
@@ -928,12 +858,41 @@ class OverlayManager @Inject constructor(
     ) {
         budgetTimerJob?.cancel()
         budgetTimerPackage = packageName
+
+        // Record session start — actual elapsed time is deducted on exit or timer expiry,
+        // NOT upfront. This ensures unused session time is returned to the daily budget.
+        budgetSessionStartTimeMs = System.currentTimeMillis()
+        budgetSessionSelectedMinutes = durationMinutes
+        budgetSessionChallengeId = challenge.id
+        budgetSessionTotalBudget = challenge.dailyBudgetMinutes ?: 0
+
         val durationMs = durationMinutes * 60_000L
         Timber.d("OverlayManager: budget timer started for $packageName ($durationMinutes min)")
 
         budgetTimerJob = scope.launch {
             delay(durationMs)
             Timber.d("OverlayManager: budget timer expired for $packageName")
+
+            // Full session elapsed — deduct the selected duration from the remaining budget.
+            val sessionStart = budgetSessionStartTimeMs
+            if (sessionStart != null) {
+                budgetSessionStartTimeMs = null  // clear before deduction to prevent double-deduct
+                val currentRemaining = budgetRemainingToday.getOrDefault(packageName, budgetSessionTotalBudget)
+                val newRemaining = maxOf(0, currentRemaining - budgetSessionSelectedMinutes)
+                budgetRemainingToday[packageName] = newRemaining
+                val cId = budgetSessionChallengeId
+                val total = budgetSessionTotalBudget
+                budgetSessionChallengeId = null
+                if (cId != null && total > 0) {
+                    val used = total - newRemaining
+                    Timber.d("OverlayManager: budget timer full expiry: used=${budgetSessionSelectedMinutes}min, remaining=${newRemaining}min")
+                    appScope.launch {
+                        dailyLogRepository.updateBudgetState(cId, todayMidnightMs(), used, newRemaining)
+                            .onFailure { e -> Timber.e(e, "OverlayManager: failed to write budget expiry for $cId") }
+                    }
+                }
+            }
+
             budgetTimerPackage = null
 
             if (currentOverlayView != null) {
@@ -968,6 +927,43 @@ class OverlayManager @Inject constructor(
                             "— re-showing budget selection"
                 )
                 showBudgetSelectionOverlay(updatedStatus, remaining, scope)
+            }
+        }
+    }
+
+    /**
+     * Called when the user exits the budget-tracked app before the timer expires.
+     * Deducts only the actual elapsed time (not the full selected duration) from the remaining
+     * budget and persists it to Room so re-entry shows the correct remaining balance.
+     *
+     * Clears [budgetSessionStartTimeMs] first to prevent double-deduction if called
+     * concurrently with timer expiry.
+     */
+    private fun writePartialBudgetSession(packageName: String) {
+        val sessionStart = budgetSessionStartTimeMs ?: return
+        val challengeId = budgetSessionChallengeId ?: return
+        val totalBudget = budgetSessionTotalBudget
+
+        budgetSessionStartTimeMs = null  // clear first — prevents double-deduction
+        budgetSessionChallengeId = null
+
+        val elapsedMs = System.currentTimeMillis() - sessionStart
+        val elapsedMinutes = (elapsedMs / 60_000L).toInt().coerceIn(0, budgetSessionSelectedMinutes)
+        val currentRemaining = budgetRemainingToday.getOrDefault(packageName, totalBudget)
+        val newRemaining = maxOf(0, currentRemaining - elapsedMinutes)
+        budgetRemainingToday[packageName] = newRemaining
+
+        if (totalBudget > 0) {
+            val used = totalBudget - newRemaining
+            Timber.d(
+                "OverlayManager: partial budget session for $packageName: " +
+                        "elapsed=${elapsedMinutes}min, remaining=${newRemaining}min"
+            )
+            serviceScope?.launch {
+                dailyLogRepository.updateBudgetState(challengeId, todayMidnightMs(), used, newRemaining)
+                    .onFailure { e ->
+                        Timber.e(e, "OverlayManager: failed to write partial budget for $challengeId")
+                    }
             }
         }
     }
@@ -1054,7 +1050,7 @@ class OverlayManager @Inject constructor(
     }
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
-        val streak = getStreak(status.challenge.id)
+        val streak = getStreak(status.challenge)
         val composeView = createSessionComposeView(
             onBack = {
                 analyticsService.logBlockingScreenAction("back_button")
@@ -1068,6 +1064,9 @@ class OverlayManager @Inject constructor(
                     streak = streak,
                     onOpenAnyway = {
                         analyticsService.logBlockingScreenAction("opened_anyway")
+                        status.challenge.appPackageName?.let {
+                            AppDetectionAccessibilityService.allowTemporarily(it)
+                        }
                         dismissOverlay("open_anyway")
                     },
                     onSkip = {
@@ -1085,8 +1084,7 @@ class OverlayManager @Inject constructor(
 
     private suspend fun showLimitExceededOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
-        val isHard = challenge.mode == ChallengeMode.HARD
-        val streak = getStreak(challenge.id)
+        val streak = getStreak(challenge)
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -1102,21 +1100,6 @@ class OverlayManager @Inject constructor(
                     todayMinutes = status.todayMinutes,
                     limitMinutes = challenge.limitValueMinutes,
                     streak = streak,
-                    onContinue = {
-                        if (isHard && challenge.stripePaymentIntentId != null) {
-                            scope.launch { captureAndLock(status, scope) }
-                        } else {
-                            analyticsService.logLimitExceeded("soft", (challenge.appPackageName ?: ""))
-                            Timber.d(
-                                "OverlayManager: Soft Mode limit exceeded — " +
-                                        "${challenge.appDisplayName} marked exceeded, " +
-                                        "5-min re-show timer started"
-                            )
-                            exceededAppsToday.add((challenge.appPackageName ?: ""))
-                            dismissOverlay()
-                            startLimitReachedTimer((challenge.appPackageName ?: ""), scope)
-                        }
-                    },
                     onStop = {
                         dismissOverlay()
                         goHome()
@@ -1325,6 +1308,10 @@ class OverlayManager @Inject constructor(
             failedSessionAppsToday.clear()
             failedGroupChallengeIds.clear()
             budgetRemainingToday.clear()
+            budgetSessionStartTimeMs = null
+            budgetSessionSelectedMinutes = 0
+            budgetSessionChallengeId = null
+            budgetSessionTotalBudget = 0
             TrackedAppEventBus.clearFreePackages()
             sessionTimerJob?.cancel()
             sessionTimerJob = null
@@ -1397,7 +1384,8 @@ class OverlayManager @Inject constructor(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_SECURE,
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP
@@ -1489,16 +1477,18 @@ class OverlayManager @Inject constructor(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.OPAQUE
         )
 
         try {
+            val tAdd = android.os.SystemClock.elapsedRealtime()
             windowManager.addView(view, params)
             currentOverlayView = view
             TrackedAppEventBus.setOverlayVisible(true)
             view.requestFocus()
-            Timber.d("Overlay visible=true, showing (challengeId=$challengeId)")
+            Timber.d("Blocking chain: overlay added in ${android.os.SystemClock.elapsedRealtime() - tAdd}ms (challengeId=$challengeId)")
         } catch (e: Exception) {
             Timber.e(e, "OverlayManager: failed to show overlay")
         }
@@ -1554,11 +1544,45 @@ class OverlayManager @Inject constructor(
     }
 
     /**
-     * Returns the current streak for [challengeId]: consecutive completed days (before today)
-     * where the limit was NOT exceeded.  Returns 0 on any error.
+     * Returns the current streak for [challenge]:
+     *  - No-end-date Soft challenges: days since startDate.
+     *  - Otherwise: consecutive completed days (before today) where the limit was NOT exceeded.
      */
-    private suspend fun getStreak(challengeId: String): Int =
-        dailyLogRepository.getStreakForChallenge(challengeId, todayMidnightMs()).getOrElse { 0 }
+    private suspend fun getStreak(challenge: Challenge): Int =
+        getChallengeStreakUseCase(challenge)
+
+    /**
+     * Marks a Soft Mode challenge as FAILED, syncs to Firestore, suppresses overlays for the
+     * tracked package(s) for the rest of the day, and launches the fail-result screen.
+     */
+    private suspend fun markSoftChallengeFailed(challenge: Challenge, reason: String) {
+        val streak = getStreak(challenge)
+        Timber.i("Soft Mode failed: challengeId=${challenge.id} streak=$streak days reason=$reason")
+
+        challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED)
+            .onFailure { Timber.e(it, "markSoftChallengeFailed: failed to update status for ${challenge.id}") }
+
+        challenge.appPackageName?.let {
+            failedSessionAppsToday.add(it)
+            exceededAppsToday.add(it)
+            TrackedAppEventBus.markPackageFreeForToday(it)
+            AppDetectionAccessibilityService.allowTemporarily(it)
+        }
+        challenge.appPackageNames.forEach {
+            failedSessionAppsToday.add(it)
+            exceededAppsToday.add(it)
+            TrackedAppEventBus.markPackageFreeForToday(it)
+        }
+
+        analyticsService.logLimitExceeded("soft_${reason}", challenge.appPackageName ?: "")
+
+        TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
+        val launchIntent = Intent(context, com.detox.app.MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        context.startActivity(launchIntent)
+        dismissOverlay()
+    }
 
     private fun todayMidnightMs(): Long {
         return Calendar.getInstance().apply {

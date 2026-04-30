@@ -168,17 +168,19 @@ fun SessionIntentionOverlay(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (streak > 0) {
-                    Text(
-                        text = stringResource(R.string.streak_display, streak),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
+                Text(
+                    text = if (streak > 0) {
+                        stringResource(R.string.streak_overlay_format, streak)
+                    } else {
+                        stringResource(R.string.streak_overlay_zero)
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
                     onClick = onNo,

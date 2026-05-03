@@ -7,6 +7,7 @@ import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.DailyLogRepository
@@ -19,8 +20,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import com.detox.app.util.DateUtils
 import timber.log.Timber
-import java.util.Calendar
 import javax.inject.Inject
 
 sealed interface GroupDetailUiState {
@@ -28,6 +29,10 @@ sealed interface GroupDetailUiState {
     data class Success(
         val groupChallenge: GroupChallenge,
         val myStreak: Int = 0,
+        /** Own opens today — read from Room DailyLog (source of truth), NOT Firestore participants array. */
+        val myOpensToday: Int = 0,
+        /** Own time used today in minutes — read from Room DailyLog (source of truth). */
+        val myTimeUsedMinutes: Int = 0,
     ) : GroupDetailUiState
     data class Error(val message: String) : GroupDetailUiState
 }
@@ -121,10 +126,41 @@ class GroupChallengeDetailViewModel @Inject constructor(
                         Timber.d("Participants count: %d", gc.participants.size)
                         retryScheduled = false
                         val localChallengeId = "group_${gc.groupId}"
+                        // ALWAYS use DateUtils.todayKey() — never inline 86400000 calculation.
+                        val todayKey = DateUtils.todayKey()
                         val streak = dailyLogRepository
-                            .getStreakForChallenge(localChallengeId, todayMidnightMs())
+                            .getStreakForChallenge(localChallengeId, todayKey)
                             .getOrElse { 0 }
-                        _uiState.value = GroupDetailUiState.Success(gc, myStreak = streak)
+
+                        // Own progress — read from Room DailyLog (source of truth).
+                        // Firestore participants array is the fallback if no Room record exists yet.
+                        val myId = firebaseAuthService.currentUserId()
+                        val dailyLog = dailyLogRepository
+                            .getLogForDate(localChallengeId, todayKey)
+                            .getOrNull()
+                        val firestoreParticipant = gc.participants.find { it.userId == myId }
+                        val myOpensToday = dailyLog?.consciousOpens
+                            ?: firestoreParticipant?.opensToday
+                            ?: 0
+                        val myTimeUsedMinutes = when (gc.limitType) {
+                            LimitType.TIME_BUDGET ->
+                                ((dailyLog?.budgetUsedMs ?: 0L) / 60_000L).toInt()
+                                    .takeIf { it > 0 }
+                                    ?: (firestoreParticipant?.timeUsedMinutes ?: 0)
+                            else -> dailyLog?.totalMinutes
+                                ?: firestoreParticipant?.timeUsedMinutes
+                                ?: 0
+                        }
+                        Timber.d(
+                            "GroupDetailVM: myOpensToday=$myOpensToday myTimeUsedMinutes=$myTimeUsedMinutes " +
+                            "source=${if (dailyLog != null) "Room" else "Firestore"}"
+                        )
+                        _uiState.value = GroupDetailUiState.Success(
+                            gc,
+                            myStreak = streak,
+                            myOpensToday = myOpensToday,
+                            myTimeUsedMinutes = myTimeUsedMinutes,
+                        )
 
                         // Sync to local Room when status transitions (once per transition)
                         if (gc.status != lastSyncedStatus) {
@@ -280,11 +316,6 @@ class GroupChallengeDetailViewModel @Inject constructor(
     }
 
     fun dismissWinDialog() { _winDialogInfo.value = null }
-
-    private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
 
     private fun syncToLocalTracking(gc: GroupChallenge) {
         val userId = firebaseAuthService.currentUserId() ?: return

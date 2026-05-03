@@ -47,6 +47,9 @@ class DailyLogRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun observeLogForDate(challengeId: String, date: Long): Flow<DailyLog?> =
+        dailyLogDao.observeLogForDate(challengeId, date).map { it?.toDomain() }
+
     override fun getLogsForChallenge(challengeId: String): Flow<List<DailyLog>> {
         return dailyLogDao.getLogsForChallenge(challengeId).map { entities ->
             entities.map { it.toDomain() }
@@ -174,6 +177,51 @@ class DailyLogRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getBudgetRemainingMs(challengeId: String, date: Long): Result<Long> {
+        return try {
+            Result.success(dailyLogDao.getBudgetRemainingMs(challengeId, date))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateBudgetStateMs(
+        challengeId: String,
+        date: Long,
+        usedMs: Long,
+        remainingMs: Long
+    ): Result<Unit> {
+        return try {
+            val existing = dailyLogDao.getLogForDate(challengeId, date)
+            if (existing != null) {
+                dailyLogDao.updateBudgetStateMs(challengeId, date, usedMs, remainingMs)
+            } else {
+                dailyLogDao.insertOrIgnore(
+                    DailyLogEntity(
+                        id = UUID.randomUUID().toString(),
+                        challengeId = challengeId,
+                        date = date,
+                        totalMinutes = 0,
+                        openCount = 0,
+                        pointsEarned = 0,
+                        limitExceeded = false,
+                        moneyLostCents = 0
+                    )
+                )
+                dailyLogDao.updateBudgetStateMs(challengeId, date, usedMs, remainingMs)
+            }
+            // Fire-and-forget Firestore sync — never blocks Room or the overlay path
+            appScope.launch {
+                firebaseAuthService.currentUserId()?.let { uid ->
+                    firestoreService.updateDailyLogBudget(uid, challengeId, date, usedMs, remainingMs)
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun getThresholdFlags(challengeId: String, date: Long): Result<ThresholdFlags> {
         return try {
             Result.success(
@@ -241,6 +289,8 @@ class DailyLogRepositoryImpl @Inject constructor(
         overlayPausedMs = overlayPausedMs,
         budgetUsedMinutes = budgetUsedMinutes,
         budgetRemainingMinutes = budgetRemainingMinutes,
+        budgetUsedMs = budgetUsedMs,
+        budgetRemainingMs = budgetRemainingMs,
         pointsEarned = pointsEarned,
         limitExceeded = limitExceeded,
         moneyLostCents = moneyLostCents,
@@ -259,6 +309,8 @@ class DailyLogRepositoryImpl @Inject constructor(
         overlayPausedMs = overlayPausedMs,
         budgetUsedMinutes = budgetUsedMinutes,
         budgetRemainingMinutes = budgetRemainingMinutes,
+        budgetUsedMs = budgetUsedMs,
+        budgetRemainingMs = budgetRemainingMs,
         pointsEarned = pointsEarned,
         limitExceeded = limitExceeded,
         moneyLostCents = moneyLostCents,

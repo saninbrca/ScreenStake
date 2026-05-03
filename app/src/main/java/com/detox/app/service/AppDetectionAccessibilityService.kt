@@ -160,6 +160,22 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                 !isCurrentlyAllowed(packageName) &&
                 !TrackedAppEventBus.freedPackagesToday.value.contains(packageName) &&
                 !TrackedAppEventBus.failedPackagesToday.value.contains(packageName)) {
+
+                // Allow re-entry if an active DAILY_BUDGET session is running for this package
+                val budgetPrefs = applicationContext.getSharedPreferences(
+                    OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+                )
+                val budgetEndTime = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+                val budgetPkg = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_PACKAGE_KEY, null)
+                if (budgetEndTime > System.currentTimeMillis() && budgetPkg == packageName) {
+                    val budgetRemaining = budgetEndTime - System.currentTimeMillis()
+                    val budgetChallengeId = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY, null)
+                    val challengeType = if (budgetChallengeId?.startsWith("group_") == true) "GROUP" else "SOLO"
+                    Timber.d("Group challenge check: pkg=$packageName challengeType=$challengeType limitType=DAILY_BUDGET — active session (${budgetRemaining}ms remaining)")
+                    allowTemporarily(packageName)
+                    return
+                }
+
                 lastForegroundPackage = packageName
                 lastDetectedPackage = packageName
                 TrackedAppEventBus.updateForegroundPackage(packageName)
@@ -245,6 +261,21 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             if (sessionEndTime > System.currentTimeMillis()) {
                 val remaining = sessionEndTime - System.currentTimeMillis()
                 Timber.d("User returned to $packageName, session remaining: ${remaining}ms")
+                return
+            }
+
+            // Allow re-entry if an active DAILY_BUDGET session is running for this package
+            val budgetPrefs = applicationContext.getSharedPreferences(
+                OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+            )
+            val budgetEndTime = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+            val budgetPkg = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_PACKAGE_KEY, null)
+            if (budgetEndTime > System.currentTimeMillis() && budgetPkg == packageName) {
+                val budgetRemaining = budgetEndTime - System.currentTimeMillis()
+                val budgetChallengeId = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY, null)
+                val challengeType = if (budgetChallengeId?.startsWith("group_") == true) "GROUP" else "SOLO"
+                Timber.d("Group challenge check: pkg=$packageName challengeType=$challengeType limitType=DAILY_BUDGET — active session (${budgetRemaining}ms remaining)")
+                allowTemporarily(packageName)
                 return
             }
 

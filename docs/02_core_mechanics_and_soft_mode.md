@@ -52,6 +52,82 @@ This means:
 
 ---
 
+## Limit Type Flows
+
+### SESSION_LIMIT
+```
+User opens blocked app
+↓
+OverlayManager reads consciousOpens from Room DailyLog (DateUtils.todayKey())
+↓
+consciousOpens < limit → SessionIntentionOverlay (Stage 1)
+  "Stark bleiben 💪" → dismiss + home (no count)
+  "öffnen" → 5s countdown → consciousOpens++
+    → write Room immediately (atomic)
+    → write Firestore immediately (fire-and-forget, SetOptions.merge())
+    → allow app 5s whitelist
+↓
+consciousOpens >= limit → SessionLimitReachedOverlay (Stage 2)
+  "Stark bleiben 💪" only → dismiss + home
+  No bypass, no quit option
+↓
+Quit only via: Dashboard → Detail → "Aufgeben"
+```
+
+### TIME_LIMIT
+```
+User opens blocked app
+↓
+OverlayManager reads timeUsedMs from Room DailyLog (DateUtils.todayKey())
+↓
+timeUsedMs < limitMs → SessionIntentionOverlay (Stage 1)
+  Same flow as SESSION_LIMIT
+  After allow: UsageTrackingService starts tracking time
+    → writes timeUsedMs to Room every 10s
+    → writes timeUsedMs to Firestore every 10s (fire-and-forget)
+↓
+timeUsedMs >= limitMs → SessionLimitReachedOverlay (Stage 2)
+  "Stark bleiben 💪" only → dismiss + home
+```
+
+### DAILY_BUDGET
+```
+User opens blocked app
+↓
+Check SharedPreferences: active session running?
+  YES + not expired → allow app directly (no overlay)
+  NO or expired →
+↓
+Read budgetRemainingMs from Room DailyLog (DateUtils.todayKey())
+  budgetRemainingMs <= 0 → SessionLimitReachedOverlay
+  budgetRemainingMs > 0  → BudgetSelectionOverlay
+    User selects session duration (max = remainingMs / 60000 min)
+    → write sessionEndTime to SharedPreferences
+    → write sessionStartTime to SharedPreferences
+    → allow app
+↓
+UsageTrackingService monitors sessionEndTime every 10s:
+  elapsed → write budgetUsedMs to Room (DateUtils.todayKey())
+  elapsed → write budgetUsedMs to Firestore (fire-and-forget, SetOptions.merge())
+  sessionEndTime reached →
+    budgetRemainingMs > 0  → BudgetSelectionOverlay over current screen
+    budgetRemainingMs <= 0 → SessionLimitReachedOverlay over current screen
+
+App start restore:
+  Read budgetUsedMs from Firestore → write to Room → set SharedPreferences committedMs
+```
+
+### TIME_WINDOW_ONLY
+```
+App blocked outside configured time window + days
+No opens counted, no overlay interaction needed
+AccessibilityService checks current time against schedule
+  Inside window  → allow
+  Outside window → SessionLimitReachedOverlay ("Stark bleiben 💪" only)
+```
+
+---
+
 ## Overlay System
 
 ### Rules (apply to ALL overlays)
@@ -171,6 +247,15 @@ val date = System.currentTimeMillis() / 86400000 * 86400000  // start of day in 
 val key = "${challengeId}_${date}"
 ```
 
+### Session Limit Sync Pattern (Source of Truth)
+- consciousOpens written to Room IMMEDIATELY on tap (atomic, never delayed)
+- consciousOpens written to Firestore IMMEDIATELY on tap (fire-and-forget)
+- On app start: read consciousOpens from Firestore → restore to Room
+- OverlayManager ALWAYS reads fresh from Room before showing overlay
+- Firestore path: `users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}`
+  - Fields: `consciousOpens`, `updatedAt`
+  - Always `SetOptions.merge()`
+
 ---
 
 ## Dashboard Display Logic
@@ -255,3 +340,50 @@ DEBUG only:
 
 2. **Group Challenge blocking unreliable:**
    `AppDetectionAccessibilityService` doesn't always block for Group Challenge participants because sync from Firestore to local Room can be delayed or missed.
+
+---
+
+## Universal Challenge Pattern
+
+All challenge types share identical overlay logic and DailyLog structure.
+The ONLY differences are what is added on top:
+
+| Layer | Soft Mode | Hard Mode | Group Challenge |
+|-------|-----------|-----------|-----------------|
+| Blocking logic | ✅ base | ✅ same | ✅ same |
+| Overlays | ✅ base | ✅ same | ✅ same |
+| DailyLog sync | ✅ base | ✅ same | ✅ same + participants |
+| Stripe | ❌ | ✅ pre-auth/capture/refund | ✅ per participant |
+| Firestore participants | ❌ | ❌ | ✅ arrayRemove+arrayUnion |
+
+### DailyLog Firestore Structure (all types)
+```
+users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
+    consciousOpens: Int      (SESSION_LIMIT)
+    timeUsedMs: Long         (TIME_LIMIT)
+    budgetUsedMs: Long       (DAILY_BUDGET)
+    budgetRemainingMs: Long  (DAILY_BUDGET)
+    updatedAt: Long
+    (SetOptions.merge() always — fields coexist safely)
+```
+
+### Fortschrittsbalken (Progress Bar) — same logic everywhere
+Used in: Dashboard card, Detail screen, Overlay
+Source of truth: Room DailyLog (read fresh via `DateUtils.todayKey()`)
+
+```
+SESSION_LIMIT:  progress = consciousOpens / limitValueSessions
+TIME_LIMIT:     progress = timeUsedMs / (limitValueMinutes * 60000)
+DAILY_BUDGET:   progress = budgetUsedMs / (dailyBudgetMinutes * 60000)
+```
+
+Display (remaining):
+```
+SESSION_LIMIT:  "${limitValueSessions - consciousOpens} opens remaining"
+TIME_LIMIT:     "${(limitMs - timeUsedMs) / 60000} min remaining"
+DAILY_BUDGET:   "${budgetRemainingMs / 60000} min remaining"
+```
+
+**CRITICAL:** Detail screen must use IDENTICAL data source as Dashboard.
+Both read from Room DailyLog via `DateUtils.todayKey()`.
+Never use ViewModel state or passed-in arguments for progress display.

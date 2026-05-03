@@ -17,11 +17,11 @@ import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
+import com.detox.app.util.DateUtils
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import timber.log.Timber
-import java.util.Calendar
 import java.util.UUID
 
 @HiltWorker
@@ -40,6 +40,18 @@ class DailyEvaluationWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         Timber.d("DailyEvaluationWorker: ▶ starting (runAttemptCount=$runAttemptCount)")
+
+        // Clear budget session accumulator at midnight so day-N committed time doesn't bleed into day-N+1
+        val budgetPrefs = applicationContext.getSharedPreferences(
+            OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+        )
+        budgetPrefs.edit()
+            .putLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, 0L)
+            .putLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+            .putLong(OverlayManager.BUDGET_SESSION_START_TIME_KEY, 0L)
+            .remove(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY)
+            .remove(OverlayManager.BUDGET_SESSION_PACKAGE_KEY)
+            .apply()
 
         return try {
             val challenges = challengeRepository.getActiveChallengesList().getOrThrow()
@@ -556,12 +568,5 @@ class DailyEvaluationWorker @AssistedInject constructor(
         }
     }
 
-    private fun getStartOfDay(): Long {
-        return Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
+    private fun getStartOfDay(): Long = DateUtils.todayKey()
 }

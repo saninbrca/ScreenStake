@@ -14,6 +14,10 @@ data class DailyLog(
     val budgetUsedMinutes: Int = 0,
     /** Minutes of budget remaining at end of day / when log was written (TIME_BUDGET only). */
     val budgetRemainingMinutes: Int = 0,
+    /** Milliseconds of budget consumed today. Source of truth; minute fields kept for compat. */
+    val budgetUsedMs: Long = 0L,
+    /** Milliseconds of budget remaining today. */
+    val budgetRemainingMs: Long = 0L,
     val pointsEarned: Int,
     val limitExceeded: Boolean,
     val moneyLostCents: Int,

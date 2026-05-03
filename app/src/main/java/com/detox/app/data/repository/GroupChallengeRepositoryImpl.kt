@@ -181,6 +181,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 limitType = groupChallenge.limitType.name.lowercase(),
                 limitValueMinutes = groupChallenge.limitValueMinutes,
                 limitValueSessions = groupChallenge.limitValueSessions,
+                dailyBudgetMinutes = if (groupChallenge.limitType == LimitType.TIME_BUDGET) groupChallenge.limitValueMinutes else null,
                 startDate = if (groupChallenge.startDate > 0L) groupChallenge.startDate else System.currentTimeMillis(),
                 endDate = groupChallenge.endDate,
                 amountCents = groupChallenge.buyInCents,

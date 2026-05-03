@@ -181,11 +181,71 @@ Repositories: [Name]RepositoryImpl.kt (impl) / [Name]Repository.kt (interface)
 // CREATE new table → INSERT from old → DROP old → RENAME new
 
 // DailyLog date stored as Long (start of day in ms):
-val today = System.currentTimeMillis() / 86400000 * 86400000
+val today = DateUtils.todayKey()   // NEVER use 86400000 inline
 
 // consciousOpens: write to Room AND Firestore on every increment.
 // Read from Firestore on app start to restore after reinstall.
 ```
+
+---
+
+## DateUtils.todayKey() — MANDATORY GLOBAL RULE
+
+NEVER calculate today's date key inline anywhere in the codebase.
+ALWAYS use DateUtils.todayKey().
+
+```kotlin
+// DateUtils.kt
+object DateUtils {
+    fun todayKey(): Long {
+        val cal = Calendar.getInstance() // device local timezone
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+}
+
+// CORRECT:
+val date = DateUtils.todayKey()
+
+// WRONG — NEVER do this:
+val date = System.currentTimeMillis() / 86400000 * 86400000
+val date = System.currentTimeMillis() / 86400000L * 86400000L
+```
+
+Search rule: grep for "86400000" must return 0 results across entire codebase.
+If found anywhere → replace with DateUtils.todayKey() immediately.
+
+Why: UTC vs local timezone mismatch caused Dashboard to always show 0
+for all challenges (Vienna = UTC+2 = 12h difference from UTC midnight).
+Fixed 2026-05-01. Never revert.
+
+---
+
+## Universal Sync Pattern (all time-based tracking)
+
+This pattern applies to ALL challenge types and ALL limit types.
+Never invent a new pattern — always follow this:
+
+WRITE (during operation):
+1. Write to Room immediately (user sees update instantly)
+2. Write to Firestore fire-and-forget (SetOptions.merge())
+Never await Firestore before updating UI
+
+RESTORE (on app start):
+1. Read from Firestore dailyLogs/{challengeId}_{DateUtils.todayKey()}
+2. Write restored values to Room DailyLog
+3. Set SharedPreferences if needed (budget session state)
+4. UsageTrackingService.onStartCommand() reads from Room
+
+HUAWEI RULE:
+Never rely on onDestroy() for critical writes.
+Any state that must survive Huawei kill:
+→ Write periodically every 10s during operation
+→ Sync to Firestore every 10s (fire-and-forget)
+→ Restore from Firestore on app start
 
 ---
 
@@ -255,6 +315,42 @@ val request = Request.Builder()
 firebase deploy --only functions               # all functions
 firebase deploy --only functions:functionName  # single function (faster)
 ```
+
+---
+
+## Firestore DailyLog Structure (all challenge types)
+
+Path: `users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}`
+```
+{
+  challengeId: String,
+  date: Long,                  ← DateUtils.todayKey() always
+  consciousOpens: Int,         ← SESSION_LIMIT
+  timeUsedMs: Long,            ← TIME_LIMIT
+  budgetUsedMs: Long,          ← DAILY_BUDGET
+  budgetRemainingMs: Long,     ← DAILY_BUDGET
+  overlayPausedMs: Long,       ← all types
+  limitExceeded: Boolean,      ← all types
+  updatedAt: Long              ← all types
+}
+```
+
+### Write Rules
+- Always SetOptions.merge() — NEVER plain `.set()` on dailyLogs documents
+- consciousOpens: write immediately on tap (atomic)
+- timeUsedMs: write every 10s via UsageTrackingService (fire-and-forget)
+- budgetUsedMs: write every 10s via UsageTrackingService (fire-and-forget)
+- Never block UI or overlay on Firestore response
+
+### Read Rules (app start restore)
+1. Read from Firestore dailyLogs for today (DateUtils.todayKey())
+2. Write all fields to Room DailyLog
+3. Set SharedPreferences for active session state (budget only)
+4. UsageTrackingService reads from Room after restore
+
+### Room DailyLog Entity must match Firestore fields exactly
+Check DetoxDatabase.kt version before adding any new column.
+Always add Room migration — never destructive reset in production.
 
 ---
 
@@ -335,4 +431,44 @@ admin/index.html
 5. /compact in Claude Code after long sessions
 6. /clear in Claude Code when switching topics
 7. firebase deploy --only functions after any Cloud Function change
+```
+
+---
+
+## Fortschrittsbalken — Global Rule
+
+Progress bar and remaining values must be identical in:
+- Dashboard card
+- Detail screen
+- Active challenge screen
+- Overlay (where applicable)
+
+Source of truth: Room DailyLog (read fresh via DateUtils.todayKey())
+
+```kotlin
+// CORRECT — read fresh from Room on every screen init:
+val dailyLog = dailyLogDao.getByKey("${challengeId}_${DateUtils.todayKey()}")
+
+// WRONG — never use passed navigation arguments for progress:
+// val opensToday = navBackStackEntry.arguments?.getInt("opensToday")
+
+// WRONG — never use stale ViewModel state:
+// val progress = viewModel.progressState.value (if set before navigation)
+```
+
+Progress calculation (identical everywhere):
+```kotlin
+val progress = when (challenge.limitType) {
+    SESSION_LIMIT -> dailyLog.consciousOpens.toFloat() / challenge.limitValueSessions
+    TIME_LIMIT -> dailyLog.timeUsedMs.toFloat() / (challenge.limitValueMinutes * 60000f)
+    DAILY_BUDGET -> dailyLog.budgetUsedMs.toFloat() / (challenge.dailyBudgetMinutes * 60000f)
+    TIME_WINDOW_ONLY -> 0f // no progress bar
+}.coerceIn(0f, 1f)
+
+val remaining = when (challenge.limitType) {
+    SESSION_LIMIT -> "${challenge.limitValueSessions - dailyLog.consciousOpens} opens"
+    TIME_LIMIT -> "${((challenge.limitValueMinutes * 60000L) - dailyLog.timeUsedMs) / 60000} min"
+    DAILY_BUDGET -> "${dailyLog.budgetRemainingMs / 60000} min"
+    TIME_WINDOW_ONLY -> ""
+}
 ```

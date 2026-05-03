@@ -11,8 +11,9 @@ import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
-import java.util.Calendar
+import com.detox.app.util.DateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,12 +48,16 @@ class ActiveChallengeViewModel @Inject constructor(
     private val _abandonState = MutableStateFlow(false)
     val abandonSuccess: StateFlow<Boolean> = _abandonState.asStateFlow()
 
+    /** Tracks the active load+observe coroutine so refresh() can cancel and restart it cleanly. */
+    private var loadJob: Job? = null
+
     init {
         loadChallenge()
     }
 
     private fun loadChallenge() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             challengeRepository.getChallengeById(challengeId)
                 .fold(
                     onSuccess = { challenge ->
@@ -60,44 +65,77 @@ class ActiveChallengeViewModel @Inject constructor(
                             _uiState.value = ActiveChallengeUiState.Error("Challenge not found")
                             return@launch
                         }
-                        val today = todayMidnightMs()
-                        val todayLog = dailyLogRepository.getLogForDate(challengeId, today).getOrNull()
-                        Timber.d("DailyLog for $challengeId date=$today: $todayLog")
-                        val opensToday = todayLog?.consciousOpens ?: 0
-                        val timeToday = todayLog?.totalMinutes ?: 0
-                        val budgetUsed = todayLog?.budgetUsedMinutes ?: 0
 
-                        val progress = when (challenge.limitType) {
-                            LimitType.SESSIONS -> {
-                                val max = challenge.limitValueSessions ?: 1
-                                if (max > 0) opensToday.toFloat() / max else 0f
-                            }
-                            LimitType.TIME_BUDGET -> {
-                                val budget = challenge.dailyBudgetMinutes ?: 1
-                                if (budget > 0) budgetUsed.toFloat() / budget else 0f
-                            }
-                            else -> {
-                                if (challenge.limitValueMinutes > 0) timeToday.toFloat() / challenge.limitValueMinutes else 0f
-                            }
-                        }
-                        Timber.d("Dashboard card: opens=$opensToday time=$timeToday progress=$progress")
-
-                        val status = DailyLimitStatus(
-                            challenge = challenge,
-                            todayMinutes = if (challenge.limitType == LimitType.TIME_BUDGET) budgetUsed else timeToday,
-                            todayOpens = opensToday,
-                            limitExceeded = todayLog?.limitExceeded ?: false,
-                            remainingMinutes = when (challenge.limitType) {
-                                LimitType.TIME -> maxOf(0, challenge.limitValueMinutes - timeToday)
-                                LimitType.SESSIONS -> maxOf(0, (challenge.limitValueSessions ?: 0) * challenge.limitValueMinutes - timeToday)
-                                LimitType.TIME_BUDGET -> todayLog?.budgetRemainingMinutes ?: (challenge.dailyBudgetMinutes ?: 0)
-                                LimitType.TIME_WINDOW -> 0
-                            },
-                            remainingOpens = if (challenge.limitType == LimitType.SESSIONS)
-                                maxOf(0, (challenge.limitValueSessions ?: 0) - opensToday) else null
-                        )
                         val streak = getChallengeStreakUseCase(challenge)
-                        _uiState.value = ActiveChallengeUiState.Success(challenge, status, streak)
+
+                        // ALWAYS use DateUtils.todayKey() — never inline 86400000 calculation.
+                        val todayKey = DateUtils.todayKey()
+                        Timber.d("DetailScreen: challengeId=$challengeId limitType=${challenge.limitType}")
+
+                        // Observe Room DailyLog via Flow — auto-refreshes whenever UsageTrackingService
+                        // writes (every 10 s) or on every conscious open. Never reads stale state.
+                        dailyLogRepository.observeLogForDate(challengeId, todayKey)
+                            .collect { dailyLog ->
+                                Timber.d("DetailScreen: dailyLog from Room = $dailyLog")
+
+                                // SOURCE OF TRUTH per field:
+                                // SESSION_LIMIT  → consciousOpens (written atomically on each "Ja, öffnen" tap)
+                                // TIME_LIMIT     → totalMinutes   (written by UsageTrackingService every 10 s)
+                                // TIME_BUDGET    → budgetUsedMs   (ms source of truth, written every 10 s)
+                                val opensToday     = dailyLog?.consciousOpens ?: 0
+                                val totalMinutes   = dailyLog?.totalMinutes   ?: 0
+                                val budgetUsedMs   = dailyLog?.budgetUsedMs   ?: 0L
+                                val budgetRemainingMs = dailyLog?.budgetRemainingMs ?: 0L
+
+                                // todayMinutes fed into DailyLimitStatus (Screen reads s.todayMinutes)
+                                val todayMinutesForStatus = when (challenge.limitType) {
+                                    LimitType.TIME_BUDGET -> (budgetUsedMs / 60_000L).toInt()
+                                    else -> totalMinutes
+                                }
+
+                                val remainingMinutes = when (challenge.limitType) {
+                                    LimitType.TIME -> maxOf(0, challenge.limitValueMinutes - totalMinutes)
+                                    LimitType.SESSIONS -> maxOf(
+                                        0,
+                                        (challenge.limitValueSessions ?: 0) * challenge.limitValueMinutes - totalMinutes
+                                    )
+                                    LimitType.TIME_BUDGET -> (budgetRemainingMs / 60_000L).toInt()
+                                    LimitType.TIME_WINDOW -> 0
+                                }
+
+                                val remainingOpens = if (challenge.limitType == LimitType.SESSIONS)
+                                    maxOf(0, (challenge.limitValueSessions ?: 0) - opensToday) else null
+
+                                val progress = when (challenge.limitType) {
+                                    LimitType.SESSIONS -> {
+                                        val max = challenge.limitValueSessions ?: 1
+                                        if (max > 0) opensToday.toFloat() / max else 0f
+                                    }
+                                    LimitType.TIME_BUDGET -> {
+                                        val budgetMs = (challenge.dailyBudgetMinutes ?: 1) * 60_000L
+                                        if (budgetMs > 0) budgetUsedMs.toFloat() / budgetMs else 0f
+                                    }
+                                    else -> {
+                                        if (challenge.limitValueMinutes > 0)
+                                            totalMinutes.toFloat() / challenge.limitValueMinutes else 0f
+                                    }
+                                }.coerceIn(0f, 1f)
+
+                                Timber.d(
+                                    "DetailScreen: progress=$progress opensToday=$opensToday " +
+                                    "totalMinutes=$totalMinutes budgetUsedMs=$budgetUsedMs"
+                                )
+
+                                val status = DailyLimitStatus(
+                                    challenge = challenge,
+                                    todayMinutes = todayMinutesForStatus,
+                                    todayOpens = opensToday,
+                                    limitExceeded = dailyLog?.limitExceeded ?: false,
+                                    remainingMinutes = remainingMinutes,
+                                    remainingOpens = remainingOpens
+                                )
+                                _uiState.value = ActiveChallengeUiState.Success(challenge, status, streak)
+                            }
                     },
                     onFailure = { e ->
                         Timber.e(e, "Failed to load challenge $challengeId")
@@ -108,11 +146,6 @@ class ActiveChallengeViewModel @Inject constructor(
                 )
         }
     }
-
-    private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
 
     fun refresh() = loadChallenge()
 

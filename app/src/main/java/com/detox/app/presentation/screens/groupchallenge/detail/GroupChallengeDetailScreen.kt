@@ -190,6 +190,9 @@ fun GroupChallengeDetailScreen(
                     gc = state.groupChallenge,
                     currentUserId = currentUserId,
                     myStreak = state.myStreak,
+                    // Own progress comes from Room DailyLog (source of truth), not Firestore array.
+                    myOpensToday = state.myOpensToday,
+                    myTimeUsedMinutes = state.myTimeUsedMinutes,
                     isStarting = startState is StartChallengeState.Loading,
                     isCurrentUserFailed = isCurrentUserFailed,
                     onStartChallenge = viewModel::startChallenge,
@@ -206,6 +209,10 @@ private fun GroupDetailContent(
     gc: GroupChallenge,
     currentUserId: String?,
     myStreak: Int,
+    /** Own opens today — sourced from Room DailyLog, not Firestore participants array. */
+    myOpensToday: Int = 0,
+    /** Own time used today (minutes) — sourced from Room DailyLog. */
+    myTimeUsedMinutes: Int = 0,
     isStarting: Boolean,
     isCurrentUserFailed: Boolean = false,
     onStartChallenge: () -> Unit,
@@ -506,7 +513,14 @@ private fun GroupDetailContent(
         if (myParticipant != null && gc.status == GroupChallengeStatus.ACTIVE) {
             item {
                 Spacer(modifier = Modifier.height(4.dp))
-                MyStatusCard(participant = myParticipant, gc = gc, streak = myStreak)
+                // Own progress reads from Room DailyLog (myOpensToday / myTimeUsedMinutes),
+                // NOT from myParticipant.opensToday / timeUsedMinutes (Firestore — can lag).
+                MyStatusCard(
+                    gc = gc,
+                    streak = myStreak,
+                    myOpensToday = myOpensToday,
+                    myTimeUsedMinutes = myTimeUsedMinutes,
+                )
             }
         }
     }
@@ -621,8 +635,19 @@ private fun LeaderboardCard(
     }
 }
 
+/**
+ * Shows the current user's own status card.
+ *
+ * [myOpensToday] and [myTimeUsedMinutes] MUST come from Room DailyLog (via ViewModel),
+ * NOT from the Firestore participants array — the array can lag by several seconds.
+ */
 @Composable
-private fun MyStatusCard(participant: Participant, gc: GroupChallenge, streak: Int) {
+private fun MyStatusCard(
+    gc: GroupChallenge,
+    streak: Int,
+    myOpensToday: Int,
+    myTimeUsedMinutes: Int,
+) {
     val maxOpens = gc.limitValueSessions ?: 0
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -639,13 +664,15 @@ private fun MyStatusCard(participant: Participant, gc: GroupChallenge, streak: I
             HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
             if (gc.limitType == LimitType.SESSIONS && maxOpens > 0) {
                 Text(
-                    text = stringResource(R.string.group_detail_my_opens, participant.opensToday, maxOpens),
+                    // myOpensToday from Room DailyLog — source of truth
+                    text = stringResource(R.string.group_detail_my_opens, myOpensToday, maxOpens),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
             Text(
-                text = stringResource(R.string.group_detail_my_time, participant.timeUsedMinutes),
+                // myTimeUsedMinutes from Room DailyLog — source of truth
+                text = stringResource(R.string.group_detail_my_time, myTimeUsedMinutes),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )

@@ -18,7 +18,7 @@ import com.detox.app.data.local.db.entity.GroupChallengeEntity
         DailyLogEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -277,6 +277,19 @@ abstract class DetoxDatabase : RoomDatabase() {
                     "ALTER TABLE challenges ADD COLUMN partialBlockDomains TEXT DEFAULT NULL"
                 )
                 Timber.d("DB migration 18→19: added partialBlockDomains column to challenges")
+            }
+        }
+
+        /** Adds millisecond-precision budget tracking columns to daily_logs. */
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE daily_logs ADD COLUMN budgetUsedMs INTEGER NOT NULL DEFAULT 0"
+                )
+                database.execSQL(
+                    "ALTER TABLE daily_logs ADD COLUMN budgetRemainingMs INTEGER NOT NULL DEFAULT 0"
+                )
+                Timber.d("DB migration 19→20: added budgetUsedMs, budgetRemainingMs columns")
             }
         }
 

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.IBinder
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
@@ -32,8 +33,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.detox.app.util.DateUtils
 import timber.log.Timber
-import java.util.Calendar
 import javax.inject.Inject
 
 private data class ThresholdSpec(val percent: Int, val fraction: Float)
@@ -134,9 +135,45 @@ class UsageTrackingService : Service() {
         startGroupChallengeStatsPolling()
         startGroupSessionLimitTracking()
         startOverlayPermissionMonitoring()
+        startBudgetSessionPolling()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Recovery: handle sessions that expired while the service was dead (Huawei kills onDestroy)
+        serviceScope.launch(Dispatchers.IO) {
+            val prefs = getSharedPreferences(OverlayManager.BUDGET_SESSION_PREFS_NAME, MODE_PRIVATE)
+            val sessionEndTime = prefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+            val now = System.currentTimeMillis()
+            if (sessionEndTime > 0L && now >= sessionEndTime) {
+                // Session expired while service was dead — run final accounting tick
+                checkBudgetSession()
+            }
+            // Restart recovery for DAILY_BUDGET challenges: sync budget_committed_ms from Room
+            // so the 10-second polling loop starts from the correct accumulated value.
+            // Without this, a stale COMMITTED from a previous day (when the midnight reset never
+            // fired because the service was killed) causes the next session to over-count usage.
+            // Guard: only when no session is active. During an active session COMMITTED is already
+            // correct relative to sessionStartTime; overwriting it here would double-count elapsed.
+            if (sessionEndTime <= 0L) {
+                val challenges = runCatching {
+                    challengeRepository.getActiveChallengesList().getOrThrow()
+                }.getOrElse { emptyList() }
+                for (challenge in challenges) {
+                    if (challenge.limitType != LimitType.TIME_BUDGET) continue
+                    val key = todayKey()
+                    Timber.d("restart recovery: reading Room with todayKey=$key for ${challenge.id}")
+                    val log = dailyLogRepository.getLogForDate(challenge.id, key).getOrNull()
+                    Timber.d("restart recovery: got budgetUsedMs=${log?.budgetUsedMs} from Room for ${challenge.id}")
+                    val usedMs = log?.budgetUsedMs ?: 0L
+                    prefs.edit().putLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, usedMs).apply()
+                    Timber.d(
+                        "UsageTrackingService: restart recovery — COMMITTED synced to " +
+                            "${usedMs}ms from Room for ${challenge.id}"
+                    )
+                }
+            }
+            // If sessionEndTime > now → session still active → polling loop handles periodic writes
+        }
         return START_STICKY
     }
 
@@ -147,6 +184,92 @@ class UsageTrackingService : Service() {
         overlayManager.stopListening()
         serviceScope.cancel()
         Timber.d("UsageTrackingService destroyed")
+    }
+
+    // ── DAILY_BUDGET session tracking ─────────────────────────────────────────
+
+    private fun startBudgetSessionPolling() {
+        serviceScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(10_000L)
+                checkBudgetSession()
+            }
+        }
+    }
+
+    private suspend fun checkBudgetSession() {
+        val prefs = getSharedPreferences(OverlayManager.BUDGET_SESSION_PREFS_NAME, MODE_PRIVATE)
+        val sessionEndTime = prefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+        if (sessionEndTime <= 0L) return  // no active session
+
+        val sessionStartTime = prefs.getLong(OverlayManager.BUDGET_SESSION_START_TIME_KEY, 0L)
+        val challengeId = prefs.getString(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY, null)
+        val packageName  = prefs.getString(OverlayManager.BUDGET_SESSION_PACKAGE_KEY, null)
+        if (challengeId == null || packageName == null) {
+            clearBudgetSession(prefs)
+            return
+        }
+
+        val challenges = runCatching {
+            challengeRepository.getActiveChallengesList().getOrThrow()
+        }.getOrElse { emptyList() }
+        val challenge = challenges.firstOrNull { it.id == challengeId }
+        if (challenge == null) {
+            Timber.w("UsageTrackingService: budget session challenge $challengeId not found — clearing prefs")
+            clearBudgetSession(prefs)
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val committedMs = prefs.getLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, 0L)
+        val totalBudgetMs = (challenge.dailyBudgetMinutes ?: 0) * 60_000L
+        val today = todayKey()
+
+        // Cap elapsed to session end — prevents over-counting on post-expiry ticks
+        val effectiveNow = minOf(now, sessionEndTime)
+        val elapsedMs = (effectiveNow - sessionStartTime).coerceAtLeast(0L)
+        val totalUsedMs = committedMs + elapsedMs
+        val newRemainingMs = (totalBudgetMs - totalUsedMs).coerceAtLeast(0L)
+
+        // Write to Room every tick — idempotent, survives Huawei kill
+        dailyLogRepository.updateBudgetStateMs(challengeId, today, totalUsedMs, newRemainingMs)
+            .onSuccess {
+                Timber.d(
+                    "UsageTrackingService: budget tick — challengeId=$challengeId " +
+                        "totalUsedMs=$totalUsedMs remaining=$newRemainingMs"
+                )
+            }
+            .onFailure { e -> Timber.e(e, "UsageTrackingService: failed to write budget tick for $challengeId") }
+
+        // Mirror budgetUsedMs → participants array for Group Challenge DAILY_BUDGET (fire-and-forget)
+        challenge.groupChallengeId?.let { groupId ->
+            val uid = firebaseAuthService.currentUserId()
+            if (uid != null) {
+                val usedMinutes = (totalUsedMs / 60_000L).toInt()
+                serviceScope.launch {
+                    groupChallengeRepository.updateParticipantTimeUsed(groupId, uid, usedMinutes)
+                    Timber.d("UsageTrackingService: budget mirror — groupId=$groupId usedMinutes=$usedMinutes")
+                }
+            }
+        }
+
+        if (now >= sessionEndTime) {
+            // Session done — persist committed total, then clear active session prefs
+            prefs.edit()
+                .putLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, totalUsedMs)
+                .apply()
+            clearBudgetSession(prefs)
+            overlayManager.onBudgetSessionExpired(packageName)
+        }
+    }
+
+    private fun clearBudgetSession(prefs: SharedPreferences) {
+        prefs.edit()
+            .putLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+            .putLong(OverlayManager.BUDGET_SESSION_START_TIME_KEY, 0L)
+            .remove(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY)
+            .remove(OverlayManager.BUDGET_SESSION_PACKAGE_KEY)
+            .apply()
     }
 
     // ── Overlay permission monitoring ─────────────────────────────────────────
@@ -323,7 +446,7 @@ class UsageTrackingService : Service() {
     }
 
     private suspend fun checkUsageThresholds() {
-        val today = todayMidnightMs()
+        val today = todayKey()
 
         val challenges = runCatching {
             challengeRepository.getActiveChallengesList().getOrThrow()
@@ -398,13 +521,7 @@ class UsageTrackingService : Service() {
         }
     }
 
-    /** Returns the Unix timestamp for today's local midnight (00:00:00.000). */
-    private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
+    private fun todayKey(): Long = DateUtils.todayKey()
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(

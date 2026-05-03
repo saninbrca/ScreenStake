@@ -23,6 +23,10 @@ interface DailyLogDao {
     @Query("SELECT * FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
     suspend fun getLogForDate(challengeId: String, date: Long): DailyLogEntity?
 
+    /** Live Flow — emits a new value whenever this row changes in Room. Used by Detail screens. */
+    @Query("SELECT * FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
+    fun observeLogForDate(challengeId: String, date: Long): Flow<DailyLogEntity?>
+
     @Query("SELECT COALESCE(consciousOpens, 0) FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
     suspend fun getConsciousOpens(challengeId: String, date: Long): Int
 
@@ -37,6 +41,12 @@ interface DailyLogDao {
 
     @Query("UPDATE daily_logs SET budgetUsedMinutes = :used, budgetRemainingMinutes = :remaining WHERE challengeId = :challengeId AND date = :date")
     suspend fun updateBudgetState(challengeId: String, date: Long, used: Int, remaining: Int)
+
+    @Query("SELECT COALESCE(budgetRemainingMs, 0) FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
+    suspend fun getBudgetRemainingMs(challengeId: String, date: Long): Long
+
+    @Query("UPDATE daily_logs SET budgetUsedMs = :usedMs, budgetRemainingMs = :remainingMs WHERE challengeId = :challengeId AND date = :date")
+    suspend fun updateBudgetStateMs(challengeId: String, date: Long, usedMs: Long, remainingMs: Long)
 
     // ── Threshold notification flags ───────────────────────────────────────────
 

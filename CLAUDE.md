@@ -33,6 +33,7 @@
 * **IMPORTANT:** This file contains only technical rules. 
 * For ANY information regarding Business Logic, Feature Details, or App Rules, you **MUST** look into the `docs/` folder.
 * Read **ONLY** the specific file needed for the current task to save tokens:
+  - **Changelog (ALWAYS load first):** `docs/00_changelog.md`
   - Architecture/Stack: `docs/01_architecture_and_stack.md`
   - Soft Mode/Logic: `docs/02_core_mechanics_and_soft_mode.md`
   - Hard Mode/Stripe: `docs/03_hard_mode_and_stripe.md`

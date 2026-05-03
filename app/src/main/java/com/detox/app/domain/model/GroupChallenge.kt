@@ -4,6 +4,7 @@ data class GroupChallenge(
     val groupId: String,
     val code: String,
     val creatorUserId: String,
+    val creatorDisplayName: String = "",
     val appPackageNames: List<String>,
     val appDisplayName: String,
     val limitType: LimitType,

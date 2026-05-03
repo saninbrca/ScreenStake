@@ -268,6 +268,40 @@ class FirestoreService @Inject constructor(
     }
 
     /**
+     * Merges budgetUsedMs and budgetRemainingMs into the flat dailyLogs collection at
+     * users/{userId}/dailyLogs/{challengeId}_{date}. Called on every 10-second budget tick.
+     * Uses SetOptions.merge() so it never overwrites consciousOpens or other fields.
+     * Callers must invoke this inside a background scope — do NOT await on the main path.
+     */
+    suspend fun updateDailyLogBudget(
+        userId: String,
+        challengeId: String,
+        date: Long,
+        usedMs: Long,
+        remainingMs: Long
+    ) {
+        try {
+            firestore
+                .collection("users").document(userId)
+                .collection("dailyLogs").document("${challengeId}_${date}")
+                .set(
+                    mapOf(
+                        "challengeId" to challengeId,
+                        "date" to date,
+                        "budgetUsedMs" to usedMs,
+                        "budgetRemainingMs" to remainingMs,
+                        "updatedAt" to System.currentTimeMillis()
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                .await()
+            Timber.d("DailyLog: budgetUsedMs=$usedMs synced to Firestore for $challengeId")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to sync budget to Firestore for $challengeId")
+        }
+    }
+
+    /**
      * Fetches flat dailyLog entries written by [updateDailyLogConsciousOpens] for today,
      * keyed by {challengeId}_{date}. Used by [SyncRepositoryImpl] on startup to restore
      * consciousOpens into Room after a reinstall.

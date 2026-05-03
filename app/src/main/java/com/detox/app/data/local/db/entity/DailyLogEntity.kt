@@ -36,6 +36,10 @@ data class DailyLogEntity(
     @ColumnInfo(defaultValue = "0") val budgetUsedMinutes: Int = 0,
     /** Minutes of budget remaining at end of day / when log was last written (TIME_BUDGET only). */
     @ColumnInfo(defaultValue = "0") val budgetRemainingMinutes: Int = 0,
+    /** Milliseconds of budget consumed today (TIME_BUDGET challenges only). Source of truth; minutes fields kept for schema compat. */
+    @ColumnInfo(defaultValue = "0") val budgetUsedMs: Long = 0L,
+    /** Milliseconds of budget remaining today (TIME_BUDGET only). */
+    @ColumnInfo(defaultValue = "0") val budgetRemainingMs: Long = 0L,
     val pointsEarned: Int,
     val limitExceeded: Boolean,
     val moneyLostCents: Int,

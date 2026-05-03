@@ -303,9 +303,11 @@ fun MainScreen(
             composable("group_join") {
                 GroupChallengeJoinScreen(
                     onBack = { navController.popBackStack() },
-                    onJoined = { groupId ->
-                        navController.navigate("group_detail/$groupId") {
-                            popUpTo("group_join") { inclusive = true }
+                    onJoined = {
+                        navController.navigate(BottomNavTab.Friends.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = false
+                            }
                             launchSingleTop = true
                         }
                     }

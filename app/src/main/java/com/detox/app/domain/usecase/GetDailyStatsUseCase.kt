@@ -1,5 +1,6 @@
 package com.detox.app.domain.usecase
 
+import android.content.Context
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
@@ -8,12 +9,15 @@ import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
+import com.detox.app.service.OverlayManager
+import com.detox.app.util.DateUtils
 import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
-import java.util.Calendar
 import javax.inject.Inject
 
 class GetDailyStatsUseCase @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val challengeRepository: ChallengeRepository,
     private val usageStatsRepository: UsageStatsRepository,
     private val dailyLogRepository: DailyLogRepository,
@@ -25,13 +29,7 @@ class GetDailyStatsUseCase @Inject constructor(
             val challenges = challengeRepository.getActiveChallengesList().getOrThrow()
             val now = System.currentTimeMillis()
 
-            // Start of today — used to look up today's DailyLog
-            val today = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
+            val today = DateUtils.todayKey()
 
             val currentUid = firebaseAuth.currentUser?.uid
             val stats = challenges.mapNotNull { challenge ->
@@ -79,19 +77,33 @@ class GetDailyStatsUseCase @Inject constructor(
                     sorted.indexOfFirst { it.userId == currentUid }.takeIf { it >= 0 }?.plus(1)
                 } else null
 
-                // TIME_BUDGET: use budget columns from Room, not raw UsageStats.
+                // TIME_BUDGET: prefer live prefs during an active session; fall back to Room (written every 10s).
                 if (challenge.limitType == LimitType.TIME_BUDGET) {
-                    val totalBudget = challenge.dailyBudgetMinutes ?: 0
-                    val hasRealBudgetActivity = todayLog != null &&
-                            (todayLog.budgetUsedMinutes > 0 || todayLog.budgetRemainingMinutes > 0)
-                    val budgetUsed = todayLog?.budgetUsedMinutes ?: 0
-                    val budgetRemaining = if (hasRealBudgetActivity) {
-                        todayLog!!.budgetRemainingMinutes
+                    val totalBudgetMs = (challenge.dailyBudgetMinutes ?: 0) * 60_000L
+
+                    val budgetPrefs = context.getSharedPreferences(
+                        OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+                    )
+                    val sessionEndTime = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+                    val sessionChallengeId = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY, null)
+
+                    val displayUsedMs: Long = if (sessionEndTime > 0L && sessionChallengeId == challenge.id) {
+                        // Active session: committedMs + live elapsed (sub-10s precision for dashboard)
+                        val committedMs = budgetPrefs.getLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, 0L)
+                        val sessionStartTime = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_START_TIME_KEY, 0L)
+                        val liveElapsedMs = (now - sessionStartTime).coerceAtLeast(0L)
+                        committedMs + liveElapsedMs
                     } else {
-                        totalBudget  // no deductions yet → full budget available
+                        // No active session: read from Room (written every 10s by UsageTrackingService)
+                        todayLog?.budgetUsedMs ?: 0L
                     }
+
+                    val displayRemainingMs = (totalBudgetMs - displayUsedMs).coerceAtLeast(0L)
+                    val budgetUsed = (displayUsedMs / 60_000L).toInt()
+                    val budgetRemaining = (displayRemainingMs / 60_000L).toInt()
+                    val totalBudget = (totalBudgetMs / 60_000L).toInt()
                     val moneyLostCents = todayLog?.moneyLostCents ?: 0
-                    val limitExceeded = todayLog?.limitExceeded ?: (budgetUsed >= totalBudget)
+                    val limitExceeded = todayLog?.limitExceeded ?: (displayRemainingMs <= 0L)
 
                     return@mapNotNull DailyStats(
                         challengeId = challenge.id,

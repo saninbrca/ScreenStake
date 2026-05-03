@@ -21,6 +21,35 @@
 
 ---
 
+## Group Challenge — Unified Architecture
+
+Group Challenge is NOT a separate blocking system.
+It is Soft Mode + Stripe + Firestore participants sync.
+
+| Component | Soft Mode | Hard Mode | Group Challenge |
+|-----------|-----------|-----------|-----------------|
+| AccessibilityService blocking | ✅ identical | ✅ identical | ✅ identical |
+| Overlay logic | ✅ identical | ✅ identical | ✅ identical |
+| SessionIntentionOverlay | ✅ identical | ✅ identical | ✅ identical |
+| SessionLimitReachedOverlay | ✅ identical | ✅ identical | ✅ identical |
+| DailyLog Room write | ✅ identical | ✅ identical | ✅ identical |
+| Firestore dailyLogs sync | ✅ identical | ✅ identical | ✅ identical |
+| DateUtils.todayKey() | ✅ identical | ✅ identical | ✅ identical |
+| Fortschrittsbalken | ✅ identical | ✅ identical | ✅ identical |
+| Stripe per participant | ❌ | ❌ | ✅ separate PaymentIntent |
+| Stripe capture on fail | ❌ | ✅ | ✅ + 10% app fee |
+| Stripe refund on success | ❌ | ✅ | ✅ winners get losers' money |
+| Firestore participants sync | ❌ | ❌ | ✅ arrayRemove+arrayUnion |
+| opensToday in participants | ❌ | ❌ | ✅ mirrored from DailyLog |
+| Leaderboard | ❌ | ❌ | ✅ real-time Firestore listener |
+| Taunt feature | ❌ | ❌ | ✅ |
+
+RULE: Any fix applied to Soft Mode blocking/overlay/DailyLog logic
+MUST be verified for Group Challenge as well.
+Never create separate overlay implementations for Group vs Solo challenges.
+
+---
+
 ## Creation Flow (6-Step Wizard)
 
 ```
@@ -147,6 +176,35 @@ db.collection("groupChallenges").document(groupId)
 ```
 
 **Why:** Dot notation on array indices causes Firestore to return partial snapshots where the `participants` field is a Map instead of a List. This breaks the entire leaderboard. The `arrayRemove + arrayUnion` pattern is the only safe approach.
+
+---
+
+## Group Challenge DailyLog Sync Pattern
+
+Group Challenge uses TWO parallel sync targets:
+
+### Target 1 — DailyLog (identical to Solo challenges)
+users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
+    consciousOpens: Int
+    timeUsedMs: Long         (if TIME_LIMIT)
+    budgetUsedMs: Long       (if DAILY_BUDGET)
+    budgetRemainingMs: Long  (if DAILY_BUDGET)
+    updatedAt: Long
+    (SetOptions.merge() always)
+
+### Target 2 — Participants Array (Group-specific)
+groupChallenges/{groupId}/participants[]/
+    opensToday: Int          ← mirrored from DailyLog consciousOpens
+    timeUsedMinutes: Int     ← mirrored from DailyLog timeUsedMs / 60000
+
+SYNC RULE: When DailyLog is written → also update participants array.
+Use arrayRemove + arrayUnion pattern (NEVER dot notation).
+opensToday in participants must always match consciousOpens in DailyLog.
+
+### Known Sync Issue (not yet fixed)
+opensToday in overlay reads from DailyLog (Room).
+opensToday in leaderboard reads from Firestore participants array.
+These can briefly differ — fix pending.
 
 ---
 
@@ -284,3 +342,61 @@ payoutRequests/{requestId}/status = "paid"
 
 3. **Stripe Connect for automatic payouts not implemented.**
    Prize money payout is fully manual. Founder must check admin dashboard and transfer manually.
+
+---
+
+## Fortschrittsbalken (Group Challenge)
+
+Identical logic to Solo challenges — read from Room DailyLog always.
+
+SESSION_LIMIT:  progress = consciousOpens / limitValueSessions
+TIME_LIMIT:     progress = timeUsedMs / (limitValueMinutes * 60000)
+DAILY_BUDGET:   progress = budgetUsedMs / (dailyBudgetMinutes * 60000)
+
+Display in Dashboard group card:
+- Progress bar (same Composable as Solo card)
+- User's current rank in leaderboard
+- Pot amount (total buy-ins)
+- Participants count
+
+Display in Group Detail screen:
+- Full leaderboard with progress per participant
+- Each participant's progress bar based on their opensToday / limit
+- CRITICAL: Read participant data from Firestore real-time listener
+- CRITICAL: Read own progress from Room DailyLog (DateUtils.todayKey())
+- Never mix sources — own data from Room, others' data from Firestore
+
+---
+
+## Group Challenge Limit Type Flows
+
+### SESSION_LIMIT (Group)
+User opens blocked app
+↓
+OverlayManager reads consciousOpens from Room DailyLog
+↓
+consciousOpens < limit → SessionIntentionOverlay (identical to Solo)
+On confirm:
+consciousOpens++ → Room (immediate)
+consciousOpens++ → Firestore dailyLogs (fire-and-forget)
+opensToday++ → Firestore participants array (arrayRemove+arrayUnion)
+↓
+consciousOpens >= limit → SessionLimitReachedOverlay
+DailyEvaluationWorker detects fail →
+stripe.capture(paymentIntentId)  ← FIRST
+failParticipant Cloud Function called
+Participant marked failed in Firestore
+Removed from active leaderboard tracking
+
+### TIME_LIMIT (Group)
+Same as SESSION_LIMIT flow but:
+timeUsedMs tracked via UsageTrackingService
+timeUsedMinutes mirrored to participants array every 10s
+Fail condition: timeUsedMs >= limitValueMinutes * 60000
+
+### DAILY_BUDGET (Group)
+Same as Solo DAILY_BUDGET flow but:
+budgetUsedMs tracked via UsageTrackingService
+budgetUsedMs written to Room + Firestore dailyLogs every 10s
+budgetUsedMinutes mirrored to participants array every 10s
+Fail condition: budgetUsedMs >= dailyBudgetMinutes * 60000

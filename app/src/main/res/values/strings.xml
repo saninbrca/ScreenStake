@@ -484,11 +484,24 @@
     <string name="group_create_share_chooser">Share Challenge Code</string>
 
     <!-- Group Challenge — Join flow -->
-    <string name="join_group_title">Join Challenge</string>
-    <string name="join_group_subtitle">Enter the 6-character code shared by the challenge creator.</string>
-    <string name="join_group_code_label">Challenge Code</string>
-    <string name="join_group_lookup">Look Up</string>
+    <string name="join_group_title">Challenge beitreten</string>
+    <string name="join_group_subtitle">Gib den 6-stelligen Code ein, den der Ersteller mit dir geteilt hat.</string>
+    <string name="join_group_code_label">Challenge-Code</string>
+    <string name="join_group_lookup">Suchen</string>
     <string name="join_group_pay_button">Pay €%1$d &amp; Join</string>
+    <string name="join_group_join_and_pay">Jetzt beitreten — €%1$d bezahlen</string>
+    <string name="join_group_confirming">Beitritt wird bestätigt…</string>
+    <string name="join_group_retry">Fehler — erneut versuchen</string>
+    <string name="join_group_joined_success">Du bist der Challenge beigetreten! 🎉</string>
+    <string name="join_group_buy_in">€%1$d Einsatz</string>
+    <string name="join_group_duration">%1$d Tage</string>
+    <string name="join_group_participants">%1$d/%2$d Teilnehmer</string>
+    <string name="join_group_creator">Erstellt von %1$s</string>
+    <string name="join_group_start_manual">Startet manuell durch den Ersteller</string>
+    <string name="join_group_limit_sessions">Max %1$d Öffnungen pro Tag</string>
+    <string name="join_group_limit_time">Max %1$d Min. pro Tag</string>
+    <string name="join_group_limit_budget">Budget: %1$d Min. pro Tag</string>
+    <string name="join_group_limit_time_window">Zeitfenster-Einschränkung</string>
 
     <!-- Group Challenge — Detail / Leaderboard -->
     <string name="group_detail_title">Group Challenge</string>

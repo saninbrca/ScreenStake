@@ -67,6 +67,16 @@ class JoinGroupChallengeUseCase @Inject constructor(
     }
 
     /**
+     * Confirms the join after [PaymentSheetResult.Completed] — adds the user to the
+     * participants array in Firestore via the confirmGroupJoin Cloud Function.
+     */
+    suspend fun confirmJoin(
+        groupId: String,
+        userId: String,
+        paymentIntentId: String
+    ): Result<Unit> = cloudFunctionsService.confirmGroupJoin(groupId, userId, paymentIntentId)
+
+    /**
      * Initiates the buy-in payment for joining [groupId].
      * Returns [JoinPaymentData] with the Stripe client secret to show PaymentSheet.
      */

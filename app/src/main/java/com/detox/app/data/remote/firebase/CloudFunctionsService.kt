@@ -178,6 +178,22 @@ class CloudFunctionsService @Inject constructor(
         Result.failure(e)
     }
 
+    suspend fun confirmGroupJoin(
+        groupId: String,
+        userId: String,
+        paymentIntentId: String
+    ): Result<Unit> = try {
+        callFunction(
+            "confirmGroupJoin",
+            mapOf("groupId" to groupId, "userId" to userId, "paymentIntentId" to paymentIntentId)
+        )
+        Timber.d("confirmGroupJoin: groupId=%s userId=%s", groupId, userId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "confirmGroupJoin failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
     suspend fun startGroupChallenge(groupId: String): Result<Unit> = try {
         callFunction("startGroupChallenge", mapOf("groupId" to groupId))
         Timber.d("startGroupChallenge: groupId=%s", groupId)

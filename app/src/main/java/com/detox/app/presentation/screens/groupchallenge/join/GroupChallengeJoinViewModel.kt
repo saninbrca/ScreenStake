@@ -20,15 +20,27 @@ sealed interface GroupJoinUiState {
     data object Idle : GroupJoinUiState
     data object LookingUp : GroupJoinUiState
     data class Preview(val groupChallenge: GroupChallenge) : GroupJoinUiState
+    /** joinGroupChallenge CF called — waiting for Stripe PaymentSheet to open. */
     data object ProcessingPayment : GroupJoinUiState
+    /** Stripe PaymentSheet is visible — waiting for user to complete / cancel / fail. */
     data class AwaitingPayment(
         val paymentData: PaymentIntentData,
         val groupChallenge: GroupChallenge,
         val groupId: String,
     ) : GroupJoinUiState
-    /** Payment confirmed — navigate to the group detail screen using [groupId]. */
+    /** Payment confirmed by Stripe — calling confirmGroupJoin CF. Cannot tap Pay again. */
+    data class ConfirmingJoin(val groupChallenge: GroupChallenge) : GroupJoinUiState
+    /** confirmGroupJoin succeeded — navigate to Friends tab. */
     data class JoinedSuccessfully(val groupId: String) : GroupJoinUiState
-    data class Error(val message: String) : GroupJoinUiState
+    /**
+     * [retryGroupChallenge] is non-null when the error occurred after the payment was captured
+     * (confirmGroupJoin CF failed). The card and retry button stay visible so the user can
+     * retry without re-entering their code. When null, a snackbar is sufficient.
+     */
+    data class Error(
+        val message: String,
+        val retryGroupChallenge: GroupChallenge? = null
+    ) : GroupJoinUiState
 }
 
 @HiltViewModel
@@ -44,6 +56,9 @@ class GroupChallengeJoinViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<GroupJoinUiState>(GroupJoinUiState.Idle)
     val uiState: StateFlow<GroupJoinUiState> = _uiState.asStateFlow()
 
+    // Held across state transitions so confirmJoin can retry without re-paying.
+    private var lastAwaitingPayment: GroupJoinUiState.AwaitingPayment? = null
+
     fun onCodeChanged(code: String) {
         _codeInput.update { code.uppercase().take(6) }
         if (_uiState.value is GroupJoinUiState.Error) _uiState.value = GroupJoinUiState.Idle
@@ -52,11 +67,11 @@ class GroupChallengeJoinViewModel @Inject constructor(
     fun lookupCode() {
         val code = _codeInput.value.trim()
         if (code.length != 6) {
-            _uiState.value = GroupJoinUiState.Error("Enter the full 6-character code.")
+            _uiState.value = GroupJoinUiState.Error("Bitte den vollständigen 6-stelligen Code eingeben.")
             return
         }
         val currentUserId = firebaseAuthService.currentUserId() ?: run {
-            _uiState.value = GroupJoinUiState.Error("Not signed in.")
+            _uiState.value = GroupJoinUiState.Error("Nicht angemeldet.")
             return
         }
         _uiState.value = GroupJoinUiState.LookingUp
@@ -68,7 +83,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     Timber.e(e, "GroupJoinVM: lookup failed code=%s", code)
-                    _uiState.value = GroupJoinUiState.Error(e.message ?: "Challenge not found.")
+                    _uiState.value = GroupJoinUiState.Error(e.message ?: "Challenge nicht gefunden.")
                 }
             )
         }
@@ -76,7 +91,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
 
     fun initiatePayment(groupChallenge: GroupChallenge) {
         val userId = firebaseAuthService.currentUserId() ?: run {
-            _uiState.value = GroupJoinUiState.Error("Not signed in.")
+            _uiState.value = GroupJoinUiState.Error("Nicht angemeldet.")
             return
         }
         val displayName = firebaseAuthService.currentUser()?.let { user ->
@@ -86,7 +101,6 @@ class GroupChallengeJoinViewModel @Inject constructor(
         } ?: "Anonymous"
         _uiState.value = GroupJoinUiState.ProcessingPayment
         viewModelScope.launch {
-            // Check for app conflicts before proceeding
             val activeChallenges = challengeRepository.getActiveChallengesList().getOrNull().orEmpty()
             val activePackages = activeChallenges.flatMap { it.appPackageNames }.toSet()
             val conflictingPkg = groupChallenge.appPackageNames.firstOrNull { it in activePackages }
@@ -95,7 +109,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                     .firstOrNull { it.appPackageNames.contains(conflictingPkg) }
                     ?.appDisplayName ?: conflictingPkg
                 _uiState.value = GroupJoinUiState.Error(
-                    "Already in an active challenge: '$conflictName'. Abandon it before joining."
+                    "Du hast bereits eine aktive Challenge für '$conflictName'. Beende sie zuerst."
                 )
                 return@launch
             }
@@ -104,32 +118,79 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 .fold(
                     onSuccess = { joinData ->
                         Timber.d("GroupJoinVM: payment intent created %s", joinData.paymentData.paymentIntentId)
-                        _uiState.value = GroupJoinUiState.AwaitingPayment(
+                        val awaitingState = GroupJoinUiState.AwaitingPayment(
                             paymentData = joinData.paymentData,
                             groupChallenge = groupChallenge,
                             groupId = joinData.groupId
                         )
+                        lastAwaitingPayment = awaitingState
+                        _uiState.value = awaitingState
                     },
                     onFailure = { e ->
                         Timber.e(e, "GroupJoinVM: initiatePayment failed")
-                        _uiState.value = GroupJoinUiState.Error(e.message ?: "Payment setup failed.")
+                        _uiState.value = GroupJoinUiState.Error(e.message ?: "Zahlungseinrichtung fehlgeschlagen.")
                     }
                 )
         }
     }
 
+    /** Called by Stripe PaymentSheet callback on PaymentSheetResult.Completed. */
     fun onPaymentSuccess() {
-        val groupId = (_uiState.value as? GroupJoinUiState.AwaitingPayment)?.groupId ?: return
-        Timber.d("GroupJoinVM: payment confirmed — joined groupId=%s", groupId)
-        _uiState.value = GroupJoinUiState.JoinedSuccessfully(groupId)
+        val awaiting = (_uiState.value as? GroupJoinUiState.AwaitingPayment)
+            ?: lastAwaitingPayment
+            ?: run {
+                Timber.w("GroupJoinVM: onPaymentSuccess called but no AwaitingPayment state")
+                return
+            }
+        val userId = firebaseAuthService.currentUserId() ?: run {
+            _uiState.value = GroupJoinUiState.Error("Nicht angemeldet.")
+            return
+        }
+        _uiState.value = GroupJoinUiState.ConfirmingJoin(awaiting.groupChallenge)
+        viewModelScope.launch {
+            joinGroupChallengeUseCase.confirmJoin(
+                groupId = awaiting.groupId,
+                userId = userId,
+                paymentIntentId = awaiting.paymentData.paymentIntentId
+            ).fold(
+                onSuccess = {
+                    Timber.d("GroupJoinVM: join confirmed — groupId=%s", awaiting.groupId)
+                    lastAwaitingPayment = null
+                    _uiState.value = GroupJoinUiState.JoinedSuccessfully(awaiting.groupId)
+                },
+                onFailure = { e ->
+                    Timber.e(e, "GroupJoinVM: confirmJoin failed groupId=%s", awaiting.groupId)
+                    _uiState.value = GroupJoinUiState.Error(
+                        message = "Deine Zahlung wurde empfangen, aber der Beitritt konnte nicht bestätigt werden. Bitte erneut versuchen.",
+                        retryGroupChallenge = awaiting.groupChallenge
+                    )
+                }
+            )
+        }
     }
 
+    /** Called by Stripe PaymentSheet callback on Canceled or Failed. */
     fun onPaymentCancelled() {
-        val gc = (_uiState.value as? GroupJoinUiState.AwaitingPayment)?.groupChallenge
+        val gc = ((_uiState.value as? GroupJoinUiState.AwaitingPayment)
+            ?: lastAwaitingPayment)?.groupChallenge
         _uiState.value = if (gc != null) GroupJoinUiState.Preview(gc) else GroupJoinUiState.Idle
     }
 
+    /** Retries the confirmGroupJoin CF call if it failed after a successful payment. */
+    fun retryConfirmJoin() {
+        val awaiting = lastAwaitingPayment ?: run {
+            _uiState.value = GroupJoinUiState.Idle
+            return
+        }
+        _uiState.value = GroupJoinUiState.ConfirmingJoin(awaiting.groupChallenge)
+        onPaymentSuccess()
+    }
+
     fun clearError() {
-        _uiState.value = GroupJoinUiState.Idle
+        if (lastAwaitingPayment != null) {
+            retryConfirmJoin()
+        } else {
+            _uiState.value = GroupJoinUiState.Idle
+        }
     }
 }

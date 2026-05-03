@@ -55,7 +55,8 @@ class SyncRepositoryImpl @Inject constructor(
                 .onFailure { e -> Timber.w(e, "SyncRepository: group challenge status sync failed") }
 
             // 4. Fetch today's dailyLog entries from the flat Firestore collection and upsert
-            //    consciousOpens into Room — restores session-limit state after reinstalls.
+            //    consciousOpens + budgetUsedMs/budgetRemainingMs into Room — restores both
+            //    session-limit and daily-budget state after reinstalls / service kills.
             val startOfToday = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
@@ -64,10 +65,20 @@ class SyncRepositoryImpl @Inject constructor(
             todayLogs.forEach { data ->
                 val challengeId = data["challengeId"] as? String ?: return@forEach
                 val date = data["date"] as? Long ?: return@forEach
-                val opens = (data["consciousOpens"] as? Long)?.toInt() ?: return@forEach
+                // consciousOpens is absent for TIME_BUDGET entries — use null, not return@forEach
+                val opens = (data["consciousOpens"] as? Long)?.toInt()
+                val budgetUsedMs = data["budgetUsedMs"] as? Long
+                val budgetRemainingMs = data["budgetRemainingMs"] as? Long
+
                 val existing = dailyLogDao.getLogForDate(challengeId, date)
                 if (existing != null) {
-                    dailyLogDao.insertDailyLog(existing.copy(consciousOpens = opens))
+                    dailyLogDao.insertDailyLog(
+                        existing.copy(
+                            consciousOpens = opens ?: existing.consciousOpens,
+                            budgetUsedMs = budgetUsedMs ?: existing.budgetUsedMs,
+                            budgetRemainingMs = budgetRemainingMs ?: existing.budgetRemainingMs
+                        )
+                    )
                 } else {
                     dailyLogDao.insertDailyLog(
                         DailyLogEntity(
@@ -76,14 +87,17 @@ class SyncRepositoryImpl @Inject constructor(
                             date = date,
                             totalMinutes = 0,
                             openCount = 0,
-                            consciousOpens = opens,
+                            consciousOpens = opens ?: 0,
+                            budgetUsedMs = budgetUsedMs ?: 0L,
+                            budgetRemainingMs = budgetRemainingMs ?: 0L,
                             pointsEarned = 0,
                             limitExceeded = false,
                             moneyLostCents = 0
                         )
                     )
                 }
-                Timber.d("DailyLog synced from Firestore: opens=$opens for $challengeId")
+                if (opens != null) Timber.d("DailyLog synced from Firestore: opens=$opens for $challengeId")
+                if (budgetUsedMs != null) Timber.d("Budget restored from Firestore: ${budgetUsedMs}ms used for $challengeId")
             }
 
             Timber.d("SyncRepository: sync completed")

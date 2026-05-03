@@ -413,12 +413,13 @@ class GroupChallengeFirestoreService @Inject constructor(
             val now = System.currentTimeMillis()
             val progress = if (endDate > startDate) (now - startDate).toFloat() / (endDate - startDate).toFloat() else 0f
             val remainingMs = endDate - now
-            Timber.d("startDate=${java.util.Date(startDate)} endDate=${java.util.Date(endDate)} progress=$progress remaining=${remainingMs / 86400000}days")
+            Timber.d("startDate=${java.util.Date(startDate)} endDate=${java.util.Date(endDate)} progress=$progress remaining=${java.util.concurrent.TimeUnit.MILLISECONDS.toDays(remainingMs)}days")
 
             GroupChallenge(
                 groupId = d["groupId"] as? String ?: id,
                 code = d["code"] as? String ?: "",
                 creatorUserId = d["creatorUserId"] as? String ?: "",
+                creatorDisplayName = d["creatorDisplayName"] as? String ?: "",
                 appPackageNames = packages,
                 appDisplayName = d["appDisplayName"] as? String ?: "",
                 limitType = runCatching {

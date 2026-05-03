@@ -18,6 +18,32 @@
 
 ---
 
+## Hard Mode vs Soft Mode — Unified Architecture
+
+Hard Mode is NOT a separate system. It is Soft Mode with Stripe added on top.
+
+| Component | Soft Mode | Hard Mode |
+|-----------|-----------|-----------|
+| AccessibilityService blocking | ✅ identical | ✅ identical |
+| Overlay logic | ✅ identical | ✅ identical |
+| SessionIntentionOverlay | ✅ identical | ✅ identical |
+| SessionLimitReachedOverlay | ✅ identical | ✅ identical |
+| DailyLog Room write | ✅ identical | ✅ identical |
+| Firestore dailyLogs sync | ✅ identical | ✅ identical |
+| DateUtils.todayKey() | ✅ identical | ✅ identical |
+| Fortschrittsbalken | ✅ identical | ✅ identical |
+| Stripe pre-auth | ❌ | ✅ on challenge start |
+| Stripe capture | ❌ | ✅ on fail (FIRST before Room write) |
+| Stripe refund | ❌ | ✅ on success (FIRST before Room write) |
+| Logout blocking | ❌ | ✅ device binding |
+| Minimum duration | none | 14 days |
+
+RULE: Any fix applied to Soft Mode blocking/overlay/DailyLog logic
+MUST be applied to Hard Mode as well. They share the same code paths.
+Never create separate implementations for Hard vs Soft Mode overlays.
+
+---
+
 ## Stripe Configuration
 
 ```
@@ -140,6 +166,47 @@ export const cancelOrRefundPayment = functions.https.onRequest(async (req, res) 
 
 ---
 
+## Hard Mode DailyLog Sync Pattern
+
+Identical to Soft Mode — same Room + Firestore pattern:
+
+### SESSION_LIMIT (Hard Mode)
+- consciousOpens written to Room immediately on tap
+- consciousOpens written to Firestore immediately (fire-and-forget, SetOptions.merge())
+- On app start: restore from Firestore → Room
+- Firestore path: users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
+
+### TIME_LIMIT (Hard Mode)
+- timeUsedMs written to Room every 10s via UsageTrackingService
+- timeUsedMs written to Firestore every 10s (fire-and-forget, SetOptions.merge())
+- On app start: restore from Firestore → Room
+
+### DAILY_BUDGET (Hard Mode)
+- budgetUsedMs written to Room every 10s via UsageTrackingService
+- budgetUsedMs written to Firestore every 10s (fire-and-forget, SetOptions.merge())
+- SharedPreferences: sessionEndTime, sessionStartTime, committedMs
+- On app start: restore from Firestore → Room → SharedPreferences
+
+### Fail Detection (all limit types)
+DailyEvaluationWorker reads from Room DailyLog (DateUtils.todayKey()):
+    consciousOpens >= limitValueSessions → FAIL
+    timeUsedMs >= limitValueMinutes * 60000 → FAIL
+    budgetUsedMs >= dailyBudgetMinutes * 60000 → FAIL
+
+On FAIL — CRITICAL ORDER (never reverse):
+    1. stripe.paymentIntents.capture(paymentIntentId)  ← FIRST
+    2. Mark FAILED in Room
+    3. Mark FAILED in Firestore challenge document
+    4. Show failure notification
+
+On SUCCESS — CRITICAL ORDER (never reverse):
+    1. stripe.paymentIntents.cancel/refund(paymentIntentId)  ← FIRST
+    2. Mark COMPLETED in Room
+    3. Mark COMPLETED in Firestore challenge document
+    4. Show success notification + confetti
+
+---
+
 ## Hard Mode Lockout — In-App Behavior
 
 While a Hard Mode challenge is active:
@@ -244,3 +311,24 @@ users/{userId}/
 
 2. **`completeGroupChallenge` Cloud Function not triggering automatically.**
    Needs to be called when `endDate` passes — must check on app foreground AND in DailyEvaluationWorker.
+
+---
+
+## Fortschrittsbalken (Hard Mode)
+
+Identical logic to Soft Mode — read from Room DailyLog always.
+
+SESSION_LIMIT:  progress = consciousOpens / limitValueSessions
+TIME_LIMIT:     progress = timeUsedMs / (limitValueMinutes * 60000)
+DAILY_BUDGET:   progress = budgetUsedMs / (dailyBudgetMinutes * 60000)
+
+Display in Detail screen:
+- Progress bar fills based on usage (same Composable as Soft Mode)
+- Remaining opens/minutes shown below bar
+- Stake amount shown prominently (e.g. "€20 auf dem Spiel")
+- Days remaining shown separately
+
+CRITICAL: Detail screen reads DIRECTLY from Room DailyLog.
+Never pass progress values as navigation arguments.
+Never use ViewModel state that was set before navigation.
+Always read fresh from Room on Detail screen init using DateUtils.todayKey().

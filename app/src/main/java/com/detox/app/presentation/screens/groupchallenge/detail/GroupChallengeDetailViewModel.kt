@@ -44,6 +44,13 @@ sealed interface StartChallengeState {
     data class Error(val message: String) : StartChallengeState
 }
 
+sealed interface QuitState {
+    data object Idle : QuitState
+    data object Loading : QuitState
+    data class Success(val amountCents: Int) : QuitState
+    data class Error(val message: String) : QuitState
+}
+
 data class WinDialogInfo(
     val bonusCents: Int,
     val groupId: String,
@@ -70,6 +77,9 @@ class GroupChallengeDetailViewModel @Inject constructor(
 
     private val _startState = MutableStateFlow<StartChallengeState>(StartChallengeState.Idle)
     val startState: StateFlow<StartChallengeState> = _startState.asStateFlow()
+
+    private val _quitState = MutableStateFlow<QuitState>(QuitState.Idle)
+    val quitState: StateFlow<QuitState> = _quitState.asStateFlow()
 
     /** Emits a snackbar message string — either a success confirmation or an error/rate-limit message. */
     private val _nudgeEvent = MutableStateFlow<String?>(null)
@@ -237,6 +247,27 @@ class GroupChallengeDetailViewModel @Inject constructor(
     }
 
     fun clearStartError() { _startState.value = StartChallengeState.Idle }
+
+    fun quitChallenge() {
+        if (_quitState.value is QuitState.Loading) return
+        val userId = firebaseAuthService.currentUserId() ?: return
+        val amountCents = (_uiState.value as? GroupDetailUiState.Success)
+            ?.groupChallenge?.buyInCents ?: 0
+        _quitState.value = QuitState.Loading
+        viewModelScope.launch {
+            cloudFunctionsService.failGroupParticipant(groupId, userId)
+                .onSuccess {
+                    Timber.d("GroupDetailVM: quitChallenge succeeded for group %s", groupId)
+                    _quitState.value = QuitState.Success(amountCents)
+                }
+                .onFailure { e ->
+                    Timber.e(e, "GroupDetailVM: quitChallenge failed for group %s", groupId)
+                    _quitState.value = QuitState.Error(e.message ?: "Fehler beim Aufgeben")
+                }
+        }
+    }
+
+    fun clearQuitState() { _quitState.value = QuitState.Idle }
 
     fun nudgeParticipant(targetUserId: String) {
         val fromUserId = currentUserId ?: return

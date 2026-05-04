@@ -194,11 +194,23 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 groupChallengeId = groupChallenge.groupId,
                 blockedDomains = groupChallenge.blockedDomains.joinToString(",").ifEmpty { null }
             )
-            challengeDao.insertChallenge(entity)
-            Timber.d(
-                "GroupChallengeRepo: synced group challenge %s → local challenge %s (paymentIntent=%s)",
-                groupChallenge.groupId, localChallengeId, userParticipant.paymentIntentId
-            )
+            // Use UPDATE if the challenge row already exists so SQLite never runs DELETE+INSERT.
+            // INSERT OR REPLACE would DELETE the old ChallengeEntity first, triggering the FK
+            // onDelete=CASCADE on DailyLogEntity and wiping the Group Challenge DailyLog.
+            val existingChallenge = challengeDao.getChallengeById(entity.id)
+            if (existingChallenge != null) {
+                challengeDao.updateChallenge(entity)
+                Timber.d(
+                    "GroupChallengeRepo: updated (no-delete) group challenge %s → local challenge %s",
+                    groupChallenge.groupId, localChallengeId
+                )
+            } else {
+                challengeDao.insertChallenge(entity)
+                Timber.d(
+                    "GroupChallengeRepo: inserted group challenge %s → local challenge %s (paymentIntent=%s)",
+                    groupChallenge.groupId, localChallengeId, userParticipant.paymentIntentId
+                )
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeRepo: syncToTracking failed for %s", groupChallenge.groupId)

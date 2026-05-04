@@ -42,7 +42,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,12 +73,14 @@ import timber.log.Timber
 fun GroupChallengeDetailScreen(
     onBack: () -> Unit,
     onNavigateToProfile: () -> Unit = {},
+    onNavigateToFriendsHub: () -> Unit = {},
     viewModel: GroupChallengeDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val startState by viewModel.startState.collectAsStateWithLifecycle()
     val nudgeEvent by viewModel.nudgeEvent.collectAsStateWithLifecycle()
     val winDialogInfo by viewModel.winDialogInfo.collectAsStateWithLifecycle()
+    val quitState by viewModel.quitState.collectAsStateWithLifecycle()
     val currentUserId = viewModel.currentUserId
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -101,6 +105,20 @@ fun GroupChallengeDetailScreen(
         if (msg != null) {
             snackbarHostState.showSnackbar(msg)
             viewModel.clearNudgeEvent()
+        }
+    }
+
+    LaunchedEffect(quitState) {
+        when (val qs = quitState) {
+            is QuitState.Success -> {
+                viewModel.clearQuitState()
+                onNavigateToFriendsHub()
+            }
+            is QuitState.Error -> {
+                snackbarHostState.showSnackbar(qs.message)
+                viewModel.clearQuitState()
+            }
+            else -> Unit
         }
     }
 
@@ -195,8 +213,10 @@ fun GroupChallengeDetailScreen(
                     myTimeUsedMinutes = state.myTimeUsedMinutes,
                     isStarting = startState is StartChallengeState.Loading,
                     isCurrentUserFailed = isCurrentUserFailed,
+                    isQuitting = quitState is QuitState.Loading,
                     onStartChallenge = viewModel::startChallenge,
                     onNudge = viewModel::nudgeParticipant,
+                    onQuit = viewModel::quitChallenge,
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -215,12 +235,15 @@ private fun GroupDetailContent(
     myTimeUsedMinutes: Int = 0,
     isStarting: Boolean,
     isCurrentUserFailed: Boolean = false,
+    isQuitting: Boolean = false,
     onStartChallenge: () -> Unit,
     onNudge: (String) -> Unit,
+    onQuit: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val now = System.currentTimeMillis()
+    var showQuitDialog by remember { mutableStateOf(false) }
 
     val cal2024 = Calendar.getInstance().apply { set(2024, 0, 1) }.timeInMillis
     val endDateValid = gc.endDate > cal2024 && gc.endDate > now
@@ -523,6 +546,64 @@ private fun GroupDetailContent(
                 )
             }
         }
+
+        // ── Aufgeben button — only for ACTIVE participant in ACTIVE challenge ──
+        if (gc.status == GroupChallengeStatus.ACTIVE && !isCurrentUserFailed) {
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = { showQuitDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isQuitting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    if (isQuitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    } else {
+                        Text(stringResource(R.string.group_detail_quit_button))
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Aufgeben confirmation dialog ───────────────────────────────────────
+    if (showQuitDialog) {
+        val amountEuros = gc.buyInCents / 100
+        AlertDialog(
+            onDismissRequest = { showQuitDialog = false },
+            title = { Text(stringResource(R.string.group_detail_quit_dialog_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.group_detail_quit_dialog_message, amountEuros)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showQuitDialog = false
+                        onQuit()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(stringResource(R.string.group_detail_quit_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQuitDialog = false }) {
+                    Text(stringResource(R.string.group_detail_quit_cancel))
+                }
+            }
+        )
     }
 }
 

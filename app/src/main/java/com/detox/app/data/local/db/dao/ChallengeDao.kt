@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -12,6 +13,10 @@ interface ChallengeDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChallenge(challenge: ChallengeEntity)
+
+    /** Updates an existing challenge row without deleting it first — no FK CASCADE on DailyLogs. */
+    @Update
+    suspend fun updateChallenge(challenge: ChallengeEntity)
 
     @Query("SELECT * FROM challenges WHERE id = :id")
     suspend fun getChallengeById(id: String): ChallengeEntity?

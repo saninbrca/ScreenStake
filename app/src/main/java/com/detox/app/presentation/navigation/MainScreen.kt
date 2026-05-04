@@ -329,6 +329,14 @@ fun MainScreen(
                             launchSingleTop = true
                             restoreState = true
                         }
+                    },
+                    onNavigateToFriendsHub = {
+                        navController.navigate(BottomNavTab.Friends.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = false
+                            }
+                            launchSingleTop = true
+                        }
                     }
                 )
             }

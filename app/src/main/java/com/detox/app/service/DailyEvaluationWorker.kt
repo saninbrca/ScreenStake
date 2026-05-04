@@ -434,13 +434,11 @@ class DailyEvaluationWorker @AssistedInject constructor(
      * Handles daily evaluation for a group challenge shadow row (a [Challenge] whose
      * [Challenge.groupChallengeId] is non-null).
      *
-     * Unlike solo challenges, group challenges are managed server-side by Cloud Functions:
-     *  - Limit exceeded today → call [CloudFunctionsService.failGroupParticipant] (CF marks
-     *    the participant as FAILED in Firestore and captures their Stripe payment).
+     * Group Challenges NEVER auto-fail. Limit exceeded = write DailyLog (stats only).
+     * Participant status only changes via manual "Aufgeben" in Detail screen.
+     *  - Limit exceeded today → write DailyLog with limitExceeded=true, moneyLostCents=0 (stats only).
      *  - End date reached    → call [CloudFunctionsService.completeGroupChallenge] (CF runs
-     *    payout logic: refunds winners, distributes the pot, awards the bonus if enabled).
-     *
-     * Both CF calls are idempotent — re-calling them when already processed is safe.
+     *    payout logic: refunds all active participants, distributes the pot from failed ones).
      */
     private suspend fun evaluateGroupChallenge(
         challenge: Challenge,
@@ -459,13 +457,13 @@ class DailyEvaluationWorker @AssistedInject constructor(
             challenge.id, groupId
         )
 
-        // If we already recorded a failure for this challenge today (written below or by
-        // OverlayManager), skip the usage check but still trigger completeGroupChallenge
-        // when the end date is reached.
+        // If the limit was already logged today (limitExceeded=true in DailyLog = stats marker,
+        // NOT a fail marker), skip re-evaluation. completeGroupChallenge is still called below
+        // when endDate is reached.
         val existingLog = dailyLogRepository.getLogForDate(challenge.id, today)
-        val alreadyFailed = existingLog.getOrNull()?.limitExceeded == true
+        val alreadyLogged = existingLog.getOrNull()?.limitExceeded == true
 
-        if (!alreadyFailed) {
+        if (!alreadyLogged) {
             // Compute today's usage for all packages in this challenge
             val todayUsage = challenge.appPackageNames.fold(
                 com.detox.app.domain.model.AppDailyUsage(0, 0)
@@ -495,46 +493,30 @@ class DailyEvaluationWorker @AssistedInject constructor(
             )
 
             if (limitExceeded) {
+                // Group Challenge NEVER auto-fails. Record limit_exceeded in DailyLog for
+                // statistics only. Participant stays active. Stripe only captured on manual
+                // "Aufgeben" in Detail screen.
                 Timber.d(
-                    "DailyEvaluationWorker: group participant limit exceeded — " +
-                            "calling failGroupParticipant groupId=%s userId=%s", groupId, userId
+                    "DailyEvaluationWorker: group %s limit reached today — " +
+                            "recording in DailyLog only (no auto-fail, participant stays active)", groupId
                 )
-                cloudFunctionsService.failGroupParticipant(groupId, userId)
-                    .onSuccess {
-                        Timber.d(
-                            "DailyEvaluationWorker: failGroupParticipant succeeded — " +
-                                    "groupId=%s userId=%s", groupId, userId
-                        )
-                        // Update shadow row locally so other UI reflects the failure
-                        challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED)
-                            .onFailure { e ->
-                                Timber.e(e, "DailyEvaluationWorker: failed to update local shadow status for %s", challenge.id)
-                            }
-                        // Update local GroupChallengeEntity participant status + stop blocking
-                        groupChallengeRepository.markParticipantFailedLocally(groupId, userId)
-                    }
-                    .onFailure { e ->
-                        Timber.e(e, "DailyEvaluationWorker: failGroupParticipant failed — groupId=%s userId=%s", groupId, userId)
-                    }
-
-                // Record a minimal daily log so we don't retry this on the next worker run
                 dailyLogRepository.insertDailyLog(
                     DailyLog(
-                        id                     = UUID.randomUUID().toString(),
-                        challengeId            = challenge.id,
-                        date                   = today,
-                        totalMinutes           = adjustedMinutes,
-                        openCount              = todayUsage.opens,
-                        overlayPausedMs        = overlayPausedMs,
-                        pointsEarned           = 0,
-                        limitExceeded          = true,
-                        moneyLostCents         = challenge.amountCents ?: 0
+                        id              = UUID.randomUUID().toString(),
+                        challengeId     = challenge.id,
+                        date            = today,
+                        totalMinutes    = adjustedMinutes,
+                        openCount       = todayUsage.opens,
+                        overlayPausedMs = overlayPausedMs,
+                        pointsEarned    = 0,
+                        limitExceeded   = true,
+                        moneyLostCents  = 0
                     )
                 )
-                Timber.d("DailyEvaluationWorker: group failure DailyLog written for %s", challenge.id)
+                Timber.d("DailyEvaluationWorker: group limit_exceeded DailyLog written for %s (stats only, no fail, no Stripe)", challenge.id)
             }
         } else {
-            Timber.d("DailyEvaluationWorker: group %s already failed today — skipping usage check", groupId)
+            Timber.d("DailyEvaluationWorker: group %s limit already logged today — skipping usage check", groupId)
         }
 
         // End-of-challenge: call completeGroupChallenge CF so it can run payout logic.

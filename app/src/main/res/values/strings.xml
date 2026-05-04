@@ -661,6 +661,14 @@
     <string name="history_filter_won">✅ Gewonnen</string>
     <string name="history_filter_failed">❌ Gefailed</string>
 
+    <!-- Group Challenge Detail — Aufgeben (manual quit) flow -->
+    <string name="group_detail_quit_button">Aufgeben</string>
+    <string name="group_detail_quit_dialog_title">Wirklich aufgeben?</string>
+    <string name="group_detail_quit_dialog_message">€%1$d werden eingezogen. Diese Aktion kann nicht rückgängig gemacht werden.</string>
+    <string name="group_detail_quit_confirm">Ja, aufgeben</string>
+    <string name="group_detail_quit_cancel">Abbrechen</string>
+    <string name="group_detail_quit_error">Fehler beim Aufgeben. Versuche es erneut.</string>
+
     <!-- Group Challenge Detail — failed user read-only banner -->
     <string name="group_detail_failed_banner">Du bist ausgeschieden 😔</string>
     <string name="group_detail_challenge_ends_on">Challenge endet am %1$s</string>

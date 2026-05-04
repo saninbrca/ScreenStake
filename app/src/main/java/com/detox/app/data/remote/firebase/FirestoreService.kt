@@ -321,6 +321,29 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    /**
+     * Reads a single flat dailyLog document for the given challenge and date.
+     * Returns null on network failure or if the document does not exist.
+     * Used by SyncRepositoryImpl to restore Group Challenge budget on app start.
+     */
+    suspend fun fetchDailyLogDocument(
+        userId: String,
+        challengeId: String,
+        date: Long
+    ): Map<String, Any>? {
+        return try {
+            firestore
+                .collection("users").document(userId)
+                .collection("dailyLogs").document("${challengeId}_${date}")
+                .get()
+                .await()
+                .data
+        } catch (e: Exception) {
+            Timber.e(e, "FirestoreService: fetchDailyLogDocument failed for $challengeId")
+            null
+        }
+    }
+
     // ── Account deletion ──────────────────────────────────────────────────────
 
     /**

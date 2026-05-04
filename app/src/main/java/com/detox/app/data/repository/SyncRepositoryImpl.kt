@@ -1,5 +1,6 @@
 package com.detox.app.data.repository
 
+import android.content.Context
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.DailyLogDao
 import com.detox.app.data.local.db.entity.ChallengeEntity
@@ -8,15 +9,21 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.SyncRepository
+import com.detox.app.service.OverlayManager
+import com.detox.app.util.DateUtils
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
-import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class SyncRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val firestoreService: FirestoreService,
     private val firebaseAuthService: FirebaseAuthService,
     private val challengeDao: ChallengeDao,
@@ -54,14 +61,68 @@ class SyncRepositoryImpl @Inject constructor(
             groupChallengeRepository.refreshFromFirestore(userId)
                 .onFailure { e -> Timber.w(e, "SyncRepository: group challenge status sync failed") }
 
+            // 3a. Restore Group Challenge DAILY_BUDGET budgets from Firestore → Room.
+            //     Group challenges have no entries in the nested Solo dailyLogs sub-collection
+            //     (step 2), so their budgetUsedMs must be restored explicitly here.
+            //     Runs AFTER refreshFromFirestore so ChallengeEntity rows exist in Room.
+            val todayKey = DateUtils.todayKey()
+            val budgetPrefs = context.getSharedPreferences(
+                OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+            )
+            val groupChallenges = groupChallengeRepository.getGroupChallenges().first()
+            for (gc in groupChallenges) {
+                if (gc.status != GroupChallengeStatus.ACTIVE) continue
+                if (gc.limitType != LimitType.TIME_BUDGET) continue
+                val localChallengeId = "group_${gc.groupId}"
+                Timber.d("Group restore: reading Firestore path = users/$userId/dailyLogs/${localChallengeId}_${todayKey}")
+                val data = firestoreService.fetchDailyLogDocument(userId, localChallengeId, todayKey)
+                val budgetUsedMs = data?.get("budgetUsedMs") as? Long ?: 0L
+                val totalBudgetMs = gc.limitValueMinutes * 60_000L
+                val budgetRemainingMs = (data?.get("budgetRemainingMs") as? Long)
+                    ?: (totalBudgetMs - budgetUsedMs).coerceAtLeast(0L)
+                Timber.d("Group restore: Firestore budgetUsedMs=$budgetUsedMs budgetRemainingMs=$budgetRemainingMs")
+                val existing = dailyLogDao.getLogForDate(localChallengeId, todayKey)
+                if (existing != null) {
+                    dailyLogDao.insertDailyLog(
+                        existing.copy(budgetUsedMs = budgetUsedMs, budgetRemainingMs = budgetRemainingMs)
+                    )
+                } else {
+                    dailyLogDao.insertDailyLog(
+                        DailyLogEntity(
+                            id = "${localChallengeId}_${todayKey}",
+                            challengeId = localChallengeId,
+                            date = todayKey,
+                            totalMinutes = 0,
+                            openCount = 0,
+                            pointsEarned = 0,
+                            limitExceeded = false,
+                            moneyLostCents = 0,
+                            budgetUsedMs = budgetUsedMs,
+                            budgetRemainingMs = budgetRemainingMs
+                        )
+                    )
+                }
+                val roomCheck = dailyLogDao.getLogForDate(localChallengeId, todayKey)
+                Timber.d("Group restore: Room after write = ${roomCheck?.budgetUsedMs} used, ${roomCheck?.budgetRemainingMs} remaining")
+                // Set per-challenge SharedPreferences key so UsageTrackingService.onStartCommand()
+                // restart-recovery reads the correct committed value for THIS challenge specifically.
+                // Guard: skip when a session is already active — COMMITTED is already correct then.
+                val activeSessionEnd = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+                if (activeSessionEnd <= 0L) {
+                    val prefsKey = "budget_committed_ms_${localChallengeId}"
+                    budgetPrefs.edit().putLong(prefsKey, budgetUsedMs).apply()
+                    Timber.d("Group restore: SharedPreferences[$prefsKey] set to $budgetUsedMs")
+                }
+                Timber.d("Group budget restore: groupId=${gc.groupId} usedMs=$budgetUsedMs remainingMs=$budgetRemainingMs")
+            }
+
             // 4. Fetch today's dailyLog entries from the flat Firestore collection and upsert
             //    consciousOpens + budgetUsedMs/budgetRemainingMs into Room — restores both
             //    session-limit and daily-budget state after reinstalls / service kills.
-            val startOfToday = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
+            val startOfToday = DateUtils.todayKey()
             val todayLogs = firestoreService.fetchTodayDailyLogs(userId, startOfToday)
+            Timber.d("Sync: about to write ${todayLogs.size} DailyLogs to Room")
+            Timber.d("Sync: DailyLog keys being written: ${todayLogs.mapNotNull { it["challengeId"] as? String }}")
             todayLogs.forEach { data ->
                 val challengeId = data["challengeId"] as? String ?: return@forEach
                 val date = data["date"] as? Long ?: return@forEach

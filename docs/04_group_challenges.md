@@ -18,6 +18,10 @@
 | App fee | **10%** of failed participants' money |
 | Winner payout | Manual SEPA transfer by founder |
 | Completed challenges in Friends tab | Hidden after **3 days** |
+| Auto-fail on limit reached | **❌ Never** — for any limit type |
+| Stripe capture trigger | **Manual "Aufgeben" only** in Detail screen |
+| Limit reached behavior | **SessionLimitReachedOverlay** (all limit types) — app stays blocked |
+| endDate success | **Stripe refund** for all participants still "active" |
 
 ---
 
@@ -257,19 +261,44 @@ TauntOverlay appears at top of screen
 
 ## Fail & Complete Logic (Group)
 
-### Participant Fails
+### DECISION — Group Challenge never auto-fails for any limit type
+
+All limit types (SESSION, TIME, BUDGET): limit reached = **SessionLimitReachedOverlay only**.
+App stays blocked. Participant status remains "active". No Stripe capture.
+Stripe capture ONLY on manual "Aufgeben" in Detail screen.
 
 ```
-DailyEvaluationWorker detects opensToday > limit for participant
+Limit reached (any type) — in OverlayManager:
+    Show SessionLimitReachedOverlay ("Stark bleiben 💪")
+    NO failGroupParticipant call
+    NO Stripe capture
+    NO status change
+
+Limit reached (any type) — in DailyEvaluationWorker:
+    Write DailyLog with limitExceeded=true, moneyLostCents=0  ← statistics only
+    NO failGroupParticipant call
+    NO Stripe capture
+    NO status change
+```
+
+### Participant Quits Manually ("Aufgeben")
+
+```
+User opens GroupChallengeDetailScreen → taps "Aufgeben" button
+    ↓
+Confirmation dialog: "Willst du wirklich aufgeben? €X werden eingezogen."
+    ↓
+User confirms → ViewModel.quitChallenge()
     ↓
 Calls failParticipant Cloud Function
     {groupId, userId}
     ↓
 Cloud Function:
-    1. stripe.paymentIntents.capture(participant.paymentIntentId)  ← money captured
+    1. stripe.paymentIntents.capture(participant.paymentIntentId)  ← money captured FIRST
     2. Calculate app fee: captured amount * 0.10
     3. Update participant.status = "failed" in Firestore
-    4. Remove from active blocking
+    ↓
+Navigate to FriendsHubScreen
     ↓
 Failed participant stays visible in leaderboard (greyed out / strikethrough)
 ```
@@ -381,22 +410,21 @@ consciousOpens++ → Room (immediate)
 consciousOpens++ → Firestore dailyLogs (fire-and-forget)
 opensToday++ → Firestore participants array (arrayRemove+arrayUnion)
 ↓
-consciousOpens >= limit → SessionLimitReachedOverlay
-DailyEvaluationWorker detects fail →
-stripe.capture(paymentIntentId)  ← FIRST
-failParticipant Cloud Function called
-Participant marked failed in Firestore
-Removed from active leaderboard tracking
+consciousOpens >= limit → SessionLimitReachedOverlay ("Stark bleiben 💪" only)
+App stays blocked. Participant stays active. NO auto-fail.
+Manual "Aufgeben" in Detail screen is the only way to quit.
 
 ### TIME_LIMIT (Group)
 Same as SESSION_LIMIT flow but:
 timeUsedMs tracked via UsageTrackingService
 timeUsedMinutes mirrored to participants array every 10s
-Fail condition: timeUsedMs >= limitValueMinutes * 60000
+Limit reached: timeUsedMs >= limitValueMinutes * 60000 → SessionLimitReachedOverlay
+NO auto-fail. Manual "Aufgeben" only.
 
 ### DAILY_BUDGET (Group)
 Same as Solo DAILY_BUDGET flow but:
 budgetUsedMs tracked via UsageTrackingService
 budgetUsedMs written to Room + Firestore dailyLogs every 10s
 budgetUsedMinutes mirrored to participants array every 10s
-Fail condition: budgetUsedMs >= dailyBudgetMinutes * 60000
+Limit reached: budgetUsedMs >= dailyBudgetMinutes * 60000 → SessionLimitReachedOverlay
+NO auto-fail. Manual "Aufgeben" only.

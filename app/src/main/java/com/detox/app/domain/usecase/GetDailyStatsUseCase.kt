@@ -40,8 +40,15 @@ class GetDailyStatsUseCase @Inject constructor(
                     challenge.endDate > 1700000000000L -> challenge.endDate // already a Unix timestamp (ms)
                     else -> challenge.startDate + (challenge.endDate * 24L * 60L * 60L * 1000L)
                 }
-                val todayLog = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
-                Timber.d("DailyLog for ${challenge.id} date=$today: $todayLog")
+                // Group Challenge DailyLogs are stored with challengeId = "group_${groupId}",
+                // not the local ChallengeEntity UUID — use the correct key.
+                val dailyLogChallengeId = if (challenge.groupChallengeId != null) {
+                    "group_${challenge.groupChallengeId}"
+                } else {
+                    challenge.id
+                }
+                val todayLog = dailyLogRepository.getLogForDate(dailyLogChallengeId, today).getOrNull()
+                Timber.d("DailyLog for $dailyLogChallengeId date=$today: $todayLog")
 
                 // Resolve group metadata once for this challenge (null if solo).
                 val groupChallenge = challenge.groupChallengeId?.let {
@@ -89,7 +96,12 @@ class GetDailyStatsUseCase @Inject constructor(
 
                     val displayUsedMs: Long = if (sessionEndTime > 0L && sessionChallengeId == challenge.id) {
                         // Active session: committedMs + live elapsed (sub-10s precision for dashboard)
-                        val committedMs = budgetPrefs.getLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, 0L)
+                        val committedMsKey = if (challenge.groupChallengeId != null) {
+                            "${OverlayManager.BUDGET_COMMITTED_MS_KEY}_group_${challenge.groupChallengeId}"
+                        } else {
+                            "${OverlayManager.BUDGET_COMMITTED_MS_KEY}_${challenge.id}"
+                        }
+                        val committedMs = budgetPrefs.getLong(committedMsKey, 0L)
                         val sessionStartTime = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_START_TIME_KEY, 0L)
                         val liveElapsedMs = (now - sessionStartTime).coerceAtLeast(0L)
                         committedMs + liveElapsedMs
@@ -99,6 +111,9 @@ class GetDailyStatsUseCase @Inject constructor(
                     }
 
                     val displayRemainingMs = (totalBudgetMs - displayUsedMs).coerceAtLeast(0L)
+                    if (challenge.groupChallengeId != null) {
+                        Timber.d("Group budget from Room: key=$dailyLogChallengeId usedMs=$displayUsedMs remainingMs=$displayRemainingMs")
+                    }
                     val budgetUsed = (displayUsedMs / 60_000L).toInt()
                     val budgetRemaining = (displayRemainingMs / 60_000L).toInt()
                     val totalBudget = (totalBudgetMs / 60_000L).toInt()

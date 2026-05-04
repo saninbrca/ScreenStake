@@ -21,6 +21,7 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.ThresholdFlags
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -79,6 +80,9 @@ class UsageTrackingService : Service() {
 
     @Inject
     lateinit var firebaseAuthService: FirebaseAuthService
+
+    @Inject
+    lateinit var firestoreService: FirestoreService
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -165,10 +169,11 @@ class UsageTrackingService : Service() {
                     val log = dailyLogRepository.getLogForDate(challenge.id, key).getOrNull()
                     Timber.d("restart recovery: got budgetUsedMs=${log?.budgetUsedMs} from Room for ${challenge.id}")
                     val usedMs = log?.budgetUsedMs ?: 0L
-                    prefs.edit().putLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, usedMs).apply()
+                    val committedKey = "budget_committed_ms_${challenge.id}"
+                    prefs.edit().putLong(committedKey, usedMs).apply()
                     Timber.d(
-                        "UsageTrackingService: restart recovery — COMMITTED synced to " +
-                            "${usedMs}ms from Room for ${challenge.id}"
+                        "UsageTrackingService: restart recovery — COMMITTED[$committedKey] " +
+                            "synced to ${usedMs}ms from Room"
                     )
                 }
             }
@@ -221,7 +226,7 @@ class UsageTrackingService : Service() {
         }
 
         val now = System.currentTimeMillis()
-        val committedMs = prefs.getLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, 0L)
+        val committedMs = prefs.getLong("budget_committed_ms_${challengeId}", 0L)
         val totalBudgetMs = (challenge.dailyBudgetMinutes ?: 0) * 60_000L
         val today = todayKey()
 
@@ -241,7 +246,7 @@ class UsageTrackingService : Service() {
             }
             .onFailure { e -> Timber.e(e, "UsageTrackingService: failed to write budget tick for $challengeId") }
 
-        // Mirror budgetUsedMs → participants array for Group Challenge DAILY_BUDGET (fire-and-forget)
+        // Mirror budgetUsedMs → participants array + Firestore dailyLogs for Group Challenge DAILY_BUDGET (fire-and-forget)
         challenge.groupChallengeId?.let { groupId ->
             val uid = firebaseAuthService.currentUserId()
             if (uid != null) {
@@ -250,13 +255,17 @@ class UsageTrackingService : Service() {
                     groupChallengeRepository.updateParticipantTimeUsed(groupId, uid, usedMinutes)
                     Timber.d("UsageTrackingService: budget mirror — groupId=$groupId usedMinutes=$usedMinutes")
                 }
+                serviceScope.launch {
+                    firestoreService.updateDailyLogBudget(uid, "group_$groupId", today, totalUsedMs, newRemainingMs)
+                    Timber.d("UsageTrackingService: Group budget synced to Firestore — group_${groupId}_${today} usedMs=$totalUsedMs")
+                }
             }
         }
 
         if (now >= sessionEndTime) {
             // Session done — persist committed total, then clear active session prefs
             prefs.edit()
-                .putLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, totalUsedMs)
+                .putLong("budget_committed_ms_${challengeId}", totalUsedMs)
                 .apply()
             clearBudgetSession(prefs)
             overlayManager.onBudgetSessionExpired(packageName)
@@ -404,20 +413,24 @@ class UsageTrackingService : Service() {
         val challenges = runCatching {
             challengeRepository.getActiveChallengesList().getOrThrow()
         }.getOrElse { return }
+        val today = todayKey()
 
         for (challenge in challenges) {
             val groupId = challenge.groupChallengeId ?: continue
-            val packageName = challenge.appPackageName ?: continue
-            val usage = runCatching {
-                usageStatsRepository.getTodayUsageForApp(packageName)
-            }.getOrNull() ?: continue
-
+            val timeMinutes: Int = if (challenge.limitType == LimitType.TIME_BUDGET) {
+                val log = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
+                ((log?.budgetUsedMs ?: 0L) / 60_000L).toInt()
+            } else {
+                val packageName = challenge.appPackageName ?: continue
+                runCatching { usageStatsRepository.getTodayUsageForApp(packageName) }
+                    .getOrNull()?.minutes ?: continue
+            }
             groupChallengeRepository.updateParticipantTimeUsed(
                 groupId = groupId,
                 userId = uid,
-                timeUsedMinutes = usage.minutes
+                timeUsedMinutes = timeMinutes
             )
-            Timber.d("Leaderboard time updated: userId=$uid time=${usage.minutes}")
+            Timber.d("Leaderboard time updated: userId=$uid groupId=$groupId time=$timeMinutes")
         }
     }
 

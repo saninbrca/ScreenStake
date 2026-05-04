@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import com.detox.app.util.DateUtils
 import timber.log.Timber
-import java.util.Calendar
 import javax.inject.Inject
 
 sealed interface DashboardUiState {
@@ -83,7 +83,7 @@ class DashboardViewModel @Inject constructor(
      * [drop(1)] skips the initial emission because [loadStats] already handles the first load.
      */
     private fun observeDailyLogChanges() {
-        val today = todayMidnightMs()
+        val today = DateUtils.todayKey()
         viewModelScope.launch {
             dailyLogRepository.observeLogsForDate(today)
                 .drop(1)
@@ -126,11 +126,4 @@ class DashboardViewModel @Inject constructor(
                 .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for ${challenge.id}") }
         }
     }
-
-    private fun todayMidnightMs(): Long = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
 }

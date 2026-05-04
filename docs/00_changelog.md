@@ -178,6 +178,119 @@ UX: GroupDetailsCard redesigned — shows app icon, buy-in prominently, limit ty
     duration, participants count, creator name, start info.
 Strings: join screen translated to German (Suchen, Jetzt beitreten — €X bezahlen, etc.)
 
+### FIXED — Group Challenge DAILY_BUDGET always shows full budget on first open
+Root cause: budgetUsedMs restored from Firestore on app start for Solo only.
+Group challenges have no entries in the nested Solo dailyLogs sub-collection (step 2
+in syncUserData). Step 4 (fetchTodayDailyLogs) is unreliable for group challenges:
+if refreshFromFirestore fails, a FK constraint violation aborts step 4 silently.
+Result: Group challenge DailyLog (key: "group_{groupId}_{todayKey}") never in Room
+on first open → OverlayManager falls back to totalBudgetMs.
+Fix: Added step 3a to syncUserData() — explicit Group Challenge budget restore:
+- After refreshFromFirestore (ChallengeEntity in Room), for each ACTIVE TIME_BUDGET group challenge
+- Reads Firestore: users/{userId}/dailyLogs/group_{groupId}_{todayKey} via fetchDailyLogDocument()
+- Writes budgetUsedMs + budgetRemainingMs to Room DailyLog
+- Sets SharedPreferences budget_committed_ms = budgetUsedMs (guarded: skip if session active)
+- If document does not exist yet (first use today): budgetUsedMs=0, budgetRemainingMs=totalBudgetMs
+- Log: "Group budget restore: groupId=... usedMs=... remainingMs=..."
+Added FirestoreService.fetchDailyLogDocument(userId, challengeId, date) to read single flat doc.
+Key format verified consistent: write (updateDailyLogBudget) and read both use "group_{groupId}_{todayKey}".
+
+### FIXED — Group Challenge DAILY_BUDGET budget_committed_ms wrong on restart
+Root cause 1: SharedPreferences used single "budget_committed_ms" key for Solo + Group.
+  onStartCommand restart-recovery looped through all TIME_BUDGET challenges and the last
+  challenge's usedMs overwrote the others → wrong committed value for the active challenge.
+Root cause 2: Leaderboard time read from UsageStatsManager (system screen time) instead of
+  Room DailyLog budgetUsedMs → showed 13 min (all-day screen time) instead of 3 min budget used.
+Root cause 3: Midnight reset only cleared the single shared key, not per-challenge keys.
+Fix 1: Per-challenge SharedPreferences key "budget_committed_ms_{challengeId}" used everywhere:
+  onStartCommand, checkBudgetSession (read + write), SyncRepositoryImpl step 3a.
+  Key for Group Challenge = "budget_committed_ms_group_{groupId}" (challengeId = "group_{groupId}").
+Fix 2: updateGroupChallengeStats() for TIME_BUDGET reads dailyLogRepository.getLogForDate()
+  and uses budgetUsedMs / 60_000 as timeUsedMinutes — Room is always source of truth.
+  Non-budget Group Challenges (TIME/SESSIONS) still read from UsageStatsManager unchanged.
+Fix 3: Midnight reset uses budgetSessionPrefs.edit().clear() — wipes all keys in the prefs
+  file including all per-challenge "budget_committed_ms_*" entries from the day.
+Added Timber logs in SyncRepositoryImpl step 3a for Firestore path, read values, Room state,
+  and SharedPreferences key to allow pinpointing future failures.
+
+### FIXED — Group Challenge budget tick never wrote to Firestore dailyLogs
+Root cause: Firestore dailyLogs write existed for Solo (via DailyLogRepositoryImpl appScope)
+but was not explicitly mirrored in the Group Challenge path of checkBudgetSession().
+Fix: Added explicit serviceScope.launch { firestoreService.updateDailyLogBudget(...) }
+inside the challenge.groupChallengeId?.let block, alongside the existing participants mirror.
+docId format: "group_{groupId}_{DateUtils.todayKey()}" — matches restore step 3a in SyncRepositoryImpl.
+Solo path unchanged (handled via DailyLogRepositoryImpl).
+
+### DECISION — Group Challenge never auto-fails for any limit type
+All limit types (SESSION, TIME, BUDGET): limit reached = SessionLimitReachedOverlay only.
+App stays blocked. Participant status remains "active". No Stripe capture.
+Stripe capture ONLY on manual "Aufgeben" in Detail screen.
+endDate reached = success → Stripe refund for all active participants.
+
+Changes:
+- OverlayManager: TIME_LIMIT group challenge → showSessionLimitReachedOverlay instead of handleGroupChallengeFail
+- OverlayManager: DAILY_BUDGET group challenge → showSessionLimitReachedOverlay instead of handleGroupChallengeFail
+- DailyEvaluationWorker: group evaluateGroupChallenge → removed failGroupParticipant CF call; DailyLog still written with limitExceeded=true (stats only), moneyLostCents=0
+- GroupChallengeDetailViewModel: added QuitState + quitChallenge() — calls failGroupParticipant CF on manual quit
+- GroupChallengeDetailScreen: added "Aufgeben" button with confirmation dialog; navigates to FriendsHub on confirm
+- completeGroupChallenge CF: already correct — active participants get refunded on endDate
+- docs/04_group_challenges.md: updated Group Challenge Rules table + Fail & Complete Logic section
+
+### FIXED — Group Challenge budget resets to 0 on tab switch
+Root cause: GetDailyStatsUseCase read DailyLog from Room using challenge.id (UUID) for Group
+Challenges, but Group DailyLogs are stored with challengeId = "group_{groupId}". todayLog was
+always null → budgetUsedMs always 0 in the no-active-session path.
+Secondary: BUDGET_COMMITTED_MS_KEY used the base key ("budget_committed_ms") instead of
+the per-challenge key ("budget_committed_ms_group_{groupId}") → committedMs was 0 in the
+active session path.
+Fix: dailyLogChallengeId = "group_${groupChallengeId}" for Group Challenges in GetDailyStatsUseCase.
+Fix: per-challenge committedMs key used in active session path.
+Fix: DashboardViewModel.todayMidnightMs() replaced with DateUtils.todayKey() (architecture rule).
+
+### FIXED — Group Challenge DailyLog deleted from Room during Firestore sync
+Root cause: `syncGroupChallengeToLocalTracking()` called `challengeDao.insertChallenge(entity)` with
+`OnConflictStrategy.REPLACE`. SQLite's `INSERT OR REPLACE` deletes the existing `ChallengeEntity`
+row before re-inserting it. The FK `onDelete = CASCADE` on `DailyLogEntity` cascade-deletes the
+Group DailyLog (`challengeId = "group_{groupId}"`) in the same transaction.
+Trigger: The Firestore real-time listener in `startSyncingForUser` fires its FIRST emit ~1s after
+`syncUserData()` completes (network latency). `syncedStatuses` is still empty at that point, so the
+status guard allows `syncGroupChallengeToLocalTracking` to run and wipe the freshly-created log.
+Fix: Added `@Update updateChallenge()` to `ChallengeDao`. In `syncGroupChallengeToLocalTracking`,
+check if the `ChallengeEntity` already exists: if so, call `updateChallenge()` (SQL UPDATE — no
+delete, no cascade) instead of `insertChallenge()`. First-time inserts are unaffected.
+Fix: `SyncRepositoryImpl` step 4 now uses `DateUtils.todayKey()` instead of inline Calendar calc
+(architecture rule). Added diagnostic logs for DailyLog keys being written.
+
+---
+
+## 2026-05-04
+
+### FIXED — Group Challenge budget resets to 0 on tab switch / app restart
+Multiple root causes fixed over several sessions:
+
+1. Firestore dailyLogs write missing in Group budget tick
+   Fix: Added identical Firestore write (SetOptions.merge(), fire-and-forget)
+   every 10s in UsageTrackingService for Group challenges
+   docId: "group_{groupId}_{DateUtils.todayKey()}"
+
+2. Group Challenge DailyLog deleted from Room during Firestore sync
+   Root cause: DashboardViewModel syncJob deleted ALL DailyLogs before
+   re-inserting from Firestore. Group DailyLogs not in Firestore fetch → deleted.
+   Fix: UPSERT only (never DELETE). Sync includes Group challenge IDs.
+
+3. SharedPreferences keys not per-challenge
+   Fix: "budget_committed_ms_{challengeId}" — Solo and Group never overwrite each other
+
+4. Leaderboard showed wrong time (13 min instead of 3)
+   Fix: Leaderboard reads from Room DailyLog directly, not SharedPreferences
+
+### DECISION — DailyLog sync rules (permanent)
+- NEVER delete DailyLog rows during any sync operation
+- UPSERT only: @Insert(onConflict = REPLACE) always
+- Firestore sync must include ALL challenge types (Solo + Group)
+- Group DailyLog key: "group_{groupId}_{DateUtils.todayKey()}"
+- Solo DailyLog key: "{challengeId}_{DateUtils.todayKey()}"
+
 ---
 
 ## Architectural Decisions (permanent rules)

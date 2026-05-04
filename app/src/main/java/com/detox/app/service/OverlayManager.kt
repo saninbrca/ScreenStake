@@ -327,10 +327,9 @@ class OverlayManager @Inject constructor(
             LimitType.TIME_BUDGET -> handleTimeBudgetApp(status, scope)
             LimitType.TIME -> {
                 when {
-                    (status.limitExceeded || exceededAppsToday.contains(packageName)) && groupChallengeId != null ->
-                        handleGroupChallengeFail(status, groupChallengeId, packageName, scope)
                     status.limitExceeded || exceededAppsToday.contains(packageName) ->
-                        showLimitExceededOverlay(status, scope)
+                        if (groupChallengeId != null) showSessionLimitReachedOverlay(status, scope)
+                        else showLimitExceededOverlay(status, scope)
                     else ->
                         showBlockingOverlay(status, scope)
                 }
@@ -839,8 +838,8 @@ class OverlayManager @Inject constructor(
 
     /**
      * Shows the budget-exhausted overlay (Stage 2).
-     * Group Challenge: delegates to [handleGroupChallengeFail] (captures payment, shows fail screen).
-     * Solo Soft Mode: shows [SessionLimitReachedOverlay] and frees the app for the rest of the day.
+     * Both Group Challenge and Solo Soft Mode: shows [SessionLimitReachedOverlay], app stays blocked.
+     * Group Challenge NEVER auto-fails here — Stripe only captured on manual "Aufgeben".
      */
     private fun showBudgetExhaustedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
@@ -852,7 +851,24 @@ class OverlayManager @Inject constructor(
         )
 
         if (groupChallengeId != null) {
-            handleGroupChallengeFail(status, groupChallengeId, packageName, scope)
+            // Group Challenge: never auto-fail. Show SessionLimitReachedOverlay (identical to Solo
+            // Soft Mode blocking). Stripe only captured on manual "Aufgeben" in Detail screen.
+            val composeView = createSessionComposeView(
+                onBack = {
+                    dismissOverlay()
+                    goHome()
+                }
+            ) {
+                DetoxTheme {
+                    SessionLimitReachedOverlay(
+                        onNo = {
+                            dismissOverlay()
+                            goHome()
+                        }
+                    )
+                }
+            }
+            showSessionOverlay(composeView, challenge.id)
             return
         }
 
@@ -1201,13 +1217,7 @@ class OverlayManager @Inject constructor(
                 sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$pkg").apply()
             }
             sessionTimerPackage = null
-            budgetSessionPrefs.edit()
-                .putLong(BUDGET_SESSION_END_TIME_KEY, 0L)
-                .putLong(BUDGET_SESSION_START_TIME_KEY, 0L)
-                .putLong(BUDGET_COMMITTED_MS_KEY, 0L)
-                .remove(BUDGET_SESSION_CHALLENGE_KEY)
-                .remove(BUDGET_SESSION_PACKAGE_KEY)
-                .apply()
+            budgetSessionPrefs.edit().clear().apply()
             scheduleMidnightReset()
         }, delay)
     }

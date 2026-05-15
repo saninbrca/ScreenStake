@@ -1,0 +1,59 @@
+appId: com.detox.app
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\50_dashboard
+
+# Zum Profile navigieren
+- tapOn: "Profile"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\51_profile
+- scroll
+- scroll
+- scroll
+- scroll
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\52_profile_bottom
+
+# Debug Panel öffnen
+- tapOn: "🛠 Debug Tools"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\53_debug_panel
+- scroll
+- scroll
+- scroll
+- scroll
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\53b_debug_gescrollt
+
+# Permissions prüfen
+- tapOn: "Check All Permissions"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\54_permissions
+- tapOn: "OK"
+- waitForAnimationToEnd
+
+# Permission Loss simulieren
+- tapOn: "Simulate Permission Lost"
+- waitForAnimationToEnd
+- tapOn: "Dashboard"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\55_dashboard_banner
+
+# Zurück zum Debug Panel und Reset
+- tapOn: "Profile"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- scroll
+- scroll
+- tapOn: "🛠 Debug Tools"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- scroll
+- scroll
+- tapOn: "Reset Permission Lost Timer"
+- waitForAnimationToEnd
+- tapOn: "Dashboard"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\56_banner_weg

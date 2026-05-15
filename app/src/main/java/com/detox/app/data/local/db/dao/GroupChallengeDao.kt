@@ -40,4 +40,7 @@ interface GroupChallengeDao {
 
     @Query("SELECT * FROM group_challenges ORDER BY endDate DESC")
     suspend fun getAllList(): List<GroupChallengeEntity>
+
+    @Query("UPDATE group_challenges SET endDate = :endDate WHERE groupId = :groupId")
+    suspend fun updateEndDate(groupId: String, endDate: Long)
 }

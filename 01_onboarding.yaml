@@ -1,0 +1,39 @@
+appId: com.detox.app
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\01_willkommen
+- assertVisible: "Jetzt starten"
+- assertVisible: "Überspringen"
+- swipe:
+    direction: LEFT
+    duration: 400
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\02_konzept
+- assertVisible: "Weiter"
+- tapOn: "Weiter"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\03_modi
+- assertVisible: "Soft Mode"
+- assertVisible: "Hard Mode"
+- assertVisible: "Verstanden"
+- tapOn: "Verstanden"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\04_permissions
+- assertVisible: "Berechtigungen aktivieren"
+- swipe:
+    direction: LEFT
+    duration: 400
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\05_fertig
+- assertVisible: "Konto erstellen"
+- assertVisible: "Ich habe bereits ein Konto"
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\06_ueberspringen_start
+- tapOn: "Überspringen"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\07_nach_ueberspringen
+- assertVisible: "Konto erstellen"

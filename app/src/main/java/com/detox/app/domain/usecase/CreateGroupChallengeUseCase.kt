@@ -8,14 +8,18 @@ import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
 
-/** Data returned to the ViewModel after the Cloud Function succeeds. */
+/** Returned from [CreateGroupChallengeUseCase.initiatePayment] — used to show PaymentSheet. */
+data class CreateGroupChallengePaymentData(
+    val groupId: String,
+    val code: String,
+    val clientSecret: String,
+    val paymentIntentId: String,
+)
+
+/** Returned from [CreateGroupChallengeUseCase.invoke] after Firestore doc is created. */
 data class GroupChallengeCreatedData(
     val groupId: String,
     val code: String,
-    /** Stripe client secret — present to the creator via PaymentSheet. */
-    val clientSecret: String,
-    /** paymentIntentId stored so we can update the participant record. */
-    val paymentIntentId: String,
 )
 
 class CreateGroupChallengeUseCase @Inject constructor(
@@ -25,43 +29,19 @@ class CreateGroupChallengeUseCase @Inject constructor(
 ) {
 
     /**
-     * Creates a new group challenge server-side and returns the data needed to
-     * present the creator's Stripe PaymentSheet.
+     * Step 1 — validates the form, generates local IDs, and creates a Stripe PaymentIntent
+     * via the [createGroupChallengePaymentIntent] Cloud Function.
      *
-     * @param creatorUserId  Firebase UID of the challenge creator.
-     * @param creatorDisplayName  Display name shown in the leaderboard.
-     * @param appPackageNames  List of app packages to block.
-     * @param appDisplayName  Human-readable name for the primary app.
-     * @param limitType  TIME, SESSIONS, or TIME_BUDGET.
-     * @param limitValueMinutes  Daily minute limit (TIME / TIME_BUDGET).
-     * @param limitValueSessions  Daily session count (SESSIONS only).
-     * @param sessionDurationMinutes  Max duration per session in minutes (SESSIONS only).
-     * @param durationDays  Challenge length in days (1–30).
-     * @param buyInCents  Fixed buy-in per participant (100–5000 cents / €1–€50).
-     * @param maxParticipants  Maximum number of players (2–20).
-     * @param startDateMs  Unix epoch of the intended start (must be ≥ now + 24 h).
-     * @param bonusEnabled  Whether to award a 10% bonus to the best performer.
-     *
-     * @return [Result] wrapping [GroupChallengeCreatedData] on success.
+     * Does NOT write to Firestore. Call [invoke] only after [PaymentSheetResult.Completed].
      */
-    suspend operator fun invoke(
-        creatorUserId: String,
-        creatorDisplayName: String,
+    suspend fun initiatePayment(
         appPackageNames: List<String>,
-        appDisplayName: String,
+        buyInCents: Int,
+        durationDays: Int,
         limitType: LimitType,
         limitValueMinutes: Int,
         limitValueSessions: Int?,
-        sessionDurationMinutes: Int = 5,
-        durationDays: Int,
-        buyInCents: Int,
-        maxParticipants: Int,
-        startDateMs: Long,
-        bonusEnabled: Boolean,
-        blockedDomains: List<String> = emptyList(),
-    ): Result<GroupChallengeCreatedData> {
-
-        // ── Validation ──────────────────────────────────────────────────────────
+    ): Result<CreateGroupChallengePaymentData> {
         if (appPackageNames.isEmpty()) {
             return Result.failure(IllegalArgumentException("Select at least one app to block."))
         }
@@ -71,9 +51,6 @@ class CreateGroupChallengeUseCase @Inject constructor(
         if (buyInCents !in 1000..5000) {
             return Result.failure(IllegalArgumentException("Buy-in must be between €10 and €50."))
         }
-        if (maxParticipants !in 2..20) {
-            return Result.failure(IllegalArgumentException("Participants must be between 2 and 20."))
-        }
         if (limitType != LimitType.TIME_BUDGET && limitValueMinutes <= 0) {
             return Result.failure(IllegalArgumentException("Time limit must be greater than 0."))
         }
@@ -81,7 +58,6 @@ class CreateGroupChallengeUseCase @Inject constructor(
             return Result.failure(IllegalArgumentException("Session count must be greater than 0."))
         }
 
-        // Cross-check: block if creator already has an active challenge for any of these apps
         val activeChallenges = challengeRepository.getActiveChallengesList().getOrElse { emptyList() }
         val activePackages = activeChallenges.flatMap { it.appPackageNames }.toSet()
         val conflictPkg = appPackageNames.firstOrNull { it in activePackages }
@@ -99,12 +75,49 @@ class CreateGroupChallengeUseCase @Inject constructor(
 
         val groupId = UUID.randomUUID().toString()
         val code = generateCode()
+
+        return cloudFunctionsService.createPaymentIntent(
+            amountCents = buyInCents,
+            durationDays = durationDays,
+            challengeId = groupId,
+        ).map { paymentData ->
+            Timber.d("CreateGroupChallengeUseCase: payment intent created groupId=%s", groupId)
+            CreateGroupChallengePaymentData(
+                groupId = groupId,
+                code = code,
+                clientSecret = paymentData.clientSecret,
+                paymentIntentId = paymentData.paymentIntentId,
+            )
+        }
+    }
+
+    /**
+     * Step 2 — called only after [PaymentSheetResult.Completed].
+     * Creates the Firestore document using the pre-authorized [paymentIntentId].
+     */
+    suspend operator fun invoke(
+        creatorUserId: String,
+        creatorDisplayName: String,
+        appPackageNames: List<String>,
+        appDisplayName: String,
+        limitType: LimitType,
+        limitValueMinutes: Int,
+        limitValueSessions: Int?,
+        sessionDurationMinutes: Int = 5,
+        durationDays: Int,
+        buyInCents: Int,
+        maxParticipants: Int,
+        startDateMs: Long,
+        bonusEnabled: Boolean,
+        blockedDomains: List<String> = emptyList(),
+        groupId: String,
+        code: String,
+        paymentIntentId: String,
+    ): Result<GroupChallengeCreatedData> {
         val baseMs = if (startDateMs > 0L) startDateMs else System.currentTimeMillis()
         val endDateMs = baseMs + durationDays.toLong() * 24 * 60 * 60 * 1000L
         Timber.d("endDate stored as: $endDateMs = ${java.util.Date(endDateMs)}")
 
-        // Persist to Firestore via Cloud Function (validates code uniqueness,
-        // creates Stripe PaymentIntent for creator, adds creator as first participant)
         val groupDataMap = mapOf(
             "groupId" to groupId,
             "creatorUserId" to creatorUserId,
@@ -125,46 +138,23 @@ class CreateGroupChallengeUseCase @Inject constructor(
             "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null }
         )
 
-        val cfResult = cloudFunctionsService.createGroupChallenge(groupId, code, groupDataMap)
+        val cfResult = cloudFunctionsService.createGroupChallenge(groupId, code, groupDataMap, paymentIntentId)
         if (cfResult.isFailure) {
             Timber.e(cfResult.exceptionOrNull(), "CreateGroupChallengeUseCase: cloud function failed")
             return Result.failure(cfResult.exceptionOrNull()!!)
         }
 
-        val creationData = cfResult.getOrThrow()
-        val finalCode = creationData.code
+        val finalCode = cfResult.getOrThrow().code
 
-        // Fetch the server-authoritative version (Source.SERVER) to populate Room
-        // NOTE: do NOT call saveGroupChallenge here — it would overwrite the Firestore document
-        // with participants=[] and erase the creator entry added by the Cloud Function.
-        Timber.d("Group created: $groupId — fetching from Firestore")
+        // Fetch from Firestore to populate Room — do NOT call saveGroupChallenge which would
+        // overwrite the document and erase the creator participant added by the CF.
+        Timber.d("CreateGroupChallengeUseCase: challenge created groupId=%s — fetching from Firestore", groupId)
         groupChallengeRepository.fetchAndCacheById(groupId)
-            .onSuccess { fetched ->
-                val fetchedId = fetched?.groupId
-                Timber.d(
-                    "CreateGroupChallengeUseCase: local groupId=%s  firestore groupId=%s  match=%b",
-                    groupId, fetchedId, groupId == fetchedId
-                )
-                if (fetched == null) {
-                    Timber.w(
-                        "CreateGroupChallengeUseCase: Firestore returned null for groupId=%s " +
-                                "— document may not have committed yet", groupId
-                    )
-                }
-            }
             .onFailure { e ->
-                Timber.w(e, "CreateGroupChallengeUseCase: fetchAndCacheById failed — using local cache")
+                Timber.w(e, "CreateGroupChallengeUseCase: fetchAndCacheById failed — continuing without local cache")
             }
 
-        Timber.d("CreateGroupChallengeUseCase: created groupId=%s code=%s", groupId, finalCode)
-        return Result.success(
-            GroupChallengeCreatedData(
-                groupId = groupId,
-                code = finalCode,
-                clientSecret = creationData.clientSecret,
-                paymentIntentId = creationData.paymentIntentId
-            )
-        )
+        return Result.success(GroupChallengeCreatedData(groupId = groupId, code = finalCode))
     }
 
     /** Generates a random 6-character uppercase alphanumeric code. */

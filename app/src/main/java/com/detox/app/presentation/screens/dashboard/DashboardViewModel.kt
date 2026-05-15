@@ -2,6 +2,8 @@ package com.detox.app.presentation.screens.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.data.local.db.DetoxDatabase
+import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.repository.ChallengeRepository
@@ -34,6 +36,7 @@ class DashboardViewModel @Inject constructor(
     private val syncUserDataUseCase: SyncUserDataUseCase,
     private val challengeRepository: ChallengeRepository,
     private val dailyLogRepository: DailyLogRepository,
+    private val database: DetoxDatabase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
@@ -42,6 +45,13 @@ class DashboardViewModel @Inject constructor(
     /** Non-null while the Hard Mode success overlay should be shown. Null = overlay hidden. */
     private val _completedChallenge = MutableStateFlow<Challenge?>(null)
     val completedChallenge: StateFlow<Challenge?> = _completedChallenge.asStateFlow()
+
+    /** Failed Hard Mode challenges with an active redemption window. Empty = banner hidden. */
+    private val _redemptionChallenges = MutableStateFlow<List<ChallengeEntity>>(emptyList())
+    val redemptionChallenges: StateFlow<List<ChallengeEntity>> = _redemptionChallenges.asStateFlow()
+
+    /** Set to true when the user dismisses the redemption banner for this session. */
+    private var redemptionBannerDismissed = false
 
     // Kicked off immediately on ViewModel creation. loadStats() awaits this before
     // reading Room, ensuring re-login always sees up-to-date data. On subsequent
@@ -73,6 +83,13 @@ class DashboardViewModel @Inject constructor(
                     }
                 }
                 .onFailure { e -> Timber.w(e, "Dashboard: failed to check completed Hard Mode challenge") }
+
+            if (!redemptionBannerDismissed) {
+                val now = System.currentTimeMillis()
+                val available = database.challengeDao().getChallengesWithRedemptionAvailable(now)
+                _redemptionChallenges.value = available
+                Timber.d("Dashboard: ${available.size} challenge(s) with redemption available")
+            }
         }
     }
 
@@ -115,6 +132,11 @@ class DashboardViewModel @Inject constructor(
                 )
             }
         )
+    }
+
+    fun dismissRedemptionBanner() {
+        redemptionBannerDismissed = true
+        _redemptionChallenges.value = emptyList()
     }
 
     /** Called when the user taps "Start New Challenge" on the success overlay. */

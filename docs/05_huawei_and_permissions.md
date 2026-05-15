@@ -325,3 +325,28 @@ class BootReceiver : BroadcastReceiver() {
 □ Battery optimization → guide user in onboarding to whitelist Detox
 □ Test → always verify on real Huawei hardware, not just emulator
 ```
+
+## Debug: Permission Testing
+
+Use Debug Panel in ProfileScreen to test permission scenarios:
+
+"Check All Permissions"
+→ Shows Overlay ✅/❌, Accessibility ✅/❌, Usage Stats ✅/❌
+→ All three must be ✅ for normal operation
+
+"Simulate Permission Lost"
+→ Sets permission_lost_at = now - 2h in SharedPreferences
+→ PermissionCheckWorker detects it within 15 min
+→ Red banner appears on all screens
+→ Notifications escalate per 24h system
+
+"Reset Permission Lost Timer"
+→ Clears permission_lost_at from SharedPreferences
+→ Red banner disappears
+→ Notifications stop
+
+On Huawei specifically:
+→ After "Simulate Permission Lost" verify:
+   - AccessibilityService status also checked
+   - ServiceWatchdogWorker detects missing service
+   - Battery optimization warning shown if service killed

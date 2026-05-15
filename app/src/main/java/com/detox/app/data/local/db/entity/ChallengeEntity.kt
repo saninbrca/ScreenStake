@@ -44,4 +44,33 @@ data class ChallengeEntity(
     @androidx.room.ColumnInfo(name = "groupChallengeId", defaultValue = "NULL") val groupChallengeId: String? = null,
     /** Comma-separated URL path prefixes for feature-level partial blocking, e.g. "instagram.com/reels". */
     @androidx.room.ColumnInfo(name = "partialBlockDomains", defaultValue = "NULL") val partialBlockDomains: String? = null,
+    /** Comma-separated PartialBlockSection IDs for native in-app section blocking, e.g. "instagram_reels,youtube_shorts". */
+    @androidx.room.ColumnInfo(name = "partial_block_sections", defaultValue = "") val partialBlockSections: String = "",
+    /** 1 when only sections are blocked, not the full app (package excluded from full-block overlay logic). */
+    @androidx.room.ColumnInfo(name = "partial_block_only", defaultValue = "0") val isPartialBlockOnly: Int = 0,
+
+    // ── Redemption Challenge fields ────────────────────────────────────────────
+
+    /** 1 when a Redemption Challenge is available after this challenge failed (Hard Mode Solo only). */
+    @androidx.room.ColumnInfo(name = "redemptionEligible", defaultValue = "0") val redemptionEligible: Int = 0,
+    /** Timestamp after which the Redemption Challenge option expires (failedAt + 3 days). */
+    @androidx.room.ColumnInfo(name = "redemptionDeadline", defaultValue = "NULL") val redemptionDeadline: Long? = null,
+    /** Timestamp after which the Redemption banner/button is shown (failedAt + 24h). */
+    @androidx.room.ColumnInfo(name = "redemptionShowAfter", defaultValue = "NULL") val redemptionShowAfter: Long? = null,
+    /** ID of the Redemption Challenge that was started for this original challenge. Non-null = already used. */
+    @androidx.room.ColumnInfo(name = "redemptionChallengeId", defaultValue = "NULL") val redemptionChallengeId: String? = null,
+    /** Amount in cents to refund on Redemption win (floor(originalAmountCents * 0.60)). */
+    @androidx.room.ColumnInfo(name = "redemptionRefundAmount", defaultValue = "NULL") val redemptionRefundAmount: Int? = null,
+    /** Duration in days for the Redemption Challenge (originalDays * 2). */
+    @androidx.room.ColumnInfo(name = "redemptionDays", defaultValue = "NULL") val redemptionDays: Int? = null,
+    /** Daily limit for the Redemption Challenge (floor(originalLimit / 2), minimum 1). */
+    @androidx.room.ColumnInfo(name = "redemptionLimit", defaultValue = "NULL") val redemptionLimit: Int? = null,
+    /** 1 when this challenge IS the Redemption Challenge (no new payment, fights for refund). */
+    @androidx.room.ColumnInfo(name = "isRedemption", defaultValue = "0") val isRedemption: Int = 0,
+    /** For Redemption Challenges: the ID of the original failed Hard Mode challenge. */
+    @androidx.room.ColumnInfo(name = "originalChallengeId", defaultValue = "NULL") val originalChallengeId: String? = null,
+    /** For Redemption Challenges: the Stripe PaymentIntentId of the original challenge to partially refund on win. */
+    @androidx.room.ColumnInfo(name = "originalPaymentIntentId", defaultValue = "NULL") val originalPaymentIntentId: String? = null,
+    /** For Redemption Challenges: the partial refund amount in cents (floor(originalAmount * 0.60)). */
+    @androidx.room.ColumnInfo(name = "refundAmountCents", defaultValue = "NULL") val refundAmountCents: Int? = null,
 )

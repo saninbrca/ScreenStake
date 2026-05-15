@@ -10,6 +10,7 @@ import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.repository.ChallengeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -171,6 +172,22 @@ class ChallengeRepositoryImpl @Inject constructor(
             completionShown = completionShown != 0,
             sessionDurationMinutes = sessionDurationMinutes,
             groupChallengeId = groupChallengeId,
+            partialBlockSections = partialBlockSections
+                .split(",")
+                .filter { it.isNotBlank() }
+                .mapNotNull { PartialBlockSection.fromId(it.trim()) },
+            isPartialBlockOnly = isPartialBlockOnly != 0,
+            redemptionEligible = redemptionEligible != 0,
+            redemptionDeadline = redemptionDeadline,
+            redemptionShowAfter = redemptionShowAfter,
+            redemptionChallengeId = redemptionChallengeId,
+            redemptionRefundAmount = redemptionRefundAmount,
+            redemptionDays = redemptionDays,
+            redemptionLimit = redemptionLimit,
+            isRedemption = isRedemption != 0,
+            originalChallengeId = originalChallengeId,
+            originalPaymentIntentId = originalPaymentIntentId,
+            refundAmountCents = refundAmountCents,
         )
     }
 
@@ -201,5 +218,18 @@ class ChallengeRepositoryImpl @Inject constructor(
         completionShown = if (completionShown) 1 else 0,
         sessionDurationMinutes = sessionDurationMinutes,
         groupChallengeId = groupChallengeId,
+        partialBlockSections = partialBlockSections.joinToString(",") { it.id },
+        isPartialBlockOnly = if (isPartialBlockOnly) 1 else 0,
+        redemptionEligible = if (redemptionEligible) 1 else 0,
+        redemptionDeadline = redemptionDeadline,
+        redemptionShowAfter = redemptionShowAfter,
+        redemptionChallengeId = redemptionChallengeId,
+        redemptionRefundAmount = redemptionRefundAmount,
+        redemptionDays = redemptionDays,
+        redemptionLimit = redemptionLimit,
+        isRedemption = if (isRedemption) 1 else 0,
+        originalChallengeId = originalChallengeId,
+        originalPaymentIntentId = originalPaymentIntentId,
+        refundAmountCents = refundAmountCents,
     )
 }

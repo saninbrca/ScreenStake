@@ -40,4 +40,33 @@ data class Challenge(
     val sessionDurationMinutes: Int = 5,
     /** Non-null when this challenge was auto-created to track a group challenge locally. */
     val groupChallengeId: String? = null,
+    /** Native app content sections blocked within the app (e.g. Instagram Reels). */
+    val partialBlockSections: List<PartialBlockSection> = emptyList(),
+    /** True when this challenge only blocks specific sections, not the full app. */
+    val isPartialBlockOnly: Boolean = false,
+
+    // ── Redemption Challenge fields ────────────────────────────────────────────
+
+    /** True when a Redemption Challenge is available after this challenge failed (Hard Mode Solo only). */
+    val redemptionEligible: Boolean = false,
+    /** Timestamp after which the Redemption option expires (failedAt + 3 days). */
+    val redemptionDeadline: Long? = null,
+    /** Timestamp after which the Redemption banner/button is shown (failedAt + 24h). */
+    val redemptionShowAfter: Long? = null,
+    /** ID of the Redemption Challenge started for this original. Non-null = already used. */
+    val redemptionChallengeId: String? = null,
+    /** Amount to refund on Redemption win in cents (floor(originalAmountCents * 0.70)). */
+    val redemptionRefundAmount: Int? = null,
+    /** Duration in days for the Redemption Challenge (originalDays * 2). */
+    val redemptionDays: Int? = null,
+    /** Daily limit for the Redemption Challenge (floor(originalLimit / 2)). */
+    val redemptionLimit: Int? = null,
+    /** True when this challenge IS the Redemption Challenge (no new payment). */
+    val isRedemption: Boolean = false,
+    /** For Redemption Challenges: ID of the original failed Hard Mode challenge. */
+    val originalChallengeId: String? = null,
+    /** For Redemption Challenges: PaymentIntentId of the original challenge to partially refund on win. */
+    val originalPaymentIntentId: String? = null,
+    /** For Redemption Challenges: partial refund amount in cents on win. */
+    val refundAmountCents: Int? = null,
 )

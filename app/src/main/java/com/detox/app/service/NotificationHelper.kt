@@ -28,6 +28,7 @@ object NotificationHelper {
     private const val NOTIF_ID_DAILY_REPORT      = 2001
     private const val NOTIF_ID_MILESTONE_BASE    = 3000
     private const val NOTIF_ID_DAILY_REMINDER    = 4001
+    private const val NOTIF_ID_REDEMPTION_BASE   = 8000
     // Per-app IDs derived from package name hash so each app gets its own slot
     private const val NOTIF_ID_USAGE_80_BASE     = 5000
     private const val NOTIF_ID_USAGE_50_BASE     = 5100
@@ -139,21 +140,37 @@ object NotificationHelper {
 
     /**
      * Posts a milestone notification when a Hard Mode challenge is completed successfully.
-     * Includes the refunded amount so the user knows their money is coming back.
      *
-     * @param amountCents amount in cents that was refunded (e.g. 1000 = €10)
+     * @param refundCents amount in cents being refunded to user (80% of original stake)
+     * @param feeCents    amount in cents kept by app as fee (20% of original stake)
      */
-    fun sendHardModeCompleted(context: Context, appName: String, amountCents: Int) {
-        postMilestone(
-            context = context,
-            notifId = NOTIF_ID_MILESTONE_BASE + appName.hashCode() + 2,
-            title = context.getString(R.string.notif_hard_mode_completed_title),
-            body = context.getString(
-                R.string.notif_hard_mode_completed_body,
-                appName,
-                amountCents / 100
+    fun sendHardModeCompleted(context: Context, appName: String, refundCents: Int, feeCents: Int = 0) {
+        val title = context.getString(R.string.notif_hard_mode_completed_title)
+        val body = if (feeCents > 0) {
+            context.getString(
+                R.string.notif_hard_mode_completed_body_fee,
+                refundCents / 100,
+                feeCents / 100
             )
-        )
+        } else {
+            context.getString(R.string.notif_hard_mode_completed_body, appName, refundCents / 100)
+        }
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(
+                NOTIF_ID_MILESTONE_BASE + appName.hashCode() + 2, notification
+            )
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS permission not granted, skipping hard mode completed notification")
+        }
     }
 
     /**
@@ -545,6 +562,108 @@ object NotificationHelper {
             Timber.d("Group challenge completed notification posted: $appName succeeded=$succeeded refund=${refundCents / 100}€")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping group completed notification")
+        }
+    }
+
+    fun sendGroupChallengePayoutReceived(
+        context: Context,
+        stakeRefundCents: Int,
+        prizeShareCents: Int,
+        hasPendingIban: Boolean
+    ) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val title = "Du hast gewonnen! 🎉"
+        val stakeEuros = stakeRefundCents / 100
+        val prizeEuros = prizeShareCents / 100
+        val body = when {
+            hasPendingIban && prizeShareCents > 0 ->
+                "Dein Einsatz (€$stakeEuros) wurde zurückgebucht. Hinterlege deine IBAN um deinen Gewinnanteil (€$prizeEuros) zu erhalten."
+            prizeShareCents > 0 ->
+                "€${stakeEuros + prizeEuros} werden auf deine Karte zurückgebucht."
+            else ->
+                "Challenge abgeschlossen! ✅ Dein Einsatz (€$stakeEuros) wurde zurückgebucht."
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_GROUP_BASE + 51, notification)
+            Timber.d("Group payout notification posted: stake=€$stakeEuros prize=€$prizeEuros pendingIban=$hasPendingIban")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group payout notification")
+        }
+    }
+
+    fun sendRedemptionAvailable(
+        context: Context,
+        appName: String,
+        refundCents: Int,
+        originalCents: Int
+    ) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val refundEuros = refundCents / 100
+        val originalEuros = originalCents / 100
+        val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_redemption_available_title))
+            .setContentText(context.getString(R.string.notif_redemption_available_body, refundEuros, originalEuros))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                context.getString(R.string.notif_redemption_available_body, refundEuros, originalEuros)
+            ))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(
+                NOTIF_ID_REDEMPTION_BASE + appName.hashCode(), notification
+            )
+            Timber.d("Redemption available notification posted for $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping redemption notification")
+        }
+    }
+
+    fun sendRedemptionCompleted(context: Context, appName: String, refundCents: Int) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val refundEuros = refundCents / 100
+        val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_redemption_completed_title))
+            .setContentText(context.getString(R.string.notif_redemption_completed_body, refundEuros))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(
+                NOTIF_ID_REDEMPTION_BASE + appName.hashCode() + 1, notification
+            )
+            Timber.d("Redemption completed notification posted for $appName: €$refundEuros refunded")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping redemption completed notification")
+        }
+    }
+
+    fun sendRedemptionFailed(context: Context, appName: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_redemption_failed_title))
+            .setContentText(context.getString(R.string.notif_redemption_failed_body, appName))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(
+                NOTIF_ID_REDEMPTION_BASE + appName.hashCode() + 2, notification
+            )
+            Timber.d("Redemption failed notification posted for $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping redemption failed notification")
         }
     }
 

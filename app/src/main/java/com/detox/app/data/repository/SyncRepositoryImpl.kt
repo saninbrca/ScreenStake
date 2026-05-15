@@ -9,6 +9,7 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -194,6 +195,8 @@ class SyncRepositoryImpl @Inject constructor(
         scheduleStartTime = scheduleStartTime,
         scheduleEndTime = scheduleEndTime,
         activeDays = activeDays.joinToString(",").ifEmpty { null },
+        partialBlockSections = partialBlockSections.joinToString(",") { it.id },
+        isPartialBlockOnly = if (isPartialBlockOnly) 1 else 0,
     )
 
     private fun DailyLog.toEntity() = DailyLogEntity(

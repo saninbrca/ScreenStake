@@ -1,9 +1,11 @@
 package com.detox.app.presentation.screens.dashboard
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,12 +14,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
+import com.detox.app.data.local.db.entity.ChallengeEntity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,10 +60,12 @@ fun DashboardScreen(
     onAddChallenge: () -> Unit,
     onChallengeClick: (String) -> Unit,
     onOpenStats: () -> Unit = {},
+    onOpenHistory: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val completedChallenge by viewModel.completedChallenge.collectAsStateWithLifecycle()
+    val redemptionChallenges by viewModel.redemptionChallenges.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(lifecycleOwner) {
@@ -135,6 +145,16 @@ fun DashboardScreen(
                                 onOpenStats = onOpenStats
                             )
                             Spacer(modifier = Modifier.height(16.dp))
+                        }
+                        if (redemptionChallenges.isNotEmpty()) {
+                            item(key = "redemption_banner") {
+                                RedemptionBanner(
+                                    challenges = redemptionChallenges,
+                                    onStartRedemption = onOpenHistory,
+                                    onDismiss = { viewModel.dismissRedemptionBanner() }
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
                         }
                         items(
                             items = state.activeChallenges,
@@ -337,6 +357,76 @@ private fun HardModeSuccessOverlay(
                 ) {
                     Text(text = stringResource(R.string.success_overlay_new_challenge))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RedemptionBanner(
+    challenges: List<ChallengeEntity>,
+    onStartRedemption: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val challenge = challenges.firstOrNull() ?: return
+    val refundEuros = (challenge.redemptionRefundAmount ?: 0) / 100
+    val daysLeft = challenge.redemptionDeadline?.let {
+        val remaining = it - System.currentTimeMillis()
+        (remaining / 86_400_000L).toInt().coerceAtLeast(0)
+    } ?: 0
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFFFF6B35), MaterialTheme.shapes.medium),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.redemption_banner_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE65100)
+                )
+                Text(
+                    text = stringResource(R.string.redemption_banner_body, refundEuros),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(R.string.redemption_banner_deadline, daysLeft),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(
+                    onClick = onStartRedemption,
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF6B35))
+                ) {
+                    Text(
+                        text = stringResource(R.string.redemption_banner_cta),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

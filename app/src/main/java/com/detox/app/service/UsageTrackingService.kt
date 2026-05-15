@@ -99,8 +99,11 @@ class UsageTrackingService : Service() {
 
         serviceScope.launch {
             challengeRepository.getActiveChallenges().collect { challenges ->
-                // Include every package from multi-app challenges
-                val packageNames = challenges.flatMap { it.appPackageNames }.toSet()
+                // Include every package from multi-app challenges (skip partial-only challenges)
+                val packageNames = challenges
+                    .filter { !it.isPartialBlockOnly }
+                    .flatMap { it.appPackageNames }
+                    .toSet()
                 TrackedAppEventBus.updateTrackedPackages(packageNames)
                 Timber.d("Updated tracked packages: $packageNames")
 
@@ -113,6 +116,13 @@ class UsageTrackingService : Service() {
                 val partialBlockDomains = challenges.flatMap { it.partialBlockDomains }.toSet()
                 TrackedAppEventBus.updatePartialBlockDomains(partialBlockDomains)
                 Timber.d("Updated partial block paths: $partialBlockDomains")
+
+                // Aggregate native in-app section blocks (AccessibilityService hot path — no DB queries)
+                val partialSections = challenges
+                    .flatMap { it.partialBlockSections }
+                    .distinct()
+                TrackedAppEventBus.updateActivePartialBlockSections(partialSections)
+                Timber.d("Updated partial block sections: ${partialSections.map { it.id }}")
 
                 // Notify AccessibilityService whether adult content blocking is needed.
                 // It reads this in-memory flag on every browser URL event — no Room query.

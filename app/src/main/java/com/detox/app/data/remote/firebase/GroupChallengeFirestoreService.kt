@@ -440,7 +440,8 @@ class GroupChallengeFirestoreService @Inject constructor(
                     )
                 }.getOrDefault(GroupChallengeStatus.WAITING),
                 participants = participants,
-                perWinnerBonus = (d["perWinnerBonus"] as? Long)?.toInt() ?: 0,
+                perWinnerBonus = ((d["prizePerWinner"] as? Long)?.toInt()
+                    ?: (d["perWinnerBonus"] as? Long)?.toInt()) ?: 0,
                 blockedDomains = (d["blockedDomains"] as? String)
                     ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
                     ?: emptyList()

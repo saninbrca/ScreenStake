@@ -11,6 +11,7 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
+import com.detox.app.domain.usecase.CreateGroupChallengePaymentData
 import com.detox.app.domain.usecase.CreateGroupChallengeUseCase
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
@@ -65,11 +66,8 @@ data class GroupCreateFormState(
 sealed interface GroupCreateUiState {
     data object Idle : GroupCreateUiState
     data object Loading : GroupCreateUiState
-    data class AwaitingPayment(
-        val groupId: String,
-        val code: String,
-        val clientSecret: String,
-    ) : GroupCreateUiState
+    /** PaymentSheet is open — only clientSecret is needed by the Screen. */
+    data class AwaitingPayment(val clientSecret: String) : GroupCreateUiState
     data class Created(val groupId: String, val code: String) : GroupCreateUiState
     data class Error(val message: String) : GroupCreateUiState
 }
@@ -92,6 +90,9 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     private val _appListState = MutableStateFlow(AppListState())
     val appListState: StateFlow<AppListState> = _appListState.asStateFlow()
+
+    /** Holds PaymentIntent data between initiatePayment (step 1) and createChallenge (step 2). */
+    private var pendingPaymentData: CreateGroupChallengePaymentData? = null
 
     init {
         loadApps()
@@ -277,7 +278,50 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     // ── Create ──────────────────────────────────────────────────────────────────
 
+    /**
+     * Step 1: validates the form and creates a Stripe PaymentIntent via CF.
+     * Sets [GroupCreateUiState.AwaitingPayment] to trigger PaymentSheet in the Screen.
+     * Does NOT write to Firestore.
+     */
     fun createChallenge() {
+        val s = _formState.value
+        _uiState.value = GroupCreateUiState.Loading
+        viewModelScope.launch {
+            val result = createGroupChallengeUseCase.initiatePayment(
+                appPackageNames = s.packageNames,
+                buyInCents = s.buyInEuros * 100,
+                durationDays = s.durationDays,
+                limitType = s.limitType,
+                limitValueMinutes = when (s.limitType) {
+                    LimitType.TIME -> s.limitValueMinutes
+                    LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
+                    else -> s.limitValueMinutes
+                },
+                limitValueSessions = if (s.limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+            )
+            result.fold(
+                onSuccess = { paymentData ->
+                    Timber.d("GroupChallengeCreateVM: payment intent created groupId=%s", paymentData.groupId)
+                    pendingPaymentData = paymentData
+                    _uiState.value = GroupCreateUiState.AwaitingPayment(clientSecret = paymentData.clientSecret)
+                },
+                onFailure = { e ->
+                    Timber.e(e, "GroupChallengeCreateVM: initiatePayment failed")
+                    _uiState.value = GroupCreateUiState.Error(e.message ?: "Failed to prepare payment.")
+                },
+            )
+        }
+    }
+
+    /**
+     * Step 2: called only from [PaymentSheetResult.Completed].
+     * Creates the Firestore document with the pre-authorized paymentIntentId.
+     */
+    fun onPaymentSuccess() {
+        val pd = pendingPaymentData ?: run {
+            Timber.w("GroupChallengeCreateVM: onPaymentSuccess called but no pendingPaymentData")
+            return
+        }
         val s = _formState.value
         val userId = firebaseAuthService.currentUserId() ?: run {
             _uiState.value = GroupCreateUiState.Error("Not signed in.")
@@ -310,31 +354,26 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
                 blockedDomains = computeBlockedDomains(),
+                groupId = pd.groupId,
+                code = pd.code,
+                paymentIntentId = pd.paymentIntentId,
             )
             result.fold(
                 onSuccess = { data ->
-                    Timber.d("GroupChallengeCreateVM: created groupId=%s code=%s", data.groupId, data.code)
+                    Timber.d("GroupChallengeCreateVM: challenge created groupId=%s code=%s", pd.groupId, data.code)
+                    pendingPaymentData = null
                     _formState.update { it.copy(generatedCode = data.code) }
-                    _uiState.value = GroupCreateUiState.AwaitingPayment(
-                        groupId = data.groupId,
-                        code = data.code,
-                        clientSecret = data.clientSecret,
-                    )
+                    if (!s.startDateEnabled) scheduleStartReminder(pd.groupId)
+                    _uiState.value = GroupCreateUiState.Created(groupId = pd.groupId, code = data.code)
                 },
                 onFailure = { e ->
-                    Timber.e(e, "GroupChallengeCreateVM: create failed")
-                    _uiState.value = GroupCreateUiState.Error(e.message ?: "Failed to create group challenge.")
+                    Timber.e(e, "GroupChallengeCreateVM: createChallenge CF failed groupId=%s", pd.groupId)
+                    _uiState.value = GroupCreateUiState.Error(
+                        e.message ?: "Payment received but challenge creation failed. Please contact support."
+                    )
                 },
             )
         }
-    }
-
-    fun onPaymentSuccess() {
-        val state = _uiState.value as? GroupCreateUiState.AwaitingPayment ?: return
-        if (!_formState.value.startDateEnabled) {
-            scheduleStartReminder(state.groupId)
-        }
-        _uiState.value = GroupCreateUiState.Created(groupId = state.groupId, code = state.code)
     }
 
     private fun scheduleStartReminder(groupId: String) {
@@ -349,8 +388,16 @@ class GroupChallengeCreateViewModel @Inject constructor(
         )
     }
 
+    /** Called from [PaymentSheetResult.Canceled] — no Firestore write, user stays on screen. */
     fun onPaymentCancelled() {
-        _uiState.value = GroupCreateUiState.Error("Payment was cancelled.")
+        pendingPaymentData = null
+        _uiState.value = GroupCreateUiState.Idle
+    }
+
+    /** Called from [PaymentSheetResult.Failed] — no Firestore write, user stays on screen. */
+    fun onPaymentFailed() {
+        pendingPaymentData = null
+        _uiState.value = GroupCreateUiState.Idle
     }
 
     fun clearError() {

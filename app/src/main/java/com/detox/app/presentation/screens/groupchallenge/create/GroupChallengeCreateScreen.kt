@@ -85,6 +85,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.ui.res.stringResource
+import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.components.StepperField
@@ -110,7 +112,10 @@ fun GroupChallengeCreateScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val appListState by viewModel.appListState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val paymentCancelledMessage = stringResource(R.string.group_create_payment_cancelled)
+    val paymentFailedMessage = stringResource(R.string.group_create_payment_failed)
 
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -121,8 +126,14 @@ fun GroupChallengeCreateScreen(
     val paymentSheet = rememberPaymentSheet { result ->
         when (result) {
             is PaymentSheetResult.Completed -> viewModel.onPaymentSuccess()
-            is PaymentSheetResult.Canceled -> viewModel.onPaymentCancelled()
-            is PaymentSheetResult.Failed -> viewModel.onPaymentCancelled()
+            is PaymentSheetResult.Canceled -> {
+                viewModel.onPaymentCancelled()
+                coroutineScope.launch { snackbarHostState.showSnackbar(paymentCancelledMessage) }
+            }
+            is PaymentSheetResult.Failed -> {
+                viewModel.onPaymentFailed()
+                coroutineScope.launch { snackbarHostState.showSnackbar(paymentFailedMessage) }
+            }
         }
     }
 
@@ -1142,7 +1153,7 @@ private fun Step6Review(
                     strokeWidth = 2.dp,
                 )
             } else {
-                Text("Create Group Challenge 🚀")
+                Text("Create Group Challenge")
             }
         }
     }

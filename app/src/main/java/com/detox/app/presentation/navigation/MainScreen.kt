@@ -201,7 +201,8 @@ fun MainScreen(
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
                     },
-                    onOpenStats = { navController.navigate("statistics") }
+                    onOpenStats = { navController.navigate("statistics") },
+                    onOpenHistory = { navController.navigate("history") }
                 )
             }
 
@@ -380,6 +381,15 @@ fun MainScreen(
                     },
                     onSoloChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
+                    },
+                    onRedemptionStarted = {
+                        navController.navigate(BottomNavTab.Dashboard.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 )
             }

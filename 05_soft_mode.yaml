@@ -1,0 +1,74 @@
+appId: com.detox.app
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_01_dashboard
+
+# Dashboard - aktive Hevy Challenge prüfen
+- assertVisible: "Hevy"
+- assertVisible: "SOFT"
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_02_challenge_card
+
+# Zum Debug Panel navigieren
+- tapOn: "Profile"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- scroll
+- scroll
+- tapOn: "Debug Tools"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_03_debug_opens
+
+# Erst Reset damit wir bei 0 starten
+- tapOn: "Reset Opens Today (all challenges)"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_04_nach_reset
+
+# Zurück zum Dashboard → 0 of 3 opens
+- tapOn: "Dashboard"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_05_dashboard_0opens
+- assertVisible: "0 of 3 opens"
+
+# Zurück zum Debug Panel → Max Opens
+- tapOn: "Profile"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- scroll
+- scroll
+- tapOn: "Debug Tools"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- tapOn: "Max Opens Now (all SESSION_LIMIT)"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_06_nach_max
+
+# Zurück zum Dashboard → 3 of 3 opens → Limit erreicht
+- tapOn: "Dashboard"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_07_limit_erreicht
+- assertVisible: "3 of 3 opens"
+
+# Reset am Ende
+- tapOn: "Profile"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- scroll
+- scroll
+- tapOn: "Debug Tools"
+- waitForAnimationToEnd
+- scroll
+- scroll
+- tapOn: "Reset Opens Today (all challenges)"
+- waitForAnimationToEnd
+- tapOn: "Dashboard"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_08_reset_fertig
+- assertVisible: "0 of 3 opens"

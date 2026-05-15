@@ -1,12 +1,16 @@
 package com.detox.app.domain.usecase
 
+import android.content.Context
+import com.detox.app.BuildConfig
 import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
@@ -17,7 +21,8 @@ data class ChallengeCreationResult(
 
 class CreateChallengeUseCase @Inject constructor(
     private val challengeRepository: ChallengeRepository,
-    private val groupChallengeRepository: GroupChallengeRepository
+    private val groupChallengeRepository: GroupChallengeRepository,
+    @ApplicationContext private val context: Context,
 ) {
     suspend operator fun invoke(
         appPackageName: String?,
@@ -40,6 +45,8 @@ class CreateChallengeUseCase @Inject constructor(
         scheduleEndTime: String? = null,
         activeDays: List<String> = emptyList(),
         sessionDurationMinutes: Int = 5,
+        partialBlockSections: List<PartialBlockSection> = emptyList(),
+        isPartialBlockOnly: Boolean = false,
     ): Result<ChallengeCreationResult> {
         // TIME_BUDGET and TIME_WINDOW challenges don't use limitValueMinutes as a usage cap
         if (limitType != LimitType.TIME_BUDGET && limitType != LimitType.TIME_WINDOW && limitValueMinutes <= 0) {
@@ -57,7 +64,7 @@ class CreateChallengeUseCase @Inject constructor(
         if (mode == ChallengeMode.HARD && (amountCents == null || amountCents <= 0)) {
             return Result.failure(IllegalArgumentException("Hard Mode requires a positive amount"))
         }
-        if (blockingType == BlockingType.APP) {
+        if (blockingType == BlockingType.APP && !isPartialBlockOnly) {
             require(appPackageNames.isNotEmpty()) { "appPackageNames must not be empty for APP challenges" }
             // Check for conflicting solo challenge (includes synced active group challenges)
             val existingChallenge = challengeRepository.getActiveChallengeForApp(appPackageNames.first())
@@ -82,7 +89,13 @@ class CreateChallengeUseCase @Inject constructor(
 
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val endDate = now + durationDays * 86_400_000L
+        val durationMultiplier = if (BuildConfig.DEBUG) {
+            val prefs = context.getSharedPreferences("detox_settings", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("debug_use_minutes_as_days", false)) 60_000L else 86_400_000L
+        } else {
+            86_400_000L
+        }
+        val endDate = now + durationDays * durationMultiplier
 
         val challenge = Challenge(
             id = id,
@@ -109,6 +122,8 @@ class CreateChallengeUseCase @Inject constructor(
             scheduleEndTime = scheduleEndTime,
             activeDays = activeDays,
             sessionDurationMinutes = if (limitType == LimitType.SESSIONS) sessionDurationMinutes else 5,
+            partialBlockSections = partialBlockSections,
+            isPartialBlockOnly = isPartialBlockOnly,
         )
 
         Timber.d(

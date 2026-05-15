@@ -1,0 +1,73 @@
+appId: com.detox.app
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_01_dashboard
+
+# 1. Friends Tab Check
+- tapOn: "Friends"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_02_friends
+- assertVisible: "Create Challenge"
+- assertVisible: "Join with Code"
+- assertVisible: "Keine aktiven Group Challenges"
+
+# 2. Create Challenge Wizard Flow
+- tapOn: "Create Challenge"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_03_wizard_step1
+- assertVisible: "Select apps to block"
+- tapOn: "Booking.com"
+- waitForAnimationToEnd
+- tapOn: "Next"
+
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_04_wizard_step2
+- assertVisible: "Set a limit type"
+- tapOn: "Next"
+
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_05_wizard_step3
+- assertVisible: "Set your limit"
+- tapOn: "Next"
+
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_06_wizard_step4
+- assertVisible: "Buy-in per player"
+- tapOn: "Next"
+
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_07_wizard_step5
+- assertVisible: "Start date & bonus"
+- tapOn: "Next"
+
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_08_wizard_step6
+- assertVisible: "Review & Create"
+
+# 3. Challenge erstellen & Stripe Checkout
+- tapOn: "Create Group Challenge"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_09_stripe_loaded
+- assertVisible: "Zahlungsinformationen hinzufügen"
+
+# Kreditkartendaten eingeben
+- tapOn: "Kartennummer"
+- inputText: "4242424242424242"
+
+- tapOn: "MM/JJ"
+- inputText: "1226"
+
+- tapOn: "CVC"
+- inputText: "123"
+
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_10_stripe_filled
+
+# Bezahlen Button (Falls die Tastatur ihn verdeckt, müssen wir hier ggf. Koordinaten nutzen)
+- tapOn: ".*zahlen.*"
+- waitForAnimationToEnd
+- waitForAnimationToEnd # Warten auf SDK-Rücksprung zur App
+
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\gc_11_final_success

@@ -1,0 +1,29 @@
+appId: com.detox.app
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\30_dashboard
+
+# Dashboard prüfen
+- assertVisible: "No active challenges"
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\31_dashboard_ok
+
+# Challenge Wizard öffnen
+- tapOn: "Start your first challenge 🚀"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\32_wizard_step1
+- assertVisible: "Step 1 of 7"
+- assertVisible: "Soft Mode"
+- assertVisible: "Hard Mode"
+
+# Zurück via Back-Button → Discard Dialog
+- tapOn:
+    point: "8%, 7%"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\33_discard_dialog
+- assertVisible: "Discard challenge?"
+- tapOn: "Discard"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\34_dashboard_final
+- assertVisible: "No active challenges"

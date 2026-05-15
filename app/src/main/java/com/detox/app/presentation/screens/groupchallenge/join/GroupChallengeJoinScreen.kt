@@ -39,6 +39,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -69,13 +71,22 @@ fun GroupChallengeJoinScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val codeInput by viewModel.codeInput.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val joinedSuccessMessage = stringResource(R.string.join_group_joined_success)
+    val paymentCancelledMessage = stringResource(R.string.join_group_payment_cancelled)
+    val paymentFailedMessage = stringResource(R.string.join_group_payment_failed)
 
     val paymentSheet = rememberPaymentSheet { result ->
         when (result) {
             is PaymentSheetResult.Completed -> viewModel.onPaymentSuccess()
-            is PaymentSheetResult.Canceled -> viewModel.onPaymentCancelled()
-            is PaymentSheetResult.Failed -> viewModel.onPaymentCancelled()
+            is PaymentSheetResult.Canceled -> {
+                viewModel.onPaymentCancelled()
+                coroutineScope.launch { snackbarHostState.showSnackbar(paymentCancelledMessage) }
+            }
+            is PaymentSheetResult.Failed -> {
+                viewModel.onPaymentCancelled()
+                coroutineScope.launch { snackbarHostState.showSnackbar(paymentFailedMessage) }
+            }
         }
     }
 
@@ -180,6 +191,7 @@ fun GroupChallengeJoinScreen(
                 Spacer(Modifier.height(4.dp))
 
                 val isLoading = uiState is GroupJoinUiState.ProcessingPayment ||
+                    uiState is GroupJoinUiState.AwaitingPayment ||
                     uiState is GroupJoinUiState.ConfirmingJoin
 
                 when {

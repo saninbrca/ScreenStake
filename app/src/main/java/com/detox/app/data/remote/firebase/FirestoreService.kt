@@ -6,6 +6,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.PartialBlockSection
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
@@ -94,6 +95,26 @@ class FirestoreService @Inject constructor(
             Timber.d("Updated challenge $challengeId status to $status in Firestore")
         } catch (e: Exception) {
             Timber.e(e, "Failed to update challenge $challengeId status")
+        }
+    }
+
+    suspend fun updateChallengePayoutStatus(userId: String, challengeId: String, amountCents: Int) {
+        try {
+            firestore
+                .collection("users").document(userId)
+                .collection("challenges").document(challengeId)
+                .set(
+                    mapOf(
+                        "payoutStatus" to "refunded",
+                        "payoutAmount" to amountCents,
+                        "payoutDate" to System.currentTimeMillis()
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                .await()
+            Timber.d("Payout status updated for challenge $challengeId: refunded €${amountCents / 100f}")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to update payout status for challenge $challengeId")
         }
     }
 
@@ -187,6 +208,11 @@ class FirestoreService @Inject constructor(
                             ?.map { it.trim() }
                             ?.filter { it.isNotBlank() }
                             ?: emptyList(),
+                        partialBlockSections = (d["partialBlockSections"] as? List<*>)
+                            ?.filterIsInstance<String>()
+                            ?.mapNotNull { PartialBlockSection.fromId(it) }
+                            ?: emptyList(),
+                        isPartialBlockOnly = d["isPartialBlockOnly"] as? Boolean ?: false,
                     )
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to parse challenge document ${doc.id}")
@@ -344,6 +370,60 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    // ── Redemption Challenge ───────────────────────────────────────────────────
+
+    suspend fun updateChallengeRedemptionInfo(
+        userId: String,
+        challengeId: String,
+        eligible: Boolean,
+        deadline: Long,
+        showAfter: Long,
+        refundAmount: Int,
+        redemptionDays: Int,
+        redemptionLimit: Int
+    ) {
+        try {
+            firestore
+                .collection("users").document(userId)
+                .collection("challenges").document(challengeId)
+                .set(
+                    mapOf(
+                        "redemptionEligible" to eligible,
+                        "redemptionDeadline" to deadline,
+                        "redemptionShowAfter" to showAfter,
+                        "redemptionRefundAmount" to refundAmount,
+                        "redemptionDays" to redemptionDays,
+                        "redemptionLimit" to redemptionLimit
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                .await()
+            Timber.d("Redemption info updated for challenge $challengeId: eligible=$eligible")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to update redemption info for challenge $challengeId")
+        }
+    }
+
+    suspend fun updateChallengeRedemptionChallengeId(
+        userId: String,
+        challengeId: String,
+        redemptionChallengeId: String
+    ) {
+        try {
+            firestore
+                .collection("users").document(userId)
+                .collection("challenges").document(challengeId)
+                .set(
+                    mapOf("redemptionChallengeId" to redemptionChallengeId),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                .await()
+            Timber.d("redemptionChallengeId=$redemptionChallengeId set on challenge $challengeId")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to update redemptionChallengeId for $challengeId")
+        }
+    }
+
     // ── Account deletion ──────────────────────────────────────────────────────
 
     /**
@@ -404,6 +484,12 @@ class FirestoreService @Inject constructor(
         "scheduleStartTime" to scheduleStartTime,
         "scheduleEndTime" to scheduleEndTime,
         "activeDays" to activeDays.joinToString(",").ifEmpty { null },
+        "partialBlockSections" to partialBlockSections.map { it.id },
+        "isPartialBlockOnly" to isPartialBlockOnly,
+        "isRedemption" to isRedemption,
+        "originalChallengeId" to originalChallengeId,
+        "originalPaymentIntentId" to originalPaymentIntentId,
+        "refundAmountCents" to refundAmountCents,
         "syncedAt" to com.google.firebase.Timestamp.now()
     )
 

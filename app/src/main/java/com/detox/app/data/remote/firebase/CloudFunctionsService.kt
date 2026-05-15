@@ -119,13 +119,20 @@ class CloudFunctionsService @Inject constructor(
 
     suspend fun cancelOrRefundPayment(
         paymentIntentId: String,
-        wasImmediate: Boolean
+        challengeId: String? = null,
+        userId: String? = null,
+        amountCents: Int? = null,
+        partialRefundCents: Int? = null
     ): Result<Unit> = try {
-        callFunction(
-            "cancelOrRefundPayment",
-            mapOf("paymentIntentId" to paymentIntentId, "wasImmediate" to wasImmediate)
-        )
-        Timber.d("cancelOrRefundPayment: %s wasImmediate=%s", paymentIntentId, wasImmediate)
+        val params = buildMap<String, Any?> {
+            put("paymentIntentId", paymentIntentId)
+            if (challengeId != null) put("challengeId", challengeId)
+            if (userId != null) put("userId", userId)
+            if (amountCents != null) put("amountCents", amountCents)
+            if (partialRefundCents != null) put("partialRefundCents", partialRefundCents)
+        }
+        callFunction("cancelOrRefundPayment", params)
+        Timber.d("cancelOrRefundPayment: %s challengeId=%s partialRefund=%s", paymentIntentId, challengeId, partialRefundCents)
         Result.success(Unit)
     } catch (e: Exception) {
         Timber.e(e, "cancelOrRefundPayment failed — %s", paymentIntentId)
@@ -134,20 +141,20 @@ class CloudFunctionsService @Inject constructor(
 
     // ── Group Challenge ────────────────────────────────────────────────────────
 
+    /** Step 2 of creator join: called only after PaymentSheetResult.Completed. Creates Firestore doc. */
     suspend fun createGroupChallenge(
         groupId: String,
         code: String,
-        groupData: Map<String, Any?>
+        groupData: Map<String, Any?>,
+        paymentIntentId: String,
     ): Result<GroupChallengeCreationData> = try {
         val response = callFunction(
             "createGroupChallenge",
-            mapOf("groupId" to groupId, "code" to code, "groupData" to groupData)
+            mapOf("groupId" to groupId, "code" to code, "groupData" to groupData, "paymentIntentId" to paymentIntentId)
         )
         val returnedCode = response["code"] as String
-        val paymentIntentId = response["paymentIntentId"] as String
-        val clientSecret = response["clientSecret"] as String
         Timber.d("createGroupChallenge: groupId=%s code=%s", groupId, returnedCode)
-        Result.success(GroupChallengeCreationData(returnedCode, paymentIntentId, clientSecret))
+        Result.success(GroupChallengeCreationData(returnedCode, paymentIntentId))
     } catch (e: Exception) {
         Timber.e(e, "createGroupChallenge failed — groupId=%s", groupId)
         Result.failure(e)
@@ -156,7 +163,6 @@ class CloudFunctionsService @Inject constructor(
     data class GroupChallengeCreationData(
         val code: String,
         val paymentIntentId: String,
-        val clientSecret: String
     )
 
     suspend fun joinGroupChallenge(
@@ -251,13 +257,15 @@ class CloudFunctionsService @Inject constructor(
         Result.failure(e)
     }
 
-    suspend fun createConnectedAccount(): Result<String> = try {
-        val response = callFunction("createConnectedAccount", emptyMap())
-        val url = response["url"] as String
-        Timber.d("createConnectedAccount: onboarding url obtained")
-        Result.success(url)
+    suspend fun setupPayoutAccount(iban: String, accountHolderName: String, userId: String): Result<Unit> = try {
+        callFunction(
+            "createConnectedAccount",
+            mapOf("iban" to iban, "accountHolderName" to accountHolderName, "userId" to userId)
+        )
+        Timber.d("setupPayoutAccount: connected account created for user %s", userId)
+        Result.success(Unit)
     } catch (e: Exception) {
-        Timber.e(e, "createConnectedAccount failed")
+        Timber.e(e, "setupPayoutAccount failed")
         Result.failure(e)
     }
 

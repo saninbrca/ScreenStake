@@ -66,4 +66,28 @@ interface ChallengeDao {
 
     @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') AND (groupChallengeId IS NULL OR groupChallengeId = '') ORDER BY endDate DESC")
     suspend fun getFinishedSoloChallenges(): List<ChallengeEntity>
+
+    @Query("UPDATE challenges SET endDate = :endDate WHERE id = :id")
+    suspend fun updateEndDate(id: String, endDate: Long)
+
+    @Query("UPDATE challenges SET redemptionEligible = :eligible, redemptionDeadline = :deadline, redemptionShowAfter = :showAfter, redemptionRefundAmount = :refundAmount, redemptionDays = :redemptionDays, redemptionLimit = :redemptionLimit WHERE id = :id")
+    suspend fun updateRedemptionInfo(id: String, eligible: Int, deadline: Long, showAfter: Long, refundAmount: Int, redemptionDays: Int, redemptionLimit: Int)
+
+    @Query("UPDATE challenges SET redemptionChallengeId = :redemptionChallengeId WHERE id = :id")
+    suspend fun updateRedemptionChallengeId(id: String, redemptionChallengeId: String)
+
+    /** Returns failed Hard Mode Solo challenges with an active (not expired) redemption window that hasn't been used yet. */
+    @Query("""
+        SELECT * FROM challenges
+        WHERE status = 'failed'
+          AND mode = 'hard'
+          AND (groupChallengeId IS NULL OR groupChallengeId = '')
+          AND isRedemption = 0
+          AND redemptionEligible = 1
+          AND redemptionChallengeId IS NULL
+          AND redemptionShowAfter <= :now
+          AND redemptionDeadline > :now
+        ORDER BY endDate DESC
+    """)
+    suspend fun getChallengesWithRedemptionAvailable(now: Long): List<ChallengeEntity>
 }

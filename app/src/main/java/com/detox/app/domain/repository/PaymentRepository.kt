@@ -21,12 +21,22 @@ interface PaymentRepository {
     suspend fun capturePayment(paymentIntentId: String): Result<Unit>
 
     /**
-     * Cancels a pre-auth or refunds an immediately captured payment (used on challenge success).
-     *
-     * @param wasImmediate true if the charge was captured immediately and a refund is needed.
+     * Cancels a pre-auth or refunds a captured payment (used on challenge success).
+     * PI status is auto-detected by the Cloud Function — no wasImmediate flag needed.
+     * Optional params trigger a Firestore payout-status update on the challenge document.
+     * Pass [partialRefundCents] to issue a partial refund (Redemption Challenge win).
      */
     suspend fun cancelOrRefundPayment(
         paymentIntentId: String,
-        wasImmediate: Boolean
+        challengeId: String? = null,
+        userId: String? = null,
+        amountCents: Int? = null,
+        partialRefundCents: Int? = null
     ): Result<Unit>
+
+    /**
+     * Creates a Stripe Custom Connected Account with the given IBAN for prize payouts.
+     * Stores stripeConnectedAccountId + payoutIban in Firestore.
+     */
+    suspend fun setupPayoutAccount(iban: String, accountHolderName: String, userId: String): Result<Unit>
 }

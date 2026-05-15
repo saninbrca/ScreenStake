@@ -18,7 +18,7 @@ import com.detox.app.data.local.db.entity.GroupChallengeEntity
         DailyLogEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 20,
+    version = 22,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -277,6 +277,37 @@ abstract class DetoxDatabase : RoomDatabase() {
                     "ALTER TABLE challenges ADD COLUMN partialBlockDomains TEXT DEFAULT NULL"
                 )
                 Timber.d("DB migration 18→19: added partialBlockDomains column to challenges")
+            }
+        }
+
+        /** Adds native in-app section blocking columns to challenges. */
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE challenges ADD COLUMN partial_block_sections TEXT NOT NULL DEFAULT ''"
+                )
+                database.execSQL(
+                    "ALTER TABLE challenges ADD COLUMN partial_block_only INTEGER NOT NULL DEFAULT 0"
+                )
+                Timber.d("DB migration 20→21: added partial_block_sections and partial_block_only columns")
+            }
+        }
+
+        /** Adds Redemption Challenge fields to challenges table. */
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE challenges ADD COLUMN redemptionEligible INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN redemptionDeadline INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN redemptionShowAfter INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN redemptionChallengeId TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN redemptionRefundAmount INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN redemptionDays INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN redemptionLimit INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN isRedemption INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN originalChallengeId TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN originalPaymentIntentId TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE challenges ADD COLUMN refundAmountCents INTEGER DEFAULT NULL")
+                Timber.d("DB migration 21→22: added Redemption Challenge columns")
             }
         }
 

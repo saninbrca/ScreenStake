@@ -23,7 +23,17 @@ class PaymentRepositoryImpl @Inject constructor(
 
     override suspend fun cancelOrRefundPayment(
         paymentIntentId: String,
-        wasImmediate: Boolean
+        challengeId: String?,
+        userId: String?,
+        amountCents: Int?,
+        partialRefundCents: Int?
     ): Result<Unit> =
-        cloudFunctionsService.cancelOrRefundPayment(paymentIntentId, wasImmediate)
+        cloudFunctionsService.cancelOrRefundPayment(paymentIntentId, challengeId, userId, amountCents, partialRefundCents)
+
+    override suspend fun setupPayoutAccount(
+        iban: String,
+        accountHolderName: String,
+        userId: String
+    ): Result<Unit> =
+        cloudFunctionsService.setupPayoutAccount(iban, accountHolderName, userId)
 }

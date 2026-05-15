@@ -283,9 +283,11 @@ users/{userId}/
 ## Business Model (Hard Mode)
 
 - When a user fails → Stripe captures their stake → money goes to app revenue
-- When a user succeeds → Stripe refunds → user gets money back
-- App earns **only from failed challenges**
-- Group Challenge: 10% fee from failed participants' money (see `04_group_challenges.md`)
+- When a user succeeds → Stripe captures then partially refunds (80% back) → app keeps 20%
+- Redemption win → 60% refunded (40% app fee)
+- Group win (losers exist) → 80% of own stake back + prize share; app keeps 20% of each winner's stake
+- Group win (nobody failed) → 100% refunded; no fee
+- Group Challenge prize pool: 10% fee from failed participants' captured money (see `04_group_challenges.md`)
 
 ---
 
@@ -303,14 +305,88 @@ users/{userId}/
 
 ---
 
+## Payout System
+
+### Payout Rates (App Fee)
+| Challenge type | User gets back | App keeps |
+|---------------|---------------|-----------|
+| Hard Mode Solo win | `floor(amountCents × 0.80)` | 20% |
+| Redemption Challenge win | `floor(originalAmountCents × 0.60)` | 40% |
+| Group Challenge win (losers exist) | `floor(stake × 0.80)` + prize share | 20% of own stake |
+| Group Challenge win (nobody failed) | 100% of stake | 0% |
+| Group prize pool | `totalCapturedFromLosers - floor(total × 0.10)` / winners | 10% of losers' pot |
+
+**Rule:** Always use `Math.floor` / `floor()` — never round up (avoid overpayment).
+
+### Hard Mode
+**Trigger:** `DailyEvaluationWorker` detects challenge `COMPLETED` (now ≥ endDate, no limitExceeded)
+**Action:** `cancelOrRefundPayment` Cloud Function with `amountCents = floor(stake × 0.80)`:
+- If PI is `requires_capture`: **capture full amount first**, then `stripe.refunds.create({ amount: refundAmount })`
+- If already captured: `stripe.refunds.create({ amount: refundAmount })`
+**Result:** Stripe partial refund → original card → 1–5 business days (app retains 20%)
+**Firestore:** `users/{userId}/challenges/{challengeId}` → `payoutStatus: "refunded"`, `payoutAmount`, `appFeeAmount`, `payoutDate`
+**Notification:** `sendHardModeCompleted()` — "Challenge gewonnen! 💚 €X werden zurückgebucht. (20% App-Gebühr: €Y)"
+
+### Group Challenge — Own Stake
+**Trigger:** `completeGroupChallenge` Cloud Function (called by `DailyEvaluationWorker` on endDate)
+**Nobody failed path:** All participants get 100% refund — no fee. PI in `requires_capture` → cancel; else → full refund.
+**Action (someone failed):** Per winner: `stakeRefund = floor(stake × 0.80)`. Capture PI if `requires_capture`, then refund `stakeRefund`.
+**Result:** Stripe partial refund → original card → 1–5 business days
+
+### Group Challenge — Prize Share
+**Trigger:** Same `completeGroupChallenge` CF
+**Calculation:**
+```
+prizePool = totalCapturedFromLosers - 10% appFee    (Math.floor for both)
+prizePerWinner = prizePool / numberOfWinners         (Math.floor)
+```
+**If winner has connected account:** `stripe.transfers.create` to `stripeConnectedAccountId`
+**If no connected account:** stored in `users/{userId}/pendingPayouts` subcollection
+  with `status: "pending_account_setup"`, `stakeRefundCents`, `displayName`
+**Firestore group doc updated with:** `prizePool`, `appFee`, `prizePerWinner`, `status: "completed"`, `completedAt`
+
+### IBAN Setup — Stripe Custom Connected Account
+**CF:** `createConnectedAccount` (type: `custom`, NOT Express — Austria individual account limitation)
+**Flow:**
+1. User taps "IBAN hinterlegen →" in ProfileScreen payout card
+2. ModalBottomSheet: name + IBAN (AT + 18 digits validation)
+3. "Speichern & Auszahlung beantragen" → `setupPayoutAccount()` → `createConnectedAccount` CF
+4. CF creates `type: "custom"` account with IBAN as `external_account`, `tos_acceptance` auto-set
+5. Firestore `users/{uid}`: `stripeConnectedAccountId`, `payoutIban`, `payoutName`, `payoutSetupAt`
+
+### Payout Display in ProfileScreen
+Per-challenge breakdown cards (show only for completed challenges):
+- **Solo Hard Mode card:** Eigener Einsatz zurück ✅ / Status: zurückgebucht 💚
+- **Group Challenge card:** Eigener Einsatz ✅ + Gewinnanteil ✅/⏳ + App-Gebühr info + Gesamt
+- **Pending prize:** "IBAN hinterlegen →" button → ModalBottomSheet
+Data source: Room (solo) + Firestore group doc (prizePerWinner, appFee) + pendingPayouts subcollection
+
+### Notifications (after payout triggers)
+`sendGroupChallengePayoutReceived()` — three variants:
+- Full payout (stake + prize): "€X werden auf deine Karte zurückgebucht."
+- Pending prize (no IBAN): "Dein Einsatz (€X) zurückgebucht. Hinterlege IBAN für Gewinnanteil (€Y)."
+- Stake only (no losers): "Challenge abgeschlossen! ✅ Dein Einsatz (€X) wurde zurückgebucht."
+
+### Critical Rules
+- `cancelOrRefundPayment` CF: NEVER use `wasImmediate` flag — always auto-detect from PI status
+- Hard Mode win: PI is `requires_capture` → capture first, then partial refund (80%). NEVER cancel (would give 100%)
+- Stripe refund ALWAYS before marking COMPLETED in Room/Firestore
+- `prizePerWinner` uses `Math.floor` (never round up — avoid overpayment)
+- App fee on losers' pot = exactly `Math.floor(total * 0.10)`
+- IBAN validation client-side: must match `AT[0-9]{18}` regex
+- Never store IBAN in Room — only Firestore + Stripe
+- All Stripe calls in Cloud Functions — never in Android code directly
+- After any CF change: `firebase deploy --only functions`
+
+---
+
 ## Known Issues (Hard Mode / Stripe)
 
-1. **Stripe Connect for automatic payouts not implemented.**
-   Current flow: winner submits IBAN in Profile → stored in Firestore `payoutRequests` → founder manually transfers via bank (SEPA).
-   Planned: Stripe Express — blocked by Austria individual account limitation.
+1. ~~**Stripe Connect for automatic payouts not implemented.**~~ RESOLVED — Custom Connected Account
+   with IBAN direct setup implemented. `claimPendingPayouts` CF retained as fallback for manual retry.
 
-2. **`completeGroupChallenge` Cloud Function not triggering automatically.**
-   Needs to be called when `endDate` passes — must check on app foreground AND in DailyEvaluationWorker.
+2. ~~**`completeGroupChallenge` Cloud Function not triggering automatically.**~~ RESOLVED — called by
+   `DailyEvaluationWorker.evaluateGroupChallenge()` when `now >= endDate`.
 
 ---
 
@@ -332,3 +408,37 @@ CRITICAL: Detail screen reads DIRECTLY from Room DailyLog.
 Never pass progress values as navigation arguments.
 Never use ViewModel state that was set before navigation.
 Always read fresh from Room on Detail screen init using DateUtils.todayKey().
+
+---
+
+## Redemption Challenge
+
+When a Hard Mode Solo challenge fails (`status=failed`, `mode=hard`, `groupChallengeId IS NULL`),
+`DailyEvaluationWorker.setRedemptionInfo()` is called, which:
+
+- Sets `redemptionEligible=1` on the original challenge
+- Sets `redemptionDeadline = now + 3 days` (Stripe 90-day refund window; 28-day cap on original duration)
+- Sets `redemptionShowAfter = now + 24 hours`
+- Computes `redemptionRefundAmount = floor(amountCents * 0.60)`
+- Stores `redemptionDays = originalDays * 2` and halved `redemptionLimit`
+- Schedules `RedemptionNotificationWorker` with a 24-hour `setInitialDelay`
+
+**Eligibility guard:** `originalDays <= 28 && stripePaymentIntentId != null && !challenge.isRedemption`
+
+**Redemption challenge parameters (created in HistoryViewModel.startRedemption()):**
+- Duration: `originalDays * 2`
+- Limit: `floor(original / 2)`, min 1 session or 5 min, stored in `redemptionLimit`
+- `amountCents = 0` (no new payment required)
+- `isRedemption = 1`, `originalChallengeId`, `originalPaymentIntentId`, `refundAmountCents`
+
+**On completion:** `DailyEvaluationWorker` calls `cancelOrRefundPayment` with
+`partialRefundCents = refundAmountCents` (60% of original) against `originalPaymentIntentId`.
+The Cloud Function uses `stripe.refunds.create({ payment_intent, amount: partialRefundCents })` (PI was already captured on original fail).
+
+**On failure:** No refund. The staked money is lost permanently.
+
+**UI surfaces:**
+- **Dashboard:** `RedemptionBanner` composable — orange card, session-dismissable via `dismissRedemptionBanner()`
+- **History:** "Comeback Challenge starten" button visible on eligible `SoloHistoryRow` entries
+- **Confirmation:** `RedemptionConfirmSheet` (ModalBottomSheet) — shows duration, limit, win/lose amounts, warning
+- After confirming: navigate back to Dashboard via `onRedemptionStarted` callback

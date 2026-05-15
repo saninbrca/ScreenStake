@@ -71,6 +71,10 @@ interface DailyLogDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertOrIgnore(log: DailyLogEntity)
 
+    /** INSERT OR REPLACE — creates the row if absent, overwrites if present. Use for debug writes and any path that can't guarantee the row exists. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(log: DailyLogEntity)
+
     /**
      * Returns the [limitExceeded] flag for the most recent [limit] completed days before
      * [beforeDate], ordered newest-first.  Used to calculate the current streak:
@@ -81,4 +85,13 @@ interface DailyLogDao {
 
     @Query("SELECT * FROM daily_logs ORDER BY date DESC LIMIT 90")
     suspend fun getAllLogsOrderedByDateDesc(): List<DailyLogEntity>
+
+    @Query("SELECT * FROM daily_logs WHERE date = :date")
+    suspend fun getAllForDate(date: Long): List<DailyLogEntity>
+
+    @Query("DELETE FROM daily_logs WHERE date = :date")
+    suspend fun deleteAllForDate(date: Long)
+
+    @Query("UPDATE daily_logs SET consciousOpens = :count WHERE challengeId = :challengeId AND date = :date")
+    suspend fun updateConsciousOpens(challengeId: String, date: Long, count: Int)
 }

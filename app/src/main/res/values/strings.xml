@@ -493,6 +493,10 @@
     <string name="join_group_confirming">Beitritt wird bestätigt…</string>
     <string name="join_group_retry">Fehler — erneut versuchen</string>
     <string name="join_group_joined_success">Du bist der Challenge beigetreten! 🎉</string>
+    <string name="join_group_payment_cancelled">Zahlung abgebrochen</string>
+    <string name="join_group_payment_failed">Zahlung fehlgeschlagen. Bitte erneut versuchen.</string>
+    <string name="group_create_payment_cancelled">Zahlung abgebrochen</string>
+    <string name="group_create_payment_failed">Zahlung fehlgeschlagen. Bitte erneut versuchen.</string>
     <string name="join_group_buy_in">€%1$d Einsatz</string>
     <string name="join_group_duration">%1$d Tage</string>
     <string name="join_group_participants">%1$d/%2$d Teilnehmer</string>
@@ -513,8 +517,9 @@
     <string name="dialog_cancel">Cancel</string>
 
     <!-- Hard Mode completion notification (includes refund amount) -->
-    <string name="notif_hard_mode_completed_title">🎉 Challenge Complete — Money Refunded!</string>
-    <string name="notif_hard_mode_completed_body">You completed your %1$s challenge! Your €%2$d has been refunded to your card.</string>
+    <string name="notif_hard_mode_completed_title">Challenge gewonnen! 💚</string>
+    <string name="notif_hard_mode_completed_body">%1$s abgeschlossen! €%2$d werden zurückgebucht.</string>
+    <string name="notif_hard_mode_completed_body_fee">Challenge gewonnen! 💚 €%1$d werden zurückgebucht. (20%% App-Gebühr: €%2$d)</string>
 
     <!-- Hard Mode Success Overlay (shown once on Dashboard after completion) -->
     <string name="success_overlay_title">Herzlichen Glückwunsch!</string>
@@ -690,4 +695,119 @@
     <string name="settings_rate_app">Rate the App</string>
     <string name="settings_send_feedback">Send Feedback</string>
     <string name="settings_contact_support">Contact Support</string>
+
+    <!-- Welcome Onboarding — Page 0: Willkommen -->
+    <string name="welcome_p0_stat_value">4.2h</string>
+    <string name="welcome_p0_stat_title">Durchschnittliche tägliche Bildschirmzeit in Deutschland</string>
+    <string name="welcome_p0_stat_sub">Das sind 63 Tage pro Jahr. Bereit, das zu ändern?</string>
+    <string name="welcome_p0_card2_title">Nimm dein Leben zurück 💪</string>
+    <string name="welcome_p0_card2_sub">Detox hilft dir, bewusster mit deiner Zeit umzugehen.</string>
+    <string name="welcome_p0_btn_start">Jetzt starten</string>
+    <string name="welcome_p0_btn_skip">Überspringen</string>
+
+    <!-- Welcome Onboarding — Page 1: Konzept -->
+    <string name="welcome_p1_title_pre">Jedes Öffnen ist eine </string>
+    <string name="welcome_p1_title_highlight">Entscheidung</string>
+    <string name="welcome_p1_subtitle">Kein gedankenloses Scrollen mehr. Detox macht jede App-Öffnung bewusst.</string>
+    <string name="welcome_p1_step1_title">App öffnen → Overlay erscheint</string>
+    <string name="welcome_p1_step1_desc">Bevor die App startet, siehst du einen kurzen Stopp-Moment.</string>
+    <string name="welcome_p1_step2_title">Stark bleiben oder bewusst öffnen</string>
+    <string name="welcome_p1_step2_desc">Du entscheidest — nicht dein Reflex.</string>
+    <string name="welcome_p1_step3_title">Streak aufbauen</string>
+    <string name="welcome_p1_step3_desc">Jeder erfolgreiche Tag verlängert deinen Streak.</string>
+    <string name="welcome_p1_preview_opens">2 von 5 bewussten Öffnungen</string>
+    <string name="welcome_p1_preview_streak">🔥 7 Tage Streak</string>
+    <string name="welcome_p1_btn_next">Weiter</string>
+
+    <!-- Welcome Onboarding — Page 2: Modi -->
+    <string name="welcome_p2_title_pre">Wähle deinen </string>
+    <string name="welcome_p2_title_highlight">Modus</string>
+    <string name="welcome_p2_subtitle">Drei Wege, weniger Zeit am Handy zu verbringen.</string>
+    <string name="welcome_p2_soft_title">Soft Mode</string>
+    <string name="welcome_p2_soft_sub">Kostenlos. Streak-basiert.</string>
+    <string name="welcome_p2_soft_badge">Gratis</string>
+    <string name="welcome_p2_hard_title">Hard Mode</string>
+    <string name="welcome_p2_hard_sub">Echtes Geld. Echte Konsequenzen.</string>
+    <string name="welcome_p2_hard_badge">Ab €5</string>
+    <string name="welcome_p2_group_title">Group Challenge</string>
+    <string name="welcome_p2_group_sub">Gegen Freunde. Verlierer zahlen.</string>
+    <string name="welcome_p2_group_badge">Sozial</string>
+    <string name="welcome_p2_btn_next">Verstanden</string>
+
+    <!-- Welcome Onboarding — Page 3: Berechtigungen -->
+    <string name="welcome_p3_title">Fast geschafft — Berechtigungen</string>
+    <string name="welcome_p3_subtitle">Ohne diese Berechtigungen kann Detox keine Apps blockieren.</string>
+    <string name="welcome_p3_overlay_title">Overlay-Berechtigung</string>
+    <string name="welcome_p3_overlay_desc">Zeigt Blocking-Display über Apps</string>
+    <string name="welcome_p3_accessibility_title">Accessibility Service</string>
+    <string name="welcome_p3_accessibility_desc">Erkennt welche App offen ist</string>
+    <string name="welcome_p3_usage_title">Nutzungsstatistiken</string>
+    <string name="welcome_p3_usage_desc">Misst deine Bildschirmzeit</string>
+    <string name="welcome_p3_privacy_text">Deine Daten bleiben auf deinem Gerät. Detox verkauft keine Nutzerdaten.</string>
+    <string name="welcome_p3_btn_activate">Berechtigungen aktivieren</string>
+    <string name="welcome_p3_huawei_title">Wichtig für Huawei</string>
+    <string name="welcome_p3_huawei_message">Bitte deaktiviere die Akku-Optimierung für Detox damit die App im Hintergrund läuft: Einstellungen → Apps → Detox → Akku → Keine Einschränkungen</string>
+    <string name="welcome_p3_huawei_btn">Zu den Einstellungen</string>
+
+    <!-- Welcome Onboarding — Page 4: Los geht's -->
+    <string name="welcome_p4_title_pre">Bereit</string>
+    <string name="welcome_p4_title_dot">.</string>
+    <string name="welcome_p4_subtitle">Erstelle deine erste Challenge und starte dein digitales Detox.</string>
+    <string name="welcome_p4_rec_label">EMPFOHLEN ZUM START</string>
+    <string name="welcome_p4_rec_1">Soft Mode — 7 Tage Challenge</string>
+    <string name="welcome_p4_rec_2">Max. 2 bewusste Öffnungen pro Tag</string>
+    <string name="welcome_p4_rec_3">Eine App deiner Wahl blockieren</string>
+    <string name="welcome_p4_btn_register">Konto erstellen</string>
+    <string name="welcome_p4_btn_login">Ich habe bereits ein Konto</string>
+
+    <!-- Welcome Onboarding — Debug -->
+    <string name="debug_reset_onboarding">Reset Onboarding (DEBUG)</string>
+    <string name="debug_onboarding_reset_toast">Onboarding zurückgesetzt</string>
+
+    <!-- Payout breakdown section (ProfileScreen) -->
+    <string name="payout_section_title">💰 Auszahlungen</string>
+    <string name="payout_stake_back">Eigener Einsatz: %1$s zurück</string>
+    <string name="payout_prize_share">Gewinnanteil (%1$d Gewinner): +%2$s</string>
+    <string name="payout_app_fee">App-Gebühr (10%%): -%1$s</string>
+    <string name="payout_app_fee_20">App-Gebühr (20%%): -%1$s</string>
+    <string name="payout_app_fee_40">App-Gebühr (40%%): -%1$s</string>
+    <string name="payout_app_fee_none">App-Gebühr: €0,00 (kein Verlierer)</string>
+    <string name="payout_total">Gesamt: %1$s</string>
+    <string name="payout_status_refunded">Auf deine Karte zurückgebucht 💚</string>
+    <string name="payout_status_pending">⏳ Ausstehend</string>
+    <string name="payout_iban_setup_button">IBAN hinterlegen →</string>
+    <string name="payout_iban_bottom_sheet_title">IBAN eingeben</string>
+    <string name="payout_iban_holder_hint">Name des Kontoinhabers</string>
+    <string name="payout_iban_field_hint">IBAN (z.B. AT12 3456 …)</string>
+    <string name="payout_iban_save_cta">Speichern &amp; Auszahlung beantragen</string>
+    <string name="payout_iban_saved_toast">IBAN gespeichert. Auszahlung wird verarbeitet.</string>
+
+    <!-- Redemption Challenge -->
+    <string name="redemption_banner_title">Comeback Challenge verfügbar</string>
+    <string name="redemption_banner_body">Du hast eine Chance €%1$d zurückzubekommen</string>
+    <string name="redemption_banner_deadline">Noch %1$d Tag(e) verfügbar</string>
+    <string name="redemption_banner_cta">Jetzt starten →</string>
+    <string name="redemption_history_title">Comeback Challenge starten</string>
+    <string name="redemption_history_body">Gewinne €%1$d zurück</string>
+    <string name="redemption_history_details">Doppelt so schwer · %1$d Tage</string>
+    <string name="redemption_history_deadline">Noch %1$d Tag(e) verfügbar</string>
+    <string name="redemption_history_cta">Starten →</string>
+    <string name="redemption_confirm_title">Comeback Challenge</string>
+    <string name="redemption_confirm_duration">Dauer: %1$d Tage (doppelt)</string>
+    <string name="redemption_confirm_limit_sessions">Limit: %1$d Opens/Tag (halbiert)</string>
+    <string name="redemption_confirm_limit_minutes">Limit: %1$d Min/Tag (halbiert)</string>
+    <string name="redemption_confirm_payment">Einsatz: Keine neue Zahlung</string>
+    <string name="redemption_confirm_win">Bei Erfolg: €%1$d werden zurückgebucht</string>
+    <string name="redemption_confirm_lose">Bei Misserfolg: Kein weiteres Comeback</string>
+    <string name="redemption_confirm_warning">Kein weiterer Comeback möglich</string>
+    <string name="redemption_confirm_cancel">Abbrechen</string>
+    <string name="redemption_confirm_start">Jetzt starten</string>
+    <string name="redemption_started_toast">Comeback Challenge gestartet! Viel Erfolg</string>
+    <string name="redemption_error_toast">Fehler beim Starten der Comeback Challenge</string>
+    <string name="notif_redemption_available_title">Zweite Chance verfügbar</string>
+    <string name="notif_redemption_available_body">Du kannst €%1$d von deinen €%2$d zurückbekommen. Starte jetzt deine Comeback Challenge!</string>
+    <string name="notif_redemption_completed_title">Comeback geschafft! 🎉</string>
+    <string name="notif_redemption_completed_body">€%1$d werden auf deine Karte zurückgebucht. Gut gemacht!</string>
+    <string name="notif_redemption_failed_title">Comeback nicht geschafft 😔</string>
+    <string name="notif_redemption_failed_body">Leider kein Refund möglich für %1$s. Du hast alles gegeben!</string>
 </resources>

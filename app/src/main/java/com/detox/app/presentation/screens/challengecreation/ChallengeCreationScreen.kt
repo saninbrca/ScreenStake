@@ -97,6 +97,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.presentation.components.StepperField
 import com.detox.app.presentation.components.TimeSpinnerPicker
 import com.stripe.android.paymentsheet.PaymentSheet
@@ -212,6 +213,7 @@ fun ChallengeCreationScreen(
                         manualDomainError = state.manualDomainError,
                         blockAdultContent = state.blockAdultContent,
                         partialBlockDomains = state.partialBlockDomains,
+                        partialBlockSections = state.partialBlockSections,
                         onSearchQueryChange = viewModel::updateSearchQuery,
                         onToggleApp = viewModel::toggleApp,
                         onReloadApps = viewModel::loadApps,
@@ -222,6 +224,7 @@ fun ChallengeCreationScreen(
                         onRemoveManualDomain = viewModel::removeManualDomain,
                         onBlockAdultContentChange = viewModel::updateBlockAdultContent,
                         onTogglePartialBlock = viewModel::togglePartialBlockDomain,
+                        onTogglePartialSection = viewModel::togglePartialSection,
                     )
                     3 -> Step3LimitType(
                         selected = state.limitType,
@@ -444,6 +447,7 @@ private fun Step2AppOrWebsite(
     manualDomainError: String?,
     blockAdultContent: Boolean,
     partialBlockDomains: Set<String>,
+    partialBlockSections: Set<String>,
     onSearchQueryChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
     onReloadApps: () -> Unit,
@@ -454,6 +458,7 @@ private fun Step2AppOrWebsite(
     onRemoveManualDomain: (String) -> Unit,
     onBlockAdultContentChange: (Boolean) -> Unit,
     onTogglePartialBlock: (String) -> Unit,
+    onTogglePartialSection: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = activeTab) {
@@ -475,10 +480,12 @@ private fun Step2AppOrWebsite(
                 selectedApps = selectedApps,
                 searchQuery = searchQuery,
                 domainToggles = domainToggles,
+                partialBlockSections = partialBlockSections,
                 onSearchQueryChange = onSearchQueryChange,
                 onToggleApp = onToggleApp,
                 onReloadApps = onReloadApps,
                 onToggleDomain = onToggleDomain,
+                onTogglePartialSection = onTogglePartialSection,
             )
             1 -> WebsitesTabContent(
                 manualDomains = manualDomains,
@@ -504,10 +511,12 @@ private fun AppsTabContent(
     selectedApps: Set<String>,
     searchQuery: String,
     domainToggles: Map<String, Boolean>,
+    partialBlockSections: Set<String>,
     onSearchQueryChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
     onReloadApps: () -> Unit,
     onToggleDomain: (String) -> Unit,
+    onTogglePartialSection: (String) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -607,6 +616,17 @@ private fun AppsTabContent(
                             conflictChallengeName = conflictName,
                             onToggle = { if (conflictName == null) onToggleApp(app.packageName) },
                         )
+                        val sections = PartialBlockSection.BY_PACKAGE[app.packageName]
+                        if (!sections.isNullOrEmpty()) {
+                            sections.forEach { section ->
+                                PartialSectionSubRow(
+                                    section = section,
+                                    app = app,
+                                    isSelected = partialBlockSections.contains(section.id),
+                                    onToggle = { onTogglePartialSection(section.id) },
+                                )
+                            }
+                        }
                     }
 
                     if (nonTrackable.isNotEmpty()) {
@@ -924,6 +944,55 @@ private fun AppListRow(
         }
     }
     HorizontalDivider()
+}
+
+// ── Partial section sub-row ───────────────────────────────────────────────────
+
+@Composable
+private fun PartialSectionSubRow(
+    section: PartialBlockSection,
+    app: AppUsageInfo,
+    isSelected: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(start = 40.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        app.icon?.let { drawable ->
+            val painter = remember(drawable) {
+                BitmapPainter(drawable.toBitmap(36, 36).asImageBitmap())
+            }
+            Image(
+                painter = painter,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+            )
+        } ?: Box(modifier = Modifier.size(36.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = section.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = section.subRowDescription,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 11.sp,
+                color = androidx.compose.ui.graphics.Color(0xFF8E8E93),
+            )
+        }
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = { onToggle() },
+        )
+    }
+    HorizontalDivider(modifier = Modifier.padding(start = 40.dp))
 }
 
 // ── Step 3: Limit type ────────────────────────────────────────────────────────

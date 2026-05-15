@@ -1,0 +1,45 @@
+appId: com.detox.app
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\10_dashboard
+
+# Zum Profile navigieren und ausloggen
+- tapOn: "Profile"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\11_profile
+- scroll
+- scroll
+- scroll
+- scroll
+- scroll
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\11b_profile_bottom
+- tapOn: "Log Out"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\12_logout_dialog
+- tapOn: "Log Out"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\13_nach_logout
+
+# Login mit falschen Daten → Fehler erwartet
+- tapOn: "Email"
+- inputText: "falsch@test.com"
+- tapOn: "Password"
+- inputText: "FalschesPasswort"
+- tapOn:
+    point: "50%, 55%"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\14_login_fehler
+
+# Korrekter Login
+- tapOn: "Email"
+- inputText: "maestro.test@detox.app"
+- tapOn: "Password"
+- inputText: "TestPasswort123"
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\15_login_ausgefuellt
+- tapOn:
+    point: "50%, 55%"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\16_nach_login

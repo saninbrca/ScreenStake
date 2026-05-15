@@ -13,6 +13,182 @@
 
 ---
 
+## 2026-05-15
+
+### FIXED — CRITICAL: User added to Group Challenge without paying
+Root cause: `joinGroupChallenge` CF added user to `participants` + `participantUserIds` arrays before PaymentSheet was shown, before any Stripe payment.
+Fix: `joinGroupChallenge` CF now only creates the PaymentIntent and returns `clientSecret` — no Firestore write.
+New `confirmGroupJoin` CF added: called after `PaymentSheetResult.Completed`, verifies PaymentIntent status with Stripe, then adds user to participants. Handles idempotency — if user already in `participantUserIds`, returns `{ success: true, alreadyJoined: true }` (200, not 409).
+Android ViewModel/UseCase flow was already correct (initiatePayment → PaymentSheet → onPaymentSuccess → confirmJoin). No Android changes needed.
+**Requires:** `firebase deploy --only functions` after this change.
+Files: `functions/src/index.ts`.
+
+---
+
+
+### FEATURE — App Fee on Winnings
+Hard Mode Solo win: 80% refund (20% app fee). Cloud Function `cancelOrRefundPayment` now captures the pre-auth PI before issuing a partial refund — NEVER cancels on win anymore.
+Redemption Challenge win: 60% refund (40% app fee, was 70%).
+Group Challenge win (losers exist): 80% of own stake back + prize share from losers' pot.
+Group Challenge win (nobody failed): 100% refund, no fee.
+`completeGroupChallenge` CF detects `nobodyFailed` and issues full cancel/refund for all; otherwise captures-then-partially-refunds each winner's stake at 80%.
+`cancelOrRefundPayment` CF: new `appFeeAmount` field written to Firestore alongside `payoutAmount`.
+ProfileScreen now shows fee breakdown for all challenge types (20%/40%/none).
+`DailyEvaluationWorker`: `setRedemptionInfo` changed from 0.70 → 0.60.
+**Requires:** `firebase deploy --only functions` after this change.
+Files: `functions/src/index.ts`, `DailyEvaluationWorker.kt`, `NotificationHelper.kt`, `strings.xml`, `ProfileViewModel.kt`, `ProfileScreen.kt`, `ChallengeEntity.kt`, `docs/03_hard_mode_and_stripe.md`.
+
+### FIXED — createGroupChallengePaymentIntent HTTP 404
+Root cause: `createGroupChallengePaymentIntent` CF was added to `index.ts` by the previous fix but never deployed to Firebase → 404 on every Group Challenge creation attempt.
+Fix: Removed `createGroupChallengePaymentIntent` CF from `index.ts` (dead code). Android now calls existing `createPaymentIntent` with `amountCents=buyInCents` and `challengeId=groupId` — already tested and working. `createGroupChallenge` CF is still called only after `PaymentSheetResult.Completed`, with the `paymentIntentId` returned from `createPaymentIntent`.
+Files: `functions/src/index.ts`, `CloudFunctionsService.kt`, `CreateGroupChallengeUseCase.kt`.
+
+### FIXED — Group Challenge created before Creator pays
+Root cause 1: `createGroupChallenge` CF was called before PaymentSheet — it created a Stripe PaymentIntent AND wrote the Firestore document (with creator as participant) in one step. Cancelling payment left an orphaned challenge in Firestore.
+Root cause 2: New Cloud Function `createGroupChallengePaymentIntent` never deployed → HTTP 404.
+Fix: Reuse existing `createPaymentIntent` for Creator buy-in (already deployed and tested).
+Flow: `createPaymentIntent` → PaymentSheet → `Completed` → `createGroupChallenge` CF.
+`createGroupChallenge` CF accepts `paymentIntentId` as required parameter; only called after `PaymentSheetResult.Completed`.
+`onPaymentCancelled()` / `onPaymentFailed()` clear pending data and return to Idle — no CF call, no Firestore write.
+Files: `functions/src/index.ts`, `CloudFunctionsService.kt`, `CreateGroupChallengeUseCase.kt`, `GroupChallengeCreateViewModel.kt`, `GroupChallengeCreateScreen.kt`, `strings.xml`.
+
+## 2026-05-14
+
+### FIXED — User added to Group Challenge without completing payment
+Root cause: `confirmGroupJoin` CF was not explicitly gated; additionally, `Canceled` and `Failed` PaymentSheet results showed no feedback to the user and were treated identically.
+Fix: `confirmGroupJoin` only called inside `PaymentSheetResult.Completed` branch (was already wired correctly in ViewModel; verified and unchanged).
+Fix: `PaymentSheetResult.Canceled` now shows snackbar "Zahlung abgebrochen" and returns user to Preview.
+Fix: `PaymentSheetResult.Failed` now shows snackbar "Zahlung fehlgeschlagen. Bitte erneut versuchen." and returns user to Preview.
+Fix: `AwaitingPayment` state added to `isLoading` condition — spinner shown while PaymentSheet is loading, preventing double-tap.
+Files: `GroupChallengeJoinScreen.kt`, `res/values/strings.xml`.
+
+### FIXED — Debug buttons never wrote to Room DailyLog
+Root cause: `challengeDao` returned `Flow` instead of `suspend List` → never emitted in a one-shot coroutine → 0 challenges found → nothing written.
+Fix: Added `suspend fun getActiveChallengesSync()` to `ChallengeDao`.
+Fix: Added upsert with `OnConflictStrategy.REPLACE` to `DailyLogDao`.
+Fix: Wrapped all debug write buttons in `try-catch` with `Timber.e`.
+Fix: `DashboardViewModel` now observes `DailyLog` via `Flow` for live updates.
+Applied to: Max Opens Now, Reset Opens Today, Exhaust Budget Now, Reset Budget Today.
+
+### FIXED — Debug buttons never wrote to Room DailyLog (limitType case mismatch)
+Root cause: `ChallengeRepositoryImpl.Challenge.toEntity()` stores `limitType` as **lowercase** in Room (`"sessions"`, `"time_budget"`). All 4 debug functions in `ProfileViewModel` filtered against **uppercase** strings (`"SESSIONS"`, `"TIME_BUDGET"`), so the filter matched zero rows. The forEach loop ran on an empty list — `upsert()` was never called, no DailyLog was ever written, the Dashboard Flow never fired.
+Fix: All 4 filters changed to lowercase: `"sessions"` and `"time_budget"`.
+Fix: Every function wrapped in `try-catch(Exception)` with `Timber.e` on failure.
+Fix: Added `Timber.d` at every step: function start, total active count, SESSIONS/TIME_BUDGET count, challengeId, key, existing row state, before upsert, after upsert verification read.
+DailyLogDao.upsert() and Dashboard observeLogsForDate() Flow were already correct — they work now that Room is actually written.
+Applies to: `debugMaxOpensNow`, `debugResetOpensToday`, `debugExhaustBudgetNow`, `debugResetBudgetToday`.
+
+### FIXED — Debug buttons not updating Dashboard (previous entry — partially correct)
+Root cause: All 4 debug functions (`debugMaxOpensNow`, `debugResetOpensToday`, `debugExhaustBudgetNow`, `debugResetBudgetToday`) used plain SQL `UPDATE` queries (`updateConsciousOpens`, `updateBudgetStateMs`). When no `DailyLogEntity` row exists for today yet, `UPDATE WHERE ...` matches zero rows and silently does nothing — Room emits no change, Dashboard Flow never re-fires.
+Fix: All 4 functions now use `getLogForDate()` to read the existing row (or null), then call `dailyLogDao.upsert()` (new `@Insert(onConflict = REPLACE)` method) with either `existing.copy(...)` or a freshly constructed entity.
+Fix: `DailyLogDao` gains a `upsert(log: DailyLogEntity)` method for this pattern.
+Fix: All Firestore writes now include `updatedAt` timestamp.
+Note: This fix was incomplete — the limitType case mismatch was still causing zero rows to match (see entry above).
+Dashboard Flow was already correct (`observeLogsForDate()` Flow with `drop(1)`).
+
+---
+
+## 2026-05-09
+
+### FEATURE — Redemption Challenge
+
+- Hard Mode Solo failures now trigger a "comeback" challenge after 24h
+- Users fight to recover 70% of their lost stake at double duration, half the limit
+- Dashboard banner (session-dismissable, orange) shows when redemption is available
+- History screen "Starten" button with `RedemptionConfirmSheet` (ModalBottomSheet)
+- Stripe partial refund on success via new `partialRefundCents` parameter in CF
+- DB migration 21→22: 11 new columns on `challenges` table
+- `RedemptionNotificationWorker` (HiltWorker) fires after 24h delay via WorkManager
+- Eligibility: `originalDays <= 28`, has Stripe PI, not itself a redemption, within 3 days
+
+---
+
+### DOCS — Partial App Blocking documented in architecture files
+
+docs/01_architecture_and_stack.md updated:
+- `PartialBlockSection.kt` added to `domain/model/` file structure
+- New section "Partial App Blocking — Architecture Notes" added
+- Cache pattern: `activePartialBlockSections` in `TrackedAppEventBus` / `AppDetectionAccessibilityService`
+- Room migration: `partial_block_sections` column (TEXT, default `""`) + `partial_block_only` (INTEGER, default `0`)
+- Firestore storage format documented (`partialBlockSections: List<String>`, `isPartialBlockOnly: Boolean`)
+- Event detection order documented (performance critical: `TYPE_WINDOW_STATE_CHANGED` first)
+
+docs/02_core_mechanics_and_soft_mode.md updated:
+- New section "Partial App Blocking (Reels / Shorts / Feed)"
+- All 6 supported sections with packages and blocked content
+- Detection order: Activity class name → ViewID → Content description (fastest to slowest)
+- On detection: `GLOBAL_ACTION_BACK` + `Toast.LENGTH_SHORT` (NEVER `GLOBAL_ACTION_HOME`)
+- `consciousOpens` rule: partial blocks NEVER increment counter
+- `AppSelectionScreen` UI pattern documented (indented sub-options, always visible)
+- Known limitations documented (ViewID changes on app updates, Huawei timing)
+
+### FEATURE — Partial App Blocking (Reels / Shorts / For You)
+New feature allowing challenges to block specific content sections inside native apps while leaving the rest of the app usable.
+Detection via `AppDetectionAccessibilityService` using activity class names, view IDs, and content descriptions — zero DB queries on hot path.
+6 sections supported: Instagram Reels, YouTube Shorts, TikTok For You, Facebook Reels, Twitter For You, Snapchat Spotlight.
+`PartialBlockSection` enum in `domain/model/` holds detection metadata per section.
+`isPartialBlockOnly = true` challenges skip full-block overlay — package excluded from `trackedPackages` in `UsageTrackingService`.
+Room DB: version 20→21, adds `partial_block_sections` (TEXT) and `partial_block_only` (INTEGER) columns to `challenges` table.
+Firestore: `partialBlockSections` (List<String> of IDs) + `isPartialBlockOnly` (Boolean) written/read on sync.
+UI: `ChallengeCreationScreen` step 2 shows indented `PartialSectionSubRow` composable after each supported app row.
+`AppSelectionScreen`: same sub-option rows; `onAppsSelected` callback extended with `partialSections: List<String>`.
+Detection response: `GLOBAL_ACTION_BACK` + short Toast "🔒 <section> geblockt" — no overlay, no `consciousOpens` increment, 1s cooldown.
+Docs: `02_core_mechanics_and_soft_mode.md` updated with Partial App Blocking section.
+
+### FEATURE — Automatic Payout System
+Hard Mode: automatic Stripe refund on completion via DailyEvaluationWorker — no manual action required.
+Group Challenge: automatic stake refund + prize transfer on completeGroupChallenge CF.
+Prize calculation: (total captured from losers - 10% appFee) / winners count (Math.floor).
+`cancelOrRefundPayment` CF: removed `wasImmediate` flag — now auto-detects PI status (`requires_capture` → cancel, else → refund).
+`completeGroupChallenge` CF: aligned field names (`prizePool`, `appFee`, `prizePerWinner`); enriched pendingPayout with `stakeRefundCents`/`status`/`displayName`.
+`createConnectedAccount` CF: rewritten Express → Custom account with IBAN direct setup (no onboarding URL).
+UI: detailed per-challenge payout breakdown cards in ProfileScreen (stake refund + prize share + app fee + status).
+IBAN setup: ModalBottomSheet with AT IBAN validation → `createConnectedAccount` CF → prize released automatically.
+Pending payouts: stored in `users/{uid}/pendingPayouts` subcollection with `status: "pending_account_setup"`.
+Notifications: `sendGroupChallengePayoutReceived()` — three variants (full payout / stake + pending IBAN / stake only).
+Docs: `03_hard_mode_and_stripe.md` updated with full Payout System section.
+
+### FEATURE — Automatic Payout System implemented
+Hard Mode: Stripe refund via DailyEvaluationWorker on COMPLETED.
+Group Challenge: stake refund + prize transfer via completeGroupChallenge CF.
+Prize calculation: (losers total - 10% fee) / winners count (Math.floor, never round up).
+IBAN: Stripe Custom Connected Account (type "custom", not Express).
+UI: detailed breakdown in ProfileScreen (Einsatz + Gewinnanteil + Gebühr).
+Pending: stored in payoutRequests if no IBAN yet.
+Notifications: automatic after payout.
+Docs: `03_hard_mode_and_stripe.md` updated with Payout System section.
+
+### DOCS — Added docs/07_onboarding_and_auth.md
+Extracted onboarding and auth documentation from 01_architecture_and_stack.md into dedicated file for token efficiency. Covers: 5-screen onboarding flow, design system, permission setup, auth methods, logout rules, Hard Mode device binding, account deletion.
+
+### FEATURE — Comprehensive DEBUG Testing Panel
+Added collapsible debug section in ProfileScreen (DEBUG builds only).
+9 sections: Onboarding, Daily Evaluation, Time Manipulation, Budget,
+Opens, Group Challenge, Stripe, Room Database, Permissions.
+Enables fast testing of all features without waiting real time.
+- DailyLogDao: +getAllForDate, +deleteAllForDate, +updateConsciousOpens
+- ChallengeDao: +updateEndDate
+- GroupChallengeDao: +updateEndDate
+- CreateChallengeUseCase: debug_use_minutes_as_days flag wired (multiplies durationDays * 60000 instead of 86400000)
+- ChallengeCreationViewModel: debug_hard_mode_min_1 flag wired (Hard Mode min = 1 day in debug)
+- ProfileViewModel: 10 debug functions + 3 debug StateFlows added
+- ProfileScreen: DebugPanel composable (collapsed by default, 9 sections, orange card)
+- Old standalone debug buttons (Test Blocking, Reset Onboarding) merged into Section 1
+
+### FEATURE — Onboarding Flow implemented
+5 swipeable screens: Welcome, Concept, Modes, Permissions, Start.
+iOS-style design: #F2F2F7 background, white cards, #00C853 primary.
+Shows only on first app start (SharedPreferences "onboarding_completed" in "detox_settings").
+determineStartDestination() checks flag first — before any auth/permission logic.
+Permission setup on Screen 4 with live checkmarks on every onResume.
+Huawei battery optimization guidance dialog on Screen 4.
+Debug reset button added in ProfileScreen (BuildConfig.DEBUG block).
+New route: Screen.Welcome ("welcome") in DetoxNavGraph.
+AuthScreen gains initialTab: AuthTab parameter; auth route extended to "auth?tab={tab}".
+New file: presentation/screens/welcome/WelcomeOnboardingScreen.kt
+
+---
+
 ## 2026-04-29
 
 ### FIXED — completeGroupChallenge HTTP 500

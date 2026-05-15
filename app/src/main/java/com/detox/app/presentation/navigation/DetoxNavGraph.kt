@@ -2,12 +2,17 @@ package com.detox.app.presentation.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.detox.app.presentation.screens.auth.AuthScreen
+import com.detox.app.presentation.screens.auth.AuthTab
 import com.detox.app.presentation.screens.onboarding.OnboardingScreen
+import com.detox.app.presentation.screens.welcome.WelcomeOnboardingScreen
 
 sealed class Screen(val route: String) {
+    data object Welcome : Screen("welcome")
     data object Auth : Screen("auth")
     data object Onboarding : Screen("onboarding")
     data object Main : Screen("main")
@@ -26,17 +31,45 @@ fun DetoxNavGraph(
         navController = navController,
         startDestination = startDestination
     ) {
+        // ── Welcome Onboarding (first run only) ─────────────────────────────────
+        composable(Screen.Welcome.route) {
+            WelcomeOnboardingScreen(
+                onNavigateToRegister = {
+                    navController.navigate("auth?tab=register") {
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                    }
+                },
+                onNavigateToLogin = {
+                    navController.navigate("auth?tab=login") {
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         // ── Auth (Login / Register) ─────────────────────────────────────────────
-        composable(Screen.Auth.route) {
+        composable(
+            route = "auth?tab={tab}",
+            arguments = listOf(
+                navArgument("tab") {
+                    type = NavType.StringType
+                    defaultValue = "login"
+                    nullable = true
+                }
+            )
+        ) { backStackEntry ->
+            val tabArg = backStackEntry.arguments?.getString("tab")
+            val initialTab = if (tabArg == "register") AuthTab.REGISTER else AuthTab.LOGIN
             AuthScreen(
+                initialTab = initialTab,
                 onRegistered = {
                     navController.navigate(Screen.Onboarding.route) {
-                        popUpTo(Screen.Auth.route) { inclusive = true }
+                        popUpTo("auth?tab={tab}") { inclusive = true }
                     }
                 },
                 onLoggedIn = {
                     navController.navigate(Screen.Main.route) {
-                        popUpTo(Screen.Auth.route) { inclusive = true }
+                        popUpTo("auth?tab={tab}") { inclusive = true }
                     }
                 }
             )

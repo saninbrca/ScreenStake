@@ -85,6 +85,7 @@ com.detox.app/
 │   │   ├── GroupChallengeStatus.kt
 │   │   ├── LimitType.kt
 │   │   ├── Participant.kt
+│   │   ├── PartialBlockSection.kt    ← NEW
 │   │   └── ThresholdFlags.kt
 │   ├── repository/        ← interfaces
 │   └── usecase/
@@ -186,6 +187,71 @@ val today = DateUtils.todayKey()   // NEVER use 86400000 inline
 // consciousOpens: write to Room AND Firestore on every increment.
 // Read from Firestore on app start to restore after reinstall.
 ```
+
+---
+
+## Partial App Blocking — Architecture Notes
+
+### PartialBlockSection Enum
+Location: `domain/model/PartialBlockSection.kt`
+Contains: `id`, `appPackage`, `displayName`, `subRowDescription`, `activityNames`, `viewIds`, `contentDescriptions`
+
+Supported sections:
+- `INSTAGRAM_REELS`    → `com.instagram.android`
+- `YOUTUBE_SHORTS`     → `com.google.android.youtube`
+- `TIKTOK_FORYOU`      → `com.zhiliaoapp.musically`
+- `FACEBOOK_REELS`     → `com.facebook.katana`
+- `TWITTER_FORYOU`     → `com.twitter.android`
+- `SNAPCHAT_SPOTLIGHT` → `com.snapchat.android`
+
+Companion object helpers:
+```kotlin
+PartialBlockSection.fromId(id: String): PartialBlockSection?
+PartialBlockSection.BY_PACKAGE: Map<String, List<PartialBlockSection>>
+PartialBlockSection.SUPPORTED_PACKAGES: Set<String>
+```
+
+### In-memory Cache (TrackedAppEventBus)
+```kotlin
+// Updated by UsageTrackingService whenever the challenge list changes:
+TrackedAppEventBus.updateActivePartialBlockSections(
+    challenges
+        .filter { it.status == ChallengeStatus.ACTIVE }
+        .flatMap { it.partialBlockSections }
+        .distinct()
+)
+
+// Read by AppDetectionAccessibilityService on every event — zero DB queries:
+val sections = TrackedAppEventBus.activePartialBlockSections.value
+    .filter { it.appPackage == packageName }
+```
+
+### Room Migration
+Version 20 → 21. Two columns added to `challenges` table:
+```sql
+ALTER TABLE challenges ADD COLUMN partial_block_sections TEXT NOT NULL DEFAULT ''
+ALTER TABLE challenges ADD COLUMN partial_block_only INTEGER NOT NULL DEFAULT 0
+```
+`partial_block_sections` stored as comma-separated section IDs: `"instagram_reels,youtube_shorts"`
+`partial_block_only = 1` → package excluded from `trackedPackages` (no full-block overlay)
+
+### Firestore Storage
+```
+partialBlockSections: ["instagram_reels", "youtube_shorts"]   ← List<String> of IDs
+isPartialBlockOnly: false                                      ← Boolean
+```
+Parsed in `FirestoreService` → `SyncRepositoryImpl.toEntity()` → mapped to enum via `PartialBlockSection.fromId()`
+
+### Event Detection Order (performance critical)
+1. `TYPE_WINDOW_STATE_CHANGED` → `handlePartialBlock()` called FIRST (before content renders)
+2. `TYPE_WINDOW_CONTENT_CHANGED` → `handlePartialBlock()` called for in-activity navigation
+
+On match: `performGlobalAction(GLOBAL_ACTION_BACK)` + `Toast.makeText(..., LENGTH_SHORT)`
+1-second cooldown (`lastPartialBlockTimeMs`) prevents rapid-fire triggers.
+
+**NEVER query Room/DB in the partial block hot path — always use `TrackedAppEventBus` cache.**
+**NEVER use `GLOBAL_ACTION_HOME` for partial blocks — must stay inside the app.**
+**NEVER show overlay or increment `consciousOpens` for partial blocks.**
 
 ---
 
@@ -432,6 +498,39 @@ admin/index.html
 6. /clear in Claude Code when switching topics
 7. firebase deploy --only functions after any Cloud Function change
 ```
+
+## Debug Testing Panel
+
+Available in DEBUG builds only (BuildConfig.DEBUG).
+Location: ProfileScreen → bottom → "🛠 Debug Tools" (collapsible)
+
+NEVER add debug code outside BuildConfig.DEBUG check.
+NEVER commit debug flags as true.
+NEVER use debug time manipulation in production.
+
+Quick reference — what each section does:
+- Onboarding: reset first-start flag
+- Daily Evaluation: trigger worker immediately
+- Time Manipulation: shorten challenge duration for testing
+- Budget: reset or exhaust daily budget instantly
+- Opens: reset or max out conscious opens instantly
+- Group Challenge: force complete/fail without waiting
+- Stripe: test card info + dashboard link
+- Room Database: inspect and clear DailyLogs
+- Permissions: check status + simulate permission loss
+
+Full documentation: docs/06_testing_guide.md
+
+---
+
+## Account & Auth Rules
+See docs/07_onboarding_and_auth.md for complete auth documentation.
+Quick reference:
+
+* Primary auth: Email/Password (all devices)
+* Secondary: Google Sign-In (Play Services only, never on Huawei)
+* Logout: clear Room FIRST, then Firebase signOut (never reverse)
+* Hard Mode active → logout and account deletion blocked
 
 ---
 

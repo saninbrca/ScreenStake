@@ -1,0 +1,41 @@
+appId: com.detox.app
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_01_dashboard
+
+# Dashboard prüfen - aktive Challenge sichtbar
+- assertVisible: "Hevy"
+- assertVisible: "SOFT"
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_02_challenge_card
+
+# Hevy öffnen → Overlay erscheint
+- launchApp:
+    appId: com.hevy
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_03_overlay
+- assertVisible: "Do you really want to open this app?"
+- assertVisible: "Stark bleiben 💪"
+- assertVisible: "Trotzdem öffnen"
+
+# Stark bleiben → App bleibt blockiert
+- tapOn: "Stark bleiben 💪"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_04_nach_stark_bleiben
+
+# Hevy nochmal öffnen → Trotzdem öffnen tippen
+- launchApp:
+    appId: com.hevy
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_05_overlay_2
+- tapOn: "Trotzdem öffnen"
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_06_hevy_offen
+
+# Zurück zu Detox → Counter prüfen
+- launchApp:
+    appId: com.detox.app
+- waitForAnimationToEnd
+- takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_07_dashboard_counter
+- assertVisible: "1 of 3"

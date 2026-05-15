@@ -227,6 +227,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun determineStartDestination(): String {
+        val onboardingCompleted = prefs.getBoolean("onboarding_completed", false)
+        if (!onboardingCompleted) {
+            Timber.d("First run — onboarding not completed → Welcome screen")
+            return Screen.Welcome.route
+        }
+
         val currentUser = firebaseAuth.currentUser
         Timber.d("determineStartDestination: FirebaseAuth.currentUser isNull=%s uid=%s",
             currentUser == null, currentUser?.uid)

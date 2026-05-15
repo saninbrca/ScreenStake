@@ -54,10 +54,13 @@ import timber.log.Timber
 
 @Composable
 fun AuthScreen(
+    initialTab: AuthTab = AuthTab.LOGIN,
     onRegistered: () -> Unit,
     onLoggedIn: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel()
 ) {
+    LaunchedEffect(initialTab) { viewModel.switchTab(initialTab) }
+
     val tab by viewModel.tab.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current

@@ -411,6 +411,24 @@ Always read fresh from Room on Detail screen init using DateUtils.todayKey().
 
 ---
 
+## Detail Screen Design (Hard Mode)
+
+Same layout as Soft Mode with the following differences:
+
+**Badge:** "HARD MODE" (orange — `#FFF0E8` bg, `#C05A00` text)
+**Stats row:** Streak 🔥 | Einsatz €X | Tage noch (green)
+
+**Info list additions:**
+- "Einsatz" → "€X,XX"
+- "Bei Erfolg" → "€X zurück (80%)" in `#00C853`
+
+**Below info card:** "💳 Dein Geld ist sicher verwahrt bis zum Ende"
+
+**"Challenge aufgeben":** text only, 14sp, `#FF3B30`, centered.
+Mentions "€X wird eingezogen" — no button background (psychologically de-emphasized).
+
+---
+
 ## Redemption Challenge
 
 When a Hard Mode Solo challenge fails (`status=failed`, `mode=hard`, `groupChallengeId IS NULL`),

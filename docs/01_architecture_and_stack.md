@@ -102,6 +102,12 @@ com.detox.app/
 │   ├── components/
 │   │   ├── BlockingScreenOverlay.kt
 │   │   ├── BudgetSelectionOverlay.kt
+│   │   ├── DetoxHorizontalPicker.kt  ← reusable horizontal scroll number picker
+│   │   │                                Used in: all challenge creation wizard steps + BudgetSelectionOverlay
+│   │   │                                Params: values: List<Int>, selectedValue: Int,
+│   │   │                                        onValueChange: (Int) -> Unit, isDark: Boolean
+│   │   │                                isDark=true:  selected=#FFF, unselected=#444 (overlays)
+│   │   │                                isDark=false: selected=#000, unselected=#AAA (wizard, white bg)
 │   │   ├── HardModeLockoutOverlay.kt
 │   │   ├── LimitExceededOverlay.kt
 │   │   ├── SessionIntentionOverlay.kt

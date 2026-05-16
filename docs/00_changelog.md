@@ -13,6 +13,58 @@
 
 ---
 
+## 2026-05-16 (10)
+
+### DOCS — Created docs/09_payout_and_fees.md
+Centralized all payout and fee documentation.
+Covers: fee structure table, Hard Mode 80%, Redemption 60%,
+Group 80%/100%, IBAN setup, Stripe Connected Account,
+ProfileScreen display, Firestore payout structure.
+Extracted from 03 and 04 — those files keep flow logic only.
+
+---
+
+## 2026-05-16 (9)
+
+### DOCS — Created docs/08_ui_design_system.md
+Centralized all UI design documentation into single file.
+Covers: colors (light+dark), typography, buttons, DetoxHorizontalPicker,
+overlay design system, detail screen designs, dashboard cards.
+Extracted from 02, 03, 04, 07 — those files keep business logic only.
+
+---
+
+## 2026-05-16 (8)
+
+### DOCS — All documentation files updated
+
+docs/01_architecture_and_stack.md:
+- DetoxHorizontalPicker.kt added to file structure
+
+docs/02_core_mechanics_and_soft_mode.md:
+- Overlay Design System v2 documented (dark, minimal, context header)
+- DetoxHorizontalPicker documented (all limit inputs, min values, behavior)
+- Soft Mode Detail Screen design documented
+
+docs/03_hard_mode_and_stripe.md:
+- Payout fees updated: Hard Mode 80% (was 100%), Redemption 60% (was 70%)
+- Redemption Challenge fully documented
+- Hard Mode Detail Screen design documented
+
+docs/04_group_challenges.md:
+- Creation Flow fixed: PaymentSheet BEFORE createGroupChallenge
+- Join Flow fixed: confirmGroupJoin added, button loading state
+- Payout fees: 80% stake refund (20% fee), 100% if nobody fails
+- Detail Screen redesign documented
+- "Nerv ihn!" marked as temporarily removed
+- Friends Tab: real-time listener documented (waiting + active)
+
+CLAUDE.md:
+- docs/06_testing_guide.md added to docs list
+- docs/07_onboarding_and_auth.md added to docs list
+
+---
+
 ## 2026-05-16 (7)
 
 ### FIXED — BudgetSelectionOverlay missing horizontal scroll picker

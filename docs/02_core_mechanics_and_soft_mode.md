@@ -197,6 +197,55 @@ override fun onCreate() {
 
 ---
 
+## Overlay Design System (v2 — current)
+
+Background: #0A0A0A (full screen)
+Text primary: #FFFFFF
+Text secondary: #666666
+Accent: #00C853
+Font: Poppins
+
+### Context Header (top of every overlay)
+One line, 13sp, weight 600, color #00C853:
+```
+SESSION_LIMIT Soft:  "🔥 X Tage Streak"
+SESSION_LIMIT Hard:  "💰 €X auf dem Spiel"
+SESSION_LIMIT Group: "👥 Platz #X von Y"
+TIME_LIMIT Soft:     "🔥 X Tage Streak"
+TIME_LIMIT Hard:     "💰 €X auf dem Spiel"
+DAILY_BUDGET:        "⏱ X min übrig heute"
+TIME_WINDOW_ONLY:    "📅 Verfügbar ab HH:MM"
+```
+Always read live from challenge object + DailyLog. Never hardcoded.
+
+### Main Display
+Large number: 64sp, bold, #FFF, letter-spacing -3
+- SESSION_LIMIT: consciousOpens (used today)
+- TIME_LIMIT: timeUsedMinutes
+- DAILY_BUDGET: budgetRemainingMs / 60000 (remaining)
+
+Label below: 13sp, #444 — clear text e.g. "von 5 Öffnungen heute verbraucht"
+
+### Progress Bar
+Keep existing component unchanged.
+Add labels below: left = context text (11sp, #333), right = percentage.
+
+### "trotzdem öffnen" button
+SessionIntentionOverlay ONLY.
+10sp, color #222, transparent bg, no border, height 32dp.
+Intentionally barely visible — psychological design.
+All other overlays: NO ghost button.
+
+### Budget Chips (BudgetSelectionOverlay)
+Unselected: #141414 bg, #444 text, #1E1E1E border
+Selected: #00C853 bg, #000 text, bold
+Label: "Minuten wählen" (11sp, #333)
+
+### Status bar
+Dark on all overlays: `isAppearanceLightStatusBars = false`
+
+---
+
 ## AppDetectionAccessibilityService — Performance Rules
 
 ```kotlin
@@ -471,3 +520,74 @@ DAILY_BUDGET:   "${budgetRemainingMs / 60000} min remaining"
 **CRITICAL:** Detail screen must use IDENTICAL data source as Dashboard.
 Both read from Room DailyLog via `DateUtils.todayKey()`.
 Never use ViewModel state or passed-in arguments for progress display.
+
+---
+
+## Horizontal Scroll Number Picker (DetoxHorizontalPicker)
+
+Used in ALL limit value inputs throughout the app.
+Single reusable composable in `presentation/components/DetoxHorizontalPicker.kt`
+
+### Applied to
+| Context | Range | Default | Unit |
+|---------|-------|---------|------|
+| SESSION_LIMIT wizard step | 1–50 | 5 | Öffnungen |
+| TIME_LIMIT wizard step | 1–480 | 60 | Minuten |
+| DAILY_BUDGET wizard step | 1–480 | 10 | Minuten |
+| Duration step | 1–365 | varies by mode | Tage |
+| Group buy-in step | 10–500 | 10 | Euro |
+| BudgetSelectionOverlay | 1–remainingMinutes | min(5, remaining) | — |
+
+### Behavior
+- `LazyRow` with `snapFlingBehavior`
+- Hard stop at min and max (no wrapping)
+- Haptic feedback on each item change
+- Auto-scroll to selected item on composition
+- Step: always 1
+
+### Visual
+| Position | Light (wizard) | Dark (overlay) | Size |
+|----------|---------------|----------------|------|
+| Selected | #000 | #FFF | 28sp bold |
+| ±1 items | #AAA | #444 | 20sp |
+| ±2 items | #CCC | #333 | 16sp |
+| ±3+ items | #E0E0E0 | #222 | 14sp |
+
+Fade gradient left/right edges (40dp). Green underline/dot on selected item.
+
+### Minimum values (enforced)
+```
+SESSION_LIMIT:  min 1
+TIME_LIMIT:     min 1
+DAILY_BUDGET:   min 1, default 10
+Duration Soft:  min 1
+Duration Hard:  min 14 (1 in DEBUG)
+Duration Group: min 3
+Buy-in:         min 10 (€)
+```
+
+---
+
+## Detail Screen Design (Soft Mode)
+
+iOS-style, white background #F2F2F7, white cards.
+
+### Card 1 — Header
+- "SOFT MODE" badge (green pill) + end date right
+- App name: 22sp bold
+- 3 stats row: **Aktuelle Streak 🔥** | **Beste Streak** | **Tage noch** (green)
+
+### Card 2 — Progress
+- "Heute" + "X / Y Öffnungen" header
+- Existing progress bar (unchanged)
+- Footer: "X übrig" left + "Reset um Mitternacht" right
+
+### Card 3 — Info list (rows with 0.5px dividers)
+Rows: Limit | Session-Dauer | Gestartet | Endet | Erfolgsrate (green)
+
+### Motivational quote
+12sp, #C7C7CC, italic. Rotates daily.
+
+### "Challenge aufgeben"
+Text only, 14sp, #FF3B30, centered.
+No button background — psychologically de-emphasized.

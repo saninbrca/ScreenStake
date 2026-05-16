@@ -39,3 +39,7 @@
   - Hard Mode/Stripe: `docs/03_hard_mode_and_stripe.md`
   - Group Challenges: `docs/04_group_challenges.md`
   - Huawei/Permissions: `docs/05_huawei_and_permissions.md`
+  - Testing Guide: `docs/06_testing_guide.md`
+  - Onboarding & Auth: `docs/07_onboarding_and_auth.md`
+  - UI Design System: `docs/08_ui_design_system.md`
+  - Payout & Fees: `docs/09_payout_and_fees.md`

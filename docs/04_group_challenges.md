@@ -71,6 +71,33 @@ Creator sees detail screen with join code to share
 
 ---
 
+## Creation Flow — CORRECT ORDER
+
+```
+Step 1–5: User fills wizard
+Step 6: Review screen
+User taps "Erstellen & Bezahlen":
+    ↓
+1. Call createPaymentIntent (buyInCents) → get clientSecret
+   (Challenge NOT created yet)
+    ↓
+2. Show Stripe PaymentSheet
+    ↓
+PaymentSheetResult.Completed:
+    → Call createGroupChallenge Cloud Function (with paymentIntentId)
+    → Navigate to GroupChallengeDetailScreen
+PaymentSheetResult.Canceled:
+    → Stay on review screen, show "Zahlung abgebrochen"
+    → No challenge created in Firestore
+PaymentSheetResult.Failed:
+    → Stay on review screen, show error, allow retry
+```
+
+**CRITICAL:** `createGroupChallenge` ONLY called after `PaymentSheetResult.Completed`.
+Never create challenge document before payment is confirmed.
+
+---
+
 ## Join Flow
 
 ```
@@ -95,6 +122,36 @@ Cloud Function: adds participant to participants array in Firestore
     ↓
 Participant appears in leaderboard in real-time
 ```
+
+---
+
+## Join Flow — CORRECT ORDER (with confirmGroupJoin)
+
+```
+Code eingeben → Vorschau erscheint
+User taps "Beitreten":
+    ↓
+1. Button → CircularProgressIndicator (preview stays open)
+2. Call createPaymentIntent (buyInCents) → clientSecret
+    ↓
+3. PaymentSheet opens automatically
+    ↓
+PaymentSheetResult.Completed:
+    → Call confirmGroupJoin Cloud Function {groupId, paymentIntentId}
+    → 409 "Already joined" = treat as SUCCESS
+    → Navigate to GroupChallengeDetailScreen
+PaymentSheetResult.Canceled:
+    → Preview stays visible
+    → Show "Zahlung abgebrochen"
+PaymentSheetResult.Failed:
+    → Show error, allow retry
+```
+
+**confirmGroupJoin Cloud Function:**
+- Validates payment
+- Adds participant to `participants` array AND `participantUserIds`
+- Returns `{success: true}` or `{success: true, alreadyJoined: true}`
+- Uses `onRequest` pattern (never `onCall`)
 
 ---
 
@@ -428,3 +485,59 @@ budgetUsedMs written to Room + Firestore dailyLogs every 10s
 budgetUsedMinutes mirrored to participants array every 10s
 Limit reached: budgetUsedMs >= dailyBudgetMinutes * 60000 → SessionLimitReachedOverlay
 NO auto-fail. Manual "Aufgeben" only.
+
+---
+
+## Payout Fees (Group Challenge)
+
+**Case A — At least one participant failed:**
+- Winner stake refund: `floor(amountCents * 0.80)` — 20% app fee on own stake
+- Prize pool: `(totalCaptured - floor(total * 0.10)) / winnersCount` — 10% app fee on losers' pot
+
+**Case B — Nobody failed (all complete):**
+- Full 100% refund for all — no fee
+- `stripe.paymentIntents.cancel()` for each participant (PI still in `requires_capture`)
+
+**Rule:** Always use `Math.floor` — never round up (avoid overpayment).
+
+---
+
+## Detail Screen Design (Group Challenge)
+
+### Card 1 — Header
+- `"● LIVE"` badge (green) or `"⏳ WARTET"` (gray) + days remaining
+- App name: 22sp bold
+- Subtitle: limit description
+- 3-column stats: **Gesamtpot €X** | **Teilnehmer X/20** | **Dein Gewinn €X** (green)
+
+### Leaderboard section
+Single white card, rows with 0.5px dividers.
+Each row: Rank (gold/silver/bronze) | Avatar | Name | "Du" badge | Sub-label | Stat
+- Own row: `#F9FFF9` background
+- Failed: name strikethrough, `#C7C7CC` color
+- **"Nerv ihn!" button: TEMPORARILY REMOVED** — pending re-implementation
+
+### Session section
+"Deine Session heute" title.
+Verbraucht / Noch verfügbar / existing progress bar.
+
+### "Challenge aufgeben"
+Text only, 14sp, `#FF3B30`.
+Confirmation: "Du verlierst €X (80% zurück). Wirklich aufgeben?"
+
+---
+
+## Friends Tab Query
+
+Uses real-time Firestore listener (not one-shot fetch):
+
+```kotlin
+firestore.collection("groupChallenges")
+    .whereArrayContains("participantUserIds", currentUserId)
+    .whereIn("status", listOf("waiting", "active"))
+    .addSnapshotListener { snapshot, error -> ... }
+```
+
+- Shows BOTH `"waiting"` and `"active"` challenges.
+- Waiting challenge card: `"⏳ Wartet auf Start von [creatorName]"` badge.
+- Auto-updates when status changes from `waiting` → `active`.

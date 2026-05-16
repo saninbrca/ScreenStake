@@ -13,7 +13,85 @@
 
 ---
 
+## 2026-05-16 (4)
+
+### FEATURE — Horizontal scroll picker for all limit inputs
+DetoxHorizontalPicker composable implemented.
+Applied to: SESSION_LIMIT, TIME_LIMIT, DAILY_BUDGET, duration, buy-in,
+BudgetSelectionOverlay, session duration input.
+Min values: 1 open / 1 min / 14 days Hard / 3 days Group / €10 buy-in.
+Default DAILY_BUDGET = 10 min. Step = 1 everywhere.
+Haptic feedback on each scroll step. Snap behavior. White background.
+
+---
+
+## 2026-05-16 (3)
+
+### REVERT — Remove DetoxScrollPicker; restore original limit inputs
+Reverted the iOS-style scroll picker feature in full.
+- Deleted `presentation/components/DetoxScrollPicker.kt`
+- Restored `ChallengeCreationScreen.kt` Step4 (StepperField) and Step6 (StepperField + FilterChip presets)
+- Restored `GroupChallengeCreateScreen.kt` Step3 (StepperField per limit type + duration) and Step4BuyIn (StepperField, max €50, step €5)
+- Restored `BudgetSelectionOverlay.kt` to chip picker (CHIP_OPTIONS: 5/10/15/20/30/45 min)
+- Reverted `ChallengeCreationViewModel.kt` dailyBudgetMinutes default: 10 → 39
+- Removed picker_* string resources from strings.xml
+- Removed dark #0A0A0A backgrounds from wizard steps; light Material theme restored
+
+---
+
+## 2026-05-16 (2)
+
+### FEATURE — iOS-style scroll picker for all limit inputs
+Replaced all limit value inputs with `DetoxScrollPicker` composable.
+Applied to: SESSION_LIMIT, TIME_LIMIT, DAILY_BUDGET, duration (Soft + Hard Mode), buy-in (Group Challenge), BudgetSelectionOverlay.
+Min values enforced: 1 open / 1 min / 14 days Hard Mode (1 in DEBUG) / 3 days Group / €10 buy-in.
+Default DAILY_BUDGET = 10 minutes (was 39).
+Step size = 1 everywhere. Max = 480 min / 50 opens / 365 days / 500 € buy-in.
+Haptic feedback (`HapticFeedbackType.TextHandleMove`) on each scroll step.
+Dark #0A0A0A background on all wizard picker steps.
+New file: `presentation/components/DetoxScrollPicker.kt`.
+
+---
+
+## 2026-05-16
+
+### FIXED — Group Challenge Join Flow (alle 3 Bugs)
+Root cause: confirmGroupJoin Cloud Function nie deployed → HTTP 404
+→ "Erneut versuchen" obwohl Payment erfolgreich
+→ Keine Navigation nach Join
+→ Friends Tab leer bis App-Neustart
+
+Fix: confirmGroupJoin zu index.ts hinzugefügt + deployed.
+Updates participants array + participantUserIds (für Friends Tab Query).
+alreadyJoined response = Success → navigiert zu GroupChallengeDetailScreen.
+firebase deploy --only functions:confirmGroupJoin
+
+### FIXED — Group Challenge Create ohne Zahlung
+Root cause: createGroupChallenge vor PaymentSheet aufgerufen.
+Fix: createPaymentIntent zuerst → PaymentSheet → Completed → createGroupChallenge.
+
+### FIXED — Group Challenge Join ohne Zahlung
+Root cause: joinGroupChallenge vor PaymentSheet aufgerufen.
+Fix: createPaymentIntent zuerst → PaymentSheet → Completed → joinGroupChallenge.
+
+---
+
 ## 2026-05-15
+
+### FEATURE — Dark minimal overlay redesign
+All overlays redesigned: #0A0A0A bg, no white cards, no app icons. Poppins throughout.
+Psychologically intentional: ghost button "trotzdem öffnen" 12sp #333.
+6 overlays updated: SessionIntention, LimitReached, BudgetSelection, TimeWindow, WebsiteBlocked, HardModeLockout.
+SessionIntentionOverlay: emoji 📱, streak line, 3-col stats row, thin green progress bar, ghost button.
+SessionLimitReachedOverlay: emoji 🔒, orange stats row, orange 100% progress bar, dark inset hint, no bypass.
+BudgetSelectionOverlay: chip picker (5/10/15/20/30/45 min), inverted buttons (primary=start, ghost=stay strong).
+TimeWindowOverlay: NEW — emoji ⏰, live countdown, open/close time row. Replaces BlockingScreenOverlay for TIME_WINDOW.
+WebsiteBlockedOverlay: emoji 🌐, domain in dark inset, "Zurück" only.
+HardModeLockoutOverlay: emoji 🔐, dark inset shows €X + days remaining.
+OverlayManager: challengeDaysLeft computed and passed to Intention overlay; opensUsed/maxOpens/streak passed to LimitReached; budgetTotalMinutes passed to BudgetSelection; TIME_WINDOW routes to new showTimeWindowOverlay + computeMinutesUntilOpen helper.
+Dark status bar: no code change required (overlays are ComposeViews without a Window).
+No blocking logic changed — visual only.
+Files: SessionIntentionOverlay.kt, SessionLimitReachedOverlay.kt, BudgetSelectionOverlay.kt, TimeWindowOverlay.kt (new), WebsiteBlockedOverlay.kt, HardModeLockoutOverlay.kt, OverlayManager.kt, strings.xml.
 
 ### FIXED — CRITICAL: User added to Group Challenge without paying
 Root cause: `joinGroupChallenge` CF added user to `participants` + `participantUserIds` arrays before PaymentSheet was shown, before any Stripe payment.

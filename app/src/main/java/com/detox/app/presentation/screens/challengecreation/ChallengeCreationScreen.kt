@@ -12,7 +12,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.foundation.layout.Arrangement
@@ -51,7 +50,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -98,7 +96,7 @@ import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.PartialBlockSection
-import com.detox.app.presentation.components.StepperField
+import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.TimeSpinnerPicker
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
@@ -1141,66 +1139,41 @@ private fun Step4LimitValues(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                StepperField(
-                    value = state.limitValueMinutes,
+                Spacer(modifier = Modifier.height(8.dp))
+                DetoxHorizontalPicker(
+                    values = (1..480).toList(),
+                    selectedValue = state.limitValueMinutes,
                     onValueChange = onUpdateLimitMinutes,
-                    label = "Daily limit",
-                    suffix = "min",
-                    min = 5,
-                    max = 600,
-                    step = 5,
-                    error = state.limitMinutesError,
-                    modifier = Modifier.fillMaxWidth(),
+                    unit = "Minuten pro Tag",
                 )
-                if (state.limitMinutesError == null && state.limitValueMinutes >= 5) {
-                    Text(
-                        text = "App will be blocked after ${state.limitValueMinutes} min/day",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
             }
 
             LimitType.SESSIONS -> {
                 Text(
-                    text = "How many opens per day, and how long per session?",
+                    text = "How many opens per day?",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                StepperField(
-                    value = state.limitValueSessions,
+                Spacer(modifier = Modifier.height(8.dp))
+                DetoxHorizontalPicker(
+                    values = (1..50).toList(),
+                    selectedValue = state.limitValueSessions,
                     onValueChange = onUpdateLimitSessions,
-                    label = "Max opens",
-                    suffix = "opens",
-                    min = 1,
-                    max = 50,
-                    step = 1,
-                    error = state.limitSessionsError,
-                    modifier = Modifier.fillMaxWidth(),
+                    unit = "Öffnungen pro Tag",
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "How long per session?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                StepperField(
-                    value = state.sessionDurationMinutes,
+                DetoxHorizontalPicker(
+                    values = (1..120).toList(),
+                    selectedValue = state.sessionDurationMinutes,
                     onValueChange = onUpdateSessionDuration,
-                    label = "Per session",
-                    suffix = "min",
-                    min = 1,
-                    max = 120,
-                    step = 1,
-                    error = state.sessionMinutesError,
-                    modifier = Modifier.fillMaxWidth(),
+                    unit = "Minuten pro Session",
                 )
-                if (state.limitSessionsError == null && state.sessionMinutesError == null) {
-                    Text(
-                        text = "${state.limitValueSessions}× opens · ${state.sessionDurationMinutes} min each",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
             }
 
             LimitType.TIME_BUDGET -> {
@@ -1209,26 +1182,13 @@ private fun Step4LimitValues(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                StepperField(
-                    value = state.dailyBudgetMinutes,
+                Spacer(modifier = Modifier.height(8.dp))
+                DetoxHorizontalPicker(
+                    values = (1..480).toList(),
+                    selectedValue = state.dailyBudgetMinutes,
                     onValueChange = onUpdateDailyBudget,
-                    label = "Daily budget",
-                    suffix = "min",
-                    min = 1,
-                    max = 600,
-                    step = 5,
-                    error = state.dailyBudgetError,
-                    modifier = Modifier.fillMaxWidth(),
+                    unit = "Minuten Tagesbudget",
                 )
-                if (state.dailyBudgetError == null && state.dailyBudgetMinutes >= 1) {
-                    Text(
-                        text = "${state.dailyBudgetMinutes} min total per day",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
             }
 
             LimitType.TIME_WINDOW -> {
@@ -1448,7 +1408,6 @@ private fun Step6Duration(
     onUpdateAmount: (Int) -> Unit,
 ) {
     val isHardMode = state.selectedMode == ChallengeMode.HARD
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1456,26 +1415,15 @@ private fun Step6Duration(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = "Challenge duration",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-
+        Text("Challenge duration", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         if (isHardMode) {
-            Text(
-                text = "Amount at stake",
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            StepperField(
-                value = state.amountEuros,
+            Text("Amount at stake", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.height(8.dp))
+            DetoxHorizontalPicker(
+                values = (5..50).toList(),
+                selectedValue = state.amountEuros,
                 onValueChange = onUpdateAmount,
-                label = "Amount (€)",
-                min = 5,
-                max = 50,
-                step = 5,
-                modifier = Modifier.fillMaxWidth(),
+                unit = "Euro Einsatz",
             )
             Text(
                 text = "⚠️ If you exceed the limit, €${state.amountEuros} will be captured immediately.",
@@ -1484,18 +1432,13 @@ private fun Step6Duration(
             )
             HorizontalDivider()
         }
-
         if (!isHardMode) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "No end date",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Text("No end date", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                 Switch(
                     checked = state.noEndDate,
                     onCheckedChange = onToggleNoEndDate,
@@ -1503,36 +1446,18 @@ private fun Step6Duration(
                         checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = MaterialTheme.colorScheme.primary,
                         checkedBorderColor = MaterialTheme.colorScheme.primary,
-                    )
+                    ),
                 )
             }
         }
-
         if (!state.noEndDate) {
-            StepperField(
-                value = state.durationDays,
+            val minDays = if (isHardMode) 14 else 1
+            DetoxHorizontalPicker(
+                values = (minDays..365).toList(),
+                selectedValue = state.durationDays,
                 onValueChange = onUpdateDuration,
-                label = "Duration",
-                suffix = "days",
-                min = if (isHardMode) 14 else 1,
-                max = 365,
-                step = 1,
-                error = state.durationError,
-                modifier = Modifier.fillMaxWidth(),
+                unit = "Tage",
             )
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                val presets = if (isHardMode) listOf(14, 21, 30, 60) else listOf(1, 7, 14, 30)
-                presets.forEach { days ->
-                    FilterChip(
-                        selected = state.durationDays == days,
-                        onClick = { onUpdateDuration(days) },
-                        label = { Text("${days}d", maxLines = 1) },
-                    )
-                }
-            }
         }
     }
 }

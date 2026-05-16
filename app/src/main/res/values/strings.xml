@@ -810,4 +810,50 @@
     <string name="notif_redemption_completed_body">€%1$d werden auf deine Karte zurückgebucht. Gut gemacht!</string>
     <string name="notif_redemption_failed_title">Comeback nicht geschafft 😔</string>
     <string name="notif_redemption_failed_body">Leider kein Refund möglich für %1$s. Du hast alles gegeben!</string>
+
+    <!-- Dark overlay redesign — SessionIntentionOverlay -->
+    <string name="overlay_intention_question">Brauchst du es wirklich?</string>
+    <string name="overlay_intention_streak_line">🔥 %1$d Tage Streak</string>
+    <string name="overlay_intention_opens_today_label">heute geöffnet</string>
+    <string name="overlay_intention_remaining_label">noch übrig</string>
+    <string name="overlay_intention_days_label">Tage noch</string>
+    <string name="overlay_intention_progress_label">%1$d / %2$d Öffnungen</string>
+    <string name="overlay_ghost_open">trotzdem öffnen</string>
+
+    <!-- Dark overlay redesign — SessionLimitReachedOverlay -->
+    <string name="overlay_limit_reached_new_title">Limit erreicht</string>
+    <string name="overlay_limit_reached_new_subtitle">Du hast dein Tageslimit von %1$d Öffnungen erreicht.</string>
+    <string name="overlay_limit_reached_opens_label">heute geöffnet</string>
+    <string name="overlay_limit_reached_streak_label">Streak 🔥</string>
+    <string name="overlay_limit_reached_hint">Challenge aufgeben nur über Dashboard</string>
+    <string name="overlay_limit_reached_progress_full">Voll</string>
+    <string name="overlay_limit_reached_progress_label">%1$d / %2$d Öffnungen</string>
+
+    <!-- Dark overlay redesign — BudgetSelectionOverlay -->
+    <string name="overlay_budget_label">Tagesbudget</string>
+    <string name="overlay_budget_min_remaining">min übrig</string>
+    <string name="overlay_budget_how_long">Wie lange möchtest du schauen?</string>
+    <string name="overlay_budget_start_session">%1$d min starten</string>
+
+    <!-- Dark overlay redesign — TimeWindowOverlay -->
+    <string name="overlay_time_window_title">Noch nicht so weit</string>
+    <string name="overlay_time_window_subtitle">Dein Zeitfenster beginnt um %1$s Uhr</string>
+    <string name="overlay_time_window_available_in">Verfügbar in</string>
+    <string name="overlay_time_window_hours_unit">Stunden</string>
+    <string name="overlay_time_window_opens_label">Öffnet</string>
+    <string name="overlay_time_window_closes_label">Schließt</string>
+    <string name="overlay_time_window_ok">Verstanden 👍</string>
+
+    <!-- Dark overlay redesign — WebsiteBlockedOverlay -->
+    <string name="overlay_website_new_title">Website geblockt</string>
+    <string name="overlay_website_new_subtitle">Diese Website ist in deiner Challenge gesperrt.</string>
+    <string name="overlay_website_back_button">Zurück</string>
+
+    <!-- Dark overlay redesign — HardModeLockoutOverlay -->
+    <string name="overlay_lockout_new_title">Hard Mode aktiv</string>
+    <string name="overlay_lockout_new_subtitle">Du kannst die App nicht öffnen.</string>
+    <string name="overlay_lockout_amount_stake">€%1$d auf dem Spiel</string>
+    <string name="overlay_lockout_days_remaining">%1$d Tage verbleibend</string>
+    <string name="overlay_lockout_back_button">Zurück</string>
+
 </resources>

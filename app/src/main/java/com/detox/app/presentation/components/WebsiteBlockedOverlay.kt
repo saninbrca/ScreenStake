@@ -1,7 +1,6 @@
 package com.detox.app.presentation.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -9,9 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,106 +22,84 @@ import androidx.compose.ui.unit.sp
 import com.detox.app.R
 
 /**
- * Full-screen opaque overlay shown when the AccessibilityService detects a blocked domain
- * in a browser address bar.
+ * Full-screen opaque overlay shown when a blocked domain is detected in a browser.
  *
- * No bypass is possible — the only action is "Stay strong 💪" which sends the user home.
+ * No bypass — single "Zurück" button only.
  * Back button is also intercepted by OverlayManager via createSessionComposeView.
  */
 @Composable
 fun WebsiteBlockedOverlay(
     domain: String,
     challengeName: String?,
-    /** Current consecutive-day streak (before today). Hidden when 0. */
     streak: Int,
     motivationText: String?,
     onGoBack: () -> Unit,
 ) {
+    val TextHint    = Color(0xFF555555)
+    val SurfaceDark = Color(0xFF111111)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0D0D))
+            .background(Color(0xFF0A0A0A))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 32.dp, vertical = 56.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 28.dp)
+                .padding(top = 72.dp, bottom = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Top: icon, title, domain, challenge name, motivation ──────────────
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            // ── Emoji ──────────────────────────────────────────────────────────
+            Text(text = "🌐", fontSize = 48.sp, textAlign = TextAlign.Center)
+
+            Spacer(Modifier.height(16.dp))
+
+            // ── Title ──────────────────────────────────────────────────────────
+            Text(
+                text = stringResource(R.string.overlay_website_new_title),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                letterSpacing = (-0.3).sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // ── Subtitle ───────────────────────────────────────────────────────
+            Text(
+                text = stringResource(R.string.overlay_website_new_subtitle),
+                fontSize = 14.sp,
+                color = Color(0xFF666666),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            // ── Domain in dark inset ───────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SurfaceDark, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "🚫",
-                    fontSize = 56.sp,
-                    textAlign = TextAlign.Center
-                )
-
-                Text(
-                    text = stringResource(R.string.website_blocked_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-
                 Text(
                     text = domain,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                    color = Color(0xFF333333),
                     textAlign = TextAlign.Center
                 )
-
-                if (challengeName != null) {
-                    Text(
-                        text = stringResource(R.string.website_blocked_challenge_label, challengeName),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White.copy(alpha = 0.65f),
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                if (!motivationText.isNullOrBlank()) {
-                    Text(
-                        text = "\"$motivationText\"",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.55f),
-                        textAlign = TextAlign.Center,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                    )
-                }
             }
 
-            // ── Middle: streak badge ──────────────────────────────────────────────
-            if (streak > 0) {
-                Text(
-                    text = stringResource(R.string.streak_display, streak),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-            } else {
-                Spacer(modifier = Modifier.height(1.dp))
-            }
+            Spacer(Modifier.weight(1f))
 
-            // ── Bottom: single "Stay strong" button ───────────────────────────────
-            Button(
-                onClick = onGoBack,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Text(
-                    text = stringResource(R.string.website_blocked_stay_strong),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
+            // ── Single back button ─────────────────────────────────────────────
+            OverlayPrimaryButton(
+                text = stringResource(R.string.overlay_website_back_button),
+                onClick = onGoBack
+            )
         }
     }
 }

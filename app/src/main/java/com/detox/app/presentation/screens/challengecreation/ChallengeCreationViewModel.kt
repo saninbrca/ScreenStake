@@ -102,7 +102,7 @@ data class ChallengeCreationState(
     val limitValueMinutes: Int = 60,
     val limitValueSessions: Int = 5,
     val sessionDurationMinutes: Int = 5,
-    val dailyBudgetMinutes: Int = 39,
+    val dailyBudgetMinutes: Int = 10,
     val avgDailyMinutes: Int = 0,
     val limitMinutesError: String? = null,
     val limitSessionsError: String? = null,

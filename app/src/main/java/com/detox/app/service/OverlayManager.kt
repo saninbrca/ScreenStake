@@ -46,6 +46,7 @@ import com.detox.app.presentation.components.LimitExceededOverlay
 import com.detox.app.presentation.components.SessionIntentionOverlay
 import com.detox.app.presentation.components.SessionLimitReachedOverlay
 import com.detox.app.presentation.components.TauntOverlay
+import com.detox.app.presentation.components.TimeWindowOverlay
 import com.detox.app.ui.theme.DetoxTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -334,7 +335,7 @@ class OverlayManager @Inject constructor(
                         showBlockingOverlay(status, scope)
                 }
             }
-            LimitType.TIME_WINDOW -> showBlockingOverlay(status, scope)
+            LimitType.TIME_WINDOW -> showTimeWindowOverlay(status, scope)
         }
     }
 
@@ -429,6 +430,11 @@ class OverlayManager @Inject constructor(
         )
 
         val streak = getStreak(challenge)
+        val challengeDaysLeft = if (challenge.endDate > 0L) {
+            ((challenge.endDate - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L).toInt()
+        } else {
+            Int.MAX_VALUE
+        }
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -449,6 +455,7 @@ class OverlayManager @Inject constructor(
                     lastSessionEndedAt = lastSessionEndedAt[(challenge.appPackageName ?: "")],
                     motivationText = motivationText,
                     streak = streak,
+                    challengeDaysLeft = challengeDaysLeft,
                     onYes = {
                         val newCount =
                             consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0) + 1
@@ -510,9 +517,11 @@ class OverlayManager @Inject constructor(
     private suspend fun showSessionLimitReachedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
         val confirmedOpens = consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0)
+        val maxOpens = challenge.limitValueSessions ?: 0
+        val streak = getStreak(challenge)
         Timber.d(
             "OverlayManager: Stage 2 shown for ${challenge.appDisplayName} " +
-                    "— $confirmedOpens/${challenge.limitValueSessions} conscious opens, " +
+                    "— $confirmedOpens/$maxOpens conscious opens, " +
                     "mode=${challenge.mode}"
         )
 
@@ -528,6 +537,9 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
+                    opensUsed = confirmedOpens,
+                    maxOpens = maxOpens,
+                    streak = streak,
                     onNo = {
                         Timber.d(
                             "OverlayManager: Stage 2 'Stark bleiben' tapped " +
@@ -811,6 +823,7 @@ class OverlayManager @Inject constructor(
                     packageName = packageName,
                     appName = challenge.appDisplayName,
                     remainingMinutes = remainingMinutes,
+                    budgetTotalMinutes = challenge.dailyBudgetMinutes ?: remainingMinutes,
                     onStart = { selectedMinutes ->
                         Timber.d(
                             "OverlayManager: Budget session starting: ${selectedMinutes}min " +
@@ -888,6 +901,57 @@ class OverlayManager @Inject constructor(
             }
         }
         showSessionOverlay(composeView, challenge.id)
+    }
+
+    // ── Time-window overlay ────────────────────────────────────────────────────
+
+    /**
+     * Shown when user opens an app outside its configured TIME_WINDOW_ONLY schedule.
+     * Computes minutes until the next window opening from the challenge's schedule times.
+     */
+    private fun showTimeWindowOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
+        val challenge = status.challenge
+        val openTime  = challenge.scheduleStartTime ?: "00:00"
+        val closeTime = challenge.scheduleEndTime   ?: "23:59"
+
+        val minutesUntilOpen = computeMinutesUntilOpen(openTime)
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                dismissOverlay("back")
+                goHome()
+            }
+        ) {
+            DetoxTheme {
+                TimeWindowOverlay(
+                    appName          = challenge.appDisplayName,
+                    openTime         = openTime,
+                    closeTime        = closeTime,
+                    minutesUntilOpen = minutesUntilOpen,
+                    onDismiss        = {
+                        dismissOverlay("time_window_ok")
+                        goHome()
+                    }
+                )
+            }
+        }
+        showOverlay(composeView, challenge.id)
+    }
+
+    /** Computes minutes from now until [openTime] (format "HH:MM"), wrapping to next day if past. */
+    private fun computeMinutesUntilOpen(openTime: String): Int {
+        return try {
+            val parts    = openTime.split(":")
+            val openHour = parts[0].toInt()
+            val openMin  = parts[1].toInt()
+            val now      = java.util.Calendar.getInstance()
+            val nowMins  = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+            val targetMins = openHour * 60 + openMin
+            val diff = targetMins - nowMins
+            if (diff > 0) diff else diff + 24 * 60
+        } catch (_: Exception) {
+            0
+        }
     }
 
     /**
@@ -1033,10 +1097,14 @@ class OverlayManager @Inject constructor(
 
         writeDailyLogForHardCapture(challenge.id, (challenge.appPackageName ?: ""), challenge.amountCents ?: 0)
 
+        val lockDaysRemaining = if (challenge.endDate > 0L) {
+            ((challenge.endDate - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L).toInt()
+        } else 0
         val info = LockedAppInfo(
             challengeId = challenge.id,
             appName = challenge.appDisplayName,
-            amountCents = challenge.amountCents ?: 0
+            amountCents = challenge.amountCents ?: 0,
+            daysRemaining = lockDaysRemaining
         )
         hardLockedPackages[(challenge.appPackageName ?: "")] = info
         Timber.d(
@@ -1105,6 +1173,7 @@ class OverlayManager @Inject constructor(
                 HardModeLockoutOverlay(
                     appName = info.appName,
                     amountCents = info.amountCents,
+                    daysRemaining = info.daysRemaining,
                     onExitHome = {
                         dismissOverlay("exit_home")
                         goHome()
@@ -1487,7 +1556,8 @@ class OverlayManager @Inject constructor(
     private data class LockedAppInfo(
         val challengeId: String,
         val appName: String,
-        val amountCents: Int
+        val amountCents: Int,
+        val daysRemaining: Int = 0
     )
 
     // ── LifecycleOwner for overlays ────────────────────────────────────────────

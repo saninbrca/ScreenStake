@@ -46,7 +46,7 @@ data class GroupCreateFormState(
     val limitValueMinutes: Int = 60,
     val limitValueSessions: Int = 5,
     val sessionMinutes: Int = 5,
-    val dailyBudgetMinutes: Int = 60,
+    val dailyBudgetMinutes: Int = 10,
     val durationDays: Int = 7,
     val durationError: String? = null,
     // Step 4 — buy-in
@@ -195,7 +195,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun setLimitValueMinutes(v: Int) = _formState.update { it.copy(limitValueMinutes = v.coerceIn(5, 600)) }
     fun setLimitValueSessions(v: Int) = _formState.update { it.copy(limitValueSessions = v.coerceIn(1, 50)) }
     fun setSessionMinutes(v: Int) = _formState.update { it.copy(sessionMinutes = v.coerceIn(5, 120)) }
-    fun setDailyBudgetMinutes(v: Int) = _formState.update { it.copy(dailyBudgetMinutes = v.coerceIn(5, 600)) }
+    fun setDailyBudgetMinutes(v: Int) = _formState.update { it.copy(dailyBudgetMinutes = v.coerceIn(1, 480)) }
 
     fun setDurationDays(v: Int) {
         val clamped = v.coerceIn(1, 365)
@@ -206,7 +206,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
     // ── Step 4 — buy-in ─────────────────────────────────────────────────────────
 
     fun setBuyInEuros(v: Int) {
-        val clamped = v.coerceIn(10, 50)
+        val clamped = v.coerceIn(10, 500)
         _formState.update { it.copy(buyInEuros = clamped) }
     }
 

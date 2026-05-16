@@ -21,7 +21,7 @@ sealed interface GroupJoinUiState {
     data object LookingUp : GroupJoinUiState
     data class Preview(val groupChallenge: GroupChallenge) : GroupJoinUiState
     /** joinGroupChallenge CF called — waiting for Stripe PaymentSheet to open. */
-    data object ProcessingPayment : GroupJoinUiState
+    data class ProcessingPayment(val groupChallenge: GroupChallenge) : GroupJoinUiState
     /** Stripe PaymentSheet is visible — waiting for user to complete / cancel / fail. */
     data class AwaitingPayment(
         val paymentData: PaymentIntentData,
@@ -99,7 +99,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 ?: user.email?.substringBefore('@')
                 ?: "Anonymous"
         } ?: "Anonymous"
-        _uiState.value = GroupJoinUiState.ProcessingPayment
+        _uiState.value = GroupJoinUiState.ProcessingPayment(groupChallenge)
         viewModelScope.launch {
             val activeChallenges = challengeRepository.getActiveChallengesList().getOrNull().orEmpty()
             val activePackages = activeChallenges.flatMap { it.appPackageNames }.toSet()
@@ -155,15 +155,36 @@ class GroupChallengeJoinViewModel @Inject constructor(
             ).fold(
                 onSuccess = {
                     Timber.d("GroupJoinVM: join confirmed — groupId=%s", awaiting.groupId)
+                    joinGroupChallengeUseCase.refreshCacheAfterJoin(awaiting.groupId)
                     lastAwaitingPayment = null
                     _uiState.value = GroupJoinUiState.JoinedSuccessfully(awaiting.groupId)
                 },
                 onFailure = { e ->
                     Timber.e(e, "GroupJoinVM: confirmJoin failed groupId=%s", awaiting.groupId)
-                    _uiState.value = GroupJoinUiState.Error(
-                        message = "Deine Zahlung wurde empfangen, aber der Beitritt konnte nicht bestätigt werden. Bitte erneut versuchen.",
-                        retryGroupChallenge = awaiting.groupChallenge
-                    )
+                    val msg = e.message ?: ""
+                    when {
+                        msg.contains("already", ignoreCase = true) -> {
+                            // Idempotency: user already added — treat as success
+                            Timber.d("GroupJoinVM: 'already joined' → success groupId=%s", awaiting.groupId)
+                            joinGroupChallengeUseCase.refreshCacheAfterJoin(awaiting.groupId)
+                            lastAwaitingPayment = null
+                            _uiState.value = GroupJoinUiState.JoinedSuccessfully(awaiting.groupId)
+                        }
+                        msg.contains("page not found", ignoreCase = true) ||
+                        msg.contains("not found", ignoreCase = true) -> {
+                            // 404 — function not deployed or wrong URL; retry won't help
+                            _uiState.value = GroupJoinUiState.Error(
+                                message = "Server nicht erreichbar. Bitte kontaktiere den Support.",
+                                retryGroupChallenge = null
+                            )
+                        }
+                        else -> {
+                            _uiState.value = GroupJoinUiState.Error(
+                                message = "Deine Zahlung wurde empfangen, aber der Beitritt konnte nicht bestätigt werden. Bitte erneut versuchen.",
+                                retryGroupChallenge = awaiting.groupChallenge
+                            )
+                        }
+                    }
                 }
             )
         }

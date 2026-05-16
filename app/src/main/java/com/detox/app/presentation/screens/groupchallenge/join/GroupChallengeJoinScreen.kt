@@ -65,14 +65,13 @@ import com.stripe.android.paymentsheet.rememberPaymentSheet
 @Composable
 fun GroupChallengeJoinScreen(
     onBack: () -> Unit,
-    onJoined: () -> Unit,
+    onJoined: (groupId: String) -> Unit,
     viewModel: GroupChallengeJoinViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val codeInput by viewModel.codeInput.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
-    val joinedSuccessMessage = stringResource(R.string.join_group_joined_success)
     val paymentCancelledMessage = stringResource(R.string.join_group_payment_cancelled)
     val paymentFailedMessage = stringResource(R.string.join_group_payment_failed)
 
@@ -93,8 +92,7 @@ fun GroupChallengeJoinScreen(
     LaunchedEffect(uiState) {
         when (val s = uiState) {
             is GroupJoinUiState.JoinedSuccessfully -> {
-                snackbarHostState.showSnackbar(joinedSuccessMessage)
-                onJoined()
+                onJoined(s.groupId)
             }
             is GroupJoinUiState.AwaitingPayment -> {
                 paymentSheet.presentWithPaymentIntent(
@@ -179,6 +177,7 @@ fun GroupChallengeJoinScreen(
             // ── Challenge details card ──────────────────────────────────────────
             val previewGc: GroupChallenge? = when (val s = uiState) {
                 is GroupJoinUiState.Preview -> s.groupChallenge
+                is GroupJoinUiState.ProcessingPayment -> s.groupChallenge
                 is GroupJoinUiState.AwaitingPayment -> s.groupChallenge
                 is GroupJoinUiState.ConfirmingJoin -> s.groupChallenge
                 is GroupJoinUiState.Error -> s.retryGroupChallenge  // keep card visible for post-payment errors

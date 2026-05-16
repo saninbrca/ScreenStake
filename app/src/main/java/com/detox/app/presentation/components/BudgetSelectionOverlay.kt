@@ -10,17 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,165 +32,157 @@ import androidx.compose.ui.unit.sp
 import com.detox.app.R
 
 /**
- * Full-screen opaque overlay that lets the user choose how many minutes of their
- * remaining daily budget they want to spend in this session.
+ * Full-screen daily budget overlay (dark, minimal redesign).
  *
- * @param packageName      Package name of the tracked app (used for Timber logging in countdown).
- * @param appName          Name of the tracked app.
- * @param remainingMinutes How many budget minutes are left for today.
- * @param onStart          Called with the number of minutes the user selected.
- * @param onGoBack         Called when the user taps "Stark bleiben" or cancels the countdown.
+ * Horizontal scroll picker for session duration. Primary button = "X min starten".
+ * Ghost button = "Stark bleiben 💪".
+ *
+ * @param budgetTotalMinutes Total daily budget in minutes (used for progress bar).
  */
 @Composable
 fun BudgetSelectionOverlay(
     packageName: String,
     appName: String,
     remainingMinutes: Int,
+    budgetTotalMinutes: Int = remainingMinutes,
     onStart: (Int) -> Unit,
     onGoBack: () -> Unit
 ) {
-    var selectedMinutes by remember { mutableIntStateOf(minOf(10, remainingMinutes).coerceAtLeast(1)) }
+    val usedMinutes = (budgetTotalMinutes - remainingMinutes).coerceAtLeast(0)
+    val usedProgress = if (budgetTotalMinutes > 0) usedMinutes.toFloat() / budgetTotalMinutes else 0f
+
+    val safeMax = remainingMinutes.coerceAtLeast(1)
+    val defaultSelection = minOf(10, safeMax)
+
+    var selectedMinutes by remember { mutableIntStateOf(defaultSelection) }
     var showCountdown by remember { mutableStateOf(false) }
+
+    val AccentOrange = Color(0xFFFF9500)
+    val TextHint     = Color(0xFF555555)
+    val TextSecond   = Color(0xFF666666)
+    val BorderDark   = Color(0xFF222222)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0D0D)),
-        contentAlignment = Alignment.Center
+            .background(Color(0xFF0A0A0A))
     ) {
-        Card(
+        // App name top-right
+        Text(
+            text = appName,
+            fontSize = 11.sp,
+            color = Color(0xFF444444),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1C))
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 16.dp)
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp)
+                .padding(top = 72.dp, bottom = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            // ── Subtitle ──────────────────────────────────────────────────────
+            Text(
+                text = stringResource(R.string.overlay_budget_label),
+                fontSize = 11.sp,
+                color = TextHint,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // ── Big remaining number ───────────────────────────────────────────
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = stringResource(R.string.budget_overlay_title, appName),
-                    style = MaterialTheme.typography.headlineSmall,
+                    text = remainingMinutes.toString(),
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    textAlign = TextAlign.Center
+                    letterSpacing = (-1).sp
                 )
-
                 Text(
-                    text = stringResource(R.string.budget_overlay_remaining, remainingMinutes),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFF4CAF50),
-                    textAlign = TextAlign.Center
+                    text = "  ${stringResource(R.string.overlay_budget_min_remaining)}",
+                    fontSize = 16.sp,
+                    color = TextHint,
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
+            }
 
-                Spacer(modifier = Modifier.height(4.dp))
+            Spacer(Modifier.height(16.dp))
 
+            // ── Progress bar (used %, orange) ──────────────────────────────────
+            OverlayProgressBar(
+                progress = usedProgress.coerceIn(0f, 1f),
+                trackColor = BorderDark,
+                fillColor = AccentOrange
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
-                    text = stringResource(R.string.budget_overlay_pick_label),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.75f),
-                    textAlign = TextAlign.Center
+                    text = "$usedMinutes / $budgetTotalMinutes min",
+                    fontSize = 11.sp,
+                    color = TextHint
                 )
+                Text(
+                    text = "${(usedProgress * 100).toInt()}%",
+                    fontSize = 11.sp,
+                    color = AccentOrange
+                )
+            }
 
-                // +/- picker
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
-                ) {
-                    // Minus button
-                    Surface(
-                        shape = CircleShape,
-                        color = if (selectedMinutes > 1) Color.White.copy(alpha = 0.15f)
-                        else Color.White.copy(alpha = 0.05f),
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        IconButton(
-                            onClick = { if (selectedMinutes > 1) selectedMinutes-- },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Text(
-                                text = "−",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = if (selectedMinutes > 1) Color.White
-                                else Color.White.copy(alpha = 0.3f)
-                            )
-                        }
-                    }
+            Spacer(Modifier.height(28.dp))
 
-                    Text(
-                        text = stringResource(R.string.budget_overlay_minutes_value, selectedMinutes),
-                        style = MaterialTheme.typography.displaySmall,
-                        color = Color.White
-                    )
+            // ── Section label ─────────────────────────────────────────────────
+            Text(
+                text = stringResource(R.string.overlay_budget_how_long),
+                fontSize = 12.sp,
+                color = TextSecond,
+                textAlign = TextAlign.Center
+            )
 
-                    // Plus button
-                    Surface(
-                        shape = CircleShape,
-                        color = if (selectedMinutes < remainingMinutes) Color.White.copy(alpha = 0.15f)
-                        else Color.White.copy(alpha = 0.05f),
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        IconButton(
-                            onClick = { if (selectedMinutes < remainingMinutes) selectedMinutes++ },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Text(
-                                text = "+",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = if (selectedMinutes < remainingMinutes) Color.White
-                                else Color.White.copy(alpha = 0.3f)
-                            )
-                        }
-                    }
-                }
+            Spacer(Modifier.height(12.dp))
 
-                Spacer(modifier = Modifier.height(8.dp))
+            // ── Horizontal scroll picker ──────────────────────────────────────
+            DetoxHorizontalPicker(
+                values = (1..safeMax).toList(),
+                selectedValue = selectedMinutes,
+                onValueChange = { selectedMinutes = it },
+                unit = "Minuten",
+            )
 
-                // Primary: stay strong (go back)
-                Button(
+            Spacer(Modifier.weight(1f))
+
+            // ── Primary button: start session ──────────────────────────────────
+            OverlayPrimaryButton(
+                text = stringResource(R.string.overlay_budget_start_session, selectedMinutes),
+                onClick = { showCountdown = true }
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // ── Ghost button: stay strong ──────────────────────────────────────
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                TextButton(
                     onClick = onGoBack,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                    modifier = Modifier.height(36.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF333333))
                 ) {
                     Text(
                         text = stringResource(R.string.stay_strong_button),
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal
                     )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = stringResource(R.string.open_anyway_hint),
-                    fontSize = 10.sp,
-                    color = Color(0xFF9E9E9E),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                    TextButton(
-                        onClick = { showCountdown = true },
-                        modifier = Modifier.height(32.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF9E9E9E))
-                    ) {
-                        Text(
-                            text = stringResource(R.string.open_anyway_button),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
                 }
             }
         }

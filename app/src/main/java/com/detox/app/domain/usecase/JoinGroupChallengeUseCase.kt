@@ -77,6 +77,15 @@ class JoinGroupChallengeUseCase @Inject constructor(
     ): Result<Unit> = cloudFunctionsService.confirmGroupJoin(groupId, userId, paymentIntentId)
 
     /**
+     * Fetches the newly joined challenge from Firestore and writes it to Room
+     * so the Friends tab Flow emits immediately without needing an app restart.
+     */
+    suspend fun refreshCacheAfterJoin(groupId: String) {
+        groupChallengeRepository.fetchAndCacheById(groupId)
+            .onFailure { e -> Timber.w(e, "JoinGroupChallengeUseCase: cache refresh failed for %s", groupId) }
+    }
+
+    /**
      * Initiates the buy-in payment for joining [groupId].
      * Returns [JoinPaymentData] with the Stripe client secret to show PaymentSheet.
      */

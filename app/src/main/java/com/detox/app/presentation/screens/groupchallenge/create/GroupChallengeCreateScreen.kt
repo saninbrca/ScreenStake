@@ -89,6 +89,7 @@ import androidx.compose.ui.res.stringResource
 import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.LimitType
+import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.StepperField
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
@@ -718,7 +719,7 @@ private fun Step3LimitAndDuration(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = "Set your limit",
@@ -728,44 +729,27 @@ private fun Step3LimitAndDuration(
 
         when (formState.limitType) {
             LimitType.TIME -> {
-                Text(
-                    text = "How many minutes per day?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                StepperField(
-                    value = formState.limitValueMinutes,
+                DetoxHorizontalPicker(
+                    values = (1..480).toList(),
+                    selectedValue = formState.limitValueMinutes,
                     onValueChange = onUpdateLimitMinutes,
-                    label = "Daily limit",
-                    suffix = "min",
-                    min = 5,
-                    max = 600,
-                    step = 5,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = "App will be blocked after ${formState.limitValueMinutes} min/day",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    unit = "Minuten pro Tag",
                 )
             }
             LimitType.SESSIONS -> {
+                DetoxHorizontalPicker(
+                    values = (1..50).toList(),
+                    selectedValue = formState.limitValueSessions,
+                    onValueChange = onUpdateLimitSessions,
+                    unit = "Öffnungen pro Tag",
+                )
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "How many opens per day, and how long per session?",
+                    text = "How long per session?",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                StepperField(
-                    value = formState.limitValueSessions,
-                    onValueChange = onUpdateLimitSessions,
-                    label = "Max opens",
-                    suffix = "opens",
-                    min = 1,
-                    max = 50,
-                    step = 1,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Spacer(modifier = Modifier.height(4.dp))
                 StepperField(
                     value = formState.sessionMinutes,
                     onValueChange = onUpdateSessionDuration,
@@ -776,66 +760,31 @@ private fun Step3LimitAndDuration(
                     step = 5,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text(
-                    text = "${formState.limitValueSessions}× opens · ${formState.sessionMinutes} min each",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
             }
             LimitType.TIME_BUDGET -> {
-                Text(
-                    text = "What's the daily time budget?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                StepperField(
-                    value = formState.dailyBudgetMinutes,
+                DetoxHorizontalPicker(
+                    values = (1..480).toList(),
+                    selectedValue = formState.dailyBudgetMinutes,
                     onValueChange = onUpdateDailyBudget,
-                    label = "Daily budget",
-                    suffix = "min",
-                    min = 5,
-                    max = 600,
-                    step = 5,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = "${formState.dailyBudgetMinutes} min total per day",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    unit = "Minuten Tagesbudget",
                 )
             }
             else -> Unit
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
         HorizontalDivider()
-        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "Duration",
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        StepperField(
-            value = formState.durationDays,
+        DetoxHorizontalPicker(
+            values = (3..365).toList(),
+            selectedValue = formState.durationDays,
             onValueChange = onUpdateDuration,
-            label = "Duration",
-            suffix = "days",
-            min = 3,
-            max = 365,
-            step = 1,
-            error = formState.durationError,
-            modifier = Modifier.fillMaxWidth(),
+            unit = "Tage",
         )
-        if (formState.durationError != null) {
-            Text(
-                text = formState.durationError,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
     }
 }
 
@@ -853,53 +802,31 @@ private fun Step4BuyIn(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Buy-in per player",
+            text = "Buy-In Per Player",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "All players must pay to join. The pot is split between successful completers.",
+            text = "How much does each player pay to join?",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        StepperField(
-            value = buyIn,
+        Spacer(modifier = Modifier.height(8.dp))
+        DetoxHorizontalPicker(
+            values = (10..500).toList(),
+            selectedValue = buyIn,
             onValueChange = onBuyInChange,
-            label = "Buy-in per player",
-            suffix = "€",
-            min = 10,
-            max = 50,
-            step = 5,
-            modifier = Modifier.fillMaxWidth(),
+            unit = "Euro pro Spieler",
         )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Total pot with 20 players:",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = "€$estimatedPot",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
+        Text(
+            text = "Total pot with 20 players: €$estimatedPot",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

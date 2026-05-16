@@ -26,6 +26,7 @@ import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.di.ApplicationScope
 import com.detox.app.domain.model.Challenge
+import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.GroupChallengeStatus
@@ -421,20 +422,8 @@ class OverlayManager @Inject constructor(
                     "— $confirmedOpens/$maxOpens conscious opens used"
         )
 
-        val motivationText = challenge.customMotivation
-            ?.takeIf { it.isNotBlank() }
-            ?: context.getString(R.string.default_motivation_text)
-        Timber.d(
-            "OverlayManager: Stage 1 motivation text for ${challenge.appDisplayName}: " +
-                    "\"$motivationText\" (custom=${challenge.customMotivation})"
-        )
-
         val streak = getStreak(challenge)
-        val challengeDaysLeft = if (challenge.endDate > 0L) {
-            ((challenge.endDate - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L).toInt()
-        } else {
-            Int.MAX_VALUE
-        }
+        val contextHeader = buildContextHeader(challenge, streak)
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -450,12 +439,9 @@ class OverlayManager @Inject constructor(
                 SessionIntentionOverlay(
                     packageName = (challenge.appPackageName ?: ""),
                     appName = challenge.appDisplayName,
+                    contextHeader = contextHeader,
                     opensUsed = confirmedOpens,
                     maxOpens = maxOpens,
-                    lastSessionEndedAt = lastSessionEndedAt[(challenge.appPackageName ?: "")],
-                    motivationText = motivationText,
-                    streak = streak,
-                    challengeDaysLeft = challengeDaysLeft,
                     onYes = {
                         val newCount =
                             consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0) + 1
@@ -525,6 +511,18 @@ class OverlayManager @Inject constructor(
                     "mode=${challenge.mode}"
         )
 
+        val contextHeader = buildContextHeader(challenge, streak)
+        val (largeNumber, largeNumberLabel) = when (challenge.limitType) {
+            LimitType.TIME -> Pair(
+                status.todayMinutes,
+                context.getString(R.string.overlay_v2_label_time, challenge.limitValueMinutes)
+            )
+            else -> Pair(
+                confirmedOpens,
+                context.getString(R.string.overlay_v2_label_sessions, maxOpens)
+            )
+        }
+
         val composeView = createSessionComposeView(
             onBack = {
                 Timber.d(
@@ -537,9 +535,10 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
-                    opensUsed = confirmedOpens,
-                    maxOpens = maxOpens,
-                    streak = streak,
+                    appName = challenge.appDisplayName,
+                    contextHeader = contextHeader,
+                    largeNumber = largeNumber,
+                    largeNumberLabel = largeNumberLabel,
                     onNo = {
                         Timber.d(
                             "OverlayManager: Stage 2 'Stark bleiben' tapped " +
@@ -863,6 +862,11 @@ class OverlayManager @Inject constructor(
                     "(mode=${challenge.mode}, groupId=$groupChallengeId)"
         )
 
+        val budgetExhaustedHeader = context.getString(R.string.overlay_v2_header_budget, 0)
+        val budgetExhaustedLabel  = context.getString(
+            R.string.overlay_v2_label_budget, challenge.dailyBudgetMinutes ?: 0
+        )
+
         if (groupChallengeId != null) {
             // Group Challenge: never auto-fail. Show SessionLimitReachedOverlay (identical to Solo
             // Soft Mode blocking). Stripe only captured on manual "Aufgeben" in Detail screen.
@@ -874,6 +878,10 @@ class OverlayManager @Inject constructor(
             ) {
                 DetoxTheme {
                     SessionLimitReachedOverlay(
+                        appName = challenge.appDisplayName,
+                        contextHeader = budgetExhaustedHeader,
+                        largeNumber = 0,
+                        largeNumberLabel = budgetExhaustedLabel,
                         onNo = {
                             dismissOverlay()
                             goHome()
@@ -893,6 +901,10 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
+                    appName = challenge.appDisplayName,
+                    contextHeader = budgetExhaustedHeader,
+                    largeNumber = 0,
+                    largeNumberLabel = budgetExhaustedLabel,
                     onNo = {
                         dismissOverlay()
                         goHome()
@@ -1547,6 +1559,42 @@ class OverlayManager @Inject constructor(
         }
         context.startActivity(launchIntent)
         dismissOverlay()
+    }
+
+    /**
+     * Builds the context header string shown at the top of every overlay (CHANGE 1).
+     * Priority: Group rank > Hard Mode money > Soft Mode streak.
+     */
+    private suspend fun buildContextHeader(challenge: Challenge, streak: Int): String {
+        return when {
+            challenge.groupChallengeId != null -> {
+                val (rank, total) = computeGroupRank(challenge.groupChallengeId!!)
+                context.getString(R.string.overlay_v2_header_rank, rank, total)
+            }
+            challenge.mode == ChallengeMode.HARD -> {
+                val euros = (challenge.amountCents ?: 0) / 100
+                context.getString(R.string.overlay_v2_header_money, euros)
+            }
+            else -> context.getString(R.string.overlay_intention_streak_line, streak)
+        }
+    }
+
+    /**
+     * Returns (rank, totalParticipants) for the current user in a group challenge.
+     * Rank is 1-based (1 = fewest opens). Falls back to (1, 1) on any error.
+     */
+    private suspend fun computeGroupRank(groupId: String): Pair<Int, Int> {
+        return try {
+            val gc = groupChallengeRepository.getGroupChallengeById(groupId) ?: return Pair(1, 1)
+            val uid = firebaseAuthService.currentUserId() ?: return Pair(1, 1)
+            val sorted = gc.participants.sortedBy { it.opensToday }
+            val myIndex = sorted.indexOfFirst { it.userId == uid }
+            val rank = if (myIndex >= 0) myIndex + 1 else sorted.size + 1
+            Pair(rank, sorted.size.coerceAtLeast(1))
+        } catch (e: Exception) {
+            Timber.e(e, "OverlayManager: computeGroupRank failed for $groupId")
+            Pair(1, 1)
+        }
     }
 
     private fun todayKey(): Long = DateUtils.todayKey()

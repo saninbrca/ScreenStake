@@ -3,9 +3,13 @@ package com.detox.app.presentation.screens.groupchallenge.detail
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,7 +29,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,7 +42,9 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,13 +53,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
@@ -62,11 +70,20 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.presentation.screens.activechallenge.DetoxCard
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import timber.log.Timber
+
+private val BgGray = Color(0xFFF2F2F7)
+private val CardWhite = Color.White
+private val CardBorder = Color(0x0F000000)
+private val TextSecondary = Color(0xFF8E8E93)
+private val AccentGreen = Color(0xFF00C853)
+private val AbandonRed = Color(0xFFFF3B30)
+private val DividerColor = Color(0xFFF2F2F7)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +100,6 @@ fun GroupChallengeDetailScreen(
     val quitState by viewModel.quitState.collectAsStateWithLifecycle()
     val currentUserId = viewModel.currentUserId
     val snackbarHostState = remember { SnackbarHostState() }
-
     val context = LocalContext.current
 
     LaunchedEffect(startState) {
@@ -122,6 +138,7 @@ fun GroupChallengeDetailScreen(
         }
     }
 
+    // Win dialog (business logic unchanged)
     winDialogInfo?.let { info ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissWinDialog() },
@@ -129,31 +146,25 @@ fun GroupChallengeDetailScreen(
                 Text(
                     text = if (info.bonusCents > 0)
                         "🎉 Du hast €${info.bonusCents / 100} gewonnen!"
-                    else
-                        "🎉 Du hast gewonnen!"
+                    else "🎉 Du hast gewonnen!"
                 )
             },
             text = {
                 Text(
                     text = if (info.hasIban)
                         "Dein Gewinn wird an deine hinterlegte IBAN überwiesen (1–2 Werktage)."
-                    else
-                        "Hinterlege deine IBAN um deinen Gewinn zu erhalten."
+                    else "Hinterlege deine IBAN um deinen Gewinn zu erhalten."
                 )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.dismissWinDialog() }) {
-                    Text("OK")
-                }
+                TextButton(onClick = { viewModel.dismissWinDialog() }) { Text("OK") }
             },
             dismissButton = if (!info.hasIban) {
                 {
                     TextButton(onClick = {
                         viewModel.dismissWinDialog()
                         onNavigateToProfile()
-                    }) {
-                        Text("Jetzt IBAN eingeben")
-                    }
+                    }) { Text("Jetzt IBAN eingeben") }
                 }
             } else null
         )
@@ -162,44 +173,37 @@ fun GroupChallengeDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = if (uiState is GroupDetailUiState.Success)
-                            (uiState as GroupDetailUiState.Success).groupChallenge.appDisplayName
-                        else
-                            stringResource(R.string.group_detail_title)
-                    )
-                },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.nav_back))
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.nav_back),
+                            tint = Color.Black
+                        )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = BgGray)
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = BgGray
     ) { innerPadding ->
         when (val state = uiState) {
             GroupDetailUiState.Loading -> {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center
                 ) { CircularProgressIndicator() }
             }
-
             is GroupDetailUiState.Error -> {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(text = state.message, color = MaterialTheme.colorScheme.error)
                 }
             }
-
             is GroupDetailUiState.Success -> {
                 val myParticipant = state.groupChallenge.participants
                     .find { it.userId == currentUserId }
@@ -208,15 +212,14 @@ fun GroupChallengeDetailScreen(
                     gc = state.groupChallenge,
                     currentUserId = currentUserId,
                     myStreak = state.myStreak,
-                    // Own progress comes from Room DailyLog (source of truth), not Firestore array.
                     myOpensToday = state.myOpensToday,
                     myTimeUsedMinutes = state.myTimeUsedMinutes,
                     isStarting = startState is StartChallengeState.Loading,
                     isCurrentUserFailed = isCurrentUserFailed,
                     isQuitting = quitState is QuitState.Loading,
                     onStartChallenge = viewModel::startChallenge,
-                    onNudge = viewModel::nudgeParticipant,
                     onQuit = viewModel::quitChallenge,
+                    onNavigateToProfile = onNavigateToProfile,
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -229,26 +232,19 @@ private fun GroupDetailContent(
     gc: GroupChallenge,
     currentUserId: String?,
     myStreak: Int,
-    /** Own opens today — sourced from Room DailyLog, not Firestore participants array. */
-    myOpensToday: Int = 0,
-    /** Own time used today (minutes) — sourced from Room DailyLog. */
-    myTimeUsedMinutes: Int = 0,
+    myOpensToday: Int,
+    myTimeUsedMinutes: Int,
     isStarting: Boolean,
-    isCurrentUserFailed: Boolean = false,
-    isQuitting: Boolean = false,
+    isCurrentUserFailed: Boolean,
+    isQuitting: Boolean,
     onStartChallenge: () -> Unit,
-    onNudge: (String) -> Unit,
-    onQuit: () -> Unit = {},
+    onQuit: () -> Unit,
+    onNavigateToProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val now = System.currentTimeMillis()
     var showQuitDialog by remember { mutableStateOf(false) }
-
-    val cal2024 = Calendar.getInstance().apply { set(2024, 0, 1) }.timeInMillis
-    val endDateValid = gc.endDate > cal2024 && gc.endDate > now
-    val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
-    val startFmt = SimpleDateFormat("dd. MMM", Locale.getDefault())
 
     val remainingMs = gc.endDate - now
     val remainingDays = remainingMs / (24L * 60 * 60 * 1000)
@@ -256,20 +252,14 @@ private fun GroupDetailContent(
     val endTimeStr = remember(gc.endDate) {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(gc.endDate))
     }
-    val remainingLabel = when {
-        remainingMs <= 0 -> "Abgelaufen"
-        remainingDays > 1 -> "Noch $remainingDays Tage"
-        remainingDays == 1L -> "Endet morgen"
-        remainingHours > 0 -> "Endet heute um $endTimeStr Uhr"
-        else -> "Abgelaufen"
-    }
+    val endDateValid = gc.endDate > Calendar.getInstance().apply { set(2024, 0, 1) }.timeInMillis && gc.endDate > now
+    val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
 
     LaunchedEffect(gc.endDate) {
-        Timber.d("endDate=${gc.endDate} remaining=${remainingDays}d ${remainingHours}h")
+        Timber.d("GroupDetail: endDate=${gc.endDate} remaining=${remainingDays}d ${remainingHours}h")
     }
 
-    // Sort: ACTIVE participants first (ascending opensToday — fewer opens = leader),
-    // then FAILED participants (descending opensToday — most-failed at the very bottom).
+    // Sorted participants (active ascending by opens, failed at bottom)
     val sorted = gc.participants.sortedWith(Comparator { a, b ->
         val aFailed = a.status == ParticipantStatus.FAILED
         val bFailed = b.status == ParticipantStatus.FAILED
@@ -283,317 +273,20 @@ private fun GroupDetailContent(
         }
     })
     Timber.d("Leaderboard sorted: ${sorted.map { "${it.displayName}:${it.status}" }}")
-    val myParticipant = gc.participants.find { it.userId == currentUserId }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // ── Failed user banner ──────────────────────────────────────────────────
-        if (isCurrentUserFailed) {
-            item { FailedUserBanner(gc) }
-        }
-
-        // ── Summary card ────────────────────────────────────────────────────────
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = gc.appDisplayName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatusBadge(gc.status)
-                    }
-
-                    // Code row — only visible when waiting; when active show participant count
-                    when (gc.status) {
-                        GroupChallengeStatus.WAITING -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = gc.code,
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    letterSpacing = androidx.compose.ui.unit.TextUnit(
-                                        6f, androidx.compose.ui.unit.TextUnitType.Sp
-                                    )
-                                )
-                                IconButton(onClick = {
-                                    val shareText = context.getString(
-                                        R.string.group_create_share_text,
-                                        gc.code, gc.appDisplayName, gc.durationDays, gc.buyInCents / 100
-                                    )
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, shareText)
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, context.getString(R.string.group_create_share_chooser)))
-                                }) {
-                                    Icon(Icons.Default.Share, contentDescription = stringResource(R.string.group_detail_share_code))
-                                }
-                            }
-                            Text(
-                                text = stringResource(R.string.group_detail_code_hint),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        GroupChallengeStatus.ACTIVE -> {
-                            val activeCount = gc.participants.count { it.status == ParticipantStatus.ACTIVE }
-                            Text(
-                                text = stringResource(R.string.group_detail_active_participants, activeCount, gc.maxParticipants),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        else -> Unit
-                    }
-
-                    HorizontalDivider()
-
-                    // Limit summary
-                    val limitSummary = when (gc.limitType) {
-                        LimitType.TIME -> "Max ${gc.limitValueMinutes} min/day"
-                        LimitType.SESSIONS -> "Max ${gc.limitValueSessions} opens/day, ${gc.sessionDurationMinutes} min each"
-                        LimitType.TIME_BUDGET -> "Budget: ${gc.limitValueMinutes} min/day"
-                        LimitType.TIME_WINDOW -> "Time window only"
-                    }
-                    Text(text = limitSummary, style = MaterialTheme.typography.bodyMedium)
-
-                    // Blocked websites
-                    if (gc.blockedDomains.isNotEmpty()) {
-                        Text(
-                            text = "🌐 Blocked: ${gc.blockedDomains.joinToString(", ")}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
-                    // End date + remaining time
-                    if (endDateValid) {
-                        Text(
-                            text = stringResource(R.string.group_detail_end_date, dateFmt.format(Date(gc.endDate))),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (gc.status == GroupChallengeStatus.ACTIVE) {
-                            Text(
-                                text = remainingLabel,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = stringResource(R.string.group_detail_duration_fallback, gc.durationDays),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Start date info (replaces "Started manually" text)
-                    if (gc.status == GroupChallengeStatus.WAITING) {
-                        val joined = gc.participants.size
-                        val max = gc.maxParticipants
-                        Text(
-                            text = "$joined/$max players joined",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        if (gc.creatorUserId == currentUserId) {
-                            val canStart = joined >= 2
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Button(
-                                onClick = onStartChallenge,
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = canStart && !isStarting,
-                            ) {
-                                if (isStarting) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                    )
-                                } else {
-                                    Text("Start Challenge 🚀")
-                                }
-                            }
-                            if (!canStart) {
-                                Text(
-                                    text = "Need at least 2 players to start",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
-                    } else {
-                        val startLabel = if (isToday(gc.startDate)) {
-                            stringResource(R.string.group_detail_started_today)
-                        } else if (gc.startDate > 0L) {
-                            stringResource(R.string.group_detail_started_on, startFmt.format(Date(gc.startDate)))
-                        } else null
-                        startLabel?.let {
-                            Text(text = it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-
-                    // Total pot
-                    val totalPotEuros = gc.participants.size * gc.buyInCents / 100
-                    if (totalPotEuros > 0) {
-                        Text(
-                            text = stringResource(R.string.group_detail_total_pot, totalPotEuros),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    if (gc.bonusEnabled) {
-                        Text(
-                            text = "🏆 Bonus for best performer (10% of pot)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── Result summary (COMPLETED / CANCELLED) ──────────────────────────────
-        if (gc.status == GroupChallengeStatus.COMPLETED || gc.status == GroupChallengeStatus.CANCELLED) {
-            item {
-                ResultSummaryCard(
-                    gc = gc,
-                    currentUserId = currentUserId,
-                    onConnectBank = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW,
-                                Uri.parse("https://detox-33208.web.app/connect"))
-                        )
-                    }
-                )
-            }
-            if (gc.status == GroupChallengeStatus.COMPLETED) {
-                val myParticipantResult = gc.participants.find { it.userId == currentUserId }
-                if (myParticipantResult != null && myParticipantResult.status != ParticipantStatus.FAILED) {
-                    item { PayoutResultCard(participant = myParticipantResult, gc = gc, onConnectBank = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW,
-                                Uri.parse("https://detox-33208.web.app/connect"))
-                        )
-                    }) }
-                }
-            }
-        }
-
-        // ── Leaderboard ─────────────────────────────────────────────────────────
-        item {
-            Text(
-                text = stringResource(R.string.group_detail_leaderboard),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-
-        if (gc.participants.isEmpty()) {
-            item {
-                Text(
-                    text = stringResource(R.string.group_detail_no_participants),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        itemsIndexed(sorted) { index, participant ->
-            LeaderboardCard(
-                rank = index + 1,
-                participant = participant,
-                gc = gc,
-                isCurrentUser = participant.userId == currentUserId,
-                isCurrentUserFailed = isCurrentUserFailed,
-                onNudge = { onNudge(participant.userId) }
-            )
-        }
-
-        // ── My Status ─────────────────────────────────────────────────────────
-        if (myParticipant != null && gc.status == GroupChallengeStatus.ACTIVE) {
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                // Own progress reads from Room DailyLog (myOpensToday / myTimeUsedMinutes),
-                // NOT from myParticipant.opensToday / timeUsedMinutes (Firestore — can lag).
-                MyStatusCard(
-                    gc = gc,
-                    streak = myStreak,
-                    myOpensToday = myOpensToday,
-                    myTimeUsedMinutes = myTimeUsedMinutes,
-                )
-            }
-        }
-
-        // ── Aufgeben button — only for ACTIVE participant in ACTIVE challenge ──
-        if (gc.status == GroupChallengeStatus.ACTIVE && !isCurrentUserFailed) {
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = { showQuitDialog = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isQuitting,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                ) {
-                    if (isQuitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    } else {
-                        Text(stringResource(R.string.group_detail_quit_button))
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Aufgeben confirmation dialog ───────────────────────────────────────
+    // Quit confirmation dialog (business logic unchanged)
     if (showQuitDialog) {
         val amountEuros = gc.buyInCents / 100
         AlertDialog(
             onDismissRequest = { showQuitDialog = false },
             title = { Text(stringResource(R.string.group_detail_quit_dialog_title)) },
             text = {
-                Text(
-                    stringResource(R.string.group_detail_quit_dialog_message, amountEuros)
-                )
+                Text(stringResource(R.string.group_detail_quit_dialog_message, amountEuros))
             },
             confirmButton = {
                 Button(
-                    onClick = {
-                        showQuitDialog = false
-                        onQuit()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
+                    onClick = { showQuitDialog = false; onQuit() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
                     Text(stringResource(R.string.group_detail_quit_confirm))
                 }
@@ -605,190 +298,689 @@ private fun GroupDetailContent(
             }
         )
     }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(BgGray),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+
+        // ── Failed user banner ─────────────────────────────────────────────────
+        if (isCurrentUserFailed) {
+            item { FailedUserBanner(gc) }
+        }
+
+        // ── Card 1: Header ─────────────────────────────────────────────────────
+        item {
+            GroupHeaderCard(
+                gc = gc,
+                remainingDays = remainingDays,
+                currentUserId = currentUserId,
+                endDateValid = endDateValid,
+                dateFmt = dateFmt,
+                isStarting = isStarting,
+                onStartChallenge = onStartChallenge,
+                onShare = {
+                    val shareText = context.getString(
+                        R.string.group_create_share_text,
+                        gc.code, gc.appDisplayName, gc.durationDays, gc.buyInCents / 100
+                    )
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(intent, context.getString(R.string.group_create_share_chooser))
+                    )
+                }
+            )
+        }
+
+        // ── Result summary for COMPLETED / CANCELLED (existing, unchanged) ─────
+        if (gc.status == GroupChallengeStatus.COMPLETED || gc.status == GroupChallengeStatus.CANCELLED) {
+            item {
+                ResultSummaryCard(
+                    gc = gc,
+                    currentUserId = currentUserId,
+                    onConnectBank = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-33208.web.app/connect"))
+                        )
+                    }
+                )
+            }
+            if (gc.status == GroupChallengeStatus.COMPLETED) {
+                val myParticipantResult = gc.participants.find { it.userId == currentUserId }
+                if (myParticipantResult != null && myParticipantResult.status != ParticipantStatus.FAILED) {
+                    item {
+                        PayoutResultCard(
+                            participant = myParticipantResult,
+                            gc = gc,
+                            onConnectBank = {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-33208.web.app/connect"))
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Leaderboard section (ACTIVE or COMPLETED) ──────────────────────────
+        if (gc.status == GroupChallengeStatus.ACTIVE || gc.status == GroupChallengeStatus.COMPLETED) {
+            item {
+                Text(
+                    text = stringResource(R.string.group_detail_leaderboard_section),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.W500,
+                    color = TextSecondary,
+                    letterSpacing = 0.5.sp
+                )
+            }
+
+            if (gc.participants.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.group_detail_no_participants),
+                        fontSize = 14.sp,
+                        color = TextSecondary
+                    )
+                }
+            } else {
+                item {
+                    LeaderboardCard(
+                        sorted = sorted,
+                        gc = gc,
+                        currentUserId = currentUserId
+                    )
+                }
+            }
+        }
+
+        // ── My session section (ACTIVE, not failed) ────────────────────────────
+        if (gc.status == GroupChallengeStatus.ACTIVE && !isCurrentUserFailed) {
+            item {
+                Text(
+                    text = stringResource(R.string.group_detail_session_section),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.W500,
+                    color = TextSecondary
+                )
+            }
+            item {
+                // Own progress reads from Room DailyLog (myOpensToday / myTimeUsedMinutes),
+                // NOT from Firestore participants array which can lag.
+                SessionCard(
+                    gc = gc,
+                    myOpensToday = myOpensToday,
+                    myTimeUsedMinutes = myTimeUsedMinutes
+                )
+            }
+        }
+
+        // ── Challenge aufgeben (text only, #FF3B30) ────────────────────────────
+        if (gc.status == GroupChallengeStatus.ACTIVE && !isCurrentUserFailed) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showQuitDialog = true }
+                        .padding(top = 16.dp, bottom = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isQuitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            text = stringResource(R.string.group_detail_quit_button),
+                            fontSize = 14.sp,
+                            color = AbandonRed
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Card 1: Group header ──────────────────────────────────────────────────────
+
+@Composable
+private fun GroupHeaderCard(
+    gc: GroupChallenge,
+    remainingDays: Long,
+    currentUserId: String?,
+    endDateValid: Boolean,
+    dateFmt: SimpleDateFormat,
+    isStarting: Boolean,
+    onStartChallenge: () -> Unit,
+    onShare: () -> Unit,
+) {
+    DetoxCard {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Badge + duration/days label
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                GroupStatusBadge(gc.status)
+                val rightLabel = when (gc.status) {
+                    GroupChallengeStatus.ACTIVE ->
+                        if (endDateValid) stringResource(R.string.group_detail_remaining_days, remainingDays)
+                        else "–"
+                    GroupChallengeStatus.WAITING ->
+                        stringResource(R.string.group_detail_duration_label, gc.durationDays)
+                    else -> ""
+                }
+                if (rightLabel.isNotEmpty()) {
+                    Text(text = rightLabel, fontSize = 12.sp, color = TextSecondary)
+                }
+            }
+
+            // App name
+            Text(
+                text = gc.appDisplayName,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                letterSpacing = (-0.3).sp
+            )
+
+            // Limit subtitle
+            val limitSubtitle = when (gc.limitType) {
+                LimitType.SESSIONS ->
+                    stringResource(R.string.group_detail_limit_sessions, gc.limitValueSessions ?: 0)
+                LimitType.TIME ->
+                    stringResource(R.string.group_detail_limit_time, gc.limitValueMinutes)
+                LimitType.TIME_BUDGET ->
+                    stringResource(R.string.group_detail_limit_budget, gc.limitValueMinutes)
+                LimitType.TIME_WINDOW ->
+                    stringResource(R.string.group_detail_limit_window)
+            }
+            Text(text = limitSubtitle, fontSize = 13.sp, color = TextSecondary)
+
+            // Stats row (3 columns) — only for ACTIVE
+            if (gc.status == GroupChallengeStatus.ACTIVE) {
+                HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+
+                val totalPotCents = gc.participants.sumOf { it.amountCents }
+                val activeCount = gc.participants.count { it.status == ParticipantStatus.ACTIVE }
+                val failedCents = gc.participants
+                    .filter { it.status == ParticipantStatus.FAILED }
+                    .sumOf { it.amountCents }
+                val prizePool = (failedCents * 0.9).toLong()
+                val myGewinnCents = if (failedCents > 0 && activeCount > 0) {
+                    (gc.buyInCents * 0.8).toLong() + prizePool / activeCount
+                } else gc.buyInCents.toLong()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    GroupStatColumn(
+                        label = stringResource(R.string.group_detail_gesamtpot_label),
+                        value = stringResource(R.string.group_detail_pot_val, totalPotCents / 100),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(0.5.dp)
+                            .height(48.dp)
+                            .background(DividerColor)
+                    )
+                    GroupStatColumn(
+                        label = stringResource(R.string.group_detail_teilnehmer_label),
+                        value = stringResource(
+                            R.string.group_detail_participants_val,
+                            activeCount, gc.maxParticipants
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(0.5.dp)
+                            .height(48.dp)
+                            .background(DividerColor)
+                    )
+                    GroupStatColumn(
+                        label = stringResource(R.string.group_detail_gewinn_label),
+                        value = stringResource(R.string.group_detail_gewinn_val, myGewinnCents / 100),
+                        valueColor = AccentGreen,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            // WAITING: join code + share + player count + start button
+            if (gc.status == GroupChallengeStatus.WAITING) {
+                HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+
+                Text(
+                    text = stringResource(R.string.group_detail_join_code_label),
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = gc.code,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        letterSpacing = 6.sp
+                    )
+                    IconButton(onClick = onShare) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = stringResource(R.string.group_detail_share_code)
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.group_detail_join_code_hint),
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+
+                val joined = gc.participants.size
+                Text(
+                    text = stringResource(R.string.group_detail_waiting_players, joined, gc.maxParticipants),
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+
+                if (gc.creatorUserId == currentUserId) {
+                    val canStart = joined >= 2
+                    Button(
+                        onClick = onStartChallenge,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = canStart && !isStarting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentGreen
+                        )
+                    ) {
+                        if (isStarting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(R.string.group_detail_start_button),
+                                color = Color.White
+                            )
+                        }
+                    }
+                    if (!canStart) {
+                        Text(
+                            text = stringResource(R.string.group_detail_need_players),
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
+private fun GroupStatColumn(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = Color.Black
+) {
+    Column(
+        modifier = modifier.padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(text = label, fontSize = 11.sp, color = TextSecondary, textAlign = TextAlign.Center)
+        Text(
+            text = value,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+// ── Leaderboard card (single white card, rows with dividers) ──────────────────
+
+@Composable
 private fun LeaderboardCard(
+    sorted: List<Participant>,
+    gc: GroupChallenge,
+    currentUserId: String?
+) {
+    GroupDetoxCard {
+        Column {
+            sorted.forEachIndexed { index, participant ->
+                LeaderboardRow(
+                    rank = index + 1,
+                    participant = participant,
+                    gc = gc,
+                    isCurrentUser = participant.userId == currentUserId
+                )
+                if (index < sorted.size - 1) {
+                    HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LeaderboardRow(
     rank: Int,
     participant: Participant,
     gc: GroupChallenge,
-    isCurrentUser: Boolean,
-    isCurrentUserFailed: Boolean = false,
-    onNudge: () -> Unit,
+    isCurrentUser: Boolean
 ) {
-    val rankEmoji = when (rank) {
-        1 -> "🥇"
-        2 -> "🥈"
-        3 -> "🥉"
-        else -> "#$rank"
+    val isFailed = participant.status == ParticipantStatus.FAILED
+    val rankColor = when (rank) {
+        1 -> Color(0xFFFFD700)
+        2 -> Color(0xFFB0BEC5)
+        3 -> Color(0xFFCD7F32)
+        else -> TextSecondary
     }
     val displayName = participant.displayName
         .takeIf { it.isNotBlank() }
         ?: participant.userId.substringBefore('@').ifBlank { participant.userId }
 
-    val progress = when (gc.limitType) {
-        LimitType.SESSIONS -> {
-            val limit = gc.limitValueSessions ?: 0
-            if (limit > 0) (participant.opensToday.toFloat() / limit.toFloat()).coerceIn(0f, 1f) else 0f
-        }
-        else -> {
-            val limit = gc.limitValueMinutes ?: 0
-            if (limit > 0) (participant.timeUsedMinutes.toFloat() / limit.toFloat()).coerceIn(0f, 1f) else 0f
-        }
+    val stat = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            stringResource(
+                R.string.group_detail_opens_stat,
+                participant.opensToday, gc.limitValueSessions ?: 0
+            )
+        else ->
+            stringResource(
+                R.string.group_detail_time_stat,
+                participant.timeUsedMinutes, gc.limitValueMinutes
+            )
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isCurrentUser)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            else MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    val rowBg = if (isCurrentUser) Color(0xFFF9FFF9) else Color.Transparent
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(rowBg)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Rank
+        Text(
+            text = "#$rank",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = rankColor,
+            modifier = Modifier.width(32.dp)
+        )
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Avatar circle with initials
+        AvatarCircle(name = displayName, size = 32.dp)
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        // Name + Du badge + status sub-label
+        Column(modifier = Modifier.weight(1f)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Rank medal
                 Text(
-                    text = rankEmoji,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.width(36.dp)
+                    text = displayName,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.W500,
+                    color = if (isFailed) Color(0xFFC7C7CC) else Color.Black,
+                    textDecoration = if (isFailed) TextDecoration.LineThrough else TextDecoration.None
                 )
-
-                // Name + status
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = displayName + if (isCurrentUser) " (Du)" else "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    ParticipantStatusBadge(participant.status)
-                }
-
-                // Stats
-                Column(horizontalAlignment = Alignment.End) {
-                    when (gc.limitType) {
-                        LimitType.SESSIONS -> Text(
-                            text = stringResource(R.string.group_detail_opens_label, participant.opensToday, gc.limitValueSessions ?: 0),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        else -> Text(
-                            text = stringResource(R.string.group_detail_time_label, participant.timeUsedMinutes, gc.limitValueMinutes ?: 0),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                if (isCurrentUser) DuBadge()
             }
-
-            // Progress bar
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-
-            // Nerv ihn! button — only for others while challenge is active and current user has not failed
-            if (!isCurrentUser && !isCurrentUserFailed && gc.status == GroupChallengeStatus.ACTIVE
-                && participant.status == ParticipantStatus.ACTIVE) {
-                Button(
-                    onClick = onNudge,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                ) {
-                    Text(text = stringResource(R.string.group_detail_nudge), style = MaterialTheme.typography.labelMedium)
-                }
+            val statusLabel = when (participant.status) {
+                ParticipantStatus.ACTIVE -> stringResource(R.string.group_detail_row_aktiv)
+                ParticipantStatus.FAILED -> stringResource(R.string.group_detail_row_failed)
+                ParticipantStatus.SUCCESS -> stringResource(R.string.group_detail_row_won)
             }
+            val statusColor = when (participant.status) {
+                ParticipantStatus.ACTIVE -> AccentGreen
+                else -> TextSecondary
+            }
+            Text(text = statusLabel, fontSize = 11.sp, color = statusColor)
         }
-    }
-}
 
-/**
- * Shows the current user's own status card.
- *
- * [myOpensToday] and [myTimeUsedMinutes] MUST come from Room DailyLog (via ViewModel),
- * NOT from the Firestore participants array — the array can lag by several seconds.
- */
-@Composable
-private fun MyStatusCard(
-    gc: GroupChallenge,
-    streak: Int,
-    myOpensToday: Int,
-    myTimeUsedMinutes: Int,
-) {
-    val maxOpens = gc.limitValueSessions ?: 0
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = stringResource(R.string.group_detail_my_status_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
-            if (gc.limitType == LimitType.SESSIONS && maxOpens > 0) {
-                Text(
-                    // myOpensToday from Room DailyLog — source of truth
-                    text = stringResource(R.string.group_detail_my_opens, myOpensToday, maxOpens),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-            Text(
-                // myTimeUsedMinutes from Room DailyLog — source of truth
-                text = stringResource(R.string.group_detail_my_time, myTimeUsedMinutes),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            if (streak > 0) {
-                Text(
-                    text = stringResource(R.string.group_detail_my_streak, streak),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-        }
+        // Stat
+        Text(
+            text = stat,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isFailed) Color(0xFFC7C7CC) else Color.Black
+        )
     }
 }
 
 @Composable
-private fun ParticipantStatusBadge(status: ParticipantStatus) {
-    val (label, color) = when (status) {
-        ParticipantStatus.ACTIVE -> "Active ✓" to Color(0xFF2E7D32)
-        ParticipantStatus.FAILED -> "Failed ✗" to MaterialTheme.colorScheme.error
-        ParticipantStatus.SUCCESS -> "Succeeded ✓" to Color(0xFF2E7D32)
-    }
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = color.copy(alpha = 0.15f)
+private fun AvatarCircle(name: String, size: Dp = 32.dp) {
+    val initials = name.trim()
+        .split(" ")
+        .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+        .take(2)
+        .joinToString("")
+        .ifEmpty { "?" }
+    val avatarColors = listOf(
+        Color(0xFF5C6BC0), Color(0xFF42A5F5), Color(0xFF26A69A),
+        Color(0xFFEC407A), Color(0xFFAB47BC), Color(0xFF26C6DA)
+    )
+    val bgColor = avatarColors[Math.abs(name.hashCode()) % avatarColors.size]
+    Box(
+        modifier = Modifier
+            .size(size)
+            .background(bgColor, CircleShape),
+        contentAlignment = Alignment.Center
     ) {
         Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
+            text = initials,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = color,
+            color = Color.White
+        )
+    }
+}
+
+@Composable
+private fun DuBadge() {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = AccentGreen.copy(alpha = 0.15f)
+    ) {
+        Text(
+            text = stringResource(R.string.group_detail_du_badge),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = AccentGreen,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
 }
+
+// ── Session card ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun SessionCard(
+    gc: GroupChallenge,
+    myOpensToday: Int,
+    myTimeUsedMinutes: Int
+) {
+    val limit = gc.limitValueSessions ?: 0
+    val limitMin = gc.limitValueMinutes
+
+    val verbrauchtVal = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            stringResource(R.string.group_detail_verbraucht_val_opens, myOpensToday, limit)
+        else ->
+            stringResource(R.string.group_detail_verbraucht_val_time, myTimeUsedMinutes, limitMin)
+    }
+    val stillAvailable = when (gc.limitType) {
+        LimitType.SESSIONS -> maxOf(0, limit - myOpensToday)
+        else -> maxOf(0, limitMin - myTimeUsedMinutes)
+    }
+    val verfuegbarVal = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            stringResource(R.string.group_detail_noch_verfuegbar_opens, stillAvailable)
+        else ->
+            stringResource(R.string.group_detail_noch_verfuegbar_min, stillAvailable)
+    }
+    val progress = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            if (limit > 0) myOpensToday.toFloat() / limit else 0f
+        else ->
+            if (limitMin > 0) myTimeUsedMinutes.toFloat() / limitMin else 0f
+    }.coerceIn(0f, 1f)
+
+    GroupDetoxCard {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Info rows
+            SessionInfoRow(
+                label = stringResource(R.string.group_detail_verbraucht_label),
+                value = verbrauchtVal
+            )
+            HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+            SessionInfoRow(
+                label = stringResource(R.string.group_detail_noch_verfuegbar_label),
+                value = verfuegbarVal,
+                valueColor = AccentGreen
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // EXISTING PROGRESS BAR — component unchanged
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(10.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionInfoRow(label: String, value: String, valueColor: Color = Color.Black) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, fontSize = 14.sp, color = TextSecondary)
+        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.W500, color = valueColor)
+    }
+}
+
+// ── Status badge ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun GroupStatusBadge(status: GroupChallengeStatus) {
+    val (label, bgColor, textColor) = when (status) {
+        GroupChallengeStatus.ACTIVE ->
+            Triple(stringResource(R.string.group_detail_live_badge), Color(0xFFE8F5E9), Color(0xFF2E7D32))
+        GroupChallengeStatus.WAITING ->
+            Triple(stringResource(R.string.group_detail_waiting_badge), Color(0xFFF5F5F5), TextSecondary)
+        GroupChallengeStatus.COMPLETED ->
+            Triple("Abgeschlossen", Color(0xFFE8F5E9), Color(0xFF2E7D32))
+        GroupChallengeStatus.CANCELLED ->
+            Triple("Abgebrochen", Color(0xFFFFEBEE), MaterialTheme.colorScheme.error)
+    }
+    Surface(shape = RoundedCornerShape(50), color = bgColor) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
+    }
+}
+
+// ── Failed user banner (existing, adapted to new card style) ──────────────────
+
+@Composable
+private fun FailedUserBanner(gc: GroupChallenge) {
+    val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
+    val endDateValid = gc.endDate > System.currentTimeMillis()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.group_detail_failed_banner),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            if (endDateValid) {
+                Text(
+                    text = stringResource(
+                        R.string.group_detail_challenge_ends_on,
+                        dateFmt.format(Date(gc.endDate))
+                    ),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                )
+            }
+            if (gc.status == GroupChallengeStatus.COMPLETED) {
+                val winner = gc.participants
+                    .filter { it.status == ParticipantStatus.SUCCESS }
+                    .minByOrNull { it.timeUsedMinutes }
+                if (winner != null) {
+                    val name = winner.displayName.takeIf { it.isNotBlank() }
+                        ?: winner.userId.substringBefore('@')
+                    val pot = gc.participants.count { it.status == ParticipantStatus.FAILED } *
+                            gc.buyInCents / 100
+                    Text(
+                        text = stringResource(R.string.group_detail_winner, name),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    if (pot > 0) {
+                        Text(
+                            text = stringResource(R.string.group_detail_total_prize, pot),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── ResultSummaryCard + PayoutResultCard (existing, unchanged) ────────────────
 
 @Composable
 private fun ResultSummaryCard(
@@ -804,6 +996,7 @@ private fun ResultSummaryCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
                 gc.status == GroupChallengeStatus.CANCELLED -> MaterialTheme.colorScheme.errorContainer
@@ -812,7 +1005,8 @@ private fun ResultSummaryCard(
                 succeededCount == 0 -> MaterialTheme.colorScheme.errorContainer
                 else -> MaterialTheme.colorScheme.secondaryContainer
             }
-        )
+        ),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
@@ -824,30 +1018,23 @@ private fun ResultSummaryCard(
                     succeededCount == 0 -> "💸 Alle haben verloren"
                     else -> "🏁 Challenge beendet"
                 },
-                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             when {
                 gc.status == GroupChallengeStatus.CANCELLED ->
-                    Text("Zu wenige Spieler. Alle Einsätze werden zurückgebucht.", style = MaterialTheme.typography.bodyMedium)
+                    Text("Zu wenige Spieler. Alle Einsätze werden zurückgebucht.")
                 iLost -> {
                     val lostCents = myParticipant?.amountCents ?: gc.buyInCents
-                    Text(
-                        "€${lostCents / 100} wurden eingezogen.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text("€${lostCents / 100} wurden eingezogen.")
                 }
                 failedCount == 0 ->
-                    Text("Alle $succeededCount Teilnehmer im Limit. Einsätze werden zurückgebucht!", style = MaterialTheme.typography.bodyMedium)
+                    Text("Alle $succeededCount Teilnehmer im Limit. Einsätze werden zurückgebucht!")
                 succeededCount == 0 ->
-                    Text("Alle $failedCount Teilnehmer haben das Limit überschritten.", style = MaterialTheme.typography.bodyMedium)
+                    Text("Alle $failedCount Teilnehmer haben das Limit überschritten.")
                 else -> {
-                    Text("$succeededCount gewonnen · $failedCount ausgeschieden", style = MaterialTheme.typography.bodyMedium)
+                    Text("$succeededCount gewonnen · $failedCount ausgeschieden")
                     if (gc.perWinnerBonus > 0) {
-                        Text(
-                            "Bonus pro Gewinner: €${gc.perWinnerBonus / 100}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Text("Bonus pro Gewinner: €${gc.perWinnerBonus / 100}", fontSize = 13.sp)
                     }
                 }
             }
@@ -867,25 +1054,22 @@ private fun PayoutResultCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (bonus > 0) {
                 Text(
                     text = "🎉 Du hast gewonnen! +€${bonus / 100} Bonus",
-                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
             }
-            Text(
-                text = "Dein Einsatz (€${buyIn / 100}) wird zurückgebucht",
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Text("Dein Einsatz (€${buyIn / 100}) wird zurückgebucht")
             if (bonus > 0) {
                 if (isPending) {
                     Text(
-                        text = "⚠️ Verbinde dein Bankkonto um €${bonus / 100} zu erhalten",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "⚠️ Verbinde dein Bankkonto um €${bonus / 100} zu erhalten",
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -893,91 +1077,25 @@ private fun PayoutResultCard(
                         Text("Bankkonto verbinden")
                     }
                 } else {
-                    Text(
-                        text = "Bonus (€${bonus / 100}) wird auf dein Bankkonto überwiesen",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text("Bonus (€${bonus / 100}) wird auf dein Bankkonto überwiesen")
                 }
             }
         }
     }
 }
 
-@Composable
-private fun StatusBadge(status: GroupChallengeStatus) {
-    val (label, color) = when (status) {
-        GroupChallengeStatus.WAITING -> "Waiting" to MaterialTheme.colorScheme.secondary
-        GroupChallengeStatus.ACTIVE -> "LIVE" to MaterialTheme.colorScheme.primary
-        GroupChallengeStatus.COMPLETED -> "Completed" to MaterialTheme.colorScheme.tertiary
-        GroupChallengeStatus.CANCELLED -> "Cancelled" to MaterialTheme.colorScheme.error
-    }
-    Card(colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.15f))) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = color,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        )
-    }
-}
+// ── Shared white card for group screens ───────────────────────────────────────
 
 @Composable
-private fun FailedUserBanner(gc: GroupChallenge) {
-    val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
-    val endDateValid = gc.endDate > System.currentTimeMillis()
-
+private fun GroupDetoxCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.group_detail_failed_banner),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            if (endDateValid) {
-                Text(
-                    text = stringResource(
-                        R.string.group_detail_challenge_ends_on,
-                        dateFmt.format(Date(gc.endDate))
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-                )
-            }
-            if (gc.status == GroupChallengeStatus.COMPLETED) {
-                val winner = gc.participants
-                    .filter { it.status == ParticipantStatus.SUCCESS }
-                    .minByOrNull { it.timeUsedMinutes }
-                if (winner != null) {
-                    val name = winner.displayName.takeIf { it.isNotBlank() }
-                        ?: winner.userId.substringBefore('@')
-                    val pot = gc.participants.count { it.status == ParticipantStatus.FAILED } * gc.buyInCents / 100
-                    Text(
-                        text = stringResource(R.string.group_detail_winner, name),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    if (pot > 0) {
-                        Text(
-                            text = stringResource(R.string.group_detail_total_prize, pot),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-            }
-        }
-    }
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(0.dp),
+        border = BorderStroke(0.5.dp, CardBorder),
+        content = content
+    )
 }
 
 private fun isToday(timestampMs: Long): Boolean {

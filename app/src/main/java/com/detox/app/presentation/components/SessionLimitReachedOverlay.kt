@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,21 +23,22 @@ import androidx.compose.ui.unit.sp
 import com.detox.app.R
 
 /**
- * Stage 2 — Limit Reached Overlay (dark, minimal redesign).
+ * Stage 2 — Limit Reached Overlay (v2 redesign).
+ *
+ * Context header + large number + label are all computed in OverlayManager and passed in,
+ * allowing this composable to handle SESSION_LIMIT, TIME_LIMIT, and DAILY_BUDGET exhausted.
  *
  * No bypass available — single "Stark bleiben 💪" button only.
- * Challenge can only be quit via Dashboard → Detail → "Aufgeben".
  */
 @Composable
 fun SessionLimitReachedOverlay(
-    opensUsed: Int = 0,
-    maxOpens: Int = 0,
-    streak: Int = 0,
+    appName: String = "",
+    contextHeader: String = "",
+    largeNumber: Int = 0,
+    largeNumberLabel: String = "",
     onNo: () -> Unit
 ) {
     val AccentOrange = Color(0xFFFF9500)
-    val TextHint     = Color(0xFF555555)
-    val SurfaceDark  = Color(0xFF111111)
     val BorderDark   = Color(0xFF222222)
 
     Box(
@@ -46,6 +46,18 @@ fun SessionLimitReachedOverlay(
             .fillMaxSize()
             .background(Color(0xFF0A0A0A))
     ) {
+        // App name top-right
+        if (appName.isNotEmpty()) {
+            Text(
+                text = appName,
+                fontSize = 11.sp,
+                color = Color(0xFF333333),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp, end = 16.dp)
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -53,116 +65,87 @@ fun SessionLimitReachedOverlay(
                 .padding(top = 72.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Emoji ──────────────────────────────────────────────────────────
-            Text(text = "🔒", fontSize = 48.sp, textAlign = TextAlign.Center)
+            // ── Context header (CHANGE 1) ──────────────────────────────────────
+            if (contextHeader.isNotEmpty()) {
+                Text(
+                    text = contextHeader,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF00C853),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(24.dp))
+            }
 
-            Spacer(Modifier.height(16.dp))
-
-            // ── Title ──────────────────────────────────────────────────────────
+            // ── Large number (CHANGE 2) ────────────────────────────────────────
             Text(
-                text = stringResource(R.string.overlay_limit_reached_new_title),
-                fontSize = 22.sp,
+                text = largeNumber.toString(),
+                fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
-                letterSpacing = (-0.3).sp,
+                letterSpacing = (-3).sp,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
 
-            // ── Subtitle ───────────────────────────────────────────────────────
-            if (maxOpens > 0) {
+            // ── Label below number ─────────────────────────────────────────────
+            if (largeNumberLabel.isNotEmpty()) {
                 Text(
-                    text = stringResource(R.string.overlay_limit_reached_new_subtitle, maxOpens),
-                    fontSize = 14.sp,
-                    color = Color(0xFF666666),
+                    text = largeNumberLabel,
+                    fontSize = 13.sp,
+                    color = Color(0xFF444444),
                     textAlign = TextAlign.Center
                 )
             }
 
-            Spacer(Modifier.height(28.dp))
-
-            // ── Stats row ─────────────────────────────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = opensUsed.toString(),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AccentOrange
-                    )
-                    Text(
-                        text = stringResource(R.string.overlay_limit_reached_opens_label),
-                        fontSize = 10.sp,
-                        color = TextHint
-                    )
-                }
-                if (streak > 0) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = streak.toString(),
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Text(
-                            text = stringResource(R.string.overlay_limit_reached_streak_label),
-                            fontSize = 10.sp,
-                            color = TextHint
-                        )
-                    }
-                }
-            }
-
             Spacer(Modifier.height(20.dp))
 
-            // ── Progress bar (100%, orange) ────────────────────────────────────
+            // ── Progress bar (100%, orange — keep existing component) ──────────
             OverlayProgressBar(progress = 1f, trackColor = BorderDark, fillColor = AccentOrange)
 
+            // ── Labels below bar (CHANGE 3) ────────────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                if (maxOpens > 0) {
-                    Text(
-                        text = stringResource(R.string.overlay_limit_reached_progress_label, opensUsed, maxOpens),
-                        fontSize = 11.sp,
-                        color = TextHint
-                    )
-                }
                 Text(
-                    text = stringResource(R.string.overlay_limit_reached_progress_full),
+                    text = stringResource(R.string.overlay_v2_progress_limit_reached),
                     fontSize = 11.sp,
-                    color = AccentOrange
+                    color = Color(0xFF333333)
+                )
+                Text(
+                    text = "100%",
+                    fontSize = 11.sp,
+                    color = Color(0xFF333333)
                 )
             }
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Hint inset ─────────────────────────────────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(SurfaceDark, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.overlay_limit_reached_hint),
-                    fontSize = 11.sp,
-                    color = TextHint,
-                    textAlign = TextAlign.Center
-                )
-            }
+            // ── CHANGE 6 — limit reached clarification ─────────────────────────
+            Text(
+                text = stringResource(R.string.overlay_v2_limit_reached_title),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                text = stringResource(R.string.overlay_v2_limit_reached_sub),
+                fontSize = 13.sp,
+                color = Color(0xFF444444),
+                textAlign = TextAlign.Center
+            )
 
             Spacer(Modifier.weight(1f))
 
-            // ── Single primary button ──────────────────────────────────────────
+            // ── Single primary button — no ghost (CHANGE 6) ────────────────────
             OverlayPrimaryButton(
                 text = stringResource(R.string.stay_strong_button),
                 onClick = onNo

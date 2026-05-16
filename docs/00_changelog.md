@@ -13,6 +13,57 @@
 
 ---
 
+## 2026-05-16 (7)
+
+### FIXED — BudgetSelectionOverlay missing horizontal scroll picker
+Root cause: Overlay still used old chip LazyRow instead of DetoxHorizontalPicker.
+Fix: Replaced chip row with DetoxHorizontalPicker (darkMode = true).
+Values: 1..remainingMinutes (inclusive). Default selected: min(5, remainingMinutes).
+Button label "X min starten" updates dynamically on every picker scroll.
+DetoxHorizontalPicker gains optional `darkMode` param (default false — no change for wizard callers).
+Dark colors: bg #0A0A0A, selected #FFFFFF, adjacent #444444/#333333/#222222, fade edges #0A0A0A.
+Unit label hidden when empty string passed (overlay has its own "Minuten wählen" label below).
+Snap behavior and haptic feedback unchanged. Hard stop at both ends when remainingMinutes is small.
+
+---
+
+## 2026-05-16 (6)
+
+### FEATURE — Overlay redesign v2
+Context header: challenge-type specific line at top of every overlay (13sp, weight 600, #00C853).
+  SESSION_LIMIT Soft: "🔥 X Tage Streak" | Hard: "💰 €X auf dem Spiel" | Group: "👥 Platz #X von Y".
+  DAILY_BUDGET: "⏱ X min übrig heute". TIME_WINDOW: "📅 Verfügbar ab HH:MM".
+Large number (64sp, bold, #FFF, letter-spacing -3) shows used/remaining value with clear label.
+  SESSION_LIMIT: opens used + "von X Öffnungen heute verbraucht".
+  TIME_LIMIT: minutes used + "von X Minuten heute verbraucht".
+  DAILY_BUDGET: remaining minutes + "von X Minuten heute verfügbar".
+  TIME_WINDOW: no number — status text "Noch nicht verfügbar" instead.
+Progress bar kept unchanged; two text labels added below (left context, right %).
+"trotzdem öffnen" reduced to 10sp #222222, height 32dp — SessionIntentionOverlay ONLY.
+Daily Budget chips: dark #141414 bg, #444 text, #1E1E1E border; selected: #00C853 bg, #000 text.
+  Ghost "Stark bleiben" removed from BudgetSelectionOverlay (ghost only on SessionIntentionOverlay).
+Limit Reached: "Tageslimit erreicht 🔒" + "Morgen bekommst du neue Öffnungen." below progress bar.
+  Single "Stark bleiben 💪" button only — no ghost.
+Time Window: countdown inset radius 14dp, 32sp countdown font; button changed to "Stark bleiben 💪".
+OverlayManager: buildContextHeader() + computeGroupRank() helpers added.
+  SessionIntentionOverlay: removed lastSessionEndedAt, motivationText, challengeDaysLeft, streak params.
+  SessionLimitReachedOverlay: new appName, contextHeader, largeNumber, largeNumberLabel params; removed streak.
+Files: SessionIntentionOverlay.kt, SessionLimitReachedOverlay.kt, BudgetSelectionOverlay.kt,
+       TimeWindowOverlay.kt, OverlayManager.kt, strings.xml.
+
+---
+
+## 2026-05-16 (5)
+
+### FEATURE — Detail Screen Redesign
+Soft Mode: Streak + Best Streak + Days, info list, success rate, quote.
+Hard Mode: Orange badge, Einsatz, 80% payout info, Stripe note.
+Group Challenge: Pot + Teilnehmer + Dein Gewinn, leaderboard with Du badge.
+Existing progress bar kept. Challenge aufgeben = text link only.
+Nerv ihn button removed temporarily.
+
+---
+
 ## 2026-05-16 (4)
 
 ### FEATURE — Horizontal scroll picker for all limit inputs

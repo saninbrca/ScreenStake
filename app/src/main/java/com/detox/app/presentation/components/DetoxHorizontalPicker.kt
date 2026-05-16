@@ -38,14 +38,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import kotlin.math.abs
 
-private val PickerBg     = Color.White
-private val SelectedClr  = Color(0xFF000000)
-private val Adjacent1Clr = Color(0xFFAAAAAA)
-private val Adjacent2Clr = Color(0xFFCCCCCC)
-private val FartherClr   = Color(0xFFE0E0E0)
 private val IndicatorClr = Color(0xFF00C853)
 private val ArrowClr     = Color(0xFFCCCCCC)
-private val UnitClr      = Color(0xFF8E8E93)
 
 private val ItemWidthDp = 44.dp
 private val FadeWidthDp = 40.dp
@@ -59,7 +53,8 @@ private val FadeWidthDp = 40.dp
  * @param values    Ordered list of integer values to display (contiguous, step 1).
  * @param selectedValue  Currently selected value — must be in [values].
  * @param onValueChange  Called on each step change during scroll.
- * @param unit      Unit label shown below the picker row (e.g. "Minuten pro Tag").
+ * @param unit      Unit label shown below the picker row (e.g. "Minuten pro Tag"). Pass empty string to hide.
+ * @param darkMode  When true, uses dark overlay color scheme (#0A0A0A background, white selected text).
  */
 @Composable
 fun DetoxHorizontalPicker(
@@ -67,7 +62,15 @@ fun DetoxHorizontalPicker(
     selectedValue: Int,
     onValueChange: (Int) -> Unit,
     unit: String,
+    darkMode: Boolean = false,
 ) {
+    val pickerBg     = if (darkMode) Color(0xFF0A0A0A) else Color.White
+    val selectedClr  = if (darkMode) Color(0xFFFFFFFF) else Color(0xFF000000)
+    val adjacent1Clr = if (darkMode) Color(0xFF444444) else Color(0xFFAAAAAA)
+    val adjacent2Clr = if (darkMode) Color(0xFF333333) else Color(0xFFCCCCCC)
+    val fartherClr   = if (darkMode) Color(0xFF222222) else Color(0xFFE0E0E0)
+    val unitClr      = if (darkMode) Color(0xFF666666) else Color(0xFF8E8E93)
+
     val haptic = LocalHapticFeedback.current
     val listState = rememberLazyListState()
     val snapFling = rememberSnapFlingBehavior(listState)
@@ -112,7 +115,7 @@ fun DetoxHorizontalPicker(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(80.dp)
-                .background(PickerBg),
+                .background(pickerBg),
         ) {
             val sidePadding = (maxWidth - ItemWidthDp) / 2
 
@@ -133,10 +136,10 @@ fun DetoxHorizontalPicker(
                     }
                     val fontWeight = if (dist == 0) FontWeight.Bold else FontWeight.Normal
                     val textColor = when (dist) {
-                        0    -> SelectedClr
-                        1    -> Adjacent1Clr
-                        2    -> Adjacent2Clr
-                        else -> FartherClr
+                        0    -> selectedClr
+                        1    -> adjacent1Clr
+                        2    -> adjacent2Clr
+                        else -> fartherClr
                     }
 
                     Column(
@@ -176,7 +179,7 @@ fun DetoxHorizontalPicker(
                     .fillMaxHeight()
                     .width(FadeWidthDp)
                     .background(
-                        Brush.horizontalGradient(listOf(PickerBg, Color.Transparent)),
+                        Brush.horizontalGradient(listOf(pickerBg, Color.Transparent)),
                     ),
             )
 
@@ -187,7 +190,7 @@ fun DetoxHorizontalPicker(
                     .fillMaxHeight()
                     .width(FadeWidthDp)
                     .background(
-                        Brush.horizontalGradient(listOf(Color.Transparent, PickerBg)),
+                        Brush.horizontalGradient(listOf(Color.Transparent, pickerBg)),
                     ),
             )
 
@@ -212,12 +215,14 @@ fun DetoxHorizontalPicker(
             )
         }
 
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = unit,
-            fontSize = 14.sp,
-            color = UnitClr,
-            textAlign = TextAlign.Center,
-        )
+        if (unit.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = unit,
+                fontSize = 14.sp,
+                color = unitClr,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }

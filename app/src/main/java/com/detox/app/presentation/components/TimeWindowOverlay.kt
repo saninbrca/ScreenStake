@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,14 +31,12 @@ import com.detox.app.R
 import kotlinx.coroutines.delay
 
 /**
- * Shown when user opens an app outside its configured TIME_WINDOW_ONLY schedule.
+ * Shown when user opens an app outside its configured TIME_WINDOW_ONLY schedule (v2 redesign).
  *
- * Displays a live countdown to when the window opens, plus open/close times.
- * Single "Verstanden 👍" button — no bypass.
- *
- * @param openTime  Scheduled open time, e.g. "09:00".
- * @param closeTime Scheduled close time, e.g. "22:00".
- * @param minutesUntilOpen Minutes remaining until the window opens. Updated externally.
+ * Context header: "📅 Verfügbar ab HH:MM" computed from openTime.
+ * Status text replaces the large number (no usage count for TIME_WINDOW).
+ * Dark inset countdown card (CHANGE 7).
+ * Single "Stark bleiben 💪" button — no bypass.
  */
 @Composable
 fun TimeWindowOverlay(
@@ -49,7 +46,6 @@ fun TimeWindowOverlay(
     minutesUntilOpen: Int,
     onDismiss: () -> Unit
 ) {
-    val TextHint    = Color(0xFF555555)
     val SurfaceDark = Color(0xFF111111)
     val BorderDark  = Color(0xFF222222)
 
@@ -76,7 +72,7 @@ fun TimeWindowOverlay(
         Text(
             text = appName,
             fontSize = 11.sp,
-            color = Color(0xFF444444),
+            color = Color(0xFF333333),
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 16.dp, end = 16.dp)
@@ -89,51 +85,56 @@ fun TimeWindowOverlay(
                 .padding(top = 72.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Emoji ──────────────────────────────────────────────────────────
-            Text(text = "⏰", fontSize = 48.sp, textAlign = TextAlign.Center)
-
-            Spacer(Modifier.height(16.dp))
-
-            // ── Title ──────────────────────────────────────────────────────────
+            // ── Context header (CHANGE 1) ──────────────────────────────────────
             Text(
-                text = stringResource(R.string.overlay_time_window_title),
-                fontSize = 22.sp,
+                text = stringResource(R.string.overlay_v2_header_time_window, openTime),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF00C853),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── Status text (CHANGE 7) — replaces large number for TIME_WINDOW ─
+            Text(
+                text = stringResource(R.string.overlay_v2_time_window_status),
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
-                letterSpacing = (-0.3).sp,
                 textAlign = TextAlign.Center
             )
 
             Spacer(Modifier.height(8.dp))
 
-            // ── Subtitle ───────────────────────────────────────────────────────
+            // ── Sub text ───────────────────────────────────────────────────────
             Text(
-                text = stringResource(R.string.overlay_time_window_subtitle, openTime),
-                fontSize = 14.sp,
-                color = Color(0xFF666666),
+                text = stringResource(R.string.overlay_v2_time_window_sub, openTime),
+                fontSize = 13.sp,
+                color = Color(0xFF444444),
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // ── Countdown inset ────────────────────────────────────────────────
+            // ── Dark inset countdown card (CHANGE 7) ───────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(SurfaceDark, RoundedCornerShape(16.dp))
-                    .padding(20.dp),
+                    .background(SurfaceDark, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = stringResource(R.string.overlay_time_window_available_in),
                         fontSize = 11.sp,
-                        color = TextHint
+                        color = Color(0xFF444444)
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = countdownText,
-                        fontSize = 36.sp,
+                        fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         letterSpacing = (-1).sp
@@ -142,14 +143,14 @@ fun TimeWindowOverlay(
                     Text(
                         text = stringResource(R.string.overlay_time_window_hours_unit),
                         fontSize = 11.sp,
-                        color = TextHint
+                        color = Color(0xFF444444)
                     )
                 }
             }
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Open / close time row ──────────────────────────────────────────
+            // ── Open / close time row (CHANGE 7) ──────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -158,14 +159,14 @@ fun TimeWindowOverlay(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = openTime,
-                        fontSize = 16.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
                         text = stringResource(R.string.overlay_time_window_opens_label),
                         fontSize = 10.sp,
-                        color = TextHint
+                        color = Color(0xFF444444)
                     )
                 }
 
@@ -173,29 +174,29 @@ fun TimeWindowOverlay(
                     modifier = Modifier
                         .width(1.dp)
                         .height(32.dp)
-                        .background(BorderDark)
+                        .background(Color(0xFF222222))
                 )
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = closeTime,
-                        fontSize = 16.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
                         text = stringResource(R.string.overlay_time_window_closes_label),
                         fontSize = 10.sp,
-                        color = TextHint
+                        color = Color(0xFF444444)
                     )
                 }
             }
 
             Spacer(Modifier.weight(1f))
 
-            // ── Single primary button ──────────────────────────────────────────
+            // ── Primary button: "Stark bleiben 💪" (CHANGE 7) ─────────────────
             OverlayPrimaryButton(
-                text = stringResource(R.string.overlay_time_window_ok),
+                text = stringResource(R.string.stay_strong_button),
                 onClick = onDismiss
             )
         }

@@ -1,23 +1,28 @@
 package com.detox.app.presentation.screens.activechallenge
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -28,7 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,8 +46,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
@@ -50,6 +60,18 @@ import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.DailyLimitStatus
 import timber.log.Timber
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+
+private val BgGray = Color(0xFFF2F2F7)
+private val CardWhite = Color.White
+private val CardBorder = Color(0x0F000000)
+private val TextSecondary = Color(0xFF8E8E93)
+private val AccentGreen = Color(0xFF00C853)
+private val AbandonRed = Color(0xFFFF3B30)
+private val DividerColor = Color(0xFFF2F2F7)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,28 +89,31 @@ fun ActiveChallengeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.active_challenge_title)) },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                            contentDescription = stringResource(R.string.nav_back),
+                            tint = Color.Black
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = BgGray)
             )
-        }
+        },
+        containerColor = BgGray
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .background(BgGray)
         ) {
             when (val state = uiState) {
                 is ActiveChallengeUiState.Loading -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
-
                 is ActiveChallengeUiState.Error -> {
                     Text(
                         text = state.message,
@@ -98,12 +123,13 @@ fun ActiveChallengeScreen(
                             .padding(24.dp)
                     )
                 }
-
                 is ActiveChallengeUiState.Success -> {
                     ActiveChallengeContent(
                         challenge = state.challenge,
                         status = state.status,
                         streak = state.streak,
+                        bestStreak = state.bestStreak,
+                        successRatePct = state.successRatePct,
                         onAbandon = { viewModel.abandonChallenge() }
                     )
                 }
@@ -117,12 +143,15 @@ private fun ActiveChallengeContent(
     challenge: Challenge,
     status: DailyLimitStatus?,
     streak: Int,
+    bestStreak: Int,
+    successRatePct: Int,
     onAbandon: () -> Unit
 ) {
-    var showAbandonDialog by remember { mutableStateOf(false) }
     val isHardMode = challenge.mode == ChallengeMode.HARD
     val darkGreen = Color(0xFF2E7D32)
+    var showAbandonDialog by remember { mutableStateOf(false) }
 
+    // ── Dialogs (business logic unchanged) ────────────────────────────────────
     if (showAbandonDialog) {
         if (isHardMode && challenge.amountCents != null) {
             AlertDialog(
@@ -137,9 +166,7 @@ private fun ActiveChallengeContent(
                     )
                 },
                 confirmButton = {
-                    TextButton(
-                        onClick = { showAbandonDialog = false; onAbandon() }
-                    ) {
+                    TextButton(onClick = { showAbandonDialog = false; onAbandon() }) {
                         Text(
                             text = stringResource(R.string.active_challenge_abandon_hard_yes),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -166,9 +193,7 @@ private fun ActiveChallengeContent(
                 confirmButton = {
                     Button(
                         onClick = { showAbandonDialog = false; onAbandon() },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
                         Text(stringResource(R.string.active_challenge_abandon_confirm_yes))
                     }
@@ -182,199 +207,385 @@ private fun ActiveChallengeContent(
         }
     }
 
+    // ── Date helpers ─────────────────────────────────────────────────────────
+    val now = System.currentTimeMillis()
+    val dateFmt = remember { SimpleDateFormat("dd. MMM yyyy", Locale.getDefault()) }
+    val startDateStr = remember(challenge.startDate) { dateFmt.format(Date(challenge.startDate)) }
+
+    val endDateMs = remember(challenge.endDate, challenge.startDate) {
+        when {
+            challenge.endDate <= 0L -> 0L
+            challenge.endDate > 1_700_000_000_000L -> challenge.endDate
+            else -> challenge.startDate + challenge.endDate * 86_400_000L
+        }
+    }
+    val endDateStr = remember(endDateMs) {
+        if (endDateMs > 0L) dateFmt.format(Date(endDateMs)) else null
+    }
+    val daysLeft = remember(endDateMs, now) {
+        if (endDateMs > 0L) maxOf(0, ((endDateMs - now) / 86_400_000L).toInt()) else null
+    }
+    Timber.d("DetailScreen: endDateMs=$endDateMs daysLeft=$daysLeft")
+
+    // ── Motivational quote (rotates daily) ───────────────────────────────────
+    val quotes = listOf(
+        "Jeder Tag zählt.",
+        "Du bist stärker als dein Handy.",
+        "Kontrolle ist Freiheit.",
+        "Weniger Screen, mehr Leben.",
+        "Dein Streak ist dein Stolz.",
+        "Kleine Schritte, große Wirkung.",
+        "Der beste Moment ist jetzt."
+    )
+    val quote = remember { quotes[Calendar.getInstance().get(Calendar.DAY_OF_YEAR) % quotes.size] }
+
+    // ── Layout ────────────────────────────────────────────────────────────────
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // App name + mode badge
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = challenge.appDisplayName,
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f)
-            )
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = if (isHardMode) MaterialTheme.colorScheme.error else darkGreen
+
+        // ── Card 1: Header ────────────────────────────────────────────────────
+        DetoxCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = if (isHardMode) stringResource(R.string.active_challenge_mode_hard)
-                    else stringResource(R.string.active_challenge_mode_soft),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-
-        // Hard Mode: amount at stake (dark green)
-        if (isHardMode && challenge.amountCents != null) {
-            Text(
-                text = stringResource(
-                    R.string.active_challenge_amount_at_stake,
-                    challenge.amountCents / 100f
-                ),
-                style = MaterialTheme.typography.titleLarge,
-                color = darkGreen
-            )
-        }
-
-        // Streak row — always shown, uses challenge.startDate for no-end-date challenges
-        Text(
-            text = stringResource(R.string.streak_detail_format, streak),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-
-        // Limit info
-        val limitText = when (challenge.limitType) {
-            LimitType.TIME -> stringResource(
-                R.string.challenge_card_time_limit,
-                challenge.limitValueMinutes
-            )
-            LimitType.SESSIONS -> stringResource(
-                R.string.challenge_card_session_limit,
-                challenge.limitValueSessions ?: 0,
-                challenge.limitValueMinutes
-            )
-            LimitType.TIME_BUDGET -> stringResource(
-                R.string.challenge_card_budget_limit,
-                challenge.dailyBudgetMinutes ?: 0
-            )
-            LimitType.TIME_WINDOW -> stringResource(R.string.challenge_card_time_window_limit)
-        }
-        Text(
-            text = limitText,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        // Adult content blocking
-        if (challenge.blockAdultContent) {
-            HorizontalDivider()
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Surface(
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                    color = MaterialTheme.colorScheme.errorContainer
+                // Badge row + end date
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Security,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .padding(6.dp)
-                            .size(20.dp)
+                    ModeBadge(isHardMode)
+                    endDateStr?.let {
+                        Text(text = it, fontSize = 12.sp, color = TextSecondary)
+                    }
+                }
+
+                // App name
+                Text(
+                    text = challenge.appDisplayName,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                    letterSpacing = (-0.3).sp
+                )
+
+                // Stats row (3 columns)
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    DetailStatColumn(
+                        label = stringResource(R.string.detail_streak_current_label),
+                        value = "🔥 $streak",
+                        modifier = Modifier.weight(1f)
+                    )
+                    DetailStatColumn(
+                        label = if (isHardMode) stringResource(R.string.detail_einsatz_label)
+                                else stringResource(R.string.detail_streak_best_label),
+                        value = if (isHardMode) "€${"%.0f".format((challenge.amountCents ?: 0) / 100f)}"
+                                else "$bestStreak",
+                        valueColor = TextSecondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    DetailStatColumn(
+                        label = stringResource(R.string.detail_days_left_label),
+                        value = daysLeft?.toString() ?: "∞",
+                        valueColor = AccentGreen,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-                Text(
-                    text = stringResource(R.string.active_challenge_adult_blocked),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.error
-                )
             }
-            HorizontalDivider()
         }
 
-        // Today's usage progress
+        // ── Card 2: Progress ──────────────────────────────────────────────────
         status?.let { s ->
-            val (progressValue, progressLabel) = when (challenge.limitType) {
-                LimitType.TIME -> {
-                    val p = if (challenge.limitValueMinutes > 0)
-                        s.todayMinutes.toFloat() / challenge.limitValueMinutes else 0f
-                    p to stringResource(
-                        R.string.challenge_card_time_progress,
-                        s.todayMinutes,
-                        challenge.limitValueMinutes
+            DetoxCard {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Header row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.detail_header_today),
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                        val rightLabel = when (challenge.limitType) {
+                            LimitType.SESSIONS ->
+                                "${s.todayOpens} / ${challenge.limitValueSessions ?: 0} Öffnungen"
+                            LimitType.TIME ->
+                                "${s.todayMinutes} / ${challenge.limitValueMinutes} Min"
+                            LimitType.TIME_BUDGET ->
+                                "${s.todayMinutes} / ${challenge.dailyBudgetMinutes ?: 0} Min"
+                            LimitType.TIME_WINDOW -> "–"
+                        }
+                        Text(
+                            text = rightLabel,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black
+                        )
+                    }
+
+                    // EXISTING PROGRESS BAR — component unchanged
+                    val progressValue = when (challenge.limitType) {
+                        LimitType.TIME ->
+                            if (challenge.limitValueMinutes > 0)
+                                s.todayMinutes.toFloat() / challenge.limitValueMinutes else 0f
+                        LimitType.SESSIONS -> {
+                            val max = challenge.limitValueSessions ?: 1
+                            if (max > 0) s.todayOpens.toFloat() / max else 0f
+                        }
+                        LimitType.TIME_BUDGET -> {
+                            val budget = challenge.dailyBudgetMinutes ?: 1
+                            if (budget > 0) s.todayMinutes.toFloat() / budget else 0f
+                        }
+                        LimitType.TIME_WINDOW -> 0f
+                    }
+                    LinearProgressIndicator(
+                        progress = { progressValue.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(10.dp),
+                        color = if (s.limitExceeded) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+
+                    // Footer row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        val remainingLabel = when (challenge.limitType) {
+                            LimitType.SESSIONS ->
+                                stringResource(
+                                    R.string.detail_remaining_opens,
+                                    maxOf(0, (challenge.limitValueSessions ?: 0) - s.todayOpens)
+                                )
+                            LimitType.TIME ->
+                                stringResource(
+                                    R.string.detail_remaining_min,
+                                    maxOf(0, challenge.limitValueMinutes - s.todayMinutes)
+                                )
+                            LimitType.TIME_BUDGET ->
+                                stringResource(
+                                    R.string.detail_remaining_min,
+                                    maxOf(0, (challenge.dailyBudgetMinutes ?: 0) - s.todayMinutes)
+                                )
+                            LimitType.TIME_WINDOW -> "–"
+                        }
+                        Text(text = remainingLabel, fontSize = 11.sp, color = TextSecondary)
+                        Text(
+                            text = stringResource(R.string.detail_reset_midnight),
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Card 3: Info list ─────────────────────────────────────────────────
+        DetoxCard {
+            Column {
+                // Limit
+                val limitVal = when (challenge.limitType) {
+                    LimitType.SESSIONS ->
+                        stringResource(
+                            R.string.detail_limit_sessions_val,
+                            challenge.limitValueSessions ?: 0
+                        )
+                    LimitType.TIME ->
+                        stringResource(R.string.detail_limit_time_val, challenge.limitValueMinutes)
+                    LimitType.TIME_BUDGET ->
+                        stringResource(
+                            R.string.detail_limit_budget_val,
+                            challenge.dailyBudgetMinutes ?: 0
+                        )
+                    LimitType.TIME_WINDOW -> "Zeitfenster"
+                }
+                InfoRow(label = stringResource(R.string.detail_info_limit), value = limitVal)
+
+                // Session-Dauer (SESSION_LIMIT only)
+                if (challenge.limitType == LimitType.SESSIONS) {
+                    InfoDivider()
+                    InfoRow(
+                        label = stringResource(R.string.detail_info_session_dur),
+                        value = stringResource(
+                            R.string.detail_info_session_dur_val,
+                            challenge.sessionDurationMinutes
+                        )
                     )
                 }
-                LimitType.SESSIONS -> {
-                    val max = challenge.limitValueSessions ?: 1
-                    val p = if (max > 0) s.todayOpens.toFloat() / max else 0f
-                    p to stringResource(
-                        R.string.challenge_card_session_progress,
-                        s.todayOpens,
-                        max
+
+                // Hard Mode: Einsatz + Bei Erfolg
+                if (isHardMode && challenge.amountCents != null) {
+                    InfoDivider()
+                    InfoRow(
+                        label = stringResource(R.string.detail_info_einsatz_row),
+                        value = stringResource(
+                            R.string.detail_info_einsatz_val,
+                            "%.2f".format(challenge.amountCents / 100f)
+                        )
+                    )
+                    InfoDivider()
+                    val refundAmount = (challenge.amountCents * 0.8f)
+                    InfoRow(
+                        label = stringResource(R.string.detail_info_bei_erfolg),
+                        value = stringResource(
+                            R.string.detail_info_bei_erfolg_val,
+                            "%.2f".format(refundAmount / 100f)
+                        ),
+                        valueColor = AccentGreen
                     )
                 }
-                LimitType.TIME_BUDGET -> {
-                    val budget = challenge.dailyBudgetMinutes ?: 1
-                    val p = if (budget > 0) s.todayMinutes.toFloat() / budget else 0f
-                    val remaining = maxOf(0, budget - s.todayMinutes)
-                    p to stringResource(
-                        R.string.challenge_card_budget_progress,
-                        s.todayMinutes, budget, remaining
-                    )
-                }
-                LimitType.TIME_WINDOW -> 0f to stringResource(
-                    R.string.challenge_card_time_window_progress,
-                    s.todayMinutes
+
+                InfoDivider()
+                InfoRow(
+                    label = stringResource(R.string.detail_info_started),
+                    value = startDateStr
+                )
+                InfoDivider()
+                InfoRow(
+                    label = stringResource(R.string.detail_info_ends),
+                    value = endDateStr ?: stringResource(R.string.active_challenge_no_end_date)
+                )
+                InfoDivider()
+                InfoRow(
+                    label = stringResource(R.string.detail_info_success_rate),
+                    value = stringResource(R.string.detail_info_success_rate_val, successRatePct),
+                    valueColor = AccentGreen
                 )
             }
+        }
 
+        // ── Stripe note (Hard Mode only) ──────────────────────────────────────
+        if (isHardMode) {
             Text(
-                text = progressLabel,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                text = stringResource(R.string.detail_stripe_note),
+                fontSize = 11.sp,
+                color = TextSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
-            LinearProgressIndicator(
-                progress = { progressValue.coerceIn(0f, 1f) },
+        }
+
+        // ── Motivational quote ────────────────────────────────────────────────
+        Text(
+            text = "\"$quote\"",
+            fontSize = 12.sp,
+            color = Color(0xFFC7C7CC),
+            fontStyle = FontStyle.Italic,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // ── Challenge aufgeben (text only, no button background) ─────────────
+        if (challenge.status == ChallengeStatus.ACTIVE) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(10.dp),
-                color = if (s.limitExceeded) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        }
-
-        val now = System.currentTimeMillis()
-        if (challenge.endDate > 0L) {
-            Timber.d("endDate type: ${if (challenge.endDate > 1700000000000L) "timestamp" else "days"} value=${challenge.endDate}")
-            val endDateMs = if (challenge.endDate > 1700000000000L) {
-                challenge.endDate // already a timestamp
-            } else {
-                challenge.startDate + (challenge.endDate * 24L * 60L * 60L * 1000L)
-            }
-            val remainingMs = endDateMs - now
-            val remainingDays = (remainingMs / (24L * 60 * 60 * 1000)).toInt()
-            Timber.d("Challenge ${challenge.id} endDate=$endDateMs remaining=$remainingDays days")
-            val (endText, endColor) = when {
-                remainingDays <= 0 -> stringResource(R.string.challenge_card_ends_today) to Color(0xFFE65100)
-                remainingDays == 1 -> stringResource(R.string.challenge_card_tomorrow) to MaterialTheme.colorScheme.onSurfaceVariant
-                else -> stringResource(R.string.challenge_card_days_left, remainingDays) to MaterialTheme.colorScheme.onSurfaceVariant
-            }
-            Text(
-                text = endText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = endColor
-            )
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Abandon only available while the challenge is still active
-        if (challenge.status == ChallengeStatus.ACTIVE) {
-            Button(
-                onClick = { showAbandonDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                )
+                    .clickable { showAbandonDialog = true }
+                    .padding(top = 16.dp, bottom = 24.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(text = stringResource(R.string.active_challenge_abandon))
+                Text(
+                    text = stringResource(R.string.detail_abandon_text),
+                    fontSize = 14.sp,
+                    color = AbandonRed
+                )
             }
+        } else {
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
+
+// ── Shared card composable ────────────────────────────────────────────────────
+
+@Composable
+fun DetoxCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(0.5.dp, CardBorder),
+        content = content
+    )
+}
+
+// ── Sub-composables ───────────────────────────────────────────────────────────
+
+@Composable
+private fun ModeBadge(isHardMode: Boolean) {
+    val bgColor = if (isHardMode) Color(0xFFFFF0E8) else Color(0xFFE8F5E9)
+    val textColor = if (isHardMode) Color(0xFFC05A00) else Color(0xFF2E7D32)
+    val label = if (isHardMode) stringResource(R.string.active_challenge_mode_hard)
+                else stringResource(R.string.active_challenge_mode_soft)
+    Surface(shape = RoundedCornerShape(50), color = bgColor) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun DetailStatColumn(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = Color.Black
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = TextSecondary,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = value,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String, valueColor: Color = Color.Black) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, fontSize = 14.sp, color = TextSecondary)
+        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.W500, color = valueColor)
+    }
+}
+
+@Composable
+private fun InfoDivider() {
+    HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
 }

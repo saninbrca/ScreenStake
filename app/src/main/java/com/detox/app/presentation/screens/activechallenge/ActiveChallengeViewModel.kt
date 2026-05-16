@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeStatus
+import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -27,6 +29,8 @@ sealed interface ActiveChallengeUiState {
         val challenge: Challenge,
         val status: DailyLimitStatus?,
         val streak: Int = 0,
+        val bestStreak: Int = 0,
+        val successRatePct: Int = 0,
     ) : ActiveChallengeUiState
     data class Error(val message: String) : ActiveChallengeUiState
 }
@@ -71,6 +75,11 @@ class ActiveChallengeViewModel @Inject constructor(
                         // ALWAYS use DateUtils.todayKey() — never inline 86400000 calculation.
                         val todayKey = DateUtils.todayKey()
                         Timber.d("DetailScreen: challengeId=$challengeId limitType=${challenge.limitType}")
+
+                        // Compute best streak + success rate from full log history (once per screen open).
+                        val allLogs = dailyLogRepository.getLogsForChallenge(challengeId).first()
+                        val bestStreak = computeBestStreak(allLogs)
+                        val successRatePct = computeSuccessRate(allLogs)
 
                         // Observe Room DailyLog via Flow — auto-refreshes whenever UsageTrackingService
                         // writes (every 10 s) or on every conscious open. Never reads stale state.
@@ -134,7 +143,9 @@ class ActiveChallengeViewModel @Inject constructor(
                                     remainingMinutes = remainingMinutes,
                                     remainingOpens = remainingOpens
                                 )
-                                _uiState.value = ActiveChallengeUiState.Success(challenge, status, streak)
+                                _uiState.value = ActiveChallengeUiState.Success(
+                                    challenge, status, streak, bestStreak, successRatePct
+                                )
                             }
                     },
                     onFailure = { e ->
@@ -148,6 +159,23 @@ class ActiveChallengeViewModel @Inject constructor(
     }
 
     fun refresh() = loadChallenge()
+
+    private fun computeBestStreak(logs: List<DailyLog>): Int {
+        if (logs.isEmpty()) return 0
+        val sorted = logs.sortedBy { it.date }
+        var best = 0
+        var current = 0
+        for (log in sorted) {
+            if (!log.limitExceeded) { current++; if (current > best) best = current }
+            else current = 0
+        }
+        return best
+    }
+
+    private fun computeSuccessRate(logs: List<DailyLog>): Int {
+        if (logs.isEmpty()) return 0
+        return logs.count { !it.limitExceeded } * 100 / logs.size
+    }
 
     fun abandonChallenge() {
         viewModelScope.launch {

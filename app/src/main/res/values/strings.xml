@@ -856,4 +856,95 @@
     <string name="overlay_lockout_days_remaining">%1$d Tage verbleibend</string>
     <string name="overlay_lockout_back_button">Zurück</string>
 
+    <!-- Detail Screen Redesign — Soft / Hard Mode -->
+    <string name="detail_streak_current_label">Aktuelle Streak</string>
+    <string name="detail_streak_best_label">Beste Streak</string>
+    <string name="detail_days_left_label">Tage noch</string>
+    <string name="detail_header_today">Heute</string>
+    <string name="detail_opens_of">%1$d / %2$d Öffnungen</string>
+    <string name="detail_time_of">%1$d / %2$d Min</string>
+    <string name="detail_reset_midnight">Reset um Mitternacht</string>
+    <string name="detail_remaining_opens">%1$d übrig</string>
+    <string name="detail_remaining_min">%1$d min übrig</string>
+    <string name="detail_info_limit">Limit</string>
+    <string name="detail_info_session_dur">Session-Dauer</string>
+    <string name="detail_info_session_dur_val">%1$d Minuten</string>
+    <string name="detail_info_started">Gestartet</string>
+    <string name="detail_info_ends">Endet</string>
+    <string name="detail_info_success_rate">Erfolgsrate</string>
+    <string name="detail_info_success_rate_val">%1$d%%</string>
+    <string name="detail_limit_sessions_val">%1$d Öffnungen / Tag</string>
+    <string name="detail_limit_time_val">%1$d Min / Tag</string>
+    <string name="detail_limit_budget_val">%1$d Min Budget / Tag</string>
+    <string name="detail_info_einsatz_row">Einsatz</string>
+    <string name="detail_info_einsatz_val">€%1$s</string>
+    <string name="detail_info_bei_erfolg">Bei Erfolg</string>
+    <string name="detail_info_bei_erfolg_val">€%1$s zurück (80%%)</string>
+    <string name="detail_stripe_note">💳 Dein Geld ist sicher verwahrt bis zum Ende der Challenge</string>
+    <string name="detail_abandon_text">Challenge aufgeben</string>
+
+    <!-- Detail Screen Redesign — Group Challenge -->
+    <string name="group_detail_live_badge">● LIVE</string>
+    <string name="group_detail_waiting_badge">⏳ WARTET</string>
+    <string name="group_detail_remaining_days">Noch %1$d Tage</string>
+    <string name="group_detail_duration_label">%1$d Tage Challenge</string>
+    <string name="group_detail_gesamtpot_label">Gesamtpot</string>
+    <string name="group_detail_teilnehmer_label">Teilnehmer</string>
+    <string name="group_detail_gewinn_label">Dein Gewinn</string>
+    <string name="group_detail_pot_val">€%1$d</string>
+    <string name="group_detail_participants_val">%1$d/%2$d</string>
+    <string name="group_detail_gewinn_val">€%1$d</string>
+    <string name="group_detail_leaderboard_section">LEADERBOARD</string>
+    <string name="group_detail_session_section">Deine Session heute</string>
+    <string name="group_detail_verbraucht_label">Verbraucht</string>
+    <string name="group_detail_verbraucht_val_time">%1$d / %2$d min</string>
+    <string name="group_detail_verbraucht_val_opens">%1$d / %2$d Öffnungen</string>
+    <string name="group_detail_noch_verfuegbar_label">Noch verfügbar</string>
+    <string name="group_detail_noch_verfuegbar_min">%1$d min</string>
+    <string name="group_detail_noch_verfuegbar_opens">%1$d Öffnungen</string>
+    <string name="group_detail_row_aktiv">● Aktiv</string>
+    <string name="group_detail_row_failed">Ausgeschieden</string>
+    <string name="group_detail_row_won">Gewonnen ✅</string>
+    <string name="group_detail_opens_stat">%1$d/%2$d Öffnungen</string>
+    <string name="group_detail_time_stat">%1$d/%2$d min</string>
+    <string name="group_detail_du_badge">Du</string>
+    <string name="group_detail_limit_sessions">%1$d Öffnungen / Tag</string>
+    <string name="group_detail_limit_time">%1$d Min / Tag</string>
+    <string name="group_detail_limit_budget">%1$d Min Budget / Tag</string>
+    <string name="group_detail_limit_window">Zeitfenster</string>
+    <string name="group_detail_waiting_players">%1$d/%2$d Spieler beigetreten</string>
+    <string name="group_detail_start_button">Challenge starten 🚀</string>
+    <string name="group_detail_need_players">Mindestens 2 Spieler nötig</string>
+    <string name="group_detail_join_code_label">Einladungscode</string>
+    <string name="group_detail_join_code_hint">Teile diesen Code mit deinen Freunden!</string>
+    <string name="detail_einsatz_label">Einsatz</string>
+
+    <!-- Overlay redesign v2 — context headers -->
+    <string name="overlay_v2_header_money">💰 €%1$d auf dem Spiel</string>
+    <string name="overlay_v2_header_rank">👥 Platz #%1$d von %2$d</string>
+    <string name="overlay_v2_header_budget">⏱ %1$d min übrig heute</string>
+    <string name="overlay_v2_header_time_window">📅 Verfügbar ab %1$s</string>
+
+    <!-- Overlay redesign v2 — large number labels -->
+    <string name="overlay_v2_label_sessions">von %1$d Öffnungen heute verbraucht</string>
+    <string name="overlay_v2_label_time">von %1$d Minuten heute verbraucht</string>
+    <string name="overlay_v2_label_budget">von %1$d Minuten heute verfügbar</string>
+
+    <!-- Overlay redesign v2 — progress bar left labels -->
+    <string name="overlay_v2_progress_sessions_remaining">%1$d übrig</string>
+    <string name="overlay_v2_progress_time_remaining">%1$d min übrig</string>
+    <string name="overlay_v2_progress_budget_used">%1$d min verbraucht</string>
+    <string name="overlay_v2_progress_limit_reached">Heutiges Limit erreicht</string>
+
+    <!-- Overlay redesign v2 — limit reached texts (CHANGE 6) -->
+    <string name="overlay_v2_limit_reached_title">Tageslimit erreicht 🔒</string>
+    <string name="overlay_v2_limit_reached_sub">Morgen bekommst du neue Öffnungen.</string>
+
+    <!-- Overlay redesign v2 — budget chips label -->
+    <string name="overlay_v2_chips_label">Minuten wählen</string>
+
+    <!-- Overlay redesign v2 — time window texts -->
+    <string name="overlay_v2_time_window_status">Noch nicht verfügbar</string>
+    <string name="overlay_v2_time_window_sub">Dein Zeitfenster beginnt um %1$s</string>
+
 </resources>

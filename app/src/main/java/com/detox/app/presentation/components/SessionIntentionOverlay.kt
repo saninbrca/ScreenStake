@@ -41,23 +41,21 @@ private val SurfaceDark  = Color(0xFF111111)
 private val BorderDark   = Color(0xFF222222)
 
 /**
- * Stage 1 — Intention Check Overlay (dark, minimal redesign).
+ * Stage 1 — Intention Check Overlay (v2 redesign).
+ *
+ * Context header is computed in OverlayManager and passed as a pre-formatted string
+ * (Streak / €Amount / Group rank depending on challenge type).
  *
  * consciousOpens ONLY increments after the ghost button tap + 5s countdown.
  * "Stark bleiben 💪" and back button go home without incrementing.
- *
- * @param challengeDaysLeft Days remaining in the challenge; Int.MAX_VALUE = no end date.
  */
 @Composable
 fun SessionIntentionOverlay(
     packageName: String,
     appName: String,
+    contextHeader: String,
     opensUsed: Int,
     maxOpens: Int,
-    lastSessionEndedAt: Long?,
-    motivationText: String,
-    streak: Int = 0,
-    challengeDaysLeft: Int = Int.MAX_VALUE,
     onYes: () -> Unit,
     onNo: () -> Unit
 ) {
@@ -74,7 +72,7 @@ fun SessionIntentionOverlay(
         Text(
             text = appName,
             fontSize = 11.sp,
-            color = Color(0xFF444444),
+            color = Color(0xFF333333),
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 16.dp, end = 16.dp)
@@ -87,57 +85,43 @@ fun SessionIntentionOverlay(
                 .padding(top = 72.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Emoji ──────────────────────────────────────────────────────────
-            Text(text = "📱", fontSize = 48.sp, textAlign = TextAlign.Center)
-
-            Spacer(Modifier.height(16.dp))
-
-            // ── Title ──────────────────────────────────────────────────────────
+            // ── Context header (CHANGE 1) ──────────────────────────────────────
             Text(
-                text = stringResource(R.string.overlay_intention_question),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                letterSpacing = (-0.3).sp,
+                text = contextHeader,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AccentGreen,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // ── Streak line ────────────────────────────────────────────────────
-            if (streak > 0) {
-                Text(
-                    text = stringResource(R.string.overlay_intention_streak_line, streak),
-                    fontSize = 13.sp,
-                    color = AccentGreen,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(20.dp))
-            } else {
-                Spacer(Modifier.height(20.dp))
-            }
+            // ── Large number (CHANGE 2) ────────────────────────────────────────
+            Text(
+                text = opensUsed.toString(),
+                fontSize = 64.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                letterSpacing = (-3).sp,
+                textAlign = TextAlign.Center
+            )
 
-            // ── Stats row ─────────────────────────────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatCell(value = opensUsed.toString(), label = stringResource(R.string.overlay_intention_opens_today_label))
-                StatCell(
-                    value = remaining.toString(),
-                    label = stringResource(R.string.overlay_intention_remaining_label),
-                    valueColor = AccentGreen
-                )
-                if (challengeDaysLeft != Int.MAX_VALUE) {
-                    StatCell(value = challengeDaysLeft.toString(), label = stringResource(R.string.overlay_intention_days_label))
-                }
-            }
+            Spacer(Modifier.height(4.dp))
+
+            // ── Label below number ─────────────────────────────────────────────
+            Text(
+                text = stringResource(R.string.overlay_v2_label_sessions, maxOpens),
+                fontSize = 13.sp,
+                color = Color(0xFF444444),
+                textAlign = TextAlign.Center
+            )
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Progress bar ──────────────────────────────────────────────────
+            // ── Progress bar (unchanged component) ────────────────────────────
             OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = BorderDark, fillColor = AccentGreen)
 
+            // ── Labels below bar (CHANGE 3) ────────────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -145,14 +129,14 @@ fun SessionIntentionOverlay(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = stringResource(R.string.overlay_intention_progress_label, opensUsed, maxOpens),
+                    text = stringResource(R.string.overlay_v2_progress_sessions_remaining, remaining),
                     fontSize = 11.sp,
-                    color = TextHint
+                    color = Color(0xFF333333)
                 )
                 Text(
                     text = "${(progress * 100).toInt()}%",
                     fontSize = 11.sp,
-                    color = AccentGreen
+                    color = Color(0xFF333333)
                 )
             }
 
@@ -166,16 +150,16 @@ fun SessionIntentionOverlay(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── Ghost button ───────────────────────────────────────────────────
+            // ── Ghost button (CHANGE 4) — barely visible, 10sp #222, 32dp ─────
             CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                 TextButton(
                     onClick = { showCountdown = true },
-                    modifier = Modifier.height(36.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF333333))
+                    modifier = Modifier.height(32.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
                 ) {
                     Text(
                         text = stringResource(R.string.overlay_ghost_open),
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Normal
                     )
                 }
@@ -189,28 +173,6 @@ fun SessionIntentionOverlay(
                 onCancel = onNo
             )
         }
-    }
-}
-
-@Composable
-private fun StatCell(
-    value: String,
-    label: String,
-    valueColor: Color = Color.White
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = valueColor
-        )
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            color = TextHint,
-            textAlign = TextAlign.Center
-        )
     }
 }
 

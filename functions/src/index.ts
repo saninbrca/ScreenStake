@@ -5,6 +5,7 @@ import Stripe from "stripe";
 admin.initializeApp();
 
 const REGION = "us-central1";
+const MILLIS_PER_DAY = 86_400_000;
 
 // ── Stripe ─────────────────────────────────────────────────────────────────────
 
@@ -374,8 +375,20 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
       return;
     }
 
-    await docRef.update({ status: "active", startDate: Date.now() });
-    functions.logger.info("startGroupChallenge: activated", { groupId, participants: participants.length });
+    const startDate = Date.now();
+    const durationDays: number = (gc["durationDays"] as number) ?? 7;
+    const endDate = startDate + durationDays * MILLIS_PER_DAY;
+
+    functions.logger.info("startGroupChallenge: setting startDate + endDate", {
+      groupId,
+      startDate,
+      endDate,
+      durationDays,
+      participants: participants.length,
+    });
+
+    await docRef.update({ status: "active", startDate, endDate });
+    functions.logger.info("startGroupChallenge: activated", { groupId, participants: participants.length, startDate, endDate });
     res.json({ status: "active" });
   } catch (e) { handleError("startGroupChallenge", e, res); }
 });
@@ -508,24 +521,50 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
       return;
     }
 
+    // "active" = still in the challenge; "completed" = CF already marked them on a prior run.
+    // Both statuses mean the participant did NOT fail — include both when counting winners.
     const failedParticipants = participants.filter((p) => p["status"] === "failed");
-    const successParticipants = participants.filter((p) => p["status"] === "active");
+    const successParticipants = participants.filter(
+      (p) => p["status"] === "active" || p["status"] === "completed"
+    );
+
+    // Per docs/09_payout_and_fees.md: nobodyFailed iff every participant is active OR completed.
+    // Stricter than failedParticipants.length === 0 — a stale "success" status (from a partial
+    // prior run of the someone-failed path) correctly returns false here instead of true.
+    const nobodyFailed = participants.every(
+      (p) => p["status"] === "active" || p["status"] === "completed"
+    );
+
+    functions.logger.info("completeGroupChallenge: participant statuses", {
+      groupId,
+      total: participants.length,
+      active: participants.filter((p) => p["status"] === "active").length,
+      failed: failedParticipants.length,
+      completed: participants.filter((p) => p["status"] === "completed").length,
+      other: participants.filter(
+        (p) => p["status"] !== "active" && p["status"] !== "failed" && p["status"] !== "completed"
+      ).map((p) => ({ userId: p["userId"], status: p["status"] })),
+      nobodyFailed,
+    });
 
     // ── Nobody-failed case: 100% refund for all, no app fee ─────────────────
-    const nobodyFailed = failedParticipants.length === 0;
-
     if (nobodyFailed) {
-      functions.logger.info("completeGroupChallenge: nobody failed — full refund for all", { groupId });
+      functions.logger.info("completeGroupChallenge: nobodyFailed=true — full refund path", { groupId });
       const updatedParticipants = await Promise.all(participants.map(async (p) => {
         const userId = p["userId"] as string;
         const pid = p["paymentIntentId"] as string;
         if (pid) {
           try {
             const pi = await getStripe().paymentIntents.retrieve(pid);
+            functions.logger.info("completeGroupChallenge: nobody-failed PI status", { groupId, userId, pid, piStatus: pi.status });
             if (pi.status === "requires_capture") {
               await getStripe().paymentIntents.cancel(pid);
-            } else {
+              functions.logger.info("completeGroupChallenge: nobody-failed PI cancelled (full cancel)", { groupId, userId, pid });
+            } else if (pi.status === "succeeded") {
               await getStripe().refunds.create({ payment_intent: pid });
+              functions.logger.info("completeGroupChallenge: nobody-failed PI full-refunded", { groupId, userId, pid });
+            } else {
+              functions.logger.warn("completeGroupChallenge: nobody-failed PI in unexpected status — skipping Stripe op", { groupId, userId, pid, piStatus: pi.status });
             }
           } catch (e) {
             functions.logger.error("completeGroupChallenge: full refund failed", { groupId, userId, error: e });
@@ -547,7 +586,14 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
       return;
     }
 
-    // ── Pot calculation (winners get 80% of own stake + prize share) ─────────
+    // ── Someone-failed path: winners get 80% of own stake + prize share ─────
+    functions.logger.info("completeGroupChallenge: nobodyFailed=false — someone-failed path", {
+      groupId,
+      winners: successParticipants.length,
+      losers: failedParticipants.length,
+    });
+
+    // ── Pot calculation ───────────────────────────────────────────────────────
     const failedPot = failedParticipants.reduce((sum, p) => sum + ((p["amountCents"] as number) ?? buyInCents), 0);
     const appFee = Math.floor(failedPot * 0.10);
     const distributablePot = failedPot - appFee;
@@ -560,17 +606,11 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
       totalPot: participants.length * buyInCents,
       failedPot,
       appFee,
+      distributablePot,
       perWinnerBonus,
       winners: successParticipants.length,
       losers: failedParticipants.length,
     });
-
-    functions.logger.info(
-      `Group complete: winners=${successParticipants.length} losers=${failedParticipants.length}`
-    );
-    functions.logger.info(
-      `Total pot: ${participants.length * buyInCents} appFee: ${appFee} perWinner: ${perWinnerBonus}`
-    );
 
     // ── Process winners: 80% stake refund + prize share ──────────────────────
     const updatedParticipants = await Promise.all(participants.map(async (p) => {
@@ -584,14 +624,20 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
       const stakeRefund = Math.floor(participantStake * 0.80);
 
       // Refund 80% of own stake — capture first if PI is still pre-authorized
+      functions.logger.info("completeGroupChallenge: processing winner stake refund (80%)", {
+        groupId, userId, participantStake, stakeRefund,
+      });
       if (pid) {
         try {
           const pi = await getStripe().paymentIntents.retrieve(pid);
+          functions.logger.info("completeGroupChallenge: winner PI status", { groupId, userId, pid, piStatus: pi.status });
           if (pi.status === "requires_capture") {
             await getStripe().paymentIntents.capture(pid);
             await getStripe().refunds.create({ payment_intent: pid, amount: stakeRefund });
+            functions.logger.info("completeGroupChallenge: winner PI captured-then-partial-refunded", { groupId, userId, stakeRefund });
           } else {
             await getStripe().refunds.create({ payment_intent: pid, amount: stakeRefund });
+            functions.logger.info("completeGroupChallenge: winner PI partial-refunded (already captured)", { groupId, userId, stakeRefund });
           }
         } catch (e) {
           functions.logger.error("completeGroupChallenge: stake refund failed", { groupId, userId, error: e });

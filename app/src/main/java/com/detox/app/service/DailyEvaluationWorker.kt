@@ -106,7 +106,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 "evaluated today — skipping payment logic"
                     )
                     val durationDays = ((challenge.endDate - challenge.startDate) /
-                            86_400_000L).toInt()
+                            DateUtils.MILLIS_PER_DAY).toInt()
                     if (now >= challenge.endDate || durationDays == 1) {
                         val log = existingRealLog
                         val finalStatus = if (log.limitExceeded) {
@@ -165,7 +165,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         challenge.stripePaymentIntentId != null
                     ) {
                         val durationDays = ((challenge.endDate - challenge.startDate) /
-                                86_400_000L).toInt()
+                                DateUtils.MILLIS_PER_DAY).toInt()
                         if (limitExceeded) {
                             paymentRepository.capturePayment(challenge.stripePaymentIntentId)
                                 .onSuccess {
@@ -233,7 +233,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     }
 
                     val durationDays = ((challenge.endDate - challenge.startDate) /
-                            86_400_000L).toInt()
+                            DateUtils.MILLIS_PER_DAY).toInt()
                     if (now >= challenge.endDate || durationDays == 1) {
                         val finalStatus = if (limitExceeded) {
                             ChallengeStatus.FAILED
@@ -325,7 +325,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     challenge.stripePaymentIntentId != null
                 ) {
                     val durationDays = ((challenge.endDate - challenge.startDate) /
-                            86_400_000L).toInt()
+                            DateUtils.MILLIS_PER_DAY).toInt()
 
                     if (limitExceeded) {
                         // User broke their Hard Mode limit today → capture payment
@@ -404,7 +404,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
 
                 // ── Update challenge status if end date reached ─────────────────
                 val durationDays = ((challenge.endDate - challenge.startDate) /
-                        86_400_000L).toInt()
+                        DateUtils.MILLIS_PER_DAY).toInt()
                 if (now >= challenge.endDate || durationDays == 1) {
                     val finalStatus = if (limitExceeded) {
                         ChallengeStatus.FAILED
@@ -642,7 +642,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private suspend fun setRedemptionInfo(challenge: Challenge, now: Long) {
         if (challenge.isRedemption) return  // No redemption of redemption
 
-        val originalDays = ((challenge.endDate - challenge.startDate) / 86_400_000L).toInt()
+        val originalDays = ((challenge.endDate - challenge.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
         val isEligible = originalDays <= 28 && challenge.stripePaymentIntentId != null
 
         if (!isEligible) {
@@ -650,8 +650,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
             return
         }
 
-        val deadline = now + (3L * 86_400_000L)
-        val showAfter = now + (24L * 3_600_000L)
+        val deadline = now + (3L * DateUtils.MILLIS_PER_DAY)
+        val showAfter = now + DateUtils.MILLIS_PER_DAY
         val refundAmount = floor((challenge.amountCents ?: 0) * 0.60).toInt()
         val redemptionDays = originalDays * 2
         val redemptionLimit = when (challenge.limitType) {

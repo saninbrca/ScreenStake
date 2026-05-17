@@ -100,7 +100,8 @@ data class PayoutChallengeInfo(
     val appFeeCents: Int,
     val winnersCount: Int,
     val payoutStatus: String,
-    val groupId: String?
+    val groupId: String?,
+    val endDateMs: Long = 0L
 )
 
 @HiltViewModel
@@ -292,7 +293,8 @@ class ProfileViewModel @Inject constructor(
                         appFeeCents = appFee,
                         winnersCount = 0,
                         payoutStatus = "refunded",
-                        groupId = null
+                        groupId = null,
+                        endDateMs = entity.endDate
                     )
                 }
         }
@@ -320,7 +322,8 @@ class ProfileViewModel @Inject constructor(
                         appFeeCents = appFee,
                         winnersCount = 0,
                         payoutStatus = "refunded",
-                        groupId = null
+                        groupId = null,
+                        endDateMs = entity.endDate
                     )
                 }
         }
@@ -372,7 +375,8 @@ class ProfileViewModel @Inject constructor(
                         appFeeCents = stakeAppFee,
                         winnersCount = winnersCount,
                         payoutStatus = payoutStatus,
-                        groupId = entity.groupId
+                        groupId = entity.groupId,
+                        endDateMs = entity.endDate
                     )
                 }
             }

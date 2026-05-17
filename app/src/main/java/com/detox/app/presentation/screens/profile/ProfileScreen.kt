@@ -79,6 +79,7 @@ import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.service.TrackedAppEventBus
+import com.detox.app.util.DateUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -989,6 +990,28 @@ private fun PayoutChallengeCard(
                 else Color(0xFF00C853)
             )
 
+            // Expected / confirmed date line
+            if (payout.endDateMs > 0L) {
+                val dateFormat = remember { SimpleDateFormat("d. MMM yyyy", Locale("de")) }
+                val expectedMs = remember(payout.endDateMs) {
+                    DateUtils.addBusinessDays(payout.endDateMs, 5)
+                }
+                val dateStr = dateFormat.format(Date(expectedMs))
+                if (payout.payoutStatus == "refunded") {
+                    Text(
+                        text = stringResource(R.string.payout_date_credit, dateStr),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF000000)
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.payout_date_expected, dateStr),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF8E8E93)
+                    )
+                }
+            }
+
             // IBAN setup button for pending prize
             if (payout.payoutStatus == "pending_payout" && payout.prizeShareCents > 0) {
                 TextButton(
@@ -1000,6 +1023,11 @@ private fun PayoutChallengeCard(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+                Text(
+                    text = stringResource(R.string.payout_prize_pending_iban_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF8E8E93)
+                )
             }
         }
     }

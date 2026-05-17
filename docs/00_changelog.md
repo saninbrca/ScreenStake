@@ -13,6 +13,87 @@
 
 ---
 
+## 2026-05-17
+
+### FIXED — Group Challenge endDate never written on challenge start (critical)
+
+**Root cause (`startGroupChallenge` CF, `functions/src/index.ts`):**
+`startGroupChallenge` wrote `{ status: "active", startDate: Date.now() }` but never
+calculated or stored `endDate`. Every group challenge therefore had `endDate = 0` in
+Firestore. `DailyEvaluationWorker.evaluateGroupChallenge` guards with
+`endDate > 0L && now >= endDate` — this condition was permanently `false`, so
+`completeGroupChallenge` was never auto-triggered.
+
+**Fixes:**
+- `startGroupChallenge` now reads `durationDays` from the Firestore doc, computes
+  `endDate = startDate + durationDays * MILLIS_PER_DAY`, and writes both fields atomically.
+- Added `functions.logger.info` at the startDate/endDate calculation point.
+- Added `const MILLIS_PER_DAY = 86_400_000` in `index.ts` — no inline magic numbers.
+
+**Android cleanup (no logic change):**
+- Added `DateUtils.MILLIS_PER_DAY = 86_400_000L` constant.
+- Replaced all 7 inline `86_400_000L` occurrences in `DailyEvaluationWorker.kt`
+  (including the `24L * 3_600_000L` form in `setRedemptionInfo`) with
+  `DateUtils.MILLIS_PER_DAY`.
+
+**Files changed:** `functions/src/index.ts`, `DateUtils.kt`, `DailyEvaluationWorker.kt`
+**Requires deploy:** `firebase deploy --only functions:startGroupChallenge`
+**Existing active challenges with `endDate == 0`:** Must be patched manually in Firestore
+  — set `endDate = startDate + (durationDays * 86400000)` on each affected document.
+
+---
+
+### FEATURE — Payout Card: expected refund date
+
+ProfileScreen payout cards now show the expected or confirmed refund date below the status line.
+
+**Logic:**
+- `DateUtils.addBusinessDays(timestampMs, days)` added — skips Saturday + Sunday, no library needed.
+- `endDateMs: Long` added to `PayoutChallengeInfo` (populated from `entity.endDate` in all three payout paths).
+- Expected date = `endDate + 5 business days`, formatted as `d. MMM yyyy` with German locale.
+
+**Display:**
+- `payoutStatus == "refunded"` → "Gutschrift: DD. MMM YYYY" (black, #000000)
+- `payoutStatus == "pending_payout"` → "Erwartet bis: DD. MMM YYYY" (gray, #8E8E93)
+- `payoutStatus == "pending_payout" + prizeShareCents > 0` → IBAN CTA kept + note "Gewinnanteil wird nach IBAN-Hinterlegung überwiesen" below button
+
+**Files changed:** `DateUtils.kt`, `ProfileViewModel.kt`, `ProfileScreen.kt`, `strings.xml`
+**No Cloud Function or Stripe changes.**
+
+---
+
+### FIXED — Group Challenge nobodyFailed: wrong fee applied when nobody failed
+
+**Root causes (3 bugs in `completeGroupChallenge` CF, `functions/src/index.ts`):**
+
+1. `successParticipants` (old line 512) only filtered `status === "active"`, excluding winners with
+   `status === "completed"` (already marked on a prior CF run). This caused `perWinnerBonus` to be
+   inflated (denominator too small) in the someone-failed path.
+
+2. `nobodyFailed` check was `failedParticipants.length === 0`. Per docs/09_payout_and_fees.md the
+   correct check is `participants.every(p => active || completed)`. The old check returned `true` for
+   any participant with status `"success"` (written by the someone-failed path on a previous partial
+   run), potentially routing into the nobody-failed branch and attempting a double-refund.
+
+3. No logging at the `nobodyFailed` decision point — impossible to diagnose production failures.
+
+**Fixes (CF only — no Android changes):**
+- `successParticipants` now includes both `"active"` and `"completed"` participants.
+- `nobodyFailed` now uses `participants.every(p => p.status === "active" || p.status === "completed")`.
+- Detailed `functions.logger.info` added at: participant-status dump, nobodyFailed decision,
+  per-PI Stripe action (cancel / full-refund / partial-refund / unexpected-status), pot calculation.
+- Nobody-failed Stripe branch: explicit `requires_capture` → cancel; `succeeded` → full refund;
+  any other status → warn log only (no silent failure).
+- `firebase deploy --only functions:completeGroupChallenge` required after this change.
+
+**Manual Firestore fix for existing Booking.com challenge (already completed with wrong data):**
+In the Firebase console, find the `groupChallenges/{groupId}` document for Booking.com and set:
+  `nobodyFailed: true`, `appFee: 0`, `prizePool: 0`, `prizePerWinner: 0`.
+Also update each participant to: `status: "completed"`, `payoutStatus: "completed"`.
+ProfileScreen will then re-read and display €0 fee on next open (reads live from Firestore).
+
+---
+
 ## 2026-05-16 (10)
 
 ### DOCS — Created docs/09_payout_and_fees.md

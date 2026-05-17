@@ -781,6 +781,9 @@
     <string name="payout_iban_field_hint">IBAN (z.B. AT12 3456 …)</string>
     <string name="payout_iban_save_cta">Speichern &amp; Auszahlung beantragen</string>
     <string name="payout_iban_saved_toast">IBAN gespeichert. Auszahlung wird verarbeitet.</string>
+    <string name="payout_date_credit">Gutschrift: %1$s</string>
+    <string name="payout_date_expected">Erwartet bis: %1$s</string>
+    <string name="payout_prize_pending_iban_note">Gewinnanteil wird nach IBAN-Hinterlegung überwiesen</string>
 
     <!-- Redemption Challenge -->
     <string name="redemption_banner_title">Comeback Challenge verfügbar</string>

@@ -81,6 +81,7 @@ class CreateGroupChallengeUseCase @Inject constructor(
             amountCents = buyInCents,
             durationDays = durationDays,
             challengeId = groupId,
+            isGroupChallenge = true,
         ).map { paymentData ->
             Timber.d("CreateGroupChallengeUseCase: payment intent created groupId=%s", groupId)
             CreateGroupChallengePaymentData(

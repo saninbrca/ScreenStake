@@ -400,7 +400,8 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             participants = participants,
             blockedDomains = blockedDomains
                 ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
-                ?: emptyList()
+                ?: emptyList(),
+            authorizationExpiresAt = authorizationExpiresAt,
         )
     }
 
@@ -436,7 +437,8 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             bonusEnabled = if (bonusEnabled) 1 else 0,
             status = status.name.lowercase(),
             participantsJson = array.toString(),
-            blockedDomains = blockedDomains.joinToString(",").ifEmpty { null }
+            blockedDomains = blockedDomains.joinToString(",").ifEmpty { null },
+            authorizationExpiresAt = authorizationExpiresAt,
         )
     }
 }

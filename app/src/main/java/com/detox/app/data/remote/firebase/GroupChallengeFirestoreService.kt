@@ -363,7 +363,8 @@ class GroupChallengeFirestoreService @Inject constructor(
         },
         // Denormalised list for Firestore array-contains queries
         "participantUserIds" to participants.map { it.userId },
-        "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null }
+        "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
+        "authorizationExpiresAt" to authorizationExpiresAt.takeIf { it > 0L }
     )
 
     @Suppress("UNCHECKED_CAST")
@@ -445,7 +446,8 @@ class GroupChallengeFirestoreService @Inject constructor(
                     ?: (d["perWinnerBonus"] as? Long)?.toInt()) ?: 0,
                 blockedDomains = (d["blockedDomains"] as? String)
                     ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
-                    ?: emptyList()
+                    ?: emptyList(),
+                authorizationExpiresAt = (d["authorizationExpiresAt"] as? Long) ?: 0L,
             )
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeFirestore: failed to parse document %s", id)

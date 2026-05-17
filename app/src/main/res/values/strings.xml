@@ -1018,4 +1018,20 @@
     <string name="abrechnung_stake_captured">Einsatz eingezogen: %1$s</string>
     <string name="abrechnung_not_passed">Challenge nicht bestanden</string>
 
+    <!-- Group Challenge Authorization Window -->
+    <string name="group_auth_days_remaining">⏳ Noch %d Tage zum Starten</string>
+    <string name="group_auth_expires_tomorrow">⏳ Läuft morgen ab!</string>
+    <string name="group_auth_expired">🔴 Abgelaufen</string>
+
+    <!-- Start — payment_not_ready dialog -->
+    <string name="group_start_payment_not_ready_title">Start nicht möglich</string>
+    <string name="group_start_payment_not_ready_body">Die Zahlung von %s ist nicht mehr gültig. Bitte entferne diesen Teilnehmer oder warte auf eine neue Zahlung.</string>
+    <string name="group_start_payment_not_ready_button">Verstanden</string>
+
+    <!-- Group Challenge Notifications -->
+    <string name="notif_group_expired_title">⏰ Challenge abgelaufen</string>
+    <string name="notif_group_expired_body">Die Group Challenge wurde nicht rechtzeitig gestartet. Dein Geld wurde vollständig zurückgegeben.</string>
+    <string name="notif_group_start_warning_title">⚠️ Starte deine Challenge!</string>
+    <string name="notif_group_start_warning_body">Deine Group Challenge läuft morgen ab. Starte sie jetzt oder alle Teilnehmer bekommen ihr Geld zurück.</string>
+
 </resources>

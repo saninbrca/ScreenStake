@@ -15,6 +15,41 @@
 
 ## [Unreleased] — May 2026
 
+### Added
+- **Group Challenge — 5-day Authorization Window:** PaymentIntents
+  for Group Challenges now use capture_method: "manual" — money is
+  reserved but NOT charged until the creator taps Start.
+  Hard Mode is completely unaffected (immediate capture unchanged).
+- **Group Challenge — Auto-Cancel after 5 days:** New
+  expireGroupChallenge Cloud Function + DailyEvaluationWorker check.
+  If challenge is not started within 5 days of creation:
+  all Stripe PaymentIntents cancelled → 100% refund → all participants
+  notified via local notification. authorizationExpiresAt field added
+  to groupChallenges Firestore collection + Room (Migration 22→23,
+  DEFAULT 0 with expiresAt <= 0L guard for existing challenges).
+- **Group Challenge — Pre-flight Check before Start:** startGroupChallenge
+  CF verifies ALL participant PaymentIntents show requires_capture
+  before capturing any. If any fails → abort immediately, no partial
+  captures. UI shows clear error dialog if payment_not_ready.
+- **Group Challenge — Day 4 Warning Notification:** Creator receives
+  local notification one day before authorization expires:
+  "Starte deine Challenge oder alle bekommen ihr Geld zurück."
+- **Group Challenge — Countdown UI in WAITING state:** Detail Screen
+  shows days remaining until authorization expires with color coding:
+  grey (> 1 day), orange (≤ 1 day), red (expired).
+- **TypeScript — Participant interface:** Added explicit Participant
+  interface in index.ts with optional status, displayName, amountCents,
+  payoutStatus fields to fix TS2353 compile errors.
+
+### Changed
+- **Group Challenge Join:** isGroupChallenge: true flag now passed
+  to createPaymentIntent from both joinGroupChallenge and
+  confirmGroupJoin CFs to enforce manual capture for all participants.
+
+---
+
+## [Unreleased] — May 2026
+
 ### Security
 - **Firestore Rules — full rewrite:** Replaced critically under-secured
   rules with granular field-level protection. Key fixes:

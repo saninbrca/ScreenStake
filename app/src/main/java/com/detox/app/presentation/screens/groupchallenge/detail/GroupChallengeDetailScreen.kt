@@ -116,6 +116,27 @@ fun GroupChallengeDetailScreen(
         }
     }
 
+    // PaymentNotReady dialog
+    if (startState is StartChallengeState.PaymentNotReady) {
+        AlertDialog(
+            onDismissRequest = { viewModel.resetStartState() },
+            title = { Text(stringResource(R.string.group_start_payment_not_ready_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.group_start_payment_not_ready_body,
+                        (startState as StartChallengeState.PaymentNotReady).displayName
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.resetStartState() }) {
+                    Text(stringResource(R.string.group_start_payment_not_ready_button))
+                }
+            }
+        )
+    }
+
     LaunchedEffect(nudgeEvent) {
         val msg = nudgeEvent
         if (msg != null) {
@@ -603,6 +624,26 @@ private fun GroupHeaderCard(
                     fontSize = 13.sp,
                     color = TextSecondary
                 )
+
+                // Authorization window countdown
+                if (gc.authorizationExpiresAt > 0L) {
+                    val now = System.currentTimeMillis()
+                    val daysLeft = (gc.authorizationExpiresAt - now) / (24L * 60 * 60 * 1000)
+                    val (countdownText, countdownColor) = when {
+                        now >= gc.authorizationExpiresAt ->
+                            Pair(stringResource(R.string.group_auth_expired), Color(0xFFFF3B30))
+                        daysLeft <= 1L ->
+                            Pair(stringResource(R.string.group_auth_expires_tomorrow), Color(0xFFFF9500))
+                        else ->
+                            Pair(stringResource(R.string.group_auth_days_remaining, daysLeft), Color(0xFF8E8E93))
+                    }
+                    Text(
+                        text = countdownText,
+                        fontSize = 13.sp,
+                        color = countdownColor,
+                        modifier = androidx.compose.ui.Modifier.padding(top = 4.dp)
+                    )
+                }
 
                 if (gc.creatorUserId == currentUserId) {
                     val canStart = joined >= 2

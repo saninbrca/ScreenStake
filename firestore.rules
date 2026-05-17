@@ -67,13 +67,15 @@ service cloud.firestore {
       allow create: if request.auth != null
         && !request.resource.data.keys().hasAny([
           'status', 'startDate', 'endDate', 'completedAt',
-          'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed'
+          'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
+          'authorizationExpiresAt'
         ]);
       allow update: if request.auth != null
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny([
             'status', 'startDate', 'endDate', 'completedAt',
-            'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed'
+            'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
+            'authorizationExpiresAt'
           ]);
       allow delete: if false;
 

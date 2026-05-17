@@ -92,12 +92,16 @@ class CloudFunctionsService @Inject constructor(
     suspend fun createPaymentIntent(
         amountCents: Int,
         durationDays: Int,
-        challengeId: String
+        challengeId: String,
+        isGroupChallenge: Boolean = false,
     ): Result<PaymentIntentData> = try {
-        val response = callFunction(
-            "createPaymentIntent",
-            mapOf("amountCents" to amountCents, "durationDays" to durationDays, "challengeId" to challengeId)
-        )
+        val params = buildMap<String, Any?> {
+            put("amountCents", amountCents)
+            put("durationDays", durationDays)
+            put("challengeId", challengeId)
+            if (isGroupChallenge) put("isGroupChallenge", true)
+        }
+        val response = callFunction("createPaymentIntent", params)
         val paymentIntentId = response["paymentIntentId"] as String
         val clientSecret = response["clientSecret"] as String
         val isImmediate = response["isImmediateCapture"] as? Boolean ?: (durationDays > 7)
@@ -176,9 +180,8 @@ class CloudFunctionsService @Inject constructor(
         )
         val paymentIntentId = response["paymentIntentId"] as String
         val clientSecret = response["clientSecret"] as String
-        val isImmediate = response["isImmediateCapture"] as? Boolean ?: true
         Timber.d("joinGroupChallenge: groupId=%s userId=%s", groupId, userId)
-        Result.success(PaymentIntentData(paymentIntentId, clientSecret, isImmediate))
+        Result.success(PaymentIntentData(paymentIntentId, clientSecret, isImmediateCapture = false))
     } catch (e: Exception) {
         Timber.e(e, "joinGroupChallenge failed — groupId=%s", groupId)
         Result.failure(e)
@@ -233,6 +236,15 @@ class CloudFunctionsService @Inject constructor(
         Result.success(Unit)
     } catch (e: Exception) {
         Timber.e(e, "cancelGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun expireGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("expireGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("expireGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "expireGroupChallenge failed — groupId=%s", groupId)
         Result.failure(e)
     }
 

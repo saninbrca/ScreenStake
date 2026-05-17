@@ -42,6 +42,7 @@ sealed interface StartChallengeState {
     data object Loading : StartChallengeState
     data object Success : StartChallengeState
     data class Error(val message: String) : StartChallengeState
+    data class PaymentNotReady(val displayName: String) : StartChallengeState
 }
 
 sealed interface QuitState {
@@ -243,12 +244,23 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "GroupDetailVM: startGroupChallenge failed for %s", groupId)
-                    _startState.value = StartChallengeState.Error(e.message ?: "Failed to start challenge")
+                    if (e.message?.contains("payment_not_ready") == true) {
+                        val gc = (_uiState.value as? GroupDetailUiState.Success)?.groupChallenge
+                        val displayName = gc?.appDisplayName ?: ""
+                        _startState.value = StartChallengeState.PaymentNotReady(displayName)
+                    } else {
+                        _startState.value = StartChallengeState.Error(e.message ?: "Failed to start challenge")
+                    }
                 }
         }
     }
 
     fun clearStartError() { _startState.value = StartChallengeState.Idle }
+
+    fun resetStartState() { _startState.value = StartChallengeState.Idle }
+
+    fun daysRemaining(gc: GroupChallenge): Long =
+        (gc.authorizationExpiresAt - System.currentTimeMillis()) / DateUtils.MILLIS_PER_DAY
 
     fun quitChallenge() {
         if (_quitState.value is QuitState.Loading) return

@@ -23,4 +23,6 @@ data class GroupChallenge(
     val blockedDomains: List<String> = emptyList(),
     /** Bonus transferred to each winner in cents (set after completion). */
     val perWinnerBonus: Int = 0,
+    /** Unix ms when the 5-day authorization window expires. 0 = not set (legacy). */
+    val authorizationExpiresAt: Long = 0L,
 )

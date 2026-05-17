@@ -51,21 +51,35 @@ function handleError(tag: string, e: unknown, res: functions.Response): void {
   }
 }
 
+// ── Participant type ───────────────────────────────────────────────────────────
+
+interface Participant {
+  userId: string;
+  paymentIntentId: string;
+  status?: string;
+  displayName?: string;
+  amountCents?: number;
+  payoutStatus?: string;
+}
+
 // ── createPaymentIntent ────────────────────────────────────────────────────────
 
 export const createPaymentIntent = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
-    const { amountCents, durationDays, challengeId } = req.body as {
+    const { amountCents, durationDays, challengeId, isGroupChallenge } = req.body as {
       amountCents: number;
       durationDays: number;
       challengeId: string;
+      isGroupChallenge?: boolean;
     };
 
     if (!amountCents || amountCents < 500) throw new HttpError(400, "Minimum amount is €5.00.");
     if (!durationDays || durationDays < 1) throw new HttpError(400, "Duration must be at least 1 day.");
 
-    const isImmediateCapture = durationDays > 7;
+    // Group Challenges always use manual capture (5-day auth window).
+    // Hard Mode keeps the durationDays > 7 → automatic logic unchanged.
+    const isImmediateCapture = isGroupChallenge ? false : durationDays > 7;
     const customerId = await getOrCreateStripeCustomer(userId);
 
     const paymentIntent = await getStripe().paymentIntents.create({
@@ -202,6 +216,7 @@ export const createGroupChallenge = functions.region(REGION).https.onRequest(asy
       code: finalCode,
       groupId,
       status: "waiting",
+      authorizationExpiresAt: Date.now() + 5 * MILLIS_PER_DAY,
       participants: [{
         userId,
         displayName: creatorDisplayName,
@@ -254,21 +269,19 @@ export const joinGroupChallenge = functions.region(REGION).https.onRequest(async
     if (startDate && startDate <= Date.now()) throw new HttpError(412, "The join window for this challenge has closed.");
 
     const buyInCents: number = gc["buyInCents"] ?? 500;
-    const durationDays: number = gc["durationDays"] ?? 7;
-    const isImmediateCapture = durationDays > 7;
 
     const customerId = await getOrCreateStripeCustomer(userId);
     const paymentIntent = await getStripe().paymentIntents.create({
       amount: buyInCents,
       currency: "eur",
       customer: customerId,
-      capture_method: isImmediateCapture ? "automatic" : "manual",
+      capture_method: "manual",
       metadata: { userId, groupId, displayName: displayName ?? "Anonymous", type: "group_challenge_buy_in" },
       description: `Detox Group Challenge buy-in — ${groupId}`,
     });
 
     functions.logger.info("joinGroupChallenge: payment intent created", { groupId, userId });
-    res.json({ paymentIntentId: paymentIntent.id, clientSecret: paymentIntent.client_secret, isImmediateCapture });
+    res.json({ paymentIntentId: paymentIntent.id, clientSecret: paymentIntent.client_secret, isImmediateCapture: false });
   } catch (e) { handleError("joinGroupChallenge", e, res); }
 });
 
@@ -356,25 +369,55 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
       return;
     }
 
-    const participants = parseParticipants<{ userId: string; paymentIntentId: string }>(gc["participants"]);
-    const isImmediateCapture = (gc["durationDays"] ?? 7) > 7;
+    const participants = parseParticipants<{ userId: string; displayName: string; paymentIntentId: string }>(gc["participants"]);
 
     if (participants.length < 2) {
       for (const p of participants) {
         try {
-          if (isImmediateCapture) {
-            await getStripe().refunds.create({ payment_intent: p.paymentIntentId });
-          } else {
+          const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+          if (pi.status === "requires_capture") {
             await getStripe().paymentIntents.cancel(p.paymentIntentId);
           }
         } catch (e) {
-          functions.logger.error("startGroupChallenge: refund/cancel failed", { groupId, userId: p.userId, error: e });
+          functions.logger.error("startGroupChallenge: cancel failed for <2 participants", { groupId, userId: p.userId, error: e });
         }
       }
       await docRef.update({ status: "cancelled" });
-      functions.logger.info("startGroupChallenge: cancelled", { groupId, participants: participants.length });
+      functions.logger.info("startGroupChallenge: cancelled (< 2 participants)", { groupId, participants: participants.length });
       res.json({ status: "cancelled" });
       return;
+    }
+
+    // Pre-flight: all PIs must be requires_capture before we capture any.
+    for (const p of participants) {
+      const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+      if (pi.status !== "requires_capture") {
+        functions.logger.warn("startGroupChallenge: payment not ready", { groupId, userId: p.userId, piStatus: pi.status });
+        res.status(400).json({
+          error: "payment_not_ready",
+          message: `Payment for ${p.displayName} is not ready. Their authorization may have expired.`,
+        });
+        return;
+      }
+    }
+
+    // Capture all PIs — money is now charged.
+    const captured: string[] = [];
+    for (const p of participants) {
+      try {
+        await getStripe().paymentIntents.capture(p.paymentIntentId);
+        captured.push(p.paymentIntentId);
+        functions.logger.info("startGroupChallenge: captured PI", { groupId, userId: p.userId });
+      } catch (e) {
+        functions.logger.error("startGroupChallenge: capture failed mid-loop — rolling back", { groupId, userId: p.userId, error: e });
+        for (const piId of captured) {
+          try { await getStripe().refunds.create({ payment_intent: piId }); } catch (re) {
+            functions.logger.error("startGroupChallenge: rollback refund failed", { piId, error: re });
+          }
+        }
+        res.status(500).json({ error: "capture_failed", message: "Failed to capture a payment. All captured payments have been refunded." });
+        return;
+      }
     }
 
     const startDate = Date.now();
@@ -421,24 +464,29 @@ export const cancelGroupChallenge = functions.region(REGION).https.onRequest(asy
       throw new HttpError(403, "Only the creator can cancel a group challenge.");
     }
 
-    const participants = parseParticipants<{ userId: string; paymentIntentId: string }>(gc["participants"]);
-    const isImmediateCapture = ((gc["durationDays"] as number) ?? 7) > 7;
+    const participants = parseParticipants<Participant>(gc["participants"]);
 
-    for (const p of participants) {
+    const updatedParticipants = [...participants];
+    for (let i = 0; i < updatedParticipants.length; i++) {
+      const p = updatedParticipants[i];
       if (!p.paymentIntentId) continue;
       try {
-        if (isImmediateCapture) {
-          await getStripe().refunds.create({ payment_intent: p.paymentIntentId });
-        } else {
+        const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+        if (pi.status === "requires_capture") {
           await getStripe().paymentIntents.cancel(p.paymentIntentId);
+          functions.logger.info("cancelGroupChallenge: PI cancelled", { groupId, userId: p.userId });
+        } else if (pi.status === "canceled") {
+          functions.logger.info("cancelGroupChallenge: PI already cancelled (idempotent)", { groupId, userId: p.userId });
+        } else {
+          functions.logger.warn("cancelGroupChallenge: unexpected PI status", { groupId, userId: p.userId, piStatus: pi.status });
         }
-        functions.logger.info("cancelGroupChallenge: refunded", { groupId, userId: p.userId });
+        updatedParticipants[i] = { ...p, status: "refunded" };
       } catch (e) {
-        functions.logger.error("cancelGroupChallenge: refund/cancel failed", { groupId, userId: p.userId, error: e });
+        functions.logger.error("cancelGroupChallenge: cancel failed", { groupId, userId: p.userId, error: e });
       }
     }
 
-    await docRef.update({ status: "cancelled" });
+    await docRef.update({ status: "cancelled", participants: updatedParticipants });
     functions.logger.info("cancelGroupChallenge: cancelled", { groupId, participants: participants.length });
     res.json({ status: "cancelled" });
   } catch (e) { handleError("cancelGroupChallenge", e, res); }
@@ -460,19 +508,23 @@ export const failParticipant = functions.region(REGION).https.onRequest(async (r
 
     const gc = doc.data()!;
     const participants = parseParticipants(gc["participants"]);
-    const isImmediateCapture = ((gc["durationDays"] as number) ?? 7) > 7;
 
     const updatedParticipants = participants.map((p) =>
       p["userId"] === failedUserId ? { ...p, status: "failed", failedAt: Date.now() } : p
     );
 
     const failedParticipant = participants.find((p) => p["userId"] === failedUserId);
-    if (failedParticipant?.["paymentIntentId"] && !isImmediateCapture) {
+    if (failedParticipant?.["paymentIntentId"]) {
       try {
         const pi = await getStripe().paymentIntents.retrieve(failedParticipant["paymentIntentId"] as string);
         if (pi.status === "requires_capture") {
           await getStripe().paymentIntents.capture(pi.id);
           functions.logger.info("failParticipant: payment captured", { groupId, userId: failedUserId });
+        } else if (pi.status === "succeeded") {
+          // PI was already captured when creator started the challenge — no action needed.
+          functions.logger.info("failParticipant: PI already captured at challenge start, skipping", { groupId, userId: failedUserId });
+        } else {
+          functions.logger.warn("failParticipant: unexpected PI status", { groupId, userId: failedUserId, piStatus: pi.status });
         }
       } catch (e) {
         functions.logger.error("failParticipant: capture failed", { groupId, userId: failedUserId, error: e });
@@ -483,6 +535,70 @@ export const failParticipant = functions.region(REGION).https.onRequest(async (r
     functions.logger.info("failParticipant: participant failed", { groupId, userId: failedUserId });
     res.json({ success: true });
   } catch (e) { handleError("failParticipant", e, res); }
+});
+
+// ── expireGroupChallenge ───────────────────────────────────────────────────────
+// Called by DailyEvaluationWorker when authorizationExpiresAt has passed.
+// Any authenticated user can trigger this — no creator check.
+// Idempotent: already-cancelled challenges are silently accepted.
+
+export const expireGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    await requireAuth(req);
+    const { groupId } = req.body as { groupId: string };
+    if (!groupId) throw new HttpError(400, "groupId is required.");
+
+    const db = admin.firestore();
+    const docRef = db.collection("groupChallenges").doc(groupId);
+    const doc = await docRef.get();
+    if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+
+    const gc = doc.data()!;
+
+    if (gc["status"] === "cancelled") {
+      functions.logger.info("expireGroupChallenge: already cancelled (idempotent)", { groupId });
+      res.json({ status: "cancelled" });
+      return;
+    }
+    if (gc["status"] !== "waiting") {
+      functions.logger.info("expireGroupChallenge: not in waiting status — skipping", { groupId, status: gc["status"] });
+      res.json({ status: gc["status"] });
+      return;
+    }
+
+    const authorizationExpiresAt: number = (gc["authorizationExpiresAt"] as number) ?? 0;
+    if (authorizationExpiresAt > 0 && Date.now() < authorizationExpiresAt) {
+      functions.logger.warn("expireGroupChallenge: authorization not yet expired", { groupId, authorizationExpiresAt, now: Date.now() });
+      res.status(412).json({ error: "not_expired", message: "Authorization window has not yet expired." });
+      return;
+    }
+
+    const participants = parseParticipants<Participant>(gc["participants"]);
+
+    const updatedParticipants = [...participants];
+    for (let i = 0; i < updatedParticipants.length; i++) {
+      const p = updatedParticipants[i];
+      if (!p.paymentIntentId) continue;
+      try {
+        const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+        if (pi.status === "requires_capture") {
+          await getStripe().paymentIntents.cancel(p.paymentIntentId);
+          functions.logger.info("expireGroupChallenge: PI cancelled", { groupId, userId: p.userId });
+        } else if (pi.status === "canceled") {
+          functions.logger.info("expireGroupChallenge: PI already cancelled (idempotent)", { groupId, userId: p.userId });
+        } else {
+          functions.logger.warn("expireGroupChallenge: unexpected PI status", { groupId, userId: p.userId, piStatus: pi.status });
+        }
+        updatedParticipants[i] = { ...p, status: "refunded" };
+      } catch (e) {
+        functions.logger.error("expireGroupChallenge: PI cancel failed", { groupId, userId: p.userId, error: e });
+      }
+    }
+
+    await docRef.update({ status: "cancelled", participants: updatedParticipants });
+    functions.logger.info("expireGroupChallenge: expired and cancelled", { groupId, participants: participants.length });
+    res.json({ status: "cancelled" });
+  } catch (e) { handleError("expireGroupChallenge", e, res); }
 });
 
 // ── completeGroupChallenge ─────────────────────────────────────────────────────

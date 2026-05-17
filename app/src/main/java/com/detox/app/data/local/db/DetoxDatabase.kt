@@ -18,7 +18,7 @@ import com.detox.app.data.local.db.entity.GroupChallengeEntity
         DailyLogEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -308,6 +308,16 @@ abstract class DetoxDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE challenges ADD COLUMN originalPaymentIntentId TEXT DEFAULT NULL")
                 database.execSQL("ALTER TABLE challenges ADD COLUMN refundAmountCents INTEGER DEFAULT NULL")
                 Timber.d("DB migration 21→22: added Redemption Challenge columns")
+            }
+        }
+
+        /** Adds 5-day authorization expiry field to group_challenges. */
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE group_challenges ADD COLUMN authorizationExpiresAt INTEGER NOT NULL DEFAULT 0"
+                )
+                Timber.d("DB migration 22→23: added authorizationExpiresAt to group_challenges")
             }
         }
 

@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.detox.app.data.local.db.dao.ChallengeDao
+import com.detox.app.data.local.db.dao.GroupChallengeDao
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
@@ -47,6 +48,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val firebaseAuthService: FirebaseAuthService,
     private val groupChallengeRepository: GroupChallengeRepository,
     private val challengeDao: ChallengeDao,
+    private val groupChallengeDao: GroupChallengeDao,
     private val firestoreService: FirestoreService,
     private val firestore: FirebaseFirestore,
 ) : CoroutineWorker(context, workerParams) {
@@ -460,6 +462,38 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     "DailyEvaluationWorker: ✓ '${challenge.appDisplayName}' done — " +
                             "exceeded=$limitExceeded, moneyLost=${moneyLostCents / 100f}€"
                 )
+            }
+
+            // ── Auto-cancel expired WAITING group challenges ───────────────────
+            val waitingGroups = groupChallengeDao.getByStatus(listOf("waiting"))
+            val userId = firebaseAuthService.currentUserId()
+            for (wg in waitingGroups) {
+                val expiresAt = wg.authorizationExpiresAt
+                if (expiresAt <= 0L) continue
+                if (now >= expiresAt) {
+                    Timber.d("DailyEvaluationWorker: group %s auth expired — calling expireGroupChallenge", wg.groupId)
+                    cloudFunctionsService.expireGroupChallenge(wg.groupId)
+                        .onSuccess {
+                            groupChallengeDao.updateStatus(wg.groupId, "cancelled")
+                            NotificationHelper.createChannels(applicationContext)
+                            NotificationHelper.sendGroupChallengeExpired(
+                                context = applicationContext,
+                                appName = wg.appDisplayName
+                            )
+                            Timber.d("DailyEvaluationWorker: group %s expired and cancelled", wg.groupId)
+                        }
+                        .onFailure { e ->
+                            Timber.e(e, "DailyEvaluationWorker: expireGroupChallenge failed for %s", wg.groupId)
+                        }
+                } else if ((expiresAt - now) <= DateUtils.MILLIS_PER_DAY && userId == wg.creatorUserId) {
+                    // Day 4 warning — notify creator only
+                    Timber.d("DailyEvaluationWorker: group %s expires in ≤1 day — sending warning to creator", wg.groupId)
+                    NotificationHelper.createChannels(applicationContext)
+                    NotificationHelper.sendGroupChallengeStartWarning(
+                        context = applicationContext,
+                        appName = wg.appDisplayName
+                    )
+                }
             }
 
             // ── Post daily summary notification ────────────────────────────────

@@ -605,6 +605,44 @@ object NotificationHelper {
         }
     }
 
+    fun sendGroupChallengeExpired(context: Context, appName: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + appName.hashCode() + 10
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_group_expired_title))
+            .setContentText(context.getString(R.string.notif_group_expired_body))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.notif_group_expired_body)))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group expired notification posted for $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group expired notification")
+        }
+    }
+
+    fun sendGroupChallengeStartWarning(context: Context, appName: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + appName.hashCode() + 11
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_group_start_warning_title))
+            .setContentText(context.getString(R.string.notif_group_start_warning_body))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.notif_group_start_warning_body)))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group start warning notification posted for $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group start warning notification")
+        }
+    }
+
     fun sendRedemptionAvailable(
         context: Context,
         appName: String,

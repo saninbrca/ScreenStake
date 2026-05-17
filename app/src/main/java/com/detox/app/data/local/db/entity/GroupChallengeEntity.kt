@@ -29,4 +29,6 @@ data class GroupChallengeEntity(
     @ColumnInfo(defaultValue = "[]") val participantsJson: String,
     /** Comma-separated blocked website domains. */
     @ColumnInfo(name = "blockedDomains", defaultValue = "NULL") val blockedDomains: String? = null,
+    /** Unix ms when the 5-day authorization window expires. 0 = not set (legacy). */
+    @ColumnInfo(defaultValue = "0") val authorizationExpiresAt: Long = 0L,
 )

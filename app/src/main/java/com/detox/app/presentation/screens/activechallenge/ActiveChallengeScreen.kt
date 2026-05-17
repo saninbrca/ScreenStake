@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -489,6 +490,9 @@ private fun ActiveChallengeContent(
             modifier = Modifier.fillMaxWidth()
         )
 
+        // ── Abrechnung (Hard Mode only, when challenge is over) ──────────────
+        AbrechnungSoloCard(challenge = challenge)
+
         // ── Challenge aufgeben (text only, no button background) ─────────────
         if (challenge.status == ChallengeStatus.ACTIVE) {
             Box(
@@ -506,6 +510,112 @@ private fun ActiveChallengeContent(
             }
         } else {
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+// ── Abrechnung card (Hard Mode, completed or failed) ─────────────────────────
+
+@Composable
+private fun AbrechnungSoloCard(
+    challenge: Challenge,
+    modifier: Modifier = Modifier
+) {
+    val isHardMode = challenge.mode == ChallengeMode.HARD
+    val isOver = challenge.status == ChallengeStatus.COMPLETED ||
+        challenge.status == ChallengeStatus.FAILED
+    if (!isHardMode || !isOver) return
+
+    val amountCents = challenge.amountCents ?: 0
+    if (amountCents <= 0) return
+
+    val isCompleted = challenge.status == ChallengeStatus.COMPLETED
+    val stakeRefund = (amountCents * 0.80).toInt()
+    val appFee = amountCents - stakeRefund
+
+    val formatCents: (Int) -> String = { cents ->
+        "€%,.2f".format(cents / 100.0)
+            .replace(",", "X").replace(".", ",").replace("X", ".")
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+    DetoxCard(modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.abrechnung_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(600),
+                color = TextSecondary,
+                letterSpacing = 0.5.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (isCompleted) {
+                // ── WIN ─────────────────────────────────────────────────────
+                SoloAbrechnungRow(
+                    label = stringResource(R.string.abrechnung_stake_back, formatCents(stakeRefund)),
+                    trailing = "✅"
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                SoloAbrechnungRow(
+                    label = stringResource(R.string.abrechnung_app_fee_20, formatCents(appFee)),
+                    trailing = null
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.abrechnung_total, formatCents(stakeRefund)),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.abrechnung_refunded),
+                    fontSize = 13.sp,
+                    color = AccentGreen
+                )
+            } else {
+                // ── FAIL ────────────────────────────────────────────────────
+                SoloAbrechnungRow(
+                    label = stringResource(R.string.abrechnung_stake_captured, formatCents(amountCents)),
+                    trailing = "❌"
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.abrechnung_not_passed),
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SoloAbrechnungRow(label: String, trailing: String?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = TextSecondary,
+            modifier = Modifier.weight(1f)
+        )
+        if (trailing != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = trailing, fontSize = 13.sp)
         }
     }
 }

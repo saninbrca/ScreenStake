@@ -25,8 +25,10 @@ import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.util.DateUtils
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -46,6 +48,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
     private val challengeDao: ChallengeDao,
     private val firestoreService: FirestoreService,
+    private val firestore: FirebaseFirestore,
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -614,8 +617,11 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         // Fetch updated group doc to get prize breakdown for notification
                         val updatedGroup = groupChallengeRepository.fetchAndCacheById(groupId).getOrNull()
                         val prizePerWinner = updatedGroup?.perWinnerBonus ?: 0
-                        val myParticipant = updatedGroup?.participants?.find { it.userId == userId }
-                        val hasPendingIban = myParticipant?.payoutStatus == "pending_payout"
+                        val payoutIban = runCatching {
+                            firestore.collection("users").document(userId).get().await()
+                                .getString("payoutIban")
+                        }.getOrNull()
+                        val hasPendingIban = payoutIban.isNullOrBlank()
                         NotificationHelper.sendGroupChallengePayoutReceived(
                             context          = applicationContext,
                             stakeRefundCents = challenge.amountCents ?: 0,

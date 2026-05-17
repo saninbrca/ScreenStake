@@ -13,6 +13,50 @@
 
 ---
 
+## [Unreleased] — May 2026
+
+### Fixed
+- **nobodyFailed Bug (Group Challenge):** Fixed payout logic —
+  when all participants win, 100% is refunded correctly
+  (App fee: €0.00) instead of incorrectly applying 80% refund
+- **Group Challenge Duration:** Audited startDate → endDate calculation —
+  challenge runs exactly X days from the moment creator taps Start.
+  Replaced inline 86400000L with MILLIS_PER_DAY constant in DateUtils
+
+### Added
+- **Payout UI — Expected Date:** Payout cards now show
+  "Erwartet bis: DD. MMM YYYY" (endDate + 5 business days, 
+  Saturday/Sunday skipped). Added DateUtils.addBusinessDays()
+- **Payout Notification:** DailyEvaluationWorker sends local
+  notification when challenge completes — 
+  "💸 Deine Auszahlung ist unterwegs — €X bis DD. MMM YYYY"
+- **Balance Card (ProfileScreen):** Shows pending prize amounts
+  with manual "Auszahlen" button (never automatic). IBAN prompt
+  only shown if no IBAN stored yet
+- **Settings → Auszahlungskonto:** IBAN + account holder name
+  now managed in Settings instead of directly in ProfileScreen
+- **Settings → Verlauf:** Verlauf Screen now accessible via
+  Settings under new "Aktivität" section
+- **Verlauf Screen — Filter Tabs:** "Alle / Gewonnen / Ausgeschieden /
+  Abgebrochen" — in-memory filtering, no new Firestore queries
+- **Detail Screen — Abrechnung Section:** Payout breakdown added
+  at the bottom of Group Challenge + Hard Mode Detail Screens
+  (completed challenges only, never Soft Mode)
+
+### Changed
+- **ProfileScreen:** Verlauf section removed completely —
+  only Avatar, Stats, and Balance Card remain
+- **ProfileScreen:** Standalone "Auszahlungen" section removed —
+  payout details now live in Detail Screen only
+- **IBAN Flow:** IBAN no longer shown permanently in ProfileScreen —
+  managed exclusively in Settings → Auszahlungskonto
+- **Payout:** Never automatic — user must actively confirm "Auszahlen".
+  Added Firestore status "requested"
+- **payoutRequests Collection:** New entry created on payout request
+  for manual admin processing
+
+---
+
 ## 2026-05-17
 
 ### FIXED — Group Challenge endDate never written on challenge start (critical)

@@ -72,7 +72,13 @@ class HistoryViewModel @Inject constructor(
             }
         }
 
-        _historyItems.value = (soloItems + groupItems).sortedByDescending { it.sortDate }
+        // Sort: newest first; within same day, Group before Solo
+        val sorted = (soloItems + groupItems).sortedWith(
+            compareByDescending<HistoryItem> { it.sortDate / 86_400_000L }
+                .thenBy { if (it is HistoryItem.Solo) 1 else 0 }
+                .thenByDescending { it.sortDate }
+        )
+        _historyItems.value = sorted
         Timber.d("HistoryViewModel: loaded ${_historyItems.value.size} history items")
     }
 

@@ -421,6 +421,11 @@ private fun GroupDetailContent(
             }
         }
 
+        // ── Abrechnung (payout breakdown) ─────────────────────────────────────
+        item {
+            AbrechnungGroupCard(gc = gc, currentUserId = currentUserId)
+        }
+
         // ── Challenge aufgeben (text only, #FF3B30) ────────────────────────────
         if (gc.status == GroupChallengeStatus.ACTIVE && !isCurrentUserFailed) {
             item {
@@ -1080,6 +1085,153 @@ private fun PayoutResultCard(
                     Text("Bonus (€${bonus / 100}) wird auf dein Bankkonto überwiesen")
                 }
             }
+        }
+    }
+}
+
+// ── Abrechnung card ───────────────────────────────────────────────────────────
+
+@Composable
+private fun AbrechnungGroupCard(
+    gc: GroupChallenge,
+    currentUserId: String?,
+) {
+    val myParticipant = gc.participants.find { it.userId == currentUserId }
+    val myStatus = myParticipant?.status
+    val showAbrechnung = gc.status == GroupChallengeStatus.COMPLETED ||
+        (gc.status == GroupChallengeStatus.ACTIVE && myStatus == ParticipantStatus.FAILED)
+    if (!showAbrechnung || myParticipant == null) return
+
+    val buyInCents = myParticipant.amountCents.takeIf { it > 0 } ?: gc.buyInCents
+    val nobodyFailed = gc.perWinnerBonus == 0
+    val prizePerWinner = gc.perWinnerBonus
+    val payoutStatus = myParticipant.payoutStatus ?: "captured"
+    val isWinner = myStatus == ParticipantStatus.SUCCESS
+
+    val formatCents: (Int) -> String = { cents ->
+        "€%,.2f".format(cents / 100.0)
+            .replace(",", "X").replace(".", ",").replace("X", ".")
+    }
+
+    val stakeRefund = if (nobodyFailed) buyInCents else (buyInCents * 0.80).toInt()
+    val appFee = buyInCents - stakeRefund
+
+    GroupDetoxCard {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.abrechnung_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(600),
+                color = TextSecondary,
+                letterSpacing = 0.5.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (isWinner) {
+                // ── WIN ─────────────────────────────────────────────────────
+                AbrechnungRow(
+                    label = stringResource(R.string.abrechnung_stake_back, formatCents(stakeRefund)),
+                    trailing = "✅"
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                if (nobodyFailed) {
+                    AbrechnungRow(
+                        label = stringResource(R.string.abrechnung_app_fee_zero),
+                        trailing = null
+                    )
+                } else {
+                    AbrechnungRow(
+                        label = stringResource(R.string.abrechnung_app_fee_20, formatCents(appFee)),
+                        trailing = null
+                    )
+                }
+
+                if (!nobodyFailed && prizePerWinner > 0) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (payoutStatus == "pending_payout") {
+                        AbrechnungRow(
+                            label = stringResource(
+                                R.string.abrechnung_prize_pending,
+                                formatCents(prizePerWinner)
+                            ),
+                            trailing = null
+                        )
+                    } else {
+                        AbrechnungRow(
+                            label = stringResource(
+                                R.string.abrechnung_prize_transferred,
+                                formatCents(prizePerWinner)
+                            ),
+                            trailing = "💰"
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val total = stakeRefund + (if (!nobodyFailed) prizePerWinner else 0)
+                Text(
+                    text = stringResource(R.string.abrechnung_total, formatCents(total)),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.abrechnung_refunded),
+                    fontSize = 13.sp,
+                    color = AccentGreen
+                )
+                if (!nobodyFailed && prizePerWinner > 0 && payoutStatus == "pending_payout") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.abrechnung_prize_pending_note),
+                        fontSize = 13.sp,
+                        color = Color(0xFFFF9500)
+                    )
+                }
+            } else {
+                // ── FAIL ────────────────────────────────────────────────────
+                AbrechnungRow(
+                    label = stringResource(R.string.abrechnung_stake_captured, formatCents(buyInCents)),
+                    trailing = "❌"
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.abrechnung_not_passed),
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AbrechnungRow(label: String, trailing: String?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = TextSecondary,
+            modifier = Modifier.weight(1f)
+        )
+        if (trailing != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = trailing, fontSize = 13.sp)
         }
     }
 }

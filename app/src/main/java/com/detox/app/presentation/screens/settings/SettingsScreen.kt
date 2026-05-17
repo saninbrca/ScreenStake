@@ -37,6 +37,10 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,7 +50,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -67,16 +73,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
+import com.detox.app.presentation.screens.profile.IbanSaveState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,12 +94,16 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToLogin: () -> Unit,
+    onNavigateToHistory: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val ibanData by viewModel.ibanData.collectAsStateWithLifecycle()
+    val ibanSaveState by viewModel.ibanSaveState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var showIbanSheet by remember { mutableStateOf(false) }
 
     // Refresh permission status whenever the screen is resumed
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -109,6 +123,90 @@ fun SettingsScreen(
             when (event) {
                 is SettingsEvent.ShowSnackbar -> snackbarHostState.showSnackbar(event.message)
                 is SettingsEvent.NavigateToLogin -> onNavigateToLogin()
+            }
+        }
+    }
+
+    LaunchedEffect(ibanSaveState) {
+        when (val s = ibanSaveState) {
+            is IbanSaveState.Success -> {
+                showIbanSheet = false
+                snackbarHostState.showSnackbar(context.getString(R.string.settings_payout_iban_saved))
+                viewModel.clearIbanSaveState()
+            }
+            is IbanSaveState.Error -> {
+                snackbarHostState.showSnackbar(s.message)
+                viewModel.clearIbanSaveState()
+            }
+            else -> Unit
+        }
+    }
+
+    if (showIbanSheet) {
+        var sheetIban by remember { mutableStateOf(ibanData?.iban ?: "") }
+        var sheetName by remember { mutableStateOf(ibanData?.name ?: "") }
+        val ibanValid = sheetIban.replace(" ", "").uppercase().matches(Regex("AT[0-9]{18}"))
+        ModalBottomSheet(onDismissRequest = { showIbanSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_payout_iban_sheet_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                OutlinedTextField(
+                    value = sheetName,
+                    onValueChange = { sheetName = it },
+                    label = { Text(stringResource(R.string.payout_iban_holder_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = sheetIban,
+                    onValueChange = { sheetIban = it },
+                    label = { Text(stringResource(R.string.payout_iban_field_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = sheetIban.isNotBlank() && !ibanValid,
+                    placeholder = { Text("AT61 1904 3002 3457 3201") }
+                )
+                Button(
+                    onClick = {
+                        viewModel.saveIban(
+                            iban = sheetIban.replace(" ", "").uppercase(),
+                            name = sheetName
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF00C853),
+                        contentColor = Color.White
+                    ),
+                    enabled = ibanValid && sheetName.isNotBlank() &&
+                            ibanSaveState !is IbanSaveState.Loading
+                ) {
+                    if (ibanSaveState is IbanSaveState.Loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.settings_payout_iban_save_button),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
     }
@@ -244,7 +342,71 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // ── 2. APPEARANCE ──────────────────────────────────────────────────
+            // ── 2. AKTIVITÄT ───────────────────────────────────────────────────
+            SectionHeader(stringResource(R.string.settings_section_activity))
+
+            SettingsRow(
+                icon = Icons.Filled.AccessTime,
+                title = stringResource(R.string.settings_history_row_title),
+                subtitle = null,
+                onClick = onNavigateToHistory,
+                showChevron = true
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // ── 3. AUSZAHLUNGSKONTO ────────────────────────────────────────────
+            SectionHeader(stringResource(R.string.settings_section_payout_account))
+
+            if (ibanData == null) {
+                SettingsRow(
+                    icon = Icons.Filled.AccountBalance,
+                    title = stringResource(R.string.settings_payout_add_iban),
+                    subtitle = stringResource(R.string.settings_payout_add_iban_subtitle),
+                    onClick = { showIbanSheet = true }
+                )
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showIbanSheet = true },
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.AccountBalance,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.payout_balance_iban_stored,
+                                ibanData!!.iban.takeLast(4)
+                            ),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_payout_edit_label),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF00C853)
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // ── 3. APPEARANCE ──────────────────────────────────────────────────
             SectionHeader(stringResource(R.string.settings_section_appearance))
 
             SwitchRow(
@@ -510,7 +672,8 @@ private fun SettingsRow(
     title: String,
     subtitle: String?,
     onClick: (() -> Unit)?,
-    destructive: Boolean = false
+    destructive: Boolean = false,
+    showChevron: Boolean = false
 ) {
     val titleColor = if (destructive) MaterialTheme.colorScheme.error
     else MaterialTheme.colorScheme.onSurface
@@ -549,6 +712,14 @@ private fun SettingsRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            if (showChevron) {
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }

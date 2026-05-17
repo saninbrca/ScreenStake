@@ -580,6 +580,8 @@
 
     <!-- Settings — Account section -->
     <string name="settings_section_account">Account</string>
+    <string name="settings_section_activity">Aktivität</string>
+    <string name="settings_history_row_title">Verlauf</string>
     <string name="settings_change_password">Change Password</string>
     <string name="settings_change_password_subtitle">Send a password reset link to your email</string>
     <string name="settings_logout">Log Out</string>
@@ -949,5 +951,71 @@
     <!-- Overlay redesign v2 — time window texts -->
     <string name="overlay_v2_time_window_status">Noch nicht verfügbar</string>
     <string name="overlay_v2_time_window_sub">Dein Zeitfenster beginnt um %1$s</string>
+
+    <!-- Guthaben card (ProfileScreen) -->
+    <string name="payout_balance_title">💰 Guthaben</string>
+    <string name="payout_balance_source">Aus %1$d Group Challenge(s)</string>
+    <string name="payout_balance_iban_missing">IBAN hinterlegen</string>
+    <string name="payout_balance_iban_stored">Konto: •••• %1$s</string>
+    <string name="payout_balance_request_button">Auszahlen</string>
+    <string name="payout_balance_confirm_title">%1$s auf dein Konto überweisen?</string>
+    <string name="payout_balance_confirm_iban">IBAN: AT•••• %1$s</string>
+    <string name="payout_balance_confirm_yes">Jetzt auszahlen</string>
+    <string name="payout_balance_success">✅ Auszahlung angefordert — wird in 3-5 Werktagen überwiesen</string>
+    <string name="payout_request_error">Fehler beim Anfordern der Auszahlung</string>
+
+    <!-- Settings — Auszahlungskonto section -->
+    <string name="settings_section_payout_account">Auszahlungskonto</string>
+    <string name="settings_payout_add_iban">IBAN hinterlegen</string>
+    <string name="settings_payout_add_iban_subtitle">Konto für Gewinnauszahlungen</string>
+    <string name="settings_payout_edit_label">Bearbeiten</string>
+
+    <!-- Payout available notification -->
+    <string name="notif_payout_available_title">🎉 Du hast %1$s gewonnen!</string>
+    <string name="notif_payout_available_no_iban_body">Hinterlege deine IBAN in den Einstellungen um dein Geld anzufordern.</string>
+    <string name="notif_payout_available_has_iban_body">Dein Gewinnanteil ist bereit. Öffne die App um die Auszahlung anzufordern.</string>
+
+    <!-- Settings — IBAN bottom sheet -->
+    <string name="settings_payout_iban_sheet_title">IBAN hinterlegen</string>
+    <string name="settings_payout_iban_save_button">Speichern</string>
+    <string name="settings_payout_iban_saved">IBAN gespeichert ✅</string>
+
+    <!-- Verlauf Screen — redesigned filter tabs -->
+    <string name="verlauf_filter_all">Alle</string>
+    <string name="verlauf_filter_won">Gewonnen</string>
+    <string name="verlauf_filter_eliminated">Ausgeschieden</string>
+    <string name="verlauf_filter_abandoned">Abgebrochen</string>
+
+    <!-- Verlauf Screen — status badges -->
+    <string name="verlauf_badge_won">✓ Gewonnen</string>
+    <string name="verlauf_badge_eliminated">✗ Ausgeschieden</string>
+    <string name="verlauf_badge_abandoned">Abgebrochen</string>
+
+    <!-- Verlauf Screen — card subrow labels -->
+    <string name="verlauf_subrow_group">👥 %1$d von %2$d Spielern gewonnen · %3$s</string>
+    <string name="verlauf_subrow_soft">SOFT MODE · %1$s</string>
+    <string name="verlauf_subrow_hard">HARD MODE · %1$s</string>
+    <string name="verlauf_subrow_comeback">COMEBACK · %1$s</string>
+
+    <!-- Verlauf Screen — payout detail section -->
+    <string name="verlauf_payout_stake_captured">Einsatz eingezogen: %1$s</string>
+    <string name="verlauf_payout_not_passed">Challenge nicht bestanden</string>
+    <string name="verlauf_payout_prize_transferred">Gewinnanteil: +%1$s</string>
+    <string name="verlauf_payout_prize_pending_label">Gewinnanteil: %1$s ⏳</string>
+    <string name="verlauf_payout_prize_pending_note">Gewinnanteil ausstehend — App öffnen</string>
+    <string name="verlauf_payout_app_fee_zero">App-Gebühr: €0,00</string>
+
+    <!-- Abrechnung section (Detail Screens) -->
+    <string name="abrechnung_title">💰 ABRECHNUNG</string>
+    <string name="abrechnung_stake_back">Eigener Einsatz: %1$s zurück</string>
+    <string name="abrechnung_app_fee_20">App-Gebühr (20%%): -%1$s</string>
+    <string name="abrechnung_app_fee_zero">App-Gebühr: €0,00</string>
+    <string name="abrechnung_prize_transferred">Gewinnanteil: +%1$s</string>
+    <string name="abrechnung_prize_pending">Gewinnanteil: %1$s ⏳</string>
+    <string name="abrechnung_prize_pending_note">Gewinnanteil ausstehend — Auszahlung in App anfordern</string>
+    <string name="abrechnung_total">Gesamt: %1$s</string>
+    <string name="abrechnung_refunded">Auf deine Karte zurückgebucht 💚</string>
+    <string name="abrechnung_stake_captured">Einsatz eingezogen: %1$s</string>
+    <string name="abrechnung_not_passed">Challenge nicht bestanden</string>
 
 </resources>

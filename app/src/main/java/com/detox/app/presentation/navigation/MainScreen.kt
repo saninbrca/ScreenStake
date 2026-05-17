@@ -235,9 +235,6 @@ fun MainScreen(
                     },
                     onSoloChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
-                    },
-                    onShowAllHistory = {
-                        navController.navigate("history")
                     }
                 )
             }
@@ -283,7 +280,8 @@ fun MainScreen(
             composable("settings") {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
-                    onNavigateToLogin = onLoggedOut
+                    onNavigateToLogin = onLoggedOut,
+                    onNavigateToHistory = { navController.navigate("history") }
                 )
             }
 

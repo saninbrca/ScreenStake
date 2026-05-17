@@ -16,7 +16,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,7 +27,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -46,7 +44,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -77,7 +74,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.BuildConfig
 import com.detox.app.R
-import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.service.TrackedAppEventBus
 import com.detox.app.util.DateUtils
 import kotlinx.coroutines.launch
@@ -93,27 +89,19 @@ fun ProfileScreen(
     onNavigateToChallenges: () -> Unit = {},
     onGroupChallengeClick: (String) -> Unit = {},
     onSoloChallengeClick: (String) -> Unit = {},
-    onShowAllHistory: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val recentChallenges by viewModel.recentChallenges.collectAsStateWithLifecycle()
-    val historyItems by viewModel.historyItems.collectAsStateWithLifecycle()
     val payoutState by viewModel.payoutState.collectAsStateWithLifecycle()
     val pendingPayoutCents by viewModel.pendingPayoutCents.collectAsStateWithLifecycle()
     val payoutClaimState by viewModel.payoutClaimState.collectAsStateWithLifecycle()
     val ibanData by viewModel.ibanData.collectAsStateWithLifecycle()
-    val ibanSaveState by viewModel.ibanSaveState.collectAsStateWithLifecycle()
-    val ibanSetupState by viewModel.ibanSetupState.collectAsStateWithLifecycle()
-    val completedPayouts by viewModel.completedPayouts.collectAsStateWithLifecycle()
-    var ibanEditing by remember { mutableStateOf(false) }
-    var ibanInput by remember { mutableStateOf("") }
-    var ibanNameInput by remember { mutableStateOf("") }
-    var showIbanSetupSheet by remember { mutableStateOf(false) }
-    var ibanSetupInput by remember { mutableStateOf("") }
-    var ibanSetupNameInput by remember { mutableStateOf("") }
+    val pendingBalance by viewModel.pendingBalance.collectAsStateWithLifecycle()
+    val payoutRequestState by viewModel.payoutRequestState.collectAsStateWithLifecycle()
+    var showPayoutConfirmDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -123,38 +111,15 @@ fun ProfileScreen(
         }
     }
 
-    LaunchedEffect(ibanData) {
-        if (ibanData != null && !ibanEditing) {
-            ibanInput = ibanData!!.iban
-            ibanNameInput = ibanData!!.name
-        }
-    }
-
-    LaunchedEffect(ibanSaveState) {
-        when (ibanSaveState) {
-            is IbanSaveState.Success -> {
-                ibanEditing = false
-                snackbarHostState.showSnackbar(context.getString(R.string.profile_iban_saved))
-                viewModel.clearIbanSaveState()
+    LaunchedEffect(payoutRequestState) {
+        when (val s = payoutRequestState) {
+            is PayoutRequestState.Success -> {
+                snackbarHostState.showSnackbar(context.getString(R.string.payout_balance_success))
+                viewModel.clearPayoutRequestState()
             }
-            is IbanSaveState.Error -> {
-                snackbarHostState.showSnackbar((ibanSaveState as IbanSaveState.Error).message)
-                viewModel.clearIbanSaveState()
-            }
-            else -> Unit
-        }
-    }
-
-    LaunchedEffect(ibanSetupState) {
-        when (val s = ibanSetupState) {
-            is IbanSetupState.Success -> {
-                showIbanSetupSheet = false
-                snackbarHostState.showSnackbar(context.getString(R.string.payout_iban_saved_toast))
-                viewModel.clearIbanSetupState()
-            }
-            is IbanSetupState.Error -> {
+            is PayoutRequestState.Error -> {
                 snackbarHostState.showSnackbar(s.message)
-                viewModel.clearIbanSetupState()
+                viewModel.clearPayoutRequestState()
             }
             else -> Unit
         }
@@ -197,6 +162,40 @@ fun ProfileScreen(
                 }
             }
         )
+    }
+
+    if (showPayoutConfirmDialog) {
+        val balance = pendingBalance
+        val iban = ibanData?.iban
+        if (balance != null && iban != null) {
+            val amountFormatted = "€%s".format(
+                "%.2f".format(balance.totalCents / 100.0).replace(".", ",")
+            )
+            val ibanLast4 = iban.takeLast(4)
+            AlertDialog(
+                onDismissRequest = { showPayoutConfirmDialog = false },
+                title = { Text(stringResource(R.string.payout_balance_confirm_title, amountFormatted)) },
+                text = { Text(stringResource(R.string.payout_balance_confirm_iban, ibanLast4)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showPayoutConfirmDialog = false
+                            viewModel.requestPayout()
+                        }
+                    ) {
+                        Text(
+                            stringResource(R.string.payout_balance_confirm_yes),
+                            color = Color(0xFF00C853)
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPayoutConfirmDialog = false }) {
+                        Text(stringResource(R.string.redemption_confirm_cancel))
+                    }
+                }
+            )
+        }
     }
 
     Scaffold(
@@ -326,220 +325,16 @@ fun ProfileScreen(
                 )
             }
 
-            // ── Verlauf (History) ─────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.profile_history_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground
+            // ── 💰 Guthaben card ──────────────────────────────────────────────
+            pendingBalance?.let { balance ->
+                Spacer(modifier = Modifier.height(16.dp))
+                GuthabenCard(
+                    balance = balance,
+                    ibanData = ibanData,
+                    onAddIban = onOpenSettings,
+                    onRequestPayout = { showPayoutConfirmDialog = true },
+                    payoutRequestState = payoutRequestState
                 )
-                if (historyItems.isNotEmpty()) {
-                    TextButton(
-                        onClick = onShowAllHistory,
-                        modifier = Modifier.wrapContentWidth()
-                    ) {
-                        Text(
-                            text = stringResource(R.string.history_show_all),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (historyItems.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.profile_no_recent_activity),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                )
-            } else {
-                historyItems.forEach { item ->
-                    when (item) {
-                        is HistoryItem.Solo -> {
-                            SoloHistoryRow(
-                                challenge = item.entity,
-                                onClick = { onSoloChallengeClick(item.entity.id) }
-                            )
-                        }
-                        is HistoryItem.Group -> {
-                            GroupHistoryRow(
-                                item = item,
-                                onClick = { onGroupChallengeClick(item.entity.groupId) }
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
-
-            // ── 💰 Auszahlung (IBAN) ─────────────────────────────────────────
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = stringResource(R.string.profile_iban_section_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (ibanData != null && !ibanEditing) {
-                        Text(
-                            text = "IBAN: ${ibanData!!.iban}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.profile_iban_holder_label, ibanData!!.name),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedButton(
-                            onClick = {
-                                ibanInput = ibanData!!.iban
-                                ibanNameInput = ibanData!!.name
-                                ibanEditing = true
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                        ) {
-                            Text(stringResource(R.string.profile_iban_edit_button))
-                        }
-                    } else {
-                        OutlinedTextField(
-                            value = ibanInput,
-                            onValueChange = { ibanInput = it },
-                            label = { Text("IBAN") },
-                            placeholder = { Text("AT61 1904 3002 3457 3201") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = ibanNameInput,
-                            onValueChange = { ibanNameInput = it },
-                            label = { Text(stringResource(R.string.profile_iban_holder_field)) },
-                            placeholder = { Text("Max Mustermann") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        Button(
-                            onClick = { viewModel.saveIban(ibanInput, ibanNameInput) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = ibanInput.isNotBlank() && ibanNameInput.isNotBlank()
-                                    && ibanSaveState !is IbanSaveState.Loading
-                        ) {
-                            if (ibanSaveState is IbanSaveState.Loading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text(stringResource(R.string.profile_iban_save_button))
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ── 💰 Auszahlungen ───────────────────────────────────────────────
-            if (completedPayouts.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = stringResource(R.string.payout_section_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                completedPayouts.forEach { payout ->
-                    PayoutChallengeCard(
-                        payout = payout,
-                        onIbanSetupClick = { showIbanSetupSheet = true }
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
-
-            // IBAN Setup BottomSheet
-            if (showIbanSetupSheet) {
-                androidx.compose.material3.ModalBottomSheet(
-                    onDismissRequest = { showIbanSetupSheet = false }
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                            .padding(bottom = 32.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.payout_iban_bottom_sheet_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        OutlinedTextField(
-                            value = ibanSetupNameInput,
-                            onValueChange = { ibanSetupNameInput = it },
-                            label = { Text(stringResource(R.string.payout_iban_holder_hint)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        val ibanValid = ibanSetupInput.replace(" ", "").let {
-                            it.uppercase().matches(Regex("AT[0-9]{18}"))
-                        }
-                        OutlinedTextField(
-                            value = ibanSetupInput,
-                            onValueChange = { ibanSetupInput = it },
-                            label = { Text(stringResource(R.string.payout_iban_field_hint)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            isError = ibanSetupInput.isNotBlank() && !ibanValid
-                        )
-                        Button(
-                            onClick = {
-                                viewModel.setupPayoutAccount(
-                                    iban = ibanSetupInput.replace(" ", "").uppercase(),
-                                    accountHolderName = ibanSetupNameInput
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = ibanValid && ibanSetupNameInput.isNotBlank() &&
-                                    ibanSetupState !is IbanSetupState.Loading
-                        ) {
-                            if (ibanSetupState is IbanSetupState.Loading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text(stringResource(R.string.payout_iban_save_cta))
-                            }
-                        }
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.weight(1f))
@@ -582,6 +377,102 @@ fun ProfileScreen(
 }
 
 @Composable
+internal fun GuthabenCard(
+    balance: PendingBalanceState,
+    ibanData: IbanData?,
+    onAddIban: () -> Unit,
+    onRequestPayout: () -> Unit,
+    payoutRequestState: PayoutRequestState,
+    modifier: Modifier = Modifier
+) {
+    val amountFormatted = "€%s".format(
+        "%.2f".format(balance.totalCents / 100.0).replace(".", ",")
+    )
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(0.5.dp, Color(0x0F000000))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.payout_balance_title),
+                fontSize = 17.sp,
+                fontWeight = FontWeight(600),
+                color = Color.Black
+            )
+            Text(
+                text = amountFormatted,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF00C853)
+            )
+            Text(
+                text = stringResource(R.string.payout_balance_source, balance.sourceCount),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF8E8E93)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            if (ibanData == null) {
+                OutlinedButton(
+                    onClick = onAddIban,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.5.dp, Color(0xFFE0E0E5)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00C853))
+                ) {
+                    Text(
+                        text = stringResource(R.string.payout_balance_iban_missing),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.payout_balance_iban_stored, ibanData.iban.takeLast(4)),
+                    fontSize = 14.sp,
+                    color = Color(0xFF8E8E93)
+                )
+                Button(
+                    onClick = onRequestPayout,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF00C853),
+                        contentColor = Color.White
+                    ),
+                    enabled = payoutRequestState !is PayoutRequestState.Loading
+                ) {
+                    if (payoutRequestState is PayoutRequestState.Loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.payout_balance_request_button),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun StatCard(value: String, label: String, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
@@ -609,185 +500,60 @@ internal fun StatCard(value: String, label: String, modifier: Modifier = Modifie
 }
 
 @Composable
-internal fun SoloHistoryRow(
-    challenge: ChallengeEntity,
-    onClick: () -> Unit = {},
-    onStartRedemption: (() -> Unit)? = null,
+internal fun SimpleHistoryRow(
+    icon: String,
+    name: String,
+    statusLabel: String,
+    statusBgColor: Color,
+    statusTextColor: Color,
+    dateStr: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val isCompleted = challenge.status == "completed"
-    val resultLabel = if (isCompleted) stringResource(R.string.history_result_success)
-    else stringResource(R.string.history_result_failed)
-    val dateStr = SimpleDateFormat("d. MMM yyyy", Locale.getDefault()).format(Date(challenge.endDate))
-    val startDate = if (challenge.startDate > 0) challenge.startDate else challenge.createdAt
-    val durationDays = ((challenge.endDate - startDate) / 86_400_000).coerceAtLeast(1)
-
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = if (challenge.isRedemption != 0) "🔥" else "📱", style = MaterialTheme.typography.bodyLarge)
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 12.dp)
-                ) {
-                    Text(
-                        text = challenge.appDisplayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = if (challenge.isRedemption != 0) "COMEBACK" else challenge.mode.uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (challenge.isRedemption != 0) Color(0xFFFF6B35) else MaterialTheme.colorScheme.primary
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(text = resultLabel, style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        text = dateStr,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = stringResource(R.string.history_duration_days, durationDays),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            if (onStartRedemption != null) {
-                val refundEuros = (challenge.redemptionRefundAmount ?: 0) / 100
-                val redemptionDays = challenge.redemptionDays ?: 0
-                val now = System.currentTimeMillis()
-                val daysLeft = challenge.redemptionDeadline
-                    ?.let { ((it - now) / 86_400_000L).coerceAtLeast(0) } ?: 0L
-
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "🔥 ${stringResource(R.string.redemption_history_title)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = androidx.compose.ui.graphics.Color(0xFFE65100)
-                            )
-                            Text(
-                                text = stringResource(R.string.redemption_history_body, refundEuros),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = stringResource(R.string.redemption_history_details, redemptionDays),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = stringResource(R.string.redemption_history_deadline, daysLeft),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(
-                            onClick = onStartRedemption,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFFF6B35)
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.redemption_history_cta),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun GroupHistoryRow(item: HistoryItem.Group, onClick: () -> Unit) {
-    val entity = item.entity
-    val resultLabel = when (item.myResult) {
-        "won" -> stringResource(R.string.history_result_won)
-        "eliminated" -> stringResource(R.string.history_result_eliminated)
-        "cancelled" -> "⚠️ Abgebrochen"
-        else -> stringResource(R.string.history_result_running)
-    }
-    val dateStr = SimpleDateFormat("d. MMM yyyy", Locale.getDefault()).format(Date(entity.endDate))
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(0.5.dp, Color(0x0F000000))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(text = "👥", style = MaterialTheme.typography.bodyLarge)
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 12.dp)
-            ) {
+            Text(text = icon, fontSize = 20.sp)
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = entity.appDisplayName,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = name,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
-                if (item.totalCount > 0) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Box(
+                    modifier = Modifier
+                        .background(statusBgColor, androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
                     Text(
-                        text = stringResource(
-                            R.string.history_players_won,
-                            item.successCount,
-                            item.totalCount
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = statusLabel,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = statusTextColor
                     )
                 }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(text = resultLabel, style = MaterialTheme.typography.bodySmall)
-                Text(
-                    text = dateStr,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = dateStr,
+                fontSize = 12.sp,
+                color = Color(0xFF8E8E93)
+            )
         }
     }
 }

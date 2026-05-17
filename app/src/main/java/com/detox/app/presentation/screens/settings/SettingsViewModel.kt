@@ -19,7 +19,11 @@ import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.presentation.screens.profile.IbanData
+import com.detox.app.presentation.screens.profile.IbanSaveState
 import com.detox.app.service.DailyReminderWorker
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.Calendar
@@ -73,6 +78,8 @@ class SettingsViewModel @Inject constructor(
     private val firestoreService: FirestoreService,
     private val challengeRepository: ChallengeRepository,
     private val database: DetoxDatabase,
+    private val firebaseAuth: FirebaseAuth,
+    private val firestore: FirebaseFirestore,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -84,6 +91,12 @@ class SettingsViewModel @Inject constructor(
 
     private val _events = Channel<SettingsEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
+
+    private val _ibanData = MutableStateFlow<IbanData?>(null)
+    val ibanData: StateFlow<IbanData?> = _ibanData.asStateFlow()
+
+    private val _ibanSaveState = MutableStateFlow<IbanSaveState>(IbanSaveState.Idle)
+    val ibanSaveState: StateFlow<IbanSaveState> = _ibanSaveState.asStateFlow()
 
     init {
         val currentUser = firebaseAuthService.currentUser()
@@ -100,7 +113,43 @@ class SettingsViewModel @Inject constructor(
             )
         }
         refreshPermissions()
+        viewModelScope.launch { fetchIban() }
     }
+
+    // ── IBAN / Payout Account ──────────────────────────────────────────────────
+
+    private suspend fun fetchIban() {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        runCatching {
+            firestore.collection("users").document(uid).get().await()
+        }.onSuccess { doc ->
+            val iban = doc.getString("payoutIban")?.takeIf { it.isNotBlank() } ?: return@onSuccess
+            val name = doc.getString("payoutName") ?: ""
+            _ibanData.value = IbanData(iban, name)
+        }
+    }
+
+    fun saveIban(iban: String, name: String) {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        if (_ibanSaveState.value is IbanSaveState.Loading) return
+        _ibanSaveState.value = IbanSaveState.Loading
+        viewModelScope.launch {
+            runCatching {
+                firestore.collection("users").document(uid)
+                    .set(
+                        mapOf("payoutIban" to iban.trim(), "payoutName" to name.trim()),
+                        com.google.firebase.firestore.SetOptions.merge()
+                    ).await()
+            }.onSuccess {
+                _ibanData.value = IbanData(iban.trim(), name.trim())
+                _ibanSaveState.value = IbanSaveState.Success
+            }.onFailure { e ->
+                _ibanSaveState.value = IbanSaveState.Error(e.message ?: "Fehler beim Speichern")
+            }
+        }
+    }
+
+    fun clearIbanSaveState() { _ibanSaveState.value = IbanSaveState.Idle }
 
     // ── Permissions ────────────────────────────────────────────────────────────
 

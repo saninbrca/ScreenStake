@@ -104,6 +104,21 @@ data class PayoutChallengeInfo(
     val endDateMs: Long = 0L
 )
 
+data class PendingBalanceInfo(val groupId: String, val amountCents: Int)
+
+data class PendingBalanceState(
+    val totalCents: Int,
+    val sourceCount: Int,
+    val groups: List<PendingBalanceInfo>
+)
+
+sealed interface PayoutRequestState {
+    object Idle : PayoutRequestState
+    object Loading : PayoutRequestState
+    object Success : PayoutRequestState
+    data class Error(val message: String) : PayoutRequestState
+}
+
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
@@ -152,6 +167,12 @@ class ProfileViewModel @Inject constructor(
     private val _completedPayouts = MutableStateFlow<List<PayoutChallengeInfo>>(emptyList())
     val completedPayouts: StateFlow<List<PayoutChallengeInfo>> = _completedPayouts.asStateFlow()
 
+    private val _pendingBalance = MutableStateFlow<PendingBalanceState?>(null)
+    val pendingBalance: StateFlow<PendingBalanceState?> = _pendingBalance.asStateFlow()
+
+    private val _payoutRequestState = MutableStateFlow<PayoutRequestState>(PayoutRequestState.Idle)
+    val payoutRequestState: StateFlow<PayoutRequestState> = _payoutRequestState.asStateFlow()
+
     val activeChallenges: StateFlow<List<ChallengeEntity>> =
         database.challengeDao().getActiveChallenges()
             .map { it.take(2) }
@@ -174,6 +195,7 @@ class ProfileViewModel @Inject constructor(
         }
         viewModelScope.launch { refreshPayoutState() }
         viewModelScope.launch { fetchPendingPayouts() }
+        viewModelScope.launch { fetchPendingBalance() }
         viewModelScope.launch { fetchIban() }
         viewModelScope.launch { fetchCompletedPayouts() }
     }
@@ -211,6 +233,68 @@ class ProfileViewModel @Inject constructor(
 
     fun clearIbanSaveState() { _ibanSaveState.value = IbanSaveState.Idle }
 
+    private suspend fun fetchPendingBalance() {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        runCatching {
+            val snap = firestore.collection("users").document(uid)
+                .collection("pendingPayouts")
+                .whereIn("status", listOf("pending_account_setup", "ready_to_payout"))
+                .get().await()
+            val groups = snap.documents.map { doc ->
+                PendingBalanceInfo(
+                    groupId = doc.id,
+                    amountCents = (doc.getLong("amount") ?: 0L).toInt()
+                )
+            }
+            PendingBalanceState(groups.sumOf { it.amountCents }, groups.size, groups)
+        }.onSuccess { state ->
+            _pendingBalance.value = if (state.totalCents > 0) state else null
+        }.onFailure { e ->
+            Timber.e(e, "fetchPendingBalance failed")
+        }
+    }
+
+    fun requestPayout() {
+        val uid = firebaseAuth.currentUser?.uid ?: return
+        val balance = _pendingBalance.value ?: return
+        val ibanInfo = _ibanData.value ?: return
+        if (_payoutRequestState.value is PayoutRequestState.Loading) return
+        _payoutRequestState.value = PayoutRequestState.Loading
+        viewModelScope.launch {
+            runCatching {
+                val batch = firestore.batch()
+                balance.groups.forEach { group ->
+                    val pendingRef = firestore.collection("users").document(uid)
+                        .collection("pendingPayouts").document(group.groupId)
+                    batch.update(pendingRef, "status", "requested")
+                    val requestRef = firestore.collection("payoutRequests").document()
+                    batch.set(
+                        requestRef,
+                        mapOf(
+                            "userId" to uid,
+                            "displayName" to ibanInfo.name,
+                            "payoutName" to ibanInfo.name,
+                            "iban" to ibanInfo.iban,
+                            "amountCents" to group.amountCents,
+                            "groupId" to group.groupId,
+                            "createdAt" to com.google.firebase.Timestamp.now(),
+                            "status" to "pending"
+                        )
+                    )
+                }
+                batch.commit().await()
+            }.onSuccess {
+                _pendingBalance.value = null
+                _payoutRequestState.value = PayoutRequestState.Success
+            }.onFailure { e ->
+                Timber.e(e, "requestPayout failed")
+                _payoutRequestState.value = PayoutRequestState.Error(e.message ?: "Fehler")
+            }
+        }
+    }
+
+    fun clearPayoutRequestState() { _payoutRequestState.value = PayoutRequestState.Idle }
+
     private suspend fun refreshPayoutState() {
         cloudFunctionsService.getConnectedAccountStatus()
             .onSuccess { status ->
@@ -244,6 +328,7 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             refreshPayoutState()
             fetchPendingPayouts()
+            fetchPendingBalance()
             fetchCompletedPayouts()
         }
     }

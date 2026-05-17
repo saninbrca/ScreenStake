@@ -572,28 +572,34 @@ object NotificationHelper {
         hasPendingIban: Boolean
     ) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
-        val title = "Du hast gewonnen! 🎉"
-        val stakeEuros = stakeRefundCents / 100
-        val prizeEuros = prizeShareCents / 100
-        val body = when {
-            hasPendingIban && prizeShareCents > 0 ->
-                "Dein Einsatz (€$stakeEuros) wurde zurückgebucht. Hinterlege deine IBAN um deinen Gewinnanteil (€$prizeEuros) zu erhalten."
-            prizeShareCents > 0 ->
-                "€${stakeEuros + prizeEuros} werden auf deine Karte zurückgebucht."
-            else ->
-                "Challenge abgeschlossen! ✅ Dein Einsatz (€$stakeEuros) wurde zurückgebucht."
+        val totalCents = stakeRefundCents + prizeShareCents
+        val totalFormatted = "€%s".format("%.2f".format(totalCents / 100.0).replace(".", ","))
+        val title = context.getString(R.string.notif_payout_available_title, totalFormatted)
+        val body = if (hasPendingIban) {
+            context.getString(R.string.notif_payout_available_no_iban_body)
+        } else {
+            context.getString(R.string.notif_payout_available_has_iban_body)
         }
-        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("navigate_to", "profile")
+        }
+        val pendingIntent = launchIntent?.let {
+            PendingIntent.getActivity(
+                context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+        val builder = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
-            .build()
+        if (pendingIntent != null) builder.setContentIntent(pendingIntent)
         try {
-            NotificationManagerCompat.from(context).notify(NOTIF_ID_GROUP_BASE + 51, notification)
-            Timber.d("Group payout notification posted: stake=€$stakeEuros prize=€$prizeEuros pendingIban=$hasPendingIban")
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_GROUP_BASE + 51, builder.build())
+            Timber.d("Group payout notification posted: total=€${totalCents / 100} noIban=$hasPendingIban")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping group payout notification")
         }

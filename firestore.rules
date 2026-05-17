@@ -3,18 +3,123 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Per-user data: only the owning user can read and write their own subtree.
-    match /users/{userId}/{document=**} {
+    // ── User profile doc ──────────────────────────────────────────────────────
+    // User can read/write their own profile. Stripe account fields are
+    // Cloud-Function-only: the CF uses Admin SDK which bypasses these rules.
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['stripeConnectedAccountId', 'stripeCustomerId']);
+      allow delete: if false;
+    }
+
+    // ── Solo challenge docs (sub-collection under users) ──────────────────────
+    // App creates challenge docs with paymentIntentId + amountCents after the
+    // Stripe PaymentSheet completes. Post-creation, status/payout/Stripe fields
+    // are immutable from the client — Cloud Functions own those writes.
+    match /users/{userId}/challenges/{challengeId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny([
+            'status', 'payoutStatus', 'payoutAmount', 'appFeeAmount',
+            'stripePaymentIntentId', 'stripeCustomerId',
+            'finalPayout', 'endDate', 'startDate',
+            'amountCents', 'paymentIntentId'
+          ]);
+      allow delete: if false;
+    }
+
+    // ── Daily logs (sub-collection under users) ───────────────────────────────
+    // Written from Android every 10 s (consciousOpens, budgetUsedMs, etc.).
+    // Full read/write for the owning user — no field restrictions needed here.
+    match /users/{userId}/dailyLogs/{logId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Group challenges: any authenticated user can read (needed for join flow,
-    // detail screen, and real-time snapshot listener).
-    // Client writes are allowed for authenticated users (fire-and-forget local sync);
-    // the canonical write is always performed by Cloud Functions via the Admin SDK.
+    // ── Pending payouts (sub-collection under users) ──────────────────────────
+    // Created and updated exclusively by Cloud Functions via Admin SDK.
+    match /users/{userId}/pendingPayouts/{payoutId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // ── Payment captures (sub-collection under users) ─────────────────────────
+    // Written by capturePayment Cloud Function only.
+    match /users/{userId}/paymentCaptures/{captureId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // ── Group challenges ──────────────────────────────────────────────────────
+    // Any authenticated user can read (join flow, leaderboard, real-time listener).
+    // The canonical document is always created by the createGroupChallenge CF via
+    // Admin SDK. The Android app only updates the participants array in real-time
+    // (opensToday / timeUsedMinutes every 10 s) — that key is intentionally NOT
+    // in the blocked list so the sync continues to work.
     match /groupChallenges/{groupId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && !request.resource.data.keys().hasAny([
+          'status', 'startDate', 'endDate', 'completedAt',
+          'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed'
+        ]);
+      allow update: if request.auth != null
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny([
+            'status', 'startDate', 'endDate', 'completedAt',
+            'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed'
+          ]);
+      allow delete: if false;
+
+      // Taunts sub-collection — any participant can create, nobody can edit/delete.
+      match /taunts/{tauntId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update, delete: if false;
+      }
+
+      // Participants sub-collection — future-proofing. Currently participants are
+      // stored as an embedded array, not a sub-collection. If ever migrated, these
+      // rules ensure each user can only write their own participant doc and cannot
+      // touch status/payout/Stripe fields.
+      match /participants/{participantId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && request.auth.uid == participantId;
+        allow update: if request.auth != null
+          && request.auth.uid == participantId
+          && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny([
+              'status', 'payoutStatus', 'finalPayout',
+              'amountCents', 'paymentIntentId'
+            ]);
+        allow delete: if false;
+      }
+    }
+
+    // ── Payout requests ───────────────────────────────────────────────────────
+    // User can create their own request (no status/paidAt on creation).
+    // Updates are Cloud-Function/admin-only (marking as paid/rejected).
+    match /payoutRequests/{requestId} {
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && !request.resource.data.keys().hasAny(['status', 'paidAt']);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── Admin collection ──────────────────────────────────────────────────────
+    // Never accessible from the client under any circumstances.
+    match /admin/{document=**} {
+      allow read, write: if false;
     }
   }
 }

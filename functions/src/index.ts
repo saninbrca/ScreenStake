@@ -112,11 +112,10 @@ export const capturePayment = functions.region(REGION).https.onRequest(async (re
 
 export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
-    await requireAuth(req);
-    const { paymentIntentId, challengeId, userId, amountCents, partialRefundCents } = req.body as {
+    const verifiedUserId = await requireAuth(req);
+    const { paymentIntentId, challengeId, amountCents, partialRefundCents } = req.body as {
       paymentIntentId: string;
       challengeId?: string;
-      userId?: string;
       amountCents?: number;
       partialRefundCents?: number;
     };
@@ -151,9 +150,9 @@ export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(as
     }
 
     // Update Firestore challenge doc with payout tracking fields
-    if (challengeId && userId) {
+    if (challengeId && verifiedUserId) {
       const db = admin.firestore();
-      await db.collection("users").doc(userId)
+      await db.collection("users").doc(verifiedUserId)
         .collection("challenges").doc(challengeId)
         .set({
           payoutStatus: "refunded",
@@ -338,7 +337,7 @@ export const confirmGroupJoin = functions.region(REGION).https.onRequest(async (
 
 export const startGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
-    await requireAuth(req);
+    const verifiedUserId = await requireAuth(req);
     const { groupId } = req.body as { groupId: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -348,6 +347,9 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
     if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
 
     const gc = doc.data()!;
+    if (gc["creatorUserId"] !== verifiedUserId) {
+      throw new HttpError(403, "Only the creator can start this challenge.");
+    }
     if (gc["status"] !== "waiting") {
       functions.logger.info("startGroupChallenge: already status=" + gc["status"], { groupId });
       res.json({ status: gc["status"] });
@@ -446,9 +448,10 @@ export const cancelGroupChallenge = functions.region(REGION).https.onRequest(asy
 
 export const failParticipant = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
-    await requireAuth(req);
+    const verifiedUserId = await requireAuth(req);
     const { groupId, userId: failedUserId } = req.body as { groupId: string; userId: string };
     if (!groupId || !failedUserId) throw new HttpError(400, "groupId and userId are required.");
+    if (verifiedUserId !== failedUserId) throw new HttpError(403, "You can only fail yourself.");
 
     const db = admin.firestore();
     const docRef = db.collection("groupChallenges").doc(groupId);
@@ -791,14 +794,13 @@ export const claimPendingPayouts = functions.region(REGION).https.onRequest(asyn
 
 export const createConnectedAccount = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
-    await requireAuth(req);
-    const { iban, accountHolderName, userId } = req.body as {
+    const verifiedUserId = await requireAuth(req);
+    const { iban, accountHolderName } = req.body as {
       iban: string;
       accountHolderName: string;
-      userId: string;
     };
-    if (!iban || !accountHolderName || !userId) {
-      throw new HttpError(400, "iban, accountHolderName, and userId are required.");
+    if (!iban || !accountHolderName) {
+      throw new HttpError(400, "iban and accountHolderName are required.");
     }
 
     const db = admin.firestore();
@@ -823,14 +825,14 @@ export const createConnectedAccount = functions.region(REGION).https.onRequest(a
       },
     });
 
-    await db.collection("users").doc(userId).set({
+    await db.collection("users").doc(verifiedUserId).set({
       stripeConnectedAccountId: account.id,
       payoutIban: iban,
       payoutName: accountHolderName,
       payoutSetupAt: Date.now(),
     }, { merge: true });
 
-    functions.logger.info(`Custom connected account created: ${account.id} for user ${userId}`);
+    functions.logger.info(`Custom connected account created: ${account.id} for user ${verifiedUserId}`);
     res.json({ success: true, accountId: account.id });
   } catch (e) { handleError("createConnectedAccount", e, res); }
 });

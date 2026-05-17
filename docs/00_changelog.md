@@ -15,6 +15,69 @@
 
 ## [Unreleased] — May 2026
 
+### Security
+- **Firestore Rules — full rewrite:** Replaced critically under-secured
+  rules with granular field-level protection. Key fixes:
+  - /users/{userId} — blocks client writes to stripeConnectedAccountId,
+    stripeCustomerId via diff().affectedKeys()
+  - /users/{userId}/challenges — blocks client writes to status,
+    payoutStatus, payoutAmount, appFeeAmount, stripePaymentIntentId,
+    finalPayout, endDate, startDate, amountCents, paymentIntentId
+  - /users/{userId}/pendingPayouts + /paymentCaptures — write: false,
+    Cloud Function Admin SDK only
+  - /groupChallenges — blocks client writes to status, startDate,
+    endDate, completedAt, prizePool, appFee, prizePerWinner, nobodyFailed
+  - /payoutRequests — user can create own only, no updates allowed
+  - /admin — permanently blocked for all clients
+  - /dailyLogs — remains fully writable (required for 10s sync)
+- **Cloud Functions — 4 auth vulnerabilities patched:**
+  - cancelOrRefundPayment: requireAuth result was discarded, used
+    req.body.userId for Firestore writes → attacker could write
+    payoutStatus: "refunded" to any user. Fixed: use verifiedUserId
+  - createConnectedAccount: same issue → attacker could overwrite any
+    user's stripeConnectedAccountId. Fixed: use verifiedUserId
+  - failParticipant: any authenticated user could fail any other
+    participant. Fixed: added 403 guard if verifiedUserId !== failedUserId
+  - startGroupChallenge: any authenticated user could start any
+    challenge. Fixed: added 403 guard if creatorUserId !== verifiedUserId
+- **firebase-functions updated to latest version**
+- **Deployed to production:** firestore:rules + functions
+
+---
+
+## [Unreleased] — May 2026
+
+### SECURITY — Firestore Rules hardened + Cloud Function auth vulnerabilities fixed
+
+**`firestore.rules` — full rewrite:**
+- Replaced broad `match /users/{userId}/{document=**} { allow write }` wildcard with granular sub-collection rules:
+  - `/users/{userId}` — update blocks `stripeConnectedAccountId` and `stripeCustomerId` (CF-only)
+  - `/users/{userId}/challenges/{challengeId}` — create allowed; update blocks `status`, `payoutStatus`, `payoutAmount`, `appFeeAmount`, `stripePaymentIntentId`, `stripeCustomerId`, `finalPayout`, `endDate`, `startDate`, `amountCents`, `paymentIntentId`
+  - `/users/{userId}/dailyLogs/{logId}` — full read/write (app writes every 10 s)
+  - `/users/{userId}/pendingPayouts/{payoutId}` — read-only; CF writes only
+  - `/users/{userId}/paymentCaptures/{captureId}` — read-only; CF writes only
+- `groupChallenges/{groupId}` — update now blocks `status`, `startDate`, `endDate`, `completedAt`, `prizePool`, `appFee`, `prizePerWinner`, `nobodyFailed`; participants array (opensToday/timeUsedMinutes) still writable
+- Added `groupChallenges/{groupId}/taunts/{tauntId}` rule — create allowed, no edit/delete
+- Added `payoutRequests/{requestId}` rule — user can create own (no `status`/`paidAt`), no updates
+- Added `admin/{document=**}` rule — permanently blocked from client
+- **DECISION:** Use `diff().affectedKeys()` for update checks (not `keys().hasAny()`) — the latter would block all updates once a protected field exists in the doc.
+
+**`functions/src/index.ts` — 4 auth vulnerabilities fixed:**
+- `cancelOrRefundPayment`: was discarding `requireAuth` result; now captures `verifiedUserId` and uses it for the Firestore write (was using `req.body.userId` → attacker could write payout status to any user's challenge)
+- `createConnectedAccount`: same bug — now uses `verifiedUserId` for all Firestore writes; removed `userId` from req.body destructuring entirely
+- `failParticipant`: now captures `verifiedUserId`; added `if (verifiedUserId !== failedUserId) throw 403` — users can only fail themselves
+- `startGroupChallenge`: now captures `verifiedUserId`; added `if (gc["creatorUserId"] !== verifiedUserId) throw 403` — only the creator can start
+
+**Files changed:** `firestore.rules`, `functions/src/index.ts`
+**Requires deploy:**
+```
+firebase deploy --only firestore:rules
+firebase deploy --only functions
+```
+**No Android Kotlin changes. No Room schema changes.**
+
+---
+
 ### FIXED — Group Challenge win popup fires on every Detail Screen open
 
 **Root cause (`GroupChallengeDetailViewModel`):**

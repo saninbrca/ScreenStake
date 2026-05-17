@@ -15,6 +15,31 @@
 
 ## [Unreleased] — May 2026
 
+### FIXED — Group Challenge win popup fires on every Detail Screen open
+
+**Root cause (`GroupChallengeDetailViewModel`):**
+`lastSyncedStatus` and `winDialogShown` are in-memory fields. Every time the Detail Screen is
+opened a new ViewModel instance is created, both reset to their initial values, and the Firestore
+snapshot fires immediately with `COMPLETED` status → `syncToLocalTracking` runs again →
+`finishLocalGroupChallenge` is called every time and the win popup is shown every time.
+
+**Fixes:**
+- `winDialogShown` in-memory flag replaced with a persistent SharedPreferences guard:
+  key `"win_popup_shown_$groupId"` in file `"detox_win_popup"`.
+  Popup is shown at most once per challenge, survives screen close and process death.
+  Set to `true` immediately before `triggerWinDialog` is called.
+- `finishLocalGroupChallenge` guarded by a Room status check via new
+  `GroupChallengeRepository.isLocalChallengeCompleted(groupId)`:
+  skipped if local challenge is already `"completed"` or `"failed"`.
+- Same Room guard applied to CANCELLED path (idempotent).
+- New `isLocalChallengeCompleted` method added to `GroupChallengeRepository` interface and
+  implemented in `GroupChallengeRepositoryImpl` (reads `challengeDao.getChallengeById("group_$groupId")?.status`).
+
+**Files changed:** `GroupChallengeDetailViewModel.kt`, `GroupChallengeRepository.kt`, `GroupChallengeRepositoryImpl.kt`
+**No Cloud Function changes. No Room schema changes. No UI layout changes.**
+
+---
+
 ### FIXED — Hard Mode Duration Bug
 
 **Root cause:**

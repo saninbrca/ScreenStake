@@ -31,6 +31,9 @@ interface GroupChallengeRepository {
      */
     suspend fun finishLocalGroupChallenge(groupId: String, succeeded: Boolean): Result<Unit>
 
+    /** Returns true if the local Room shadow for this group challenge is already "completed" or "failed". */
+    suspend fun isLocalChallengeCompleted(groupId: String): Boolean
+
     /**
      * Fetches all group challenges for [userId] from Firestore, upserts them into Room,
      * and syncs [ChallengeEntity] rows for ACTIVE and finished challenges.

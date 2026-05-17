@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.Color
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -106,7 +105,6 @@ fun DashboardScreen(
                 is DashboardUiState.Empty -> {
                     EmptyState(
                         onAddChallenge = onAddChallenge,
-                        onOpenStats = onOpenStats,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
@@ -142,8 +140,7 @@ fun DashboardScreen(
                     ) {
                         item(key = "header") {
                             DashboardHeader(
-                                activeCount = state.activeChallenges.size,
-                                onOpenStats = onOpenStats
+                                activeCount = state.activeChallenges.size
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                         }
@@ -184,39 +181,25 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun DashboardHeader(activeCount: Int, onOpenStats: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(end = 48.dp)) {
-            Text(
-                text = stringResource(R.string.dashboard_title),
-                style = MaterialTheme.typography.displayLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.dashboard_active_count, activeCount),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        IconButton(
-            onClick = onOpenStats,
-            modifier = Modifier.align(Alignment.TopEnd)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.BarChart,
-                contentDescription = stringResource(R.string.stats_title),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(28.dp)
-            )
-        }
+private fun DashboardHeader(activeCount: Int) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.dashboard_title),
+            style = MaterialTheme.typography.displayLarge,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.dashboard_active_count, activeCount),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
 @Composable
 private fun EmptyState(
     onAddChallenge: () -> Unit,
-    onOpenStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -224,21 +207,6 @@ private fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Header row with stats icon
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.TopEnd
-        ) {
-            IconButton(onClick = onOpenStats) {
-                Icon(
-                    imageVector = Icons.Filled.BarChart,
-                    contentDescription = stringResource(R.string.stats_title),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        }
-
         Spacer(modifier = Modifier.weight(1f))
 
         Icon(

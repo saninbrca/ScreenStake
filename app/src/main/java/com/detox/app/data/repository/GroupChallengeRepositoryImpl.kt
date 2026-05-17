@@ -280,6 +280,12 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun isLocalChallengeCompleted(groupId: String): Boolean {
+        val localId = "group_$groupId"
+        val status = challengeDao.getChallengeById(localId)?.status
+        return status == "completed" || status == "failed"
+    }
+
     override suspend fun updateParticipantStats(
         groupId: String,
         userId: String,

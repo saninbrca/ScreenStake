@@ -65,6 +65,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
     private val cloudFunctionsService: CloudFunctionsService,
     private val dailyLogRepository: DailyLogRepository,
     private val firestore: FirebaseFirestore,
+    @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context,
 ) : ViewModel() {
 
     private val groupId: String = requireNotNull(savedStateHandle["groupId"]) {
@@ -88,7 +89,8 @@ class GroupChallengeDetailViewModel @Inject constructor(
     private val _winDialogInfo = MutableStateFlow<WinDialogInfo?>(null)
     val winDialogInfo: StateFlow<WinDialogInfo?> = _winDialogInfo.asStateFlow()
 
-    private var winDialogShown = false
+    private val prefs = context.getSharedPreferences("detox_win_popup", android.content.Context.MODE_PRIVATE)
+    private val winPopupKey get() = "win_popup_shown_$groupId"
 
     /** In-memory taunt count per target userId for the current session. */
     private val tauntCountsToday = mutableMapOf<String, Int>()
@@ -362,17 +364,23 @@ class GroupChallengeDetailViewModel @Inject constructor(
                     Timber.d("GroupDetailVM: status → COMPLETED for %s — finalising local challenge", groupId)
                     val participant = gc.participants.find { it.userId == userId }
                     val succeeded = participant?.status?.name?.uppercase() != "FAILED"
-                    groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded)
-                        .onFailure { e -> Timber.e(e, "GroupDetailVM: finishLocalGroupChallenge failed") }
-                    if (succeeded && !winDialogShown) {
-                        winDialogShown = true
+                    val alreadyCompleted = groupChallengeRepository.isLocalChallengeCompleted(groupId)
+                    if (!alreadyCompleted) {
+                        groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded)
+                            .onFailure { e -> Timber.e(e, "GroupDetailVM: finishLocalGroupChallenge failed") }
+                    }
+                    if (succeeded && !prefs.getBoolean(winPopupKey, false)) {
+                        prefs.edit().putBoolean(winPopupKey, true).apply()
                         triggerWinDialog(gc, participant)
                     }
                 }
                 GroupChallengeStatus.CANCELLED -> {
                     Timber.d("GroupDetailVM: status → CANCELLED for %s — finalising local challenge as failed", groupId)
-                    groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded = false)
-                        .onFailure { e -> Timber.e(e, "GroupDetailVM: finishLocalGroupChallenge (cancelled) failed") }
+                    val alreadyCompleted = groupChallengeRepository.isLocalChallengeCompleted(groupId)
+                    if (!alreadyCompleted) {
+                        groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded = false)
+                            .onFailure { e -> Timber.e(e, "GroupDetailVM: finishLocalGroupChallenge (cancelled) failed") }
+                    }
                 }
                 GroupChallengeStatus.WAITING -> Unit // nothing to sync yet
             }

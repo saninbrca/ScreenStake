@@ -161,7 +161,7 @@ fun MainScreen(
                                     saveState = true
                                 }
                                 launchSingleTop = true
-                                restoreState = true
+                                restoreState = false
                             }
                         },
                         icon = {
@@ -201,7 +201,6 @@ fun MainScreen(
                     onChallengeClick = { challengeId ->
                         navController.navigate("active_challenge/$challengeId")
                     },
-                    onOpenStats = { navController.navigate("statistics") },
                     onOpenHistory = { navController.navigate("history") }
                 )
             }

@@ -41,7 +41,7 @@ data class GroupCreateFormState(
     val manualDomainInput: String = "",
     val manualDomains: List<String> = emptyList(),
     // Step 2 — limit type
-    val limitType: LimitType = LimitType.TIME,
+    val limitType: LimitType? = null,
     // Step 3 — limit value + duration
     val limitValueMinutes: Int = 60,
     val limitValueSessions: Int = 5,
@@ -194,7 +194,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     fun setLimitValueMinutes(v: Int) = _formState.update { it.copy(limitValueMinutes = v.coerceIn(5, 600)) }
     fun setLimitValueSessions(v: Int) = _formState.update { it.copy(limitValueSessions = v.coerceIn(1, 50)) }
-    fun setSessionMinutes(v: Int) = _formState.update { it.copy(sessionMinutes = v.coerceIn(5, 120)) }
+    fun setSessionMinutes(v: Int) = _formState.update { it.copy(sessionMinutes = v.coerceIn(1, 120)) }
     fun setDailyBudgetMinutes(v: Int) = _formState.update { it.copy(dailyBudgetMinutes = v.coerceIn(1, 480)) }
 
     fun setDurationDays(v: Int) {
@@ -242,7 +242,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
         val s = _formState.value
         return when (s.currentStep) {
             1 -> s.packageNames.isNotEmpty()
-            2 -> true
+            2 -> s.limitType != null
             3 -> s.durationError == null && s.durationDays >= 3
             4 -> s.buyInEuros >= 10
             5 -> !s.startDateEnabled || (s.startDateMs > 0L && s.startDateError == null)
@@ -259,6 +259,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                     false
                 } else true
             }
+            2 -> s.limitType != null
             3 -> {
                 if (s.durationDays < 3) {
                     _formState.update { it.copy(durationError = "Group challenges require minimum 3 days") }
@@ -287,17 +288,18 @@ class GroupChallengeCreateViewModel @Inject constructor(
         val s = _formState.value
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
+            val limitType = s.limitType ?: LimitType.TIME
             val result = createGroupChallengeUseCase.initiatePayment(
                 appPackageNames = s.packageNames,
                 buyInCents = s.buyInEuros * 100,
                 durationDays = s.durationDays,
-                limitType = s.limitType,
-                limitValueMinutes = when (s.limitType) {
+                limitType = limitType,
+                limitValueMinutes = when (limitType) {
                     LimitType.TIME -> s.limitValueMinutes
                     LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
                     else -> s.limitValueMinutes
                 },
-                limitValueSessions = if (s.limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+                limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
             )
             result.fold(
                 onSuccess = { paymentData ->
@@ -335,18 +337,19 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
+            val limitType = s.limitType ?: LimitType.TIME
             val result = createGroupChallengeUseCase(
                 creatorUserId = userId,
                 creatorDisplayName = creatorName,
                 appPackageNames = s.packageNames,
                 appDisplayName = s.displayName,
-                limitType = s.limitType,
-                limitValueMinutes = when (s.limitType) {
+                limitType = limitType,
+                limitValueMinutes = when (limitType) {
                     LimitType.TIME -> s.limitValueMinutes
                     LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
                     else -> s.limitValueMinutes
                 },
-                limitValueSessions = if (s.limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+                limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
                 sessionDurationMinutes = s.sessionMinutes,
                 durationDays = s.durationDays,
                 buyInCents = s.buyInEuros * 100,

@@ -90,7 +90,6 @@ import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.components.DetoxHorizontalPicker
-import com.detox.app.presentation.components.StepperField
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
 import com.stripe.android.paymentsheet.PaymentSheet
@@ -289,7 +288,8 @@ private fun WizardHeader(
             progress = { currentStep.toFloat() / totalSteps.toFloat() },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(4.dp),
+                .height(6.dp),
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -317,7 +317,7 @@ private fun Step1AppSelection(
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(
                 text = "Select apps to block",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -335,6 +335,7 @@ private fun Step1AppSelection(
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
             )
             if (packageNamesError != null) {
                 Spacer(modifier = Modifier.height(4.dp))
@@ -606,7 +607,7 @@ private fun GroupDomainSuggestionsSection(
 
 @Composable
 private fun Step2LimitType(
-    selected: LimitType,
+    selected: LimitType?,
     onSelect: (LimitType) -> Unit,
 ) {
     Column(
@@ -618,7 +619,7 @@ private fun Step2LimitType(
     ) {
         Text(
             text = "Set a limit type",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -678,17 +679,23 @@ private fun GroupLimitTypeCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = emoji, fontSize = 20.sp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(text = emoji, fontSize = 24.sp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                )
                 Text(
                     text = description,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (isSelected) {
@@ -723,7 +730,7 @@ private fun Step3LimitAndDuration(
     ) {
         Text(
             text = "Set your limit",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
 
@@ -749,16 +756,12 @@ private fun Step3LimitAndDuration(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                StepperField(
-                    value = formState.sessionMinutes,
+                Spacer(modifier = Modifier.height(8.dp))
+                DetoxHorizontalPicker(
+                    values = (1..120).toList(),
+                    selectedValue = formState.sessionMinutes,
                     onValueChange = onUpdateSessionDuration,
-                    label = "Per session",
-                    suffix = "min",
-                    min = 5,
-                    max = 120,
-                    step = 5,
-                    modifier = Modifier.fillMaxWidth(),
+                    unit = "Minuten pro Session",
                 )
             }
             LimitType.TIME_BUDGET -> {
@@ -806,7 +809,7 @@ private fun Step4BuyIn(
     ) {
         Text(
             text = "Buy-In Per Player",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -873,7 +876,7 @@ private fun Step5StartDateAndBonus(
     ) {
         Text(
             text = "Start date & bonus",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
 
@@ -1000,7 +1003,7 @@ private fun Step6Review(
     ) {
         Text(
             text = "Review & Create",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
 

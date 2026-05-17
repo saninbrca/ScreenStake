@@ -15,6 +15,72 @@
 
 ## [Unreleased] — May 2026
 
+### Fixed
+- **Group Challenge Wizard — UI alignment with Solo Wizard:**
+  Audited and fixed all Group Challenge Wizard steps to match
+  Solo Wizard design exactly:
+  - Limit Type screen: Next button now grey/disabled when nothing
+    selected, green/enabled only after selection
+  - Limit Type cards: fixed text overflow, all cards same height
+  - Set Your Limit screen: replaced — / + button input with
+    DetoxHorizontalPicker (isDark=false) to match Solo
+  - All steps: background, card style, typography, spacing,
+    padding aligned to docs/08_ui_design_system.md
+  - Next button: 54dp height, 14dp radius, full width on all steps
+  - Input components consistent throughout — no mixed styles
+
+---
+
+## [Unreleased] — May 2026
+
+### FIXED — Group Challenge Wizard: full visual alignment to Solo Wizard design
+
+**Root causes (multiple):**
+- `limitType` in `GroupCreateFormState` was non-nullable with default `LimitType.TIME` →
+  Step 2 always had a card pre-selected and Next button always enabled, violating the
+  "grey/disabled until selection made" requirement.
+- `GroupLimitTypeCard` used smaller padding (12dp vs 20dp), smaller emoji (20sp vs 24sp),
+  smaller description text (`bodySmall` vs `bodyMedium`), and tighter column spacing (2dp vs 4dp)
+  — all diverging from `LimitTypeCard` in the Solo Wizard.
+- `Step3LimitAndDuration` SESSIONS path used `StepperField` (— / + buttons) for session
+  duration instead of `DetoxHorizontalPicker`, and range was capped at min=5 instead of min=1.
+- All step screen titles used `titleMedium` instead of `titleLarge` (Steps 1–6).
+- Step 1 search field missing `shape = RoundedCornerShape(12.dp)`.
+- `WizardHeader` progress bar was 4dp height instead of 6dp.
+
+**Fixes (`GroupChallengeCreateViewModel.kt`):**
+- `limitType: LimitType = LimitType.TIME` → `limitType: LimitType? = null`
+- `canGoNext()` step 2: `true` → `s.limitType != null`
+- `validateCurrentStep()`: added step 2 null guard
+- `setSessionMinutes` coerceIn: `(5, 120)` → `(1, 120)` to match Solo's (1..120) range
+- `createChallenge()` and `onPaymentSuccess()`: `limitType = s.limitType ?: LimitType.TIME` for safe nullable handling
+
+**Fixes (`GroupChallengeCreateScreen.kt`):**
+- `WizardHeader` progress bar: `height(4.dp)` → `height(6.dp)` + explicit primary color
+- Step 1 title: `titleMedium` → `titleLarge`
+- Step 1 search field: added `shape = RoundedCornerShape(12.dp)`
+- `Step2LimitType` param: `selected: LimitType` → `selected: LimitType?`
+- `Step2LimitType` title: `titleMedium` → `titleLarge`
+- `GroupLimitTypeCard` inner padding: `12dp` → `20dp`
+- `GroupLimitTypeCard` emoji: `20sp` → `24sp`
+- `GroupLimitTypeCard` title: `bodyMedium` → `bodyLarge` (matching Solo's `bodyLarge`)
+- `GroupLimitTypeCard` description: `bodySmall` → `bodyMedium`
+- `GroupLimitTypeCard` column spacing: `2dp` → `4dp`
+- `GroupLimitTypeCard` description: added `maxLines=2, overflow=Ellipsis`
+- Step 3 SESSIONS: replaced `StepperField` with `DetoxHorizontalPicker(values=(1..120))` for session duration
+- Step 3 title: `titleMedium` → `titleLarge`
+- Step 4 title: `titleMedium` → `titleLarge`
+- Step 5 title: `titleMedium` → `titleLarge`
+- Step 6 title: `titleMedium` → `titleLarge`
+- Removed `StepperField` import (no longer used)
+
+**Files changed:** `GroupChallengeCreateViewModel.kt`, `GroupChallengeCreateScreen.kt`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe changes.**
+
+---
+
+## [Unreleased] — May 2026
+
 ### Added
 - **Group Challenge — 5-day Authorization Window:** PaymentIntents
   for Group Challenges now use capture_method: "manual" — money is

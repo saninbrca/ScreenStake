@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
+import com.detox.app.util.DateUtils
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
@@ -74,7 +75,7 @@ class HistoryViewModel @Inject constructor(
 
         // Sort: newest first; within same day, Group before Solo
         val sorted = (soloItems + groupItems).sortedWith(
-            compareByDescending<HistoryItem> { it.sortDate / 86_400_000L }
+            compareByDescending<HistoryItem> { it.sortDate / DateUtils.MILLIS_PER_DAY }
                 .thenBy { if (it is HistoryItem.Solo) 1 else 0 }
                 .thenByDescending { it.sortDate }
         )
@@ -94,13 +95,13 @@ class HistoryViewModel @Inject constructor(
                 val now = System.currentTimeMillis()
                 val redemptionId = UUID.randomUUID().toString()
 
-                val originalDays = ((original.endDate - original.startDate) / 86_400_000L).toInt()
+                val originalDays = ((original.endDate - original.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
                 val redemptionDays = originalDays * 2
                 val redemptionLimit = computeRedemptionLimit(original)
                 val refundAmount = original.redemptionRefundAmount
                     ?: floor((original.amountCents ?: 0) * 0.70).toInt()
 
-                val endDate = now + (redemptionDays * 86_400_000L)
+                val endDate = now + (redemptionDays * DateUtils.MILLIS_PER_DAY)
 
                 val redemptionEntity = ChallengeEntity(
                     id = redemptionId,

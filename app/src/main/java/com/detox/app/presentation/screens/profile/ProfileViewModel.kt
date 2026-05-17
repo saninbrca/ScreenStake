@@ -363,7 +363,7 @@ class ProfileViewModel @Inject constructor(
                 .filter { it.status == "completed" && it.mode == "hard" && it.amountCents != null && it.amountCents > 0 && it.isRedemption == 0 }
                 .forEach { entity ->
                     val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate) {
-                        ((entity.endDate - entity.startDate) / 86_400_000L).toInt()
+                        ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
                     } else 0
                     val originalAmount = entity.amountCents ?: 0
                     val stakeRefund = (originalAmount * 0.80).toInt()
@@ -395,7 +395,7 @@ class ProfileViewModel @Inject constructor(
                         ?.let { database.challengeDao().getChallengeById(it)?.amountCents } ?: 0
                     val appFee = if (originalAmount > 0) originalAmount - refundCents else 0
                     val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate) {
-                        ((entity.endDate - entity.startDate) / 86_400_000L).toInt()
+                        ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
                     } else 0
                     payouts += PayoutChallengeInfo(
                         challengeTitle = entity.appDisplayName ?: entity.appPackageName ?: "App",
@@ -815,6 +815,32 @@ class ProfileViewModel @Inject constructor(
         if (!BuildConfig.DEBUG) return
         viewModelScope.launch(Dispatchers.IO) {
             _debugActiveChallenges.value = database.challengeDao().getActiveChallengesList()
+        }
+    }
+
+    fun debugFixStaleChallenges(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch(Dispatchers.IO) {
+            var fixedCount = 0
+            val uid = firebaseAuth.currentUser?.uid
+            database.challengeDao().getActiveChallengesList().forEach { challenge ->
+                val diff = challenge.endDate - challenge.startDate
+                if (diff in 1 until DateUtils.MILLIS_PER_DAY) {
+                    // Challenges created with debug_use_minutes_as_days=true used 60_000L multiplier.
+                    // Reverse-engineer: originalDays = diff / 60_000, then correct to MILLIS_PER_DAY.
+                    val originalDays = diff / 60_000L
+                    val newEnd = challenge.startDate + originalDays * DateUtils.MILLIS_PER_DAY
+                    database.challengeDao().updateEndDate(challenge.id, newEnd)
+                    if (uid != null) {
+                        firestore.collection("users").document(uid)
+                            .collection("challenges").document(challenge.id)
+                            .set(mapOf("endDate" to newEnd), SetOptions.merge())
+                    }
+                    Timber.d("Fixed stale: id=${challenge.id} diff=${diff}ms originalDays=$originalDays newEnd=$newEnd")
+                    fixedCount++
+                }
+            }
+            onResult("Fixed $fixedCount stale challenge(s)")
         }
     }
 

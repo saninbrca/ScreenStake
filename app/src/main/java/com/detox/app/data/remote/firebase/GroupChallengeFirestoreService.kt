@@ -2,6 +2,7 @@ package com.detox.app.data.remote.firebase
 
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.util.DateUtils
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
@@ -408,7 +409,7 @@ class GroupChallengeFirestoreService @Inject constructor(
             }
             val startDate = (d.get("startDate") as? Number)?.toLong() ?: createdAt
             val endDate = (d.get("endDate") as? Number)?.toLong()
-                ?: (startDate + 7L * 24 * 60 * 60 * 1000)
+                ?: (startDate + 7L * DateUtils.MILLIS_PER_DAY)
 
             val now = System.currentTimeMillis()
             val progress = if (endDate > startDate) (now - startDate).toFloat() / (endDate - startDate).toFloat() else 0f

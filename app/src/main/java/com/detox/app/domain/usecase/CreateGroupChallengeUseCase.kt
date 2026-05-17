@@ -3,6 +3,7 @@ package com.detox.app.domain.usecase
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.util.DateUtils
 import com.detox.app.domain.repository.GroupChallengeRepository
 import timber.log.Timber
 import java.util.UUID
@@ -115,7 +116,7 @@ class CreateGroupChallengeUseCase @Inject constructor(
         paymentIntentId: String,
     ): Result<GroupChallengeCreatedData> {
         val baseMs = if (startDateMs > 0L) startDateMs else System.currentTimeMillis()
-        val endDateMs = baseMs + durationDays.toLong() * 24 * 60 * 60 * 1000L
+        val endDateMs = baseMs + durationDays.toLong() * DateUtils.MILLIS_PER_DAY
         Timber.d("endDate stored as: $endDateMs = ${java.util.Date(endDateMs)}")
 
         val groupDataMap = mapOf(

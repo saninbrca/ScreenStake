@@ -60,6 +60,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.DailyLimitStatus
+import com.detox.app.util.DateUtils
 import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -217,14 +218,14 @@ private fun ActiveChallengeContent(
         when {
             challenge.endDate <= 0L -> 0L
             challenge.endDate > 1_700_000_000_000L -> challenge.endDate
-            else -> challenge.startDate + challenge.endDate * 86_400_000L
+            else -> challenge.startDate + challenge.endDate * DateUtils.MILLIS_PER_DAY
         }
     }
     val endDateStr = remember(endDateMs) {
         if (endDateMs > 0L) dateFmt.format(Date(endDateMs)) else null
     }
     val daysLeft = remember(endDateMs, now) {
-        if (endDateMs > 0L) maxOf(0, ((endDateMs - now) / 86_400_000L).toInt()) else null
+        if (endDateMs > 0L) maxOf(0, ((endDateMs - now) / DateUtils.MILLIS_PER_DAY).toInt()) else null
     }
     Timber.d("DetailScreen: endDateMs=$endDateMs daysLeft=$daysLeft")
 

@@ -1110,7 +1110,7 @@ class OverlayManager @Inject constructor(
         writeDailyLogForHardCapture(challenge.id, (challenge.appPackageName ?: ""), challenge.amountCents ?: 0)
 
         val lockDaysRemaining = if (challenge.endDate > 0L) {
-            ((challenge.endDate - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L).toInt()
+            ((challenge.endDate - System.currentTimeMillis()) / DateUtils.MILLIS_PER_DAY).coerceAtLeast(0L).toInt()
         } else 0
         val info = LockedAppInfo(
             challengeId = challenge.id,

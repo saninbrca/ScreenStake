@@ -53,6 +53,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.presentation.components.ChallengeCard
+import com.detox.app.util.DateUtils
 import timber.log.Timber
 
 @Composable
@@ -295,9 +296,9 @@ private fun HardModeSuccessOverlay(
     val endDateMs = if (challenge.endDate > 1700000000000L) {
         challenge.endDate // already a timestamp
     } else {
-        challenge.startDate + (challenge.endDate * 24L * 60L * 60L * 1000L)
+        challenge.startDate + (challenge.endDate * DateUtils.MILLIS_PER_DAY)
     }
-    val durationDays = ((endDateMs - challenge.startDate) / 86_400_000L).toInt()
+    val durationDays = ((endDateMs - challenge.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
     val amountEuros = (challenge.amountCents ?: 0) / 100
 
     Box(
@@ -373,7 +374,7 @@ private fun RedemptionBanner(
     val refundEuros = (challenge.redemptionRefundAmount ?: 0) / 100
     val daysLeft = challenge.redemptionDeadline?.let {
         val remaining = it - System.currentTimeMillis()
-        (remaining / 86_400_000L).toInt().coerceAtLeast(0)
+        (remaining / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(0)
     } ?: 0
 
     Card(

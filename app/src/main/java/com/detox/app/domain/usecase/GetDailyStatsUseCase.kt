@@ -38,7 +38,7 @@ class GetDailyStatsUseCase @Inject constructor(
                 val soloEndDateMs = when {
                     challenge.endDate <= 0L -> 0L
                     challenge.endDate > 1700000000000L -> challenge.endDate // already a Unix timestamp (ms)
-                    else -> challenge.startDate + (challenge.endDate * 24L * 60L * 60L * 1000L)
+                    else -> challenge.startDate + (challenge.endDate * DateUtils.MILLIS_PER_DAY)
                 }
                 // Group Challenge DailyLogs are stored with challengeId = "group_${groupId}",
                 // not the local ChallengeEntity UUID — use the correct key.
@@ -60,7 +60,7 @@ class GetDailyStatsUseCase @Inject constructor(
                 else soloEndDateMs
                 val daysRemaining = when {
                     effectiveEndDateMs <= 0L -> Int.MAX_VALUE
-                    effectiveEndDateMs > now -> ((effectiveEndDateMs - now) / 86_400_000L).toInt().coerceAtLeast(0)
+                    effectiveEndDateMs > now -> ((effectiveEndDateMs - now) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(0)
                     else -> 0
                 }
                 Timber.d("Challenge ${challenge.id} endDate=$effectiveEndDateMs remaining=$daysRemaining days")

@@ -227,7 +227,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                     val userId = firebaseAuthService.currentUserId()
                     if (currentGc != null && userId != null) {
                         val startDate = System.currentTimeMillis()
-                        val endDate = startDate + currentGc.durationDays * 24L * 60 * 60 * 1000
+                        val endDate = startDate + currentGc.durationDays.toLong() * DateUtils.MILLIS_PER_DAY
                         val activeGc = currentGc.copy(
                             status = GroupChallengeStatus.ACTIVE,
                             startDate = startDate,

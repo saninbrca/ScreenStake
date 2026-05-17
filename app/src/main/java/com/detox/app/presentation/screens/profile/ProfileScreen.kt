@@ -1068,6 +1068,9 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
                     prefs.edit().putBoolean("debug_hard_mode_min_1", hardMin1On).apply()
                     toast(if (hardMin1On) "Hard Mode min: 1 DAY (debug)" else "Hard Mode min: 14 DAYS (normal)")
                 }
+                DebugButton("Fix stale challenges (endDate < 1 day)") {
+                    viewModel.debugFixStaleChallenges { msg -> toast(msg) }
+                }
 
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),

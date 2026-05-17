@@ -11,6 +11,7 @@ import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.detox.app.util.DateUtils
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
@@ -91,11 +92,13 @@ class CreateChallengeUseCase @Inject constructor(
         val now = System.currentTimeMillis()
         val durationMultiplier = if (BuildConfig.DEBUG) {
             val prefs = context.getSharedPreferences("detox_settings", Context.MODE_PRIVATE)
-            if (prefs.getBoolean("debug_use_minutes_as_days", false)) 60_000L else 86_400_000L
+            if (prefs.getBoolean("debug_use_minutes_as_days", false)) 60_000L else DateUtils.MILLIS_PER_DAY
         } else {
-            86_400_000L
+            DateUtils.MILLIS_PER_DAY
         }
         val endDate = now + durationDays * durationMultiplier
+        val diffMs = endDate - now
+        Timber.d("Challenge created: durationDays=$durationDays startDate=$now endDate=$endDate diff=${diffMs}ms = ${diffMs / DateUtils.MILLIS_PER_DAY}days (${diffMs / 60_000}min)")
 
         val challenge = Challenge(
             id = id,

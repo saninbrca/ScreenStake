@@ -2,6 +2,7 @@ package com.detox.app.domain.usecase
 
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.util.DateUtils
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -15,7 +16,7 @@ class GetChallengeStreakUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(challenge: Challenge, nowMs: Long = System.currentTimeMillis()): Int {
         return if (challenge.endDate <= 0L) {
-            ((nowMs - challenge.startDate) / DAY_MS).toInt().coerceAtLeast(0)
+            ((nowMs - challenge.startDate) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(0)
         } else {
             dailyLogRepository
                 .getStreakForChallenge(challenge.id, todayMidnightMs(nowMs))
@@ -31,7 +32,4 @@ class GetChallengeStreakUseCase @Inject constructor(
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
 
-    companion object {
-        private const val DAY_MS: Long = 24L * 60 * 60 * 1000
-    }
 }

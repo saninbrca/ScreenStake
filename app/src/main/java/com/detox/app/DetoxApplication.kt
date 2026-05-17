@@ -53,6 +53,12 @@ class DetoxApplication : Application(), Configuration.Provider {
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
+            // Auto-reset debug flags on every cold start so they can't bleed into real sessions.
+            getSharedPreferences("detox_settings", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("debug_use_minutes_as_days", false)
+                .apply()
+            Timber.d("DetoxApplication: debug_use_minutes_as_days reset to false on cold start")
         }
 
         // Create all notification channels up-front so they exist before any

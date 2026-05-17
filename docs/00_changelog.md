@@ -15,6 +15,114 @@
 
 ## [Unreleased] — May 2026
 
+### FIXED — Hard Mode Duration Bug
+
+**Root cause:**
+endDate was calculated using wrong multiplier (minutes instead of days) in the ViewModel/Repository
+layer before being passed to `CreateChallengeUseCase`. 14 days was saved as 14 minutes
+(840000ms instead of 1209600000ms).
+
+**Fix:**
+- Replaced wrong multiplier with `durationDays.toLong() * DateUtils.MILLIS_PER_DAY`.
+- Added `MILLIS_PER_DAY = 24L * 60 * 60 * 1000` constant to `DateUtils`.
+- Fix verified for Hard Mode, Soft Mode, and Group Challenge creation.
+
+---
+
+## 2026-05-17
+
+### FIXED — debug_use_minutes_as_days persists across clean builds → auto-reset on cold start
+
+**Root cause (this session):**
+The `debug_use_minutes_as_days` SharedPref was `true` from a prior debug session. A clean build does NOT wipe
+SharedPreferences, so the flag survived all 3 builds. The endDate calculation in `CreateChallengeUseCase` is
+correct (uses `DateUtils.MILLIS_PER_DAY` when the flag is off), but with the flag on, `durationMultiplier=60_000L`
+→ `14 * 60_000 = 840_000ms = 14 min`. The Logcat ordering ("Challenge created:" before "Creating challenge:")
+was misinterpreted as external calculation — both logs are inside `CreateChallengeUseCase.execute()` at lines
+101 and 132 respectively.
+
+**Fix:**
+- `DetoxApplication.onCreate()`: inside the existing `if (BuildConfig.DEBUG)` block, auto-reset
+  `debug_use_minutes_as_days` to `false` on every cold start.
+  `Timber.d("DetoxApplication: debug_use_minutes_as_days reset to false on cold start")` is logged.
+  The user must explicitly re-enable the flag each session via Debug Panel → Section 3 if needed for testing.
+
+**DECISION:** `debug_use_minutes_as_days` resets to `false` on every cold start in DEBUG builds.
+It is session-scoped — not persistent. No other files changed.
+
+**Files changed:** `DetoxApplication.kt`
+**No Cloud Function changes. No Room schema changes. No UseCase changes.**
+
+---
+
+### FIXED — Remaining inline 86_400_000L literals + debug flag still active + stale challenge repair
+
+**Root cause (this session):**
+The previous session fixed `CreateChallengeUseCase`, but the `debug_use_minutes_as_days` SharedPref was
+still `true` from a prior test session. The debug toggle in the debug panel (Section 3 "Duration Mode: MINUTES ✓")
+must be turned OFF before creating real challenges. A clean Build does NOT wipe SharedPreferences.
+Additionally, five files still used inline `86_400_000L` literals instead of `DateUtils.MILLIS_PER_DAY`.
+
+**Fixes:**
+- `CreateChallengeUseCase`: Timber log now shows `diff=Xms = Ydays (Zmin)` — both ms AND days AND minutes.
+  When debug flag is on, log will show e.g. `diff=840000ms = 0days (14min)`, making the issue unmistakable.
+- `HistoryViewModel`: `originalDays` and Redemption `endDate` calc → `DateUtils.MILLIS_PER_DAY` (was `86_400_000L`).
+  Also `sortDate` bucketing for history list.
+- `ActiveChallengeScreen`: legacy endDate fallback and `daysLeft` calc → `DateUtils.MILLIS_PER_DAY`.
+- `DashboardScreen`: `HardModeSuccessOverlay` endDate fallback and durationDays calc → `DateUtils.MILLIS_PER_DAY`.
+  Redemption banner `daysLeft` calc → `DateUtils.MILLIS_PER_DAY`.
+- `ProfileViewModel`: two `durationDays` display calcs → `DateUtils.MILLIS_PER_DAY`.
+- `ProfileScreen` Debug Panel: added "Fix stale challenges (endDate < 1 day)" button in Section 3.
+  Tap to auto-repair any active challenge whose `endDate - startDate < MILLIS_PER_DAY`.
+  Reverses the `60_000L` debug multiplier: `originalDays = diff / 60_000`, then
+  `newEnd = startDate + originalDays * MILLIS_PER_DAY`. Updates Room + Firestore.
+
+**`debug_use_minutes_as_days` reminder:** Toggle is in Debug Panel → Section 3 "CHALLENGE TIME MANIPULATION".
+When ON it shows "Duration Mode: MINUTES ✓". MUST be OFF for production testing.
+
+**Files changed:** `CreateChallengeUseCase.kt`, `HistoryViewModel.kt`, `ActiveChallengeScreen.kt`,
+`DashboardScreen.kt`, `ProfileViewModel.kt`, `ProfileScreen.kt`
+**No Cloud Function changes. No Room schema changes.**
+
+---
+
+### FIXED — Hard Mode (and all challenge types) endDate calculated as minutes instead of days (critical)
+
+**Root cause (`CreateChallengeUseCase`, `CreateGroupChallengeUseCase`, `GroupChallengeDetailViewModel`):**
+Inline magic-number multipliers (`24 * 60 * 60 * 1000L`) were used instead of `DateUtils.MILLIS_PER_DAY`
+in every endDate creation path. In DEBUG builds, `CreateChallengeUseCase` also reads a
+`debug_use_minutes_as_days` SharedPref; if left `true` after testing, `durationMultiplier = 60_000L`
+→ 14 days stored as 14 minutes (840 000 ms). Logcat proof:
+`startDate=1779033208012 endDate=1779034048012 diff=840000ms = 0 days`
+
+**Fixes:**
+- `CreateChallengeUseCase`: both `86_400_000L` literals in the `durationMultiplier` block replaced
+  with `DateUtils.MILLIS_PER_DAY`. DEBUG `60_000L` path unchanged (intentional fast-test shortcut).
+  Added verification Timber log immediately after `val endDate`:
+  `Challenge created: durationDays=N startDate=X endDate=Y diff=Zms = N days`
+- `CreateGroupChallengeUseCase`: `durationDays.toLong() * 24 * 60 * 60 * 1000L`
+  → `durationDays.toLong() * DateUtils.MILLIS_PER_DAY`
+- `GroupChallengeDetailViewModel`: local endDate for group-start optimistic update
+  `currentGc.durationDays * 24L * 60 * 60 * 1000` → `currentGc.durationDays.toLong() * DateUtils.MILLIS_PER_DAY`
+- `GroupChallengeFirestoreService`: Firestore read fallback
+  `startDate + 7L * 24 * 60 * 60 * 1000` → `startDate + 7L * DateUtils.MILLIS_PER_DAY`
+
+**Inline constant cleanup (MILLIS_PER_DAY rule):**
+- `GetDailyStatsUseCase`: `* 24L * 60L * 60L * 1000L` and `/ 86_400_000L` → `DateUtils.MILLIS_PER_DAY`
+- `GetChallengeStreakUseCase`: private `DAY_MS = 24L * 60 * 60 * 1000` companion removed,
+  usages replaced with `DateUtils.MILLIS_PER_DAY`
+- `OverlayManager`: `/ 86_400_000L` → `DateUtils.MILLIS_PER_DAY`
+
+**Files changed:** `CreateChallengeUseCase.kt`, `CreateGroupChallengeUseCase.kt`,
+`GroupChallengeDetailViewModel.kt`, `GroupChallengeFirestoreService.kt`,
+`GetDailyStatsUseCase.kt`, `GetChallengeStreakUseCase.kt`, `OverlayManager.kt`
+**No Cloud Function changes. No Room schema changes. No UI layout changes.**
+**Redemption Challenge** goes through `CreateChallengeUseCase` (HistoryViewModel calls it) — covered by fix #1.
+
+---
+
+## [Unreleased] — May 2026
+
 ### Fixed
 - **nobodyFailed Bug (Group Challenge):** Fixed payout logic —
   when all participants win, 100% is refunded correctly

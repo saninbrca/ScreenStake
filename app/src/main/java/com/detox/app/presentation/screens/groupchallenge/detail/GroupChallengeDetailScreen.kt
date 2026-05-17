@@ -98,6 +98,8 @@ fun GroupChallengeDetailScreen(
     val nudgeEvent by viewModel.nudgeEvent.collectAsStateWithLifecycle()
     val winDialogInfo by viewModel.winDialogInfo.collectAsStateWithLifecycle()
     val quitState by viewModel.quitState.collectAsStateWithLifecycle()
+    val leaveState by viewModel.leaveState.collectAsStateWithLifecycle()
+    val deleteState by viewModel.deleteState.collectAsStateWithLifecycle()
     val currentUserId = viewModel.currentUserId
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -154,6 +156,34 @@ fun GroupChallengeDetailScreen(
             is QuitState.Error -> {
                 snackbarHostState.showSnackbar(qs.message)
                 viewModel.clearQuitState()
+            }
+            else -> Unit
+        }
+    }
+
+    LaunchedEffect(leaveState) {
+        when (val ls = leaveState) {
+            is LeaveState.Success -> {
+                viewModel.clearLeaveState()
+                onNavigateToFriendsHub()
+            }
+            is LeaveState.Error -> {
+                snackbarHostState.showSnackbar(ls.message)
+                viewModel.clearLeaveState()
+            }
+            else -> Unit
+        }
+    }
+
+    LaunchedEffect(deleteState) {
+        when (val ds = deleteState) {
+            is DeleteState.Success -> {
+                viewModel.clearDeleteState()
+                onNavigateToFriendsHub()
+            }
+            is DeleteState.Error -> {
+                snackbarHostState.showSnackbar(ds.message)
+                viewModel.clearDeleteState()
             }
             else -> Unit
         }
@@ -238,8 +268,12 @@ fun GroupChallengeDetailScreen(
                     isStarting = startState is StartChallengeState.Loading,
                     isCurrentUserFailed = isCurrentUserFailed,
                     isQuitting = quitState is QuitState.Loading,
+                    isLeaving = leaveState is LeaveState.Loading,
+                    isDeleting = deleteState is DeleteState.Loading,
                     onStartChallenge = viewModel::startChallenge,
                     onQuit = viewModel::quitChallenge,
+                    onLeave = viewModel::leaveChallenge,
+                    onDelete = viewModel::deleteChallenge,
                     onNavigateToProfile = onNavigateToProfile,
                     modifier = Modifier.padding(innerPadding)
                 )
@@ -258,14 +292,20 @@ private fun GroupDetailContent(
     isStarting: Boolean,
     isCurrentUserFailed: Boolean,
     isQuitting: Boolean,
+    isLeaving: Boolean,
+    isDeleting: Boolean,
     onStartChallenge: () -> Unit,
     onQuit: () -> Unit,
+    onLeave: () -> Unit,
+    onDelete: () -> Unit,
     onNavigateToProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val now = System.currentTimeMillis()
     var showQuitDialog by remember { mutableStateOf(false) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     val remainingMs = gc.endDate - now
     val remainingDays = remainingMs / (24L * 60 * 60 * 1000)
@@ -320,6 +360,53 @@ private fun GroupDetailContent(
         )
     }
 
+    // Leave confirmation dialog (WAITING, non-creator)
+    if (showLeaveDialog) {
+        val amountStr = "€%,.2f".format(gc.buyInCents / 100.0)
+            .replace(",", "X").replace(".", ",").replace("X", ".")
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            title = { Text(stringResource(R.string.group_leave_dialog_title)) },
+            text = { Text(stringResource(R.string.group_leave_dialog_body, amountStr)) },
+            confirmButton = {
+                Button(
+                    onClick = { showLeaveDialog = false; onLeave() },
+                    colors = ButtonDefaults.buttonColors(containerColor = AbandonRed)
+                ) {
+                    Text(stringResource(R.string.group_leave_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }) {
+                    Text(stringResource(R.string.group_leave_dialog_cancel))
+                }
+            }
+        )
+    }
+
+    // Delete confirmation dialog (WAITING, creator only)
+    if (showDeleteDialog) {
+        val participantCount = gc.participants.size
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(stringResource(R.string.group_delete_dialog_title)) },
+            text = { Text(stringResource(R.string.group_delete_dialog_body, participantCount)) },
+            confirmButton = {
+                Button(
+                    onClick = { showDeleteDialog = false; onDelete() },
+                    colors = ButtonDefaults.buttonColors(containerColor = AbandonRed)
+                ) {
+                    Text(stringResource(R.string.group_delete_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(stringResource(R.string.group_delete_dialog_cancel))
+                }
+            }
+        )
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -342,7 +429,9 @@ private fun GroupDetailContent(
                 endDateValid = endDateValid,
                 dateFmt = dateFmt,
                 isStarting = isStarting,
+                isDeleting = isDeleting,
                 onStartChallenge = onStartChallenge,
+                onDelete = { showDeleteDialog = true },
                 onShare = {
                     val shareText = context.getString(
                         R.string.group_create_share_text,
@@ -469,6 +558,30 @@ private fun GroupDetailContent(
                 }
             }
         }
+
+        // ── Challenge verlassen (WAITING, non-creator only) ────────────────────
+        if (gc.status == GroupChallengeStatus.WAITING && gc.creatorUserId != currentUserId) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isLeaving) { showLeaveDialog = true }
+                        .padding(top = 16.dp, bottom = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isLeaving) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            text = stringResource(R.string.group_leave_button),
+                            fontSize = 14.sp,
+                            color = AbandonRed
+                        )
+                    }
+                }
+            }
+        }
+
     }
 }
 
@@ -482,7 +595,9 @@ private fun GroupHeaderCard(
     endDateValid: Boolean,
     dateFmt: SimpleDateFormat,
     isStarting: Boolean,
+    isDeleting: Boolean,
     onStartChallenge: () -> Unit,
+    onDelete: () -> Unit,
     onShare: () -> Unit,
 ) {
     DetoxCard {
@@ -676,6 +791,25 @@ private fun GroupHeaderCard(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
+                    }
+                    // Delete button — below Start, creator only, WAITING only
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isDeleting) { onDelete() }
+                            .padding(top = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isDeleting) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text(
+                                text = stringResource(R.string.group_delete_button),
+                                fontSize = 14.sp,
+                                color = AbandonRed,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             }

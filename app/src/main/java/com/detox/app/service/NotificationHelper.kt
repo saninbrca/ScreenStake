@@ -624,6 +624,45 @@ object NotificationHelper {
         }
     }
 
+    fun sendGroupChallengeLeft(context: Context, groupId: String, amountCents: Int) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + groupId.hashCode() + 30
+        val body = context.getString(R.string.notif_group_left_body, amountCents / 100)
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_group_left_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group left notification posted for groupId=%s", groupId)
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group left notification")
+        }
+    }
+
+    fun sendGroupChallengeDeleted(context: Context, groupId: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notifId = NOTIF_ID_GROUP_BASE + groupId.hashCode() + 31
+        val notification = NotificationCompat.Builder(context, CHANNEL_GROUP_EVENTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_group_deleted_title))
+            .setContentText(context.getString(R.string.notif_group_deleted_body))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.notif_group_deleted_body)))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Group deleted notification posted for groupId=%s", groupId)
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping group deleted notification")
+        }
+    }
+
     fun sendGroupChallengeStartWarning(context: Context, appName: String) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val notifId = NOTIF_ID_GROUP_BASE + appName.hashCode() + 11

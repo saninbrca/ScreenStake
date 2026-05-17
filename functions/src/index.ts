@@ -601,6 +601,142 @@ export const expireGroupChallenge = functions.region(REGION).https.onRequest(asy
   } catch (e) { handleError("expireGroupChallenge", e, res); }
 });
 
+// ── leaveGroupChallenge ────────────────────────────────────────────────────────
+// Regular participant (non-creator) leaves a WAITING challenge.
+// Stripe PI is cancelled → 100% refund.
+// If remaining participants < 2 → status set to "cancelled".
+
+export const leaveGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const verifiedUserId = await requireAuth(req);
+    const { groupId } = req.body as { groupId: string };
+    if (!groupId) throw new HttpError(400, "groupId is required.");
+
+    const db = admin.firestore();
+    const docRef = db.collection("groupChallenges").doc(groupId);
+    const doc = await docRef.get();
+    if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+
+    const gc = doc.data()!;
+
+    // 2. Verify status == "waiting"
+    if (gc["status"] !== "waiting") {
+      throw new HttpError(400, "Du kannst eine aktive Challenge nicht verlassen.");
+    }
+
+    const participants = parseParticipants<Participant>(gc["participants"]);
+
+    // 3. Verify user is a participant
+    const participant = participants.find((p) => p.userId === verifiedUserId);
+    if (!participant) {
+      throw new HttpError(403, "Du bist kein Teilnehmer dieser Challenge.");
+    }
+
+    // 4. Verify user is NOT the creator
+    if (gc["creatorUserId"] === verifiedUserId) {
+      throw new HttpError(400, "Als Ersteller kannst du die Challenge nicht verlassen. Lösche die Challenge stattdessen.");
+    }
+
+    // 5+6. Find and verify PaymentIntent
+    const paymentIntentId = participant.paymentIntentId;
+    if (!paymentIntentId) throw new HttpError(500, "Kein Payment gefunden.");
+
+    const pi = await getStripe().paymentIntents.retrieve(paymentIntentId);
+    if (pi.status !== "requires_capture") {
+      throw new HttpError(400, `Zahlung kann nicht storniert werden. Status: ${pi.status}`);
+    }
+
+    // 7. Cancel Stripe PI — FIRST before any Firestore write
+    await getStripe().paymentIntents.cancel(paymentIntentId);
+    functions.logger.info("leaveGroupChallenge: PI cancelled", { groupId, userId: verifiedUserId });
+
+    // 8. Only after Stripe cancel → update Firestore
+    const remainingParticipants = participants.filter((p) => p.userId !== verifiedUserId);
+    const newStatus = remainingParticipants.length < 2 ? "cancelled" : (gc["status"] as string);
+
+    const updateData: Record<string, unknown> = {
+      participants: remainingParticipants,
+      participantUserIds: admin.firestore.FieldValue.arrayRemove(verifiedUserId),
+    };
+    if (newStatus === "cancelled") {
+      updateData["status"] = "cancelled";
+    }
+    await docRef.update(updateData);
+
+    functions.logger.info("leaveGroupChallenge: participant removed", {
+      groupId,
+      userId: verifiedUserId,
+      remaining: remainingParticipants.length,
+      newStatus,
+    });
+
+    const amountCents: number = (participant.amountCents ?? (gc["buyInCents"] as number)) ?? 0;
+    res.json({ success: true, amountCents });
+  } catch (e) { handleError("leaveGroupChallenge", e, res); }
+});
+
+// ── deleteGroupChallenge ───────────────────────────────────────────────────────
+// Creator deletes a WAITING challenge → cancels ALL participant PIs → 100% refund each.
+
+export const deleteGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const verifiedUserId = await requireAuth(req);
+    const { groupId } = req.body as { groupId: string };
+    if (!groupId) throw new HttpError(400, "groupId is required.");
+
+    const db = admin.firestore();
+    const docRef = db.collection("groupChallenges").doc(groupId);
+    const doc = await docRef.get();
+    if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+
+    const gc = doc.data()!;
+
+    // 2. Verify status == "waiting"
+    if (gc["status"] !== "waiting") {
+      throw new HttpError(400, "Du kannst nur eine wartende Challenge löschen.");
+    }
+
+    // 3. Verify caller is the creator
+    if (gc["creatorUserId"] !== verifiedUserId) {
+      throw new HttpError(403, "Nur der Ersteller kann die Challenge löschen.");
+    }
+
+    const participants = parseParticipants<Participant>(gc["participants"]);
+
+    // 4. For each participant: cancel their PI — all Stripe work BEFORE Firestore write
+    const updatedParticipants = [...participants];
+    for (let i = 0; i < updatedParticipants.length; i++) {
+      const p = updatedParticipants[i];
+      if (!p.paymentIntentId) continue;
+      try {
+        const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+        if (pi.status === "requires_capture") {
+          await getStripe().paymentIntents.cancel(p.paymentIntentId);
+          functions.logger.info("deleteGroupChallenge: PI cancelled", { groupId, userId: p.userId });
+        } else if (pi.status === "canceled") {
+          functions.logger.info("deleteGroupChallenge: PI already cancelled (idempotent)", { groupId, userId: p.userId });
+        } else {
+          functions.logger.warn("deleteGroupChallenge: unexpected PI status — skipping", { groupId, userId: p.userId, piStatus: pi.status });
+        }
+        updatedParticipants[i] = { ...p, status: "refunded" };
+      } catch (e) {
+        functions.logger.error("deleteGroupChallenge: PI cancel failed", { groupId, userId: p.userId, error: e });
+      }
+    }
+
+    // 5. Only after ALL Stripe cancels → update Firestore
+    await docRef.update({ status: "cancelled", participants: updatedParticipants });
+
+    functions.logger.info("deleteGroupChallenge: challenge deleted by creator", {
+      groupId,
+      creatorId: verifiedUserId,
+      participantCount: participants.length,
+    });
+
+    res.json({ success: true });
+  } catch (e) { handleError("deleteGroupChallenge", e, res); }
+});
+
 // ── completeGroupChallenge ─────────────────────────────────────────────────────
 
 export const completeGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {

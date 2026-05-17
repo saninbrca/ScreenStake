@@ -248,6 +248,27 @@ class CloudFunctionsService @Inject constructor(
         Result.failure(e)
     }
 
+    data class LeaveGroupChallengeResult(val amountCents: Int)
+
+    suspend fun leaveGroupChallenge(groupId: String): Result<LeaveGroupChallengeResult> = try {
+        val response = callFunction("leaveGroupChallenge", mapOf("groupId" to groupId))
+        val amountCents = (response["amountCents"] as? Number)?.toInt() ?: 0
+        Timber.d("leaveGroupChallenge: groupId=%s amountCents=%d", groupId, amountCents)
+        Result.success(LeaveGroupChallengeResult(amountCents))
+    } catch (e: Exception) {
+        Timber.e(e, "leaveGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun deleteGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("deleteGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("deleteGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "deleteGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
     // ── Stripe Connect ─────────────────────────────────────────────────────────
 
     data class ConnectedAccountStatus(

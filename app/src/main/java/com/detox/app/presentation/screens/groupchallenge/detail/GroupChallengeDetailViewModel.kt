@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import com.detox.app.service.NotificationHelper
 import com.detox.app.util.DateUtils
 import timber.log.Timber
 import javax.inject.Inject
@@ -52,6 +53,20 @@ sealed interface QuitState {
     data class Error(val message: String) : QuitState
 }
 
+sealed interface LeaveState {
+    data object Idle : LeaveState
+    data object Loading : LeaveState
+    data class Success(val amountCents: Int) : LeaveState
+    data class Error(val message: String) : LeaveState
+}
+
+sealed interface DeleteState {
+    data object Idle : DeleteState
+    data object Loading : DeleteState
+    data object Success : DeleteState
+    data class Error(val message: String) : DeleteState
+}
+
 data class WinDialogInfo(
     val bonusCents: Int,
     val groupId: String,
@@ -66,7 +81,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
     private val cloudFunctionsService: CloudFunctionsService,
     private val dailyLogRepository: DailyLogRepository,
     private val firestore: FirebaseFirestore,
-    @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
 
     private val groupId: String = requireNotNull(savedStateHandle["groupId"]) {
@@ -82,6 +97,12 @@ class GroupChallengeDetailViewModel @Inject constructor(
 
     private val _quitState = MutableStateFlow<QuitState>(QuitState.Idle)
     val quitState: StateFlow<QuitState> = _quitState.asStateFlow()
+
+    private val _leaveState = MutableStateFlow<LeaveState>(LeaveState.Idle)
+    val leaveState: StateFlow<LeaveState> = _leaveState.asStateFlow()
+
+    private val _deleteState = MutableStateFlow<DeleteState>(DeleteState.Idle)
+    val deleteState: StateFlow<DeleteState> = _deleteState.asStateFlow()
 
     /** Emits a snackbar message string — either a success confirmation or an error/rate-limit message. */
     private val _nudgeEvent = MutableStateFlow<String?>(null)
@@ -282,6 +303,46 @@ class GroupChallengeDetailViewModel @Inject constructor(
     }
 
     fun clearQuitState() { _quitState.value = QuitState.Idle }
+
+    fun leaveChallenge() {
+        if (_leaveState.value is LeaveState.Loading) return
+        _leaveState.value = LeaveState.Loading
+        viewModelScope.launch {
+            cloudFunctionsService.leaveGroupChallenge(groupId)
+                .onSuccess { result ->
+                    Timber.d("GroupDetailVM: leaveGroupChallenge succeeded for group %s", groupId)
+                    NotificationHelper.sendGroupChallengeLeft(
+                        context, groupId, result.amountCents
+                    )
+                    _leaveState.value = LeaveState.Success(result.amountCents)
+                }
+                .onFailure { e ->
+                    Timber.e(e, "GroupDetailVM: leaveGroupChallenge failed for group %s", groupId)
+                    _leaveState.value = LeaveState.Error(e.message ?: "Fehler beim Verlassen")
+                }
+        }
+    }
+
+    fun clearLeaveState() { _leaveState.value = LeaveState.Idle }
+
+    fun deleteChallenge() {
+        if (_deleteState.value is DeleteState.Loading) return
+        _deleteState.value = DeleteState.Loading
+        viewModelScope.launch {
+            cloudFunctionsService.deleteGroupChallenge(groupId)
+                .onSuccess {
+                    Timber.d("GroupDetailVM: deleteGroupChallenge succeeded for group %s", groupId)
+                    NotificationHelper.sendGroupChallengeDeleted(context, groupId)
+                    _deleteState.value = DeleteState.Success
+                }
+                .onFailure { e ->
+                    Timber.e(e, "GroupDetailVM: deleteGroupChallenge failed for group %s", groupId)
+                    _deleteState.value = DeleteState.Error(e.message ?: "Fehler beim Löschen")
+                }
+        }
+    }
+
+    fun clearDeleteState() { _deleteState.value = DeleteState.Idle }
 
     fun nudgeParticipant(targetUserId: String) {
         val fromUserId = currentUserId ?: return

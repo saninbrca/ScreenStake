@@ -15,6 +15,27 @@
 
 ## [Unreleased] — May 2026
 
+### Added
+- **Group Challenge — Leave (participant) and Delete (creator) for WAITING status:**
+  Regular participants can leave a WAITING challenge → 100% Stripe refund.
+  Creator can delete a WAITING challenge → ALL participants get 100% refund.
+  Neither action is available once status=ACTIVE.
+  - New CF `leaveGroupChallenge`: verifies WAITING + non-creator, cancels PI, removes from participants array, auto-cancels challenge if < 2 remain.
+  - New CF `deleteGroupChallenge`: verifies WAITING + creator, cancels ALL PIs idempotently, sets status=cancelled.
+  - UI: "Challenge verlassen" text link (14sp, #FF3B30) below participant list — WAITING + non-creator only.
+  - UI: "Challenge löschen" text link (14sp, #FF3B30) below Start button in header card — WAITING + creator only.
+  - Confirmation dialogs for both actions with amount/participant count.
+  - Local WorkManager notifications after each action via NotificationHelper.
+  - LeaveState + DeleteState added to GroupChallengeDetailViewModel.
+  - Critical rule: Stripe cancel ALWAYS before Firestore update.
+
+**Files changed:** `functions/src/index.ts`, `CloudFunctionsService.kt`, `GroupChallengeDetailViewModel.kt`, `GroupChallengeDetailScreen.kt`, `NotificationHelper.kt`, `strings.xml`
+**Requires deploy:** `firebase deploy --only functions:leaveGroupChallenge,functions:deleteGroupChallenge`
+
+---
+
+## [Unreleased] — May 2026
+
 ### Fixed
 - **Group Challenge Wizard — UI alignment with Solo Wizard:**
   Audited and fixed all Group Challenge Wizard steps to match

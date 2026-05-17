@@ -1028,6 +1028,25 @@
     <string name="group_start_payment_not_ready_body">Die Zahlung von %s ist nicht mehr gültig. Bitte entferne diesen Teilnehmer oder warte auf eine neue Zahlung.</string>
     <string name="group_start_payment_not_ready_button">Verstanden</string>
 
+    <!-- Group Challenge — Leave / Delete (WAITING state) -->
+    <string name="group_leave_button">Challenge verlassen</string>
+    <string name="group_leave_dialog_title">Challenge verlassen?</string>
+    <string name="group_leave_dialog_body">Dein Einsatz von %1$s wird vollständig zurückerstattet.</string>
+    <string name="group_leave_dialog_confirm">Verlassen</string>
+    <string name="group_leave_dialog_cancel">Abbrechen</string>
+
+    <string name="group_delete_button">Challenge löschen</string>
+    <string name="group_delete_dialog_title">Challenge löschen?</string>
+    <string name="group_delete_dialog_body">Alle %1$d Teilnehmer erhalten ihren Einsatz vollständig zurück.</string>
+    <string name="group_delete_dialog_confirm">Löschen</string>
+    <string name="group_delete_dialog_cancel">Abbrechen</string>
+
+    <!-- Notifications — Leave / Delete -->
+    <string name="notif_group_left_title">Challenge verlassen</string>
+    <string name="notif_group_left_body">Du hast die Challenge verlassen. €%1$d werden zurückerstattet.</string>
+    <string name="notif_group_deleted_title">Challenge gelöscht</string>
+    <string name="notif_group_deleted_body">Der Ersteller hat die Challenge gelöscht. Dein Einsatz wird vollständig zurückerstattet.</string>
+
     <!-- Group Challenge Notifications -->
     <string name="notif_group_expired_title">⏰ Challenge abgelaufen</string>
     <string name="notif_group_expired_body">Die Group Challenge wurde nicht rechtzeitig gestartet. Dein Geld wurde vollständig zurückgegeben.</string>

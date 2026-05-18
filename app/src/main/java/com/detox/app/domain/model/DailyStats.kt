@@ -19,6 +19,8 @@ data class DailyStats(
     val budgetRemainingMinutes: Int? = null,
     /** Custom + adult domains being blocked via VPN for this challenge. */
     val blockedDomains: List<String> = emptyList(),
+    /** URL path prefixes for feature-level partial blocking, e.g. "instagram.com/reels". */
+    val partialBlockDomains: List<String> = emptyList(),
     /** True when this challenge has adult-content blocking enabled. */
     val blockAdultContent: Boolean = false,
     val mode: ChallengeMode = ChallengeMode.SOFT,

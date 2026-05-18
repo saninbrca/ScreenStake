@@ -33,13 +33,18 @@ private const val MAX_PARTICIPANTS = 20
 
 data class GroupCreateFormState(
     val currentStep: Int = 1,
-    // Step 1 — app selection
+    // Step 1 — app/website selection
+    val activeTab: Int = 0,   // 0 = Apps, 1 = Websites
     val packageNames: List<String> = emptyList(),
     val displayName: String = "",
     val searchQuery: String = "",
     val domainToggles: Map<String, Boolean> = emptyMap(),
     val manualDomainInput: String = "",
     val manualDomains: List<String> = emptyList(),
+    val manualDomainError: String? = null,
+    val blockAdultContent: Boolean = false,
+    val partialBlockDomains: Set<String> = emptySet(),
+    val partialBlockSections: Set<String> = emptySet(),
     // Step 2 — limit type
     val limitType: LimitType? = null,
     // Step 3 — limit value + duration
@@ -127,7 +132,9 @@ class GroupChallengeCreateViewModel @Inject constructor(
         }
     }
 
-    // ── Step 1 — app selection ──────────────────────────────────────────────────
+    // ── Step 1 — tab + app/website selection ───────────────────────────────────
+
+    fun updateActiveTab(tab: Int) = _formState.update { it.copy(activeTab = tab, manualDomainError = null) }
 
     fun toggleApp(packageName: String) {
         val current = _formState.value.packageNames.toMutableList()
@@ -161,29 +168,61 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     fun updateSearchQuery(q: String) = _formState.update { it.copy(searchQuery = q) }
 
-    fun updateManualDomainInput(v: String) = _formState.update { it.copy(manualDomainInput = v) }
+    fun updateManualDomainInput(v: String) = _formState.update { it.copy(manualDomainInput = v, manualDomainError = null) }
 
     fun addManualDomain() {
-        val raw = _formState.value.manualDomainInput.trim().lowercase()
-            .removePrefix("https://").removePrefix("http://").trimEnd('/')
-        if (raw.isBlank() || !raw.contains('.')) return
-        val current = _formState.value.manualDomains
-        if (current.contains(raw)) {
-            _formState.update { it.copy(manualDomainInput = "") }
+        var input = _formState.value.manualDomainInput.trim().lowercase()
+        input = input
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .removePrefix("www.")
+            .substringBefore("/")
+            .trim()
+        if (input.isBlank() || !input.contains(".") || input.contains(" ")) {
+            _formState.update { it.copy(manualDomainError = "Please enter a valid website (e.g. instagram.com)") }
             return
         }
-        _formState.update { it.copy(manualDomains = current + raw, manualDomainInput = "") }
+        _formState.update { s ->
+            if (!s.manualDomains.contains(input)) {
+                s.copy(manualDomains = s.manualDomains + input, manualDomainInput = "", manualDomainError = null)
+            } else {
+                s.copy(manualDomainInput = "", manualDomainError = null)
+            }
+        }
     }
 
     fun removeManualDomain(domain: String) =
         _formState.update { it.copy(manualDomains = it.manualDomains - domain) }
+
+    fun updateBlockAdultContent(enabled: Boolean) =
+        _formState.update { it.copy(blockAdultContent = enabled) }
+
+    fun togglePartialBlockDomain(path: String) {
+        _formState.update { s ->
+            val updated = if (s.partialBlockDomains.contains(path))
+                s.partialBlockDomains - path
+            else
+                s.partialBlockDomains + path
+            s.copy(partialBlockDomains = updated)
+        }
+    }
+
+    fun togglePartialSection(sectionId: String) {
+        _formState.update { s ->
+            val updated = if (sectionId in s.partialBlockSections)
+                s.partialBlockSections - sectionId
+            else
+                s.partialBlockSections + sectionId
+            s.copy(partialBlockSections = updated)
+        }
+    }
 
     fun computeBlockedDomains(): List<String> {
         val s = _formState.value
         val fromToggles = s.domainToggles
             .filter { it.value }
             .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
-        return (fromToggles + s.manualDomains).distinct()
+        return (fromToggles + s.manualDomains + s.partialBlockDomains).distinct()
     }
 
     // ── Step 2 — limit type ─────────────────────────────────────────────────────
@@ -241,7 +280,11 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun canGoNext(): Boolean {
         val s = _formState.value
         return when (s.currentStep) {
-            1 -> s.packageNames.isNotEmpty()
+            1 -> when (s.activeTab) {
+                0 -> s.packageNames.isNotEmpty()
+                1 -> s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
+                else -> false
+            }
             2 -> s.limitType != null
             3 -> s.durationError == null && s.durationDays >= 3
             4 -> s.buyInEuros >= 10
@@ -253,11 +296,14 @@ class GroupChallengeCreateViewModel @Inject constructor(
     private fun validateCurrentStep(): Boolean {
         val s = _formState.value
         return when (s.currentStep) {
-            1 -> {
-                if (s.packageNames.isEmpty()) {
-                    _formState.update { it.copy(packageNamesError = "Select at least one app") }
-                    false
-                } else true
+            1 -> when (s.activeTab) {
+                0 -> {
+                    if (s.packageNames.isEmpty()) {
+                        _formState.update { it.copy(packageNamesError = "Select at least one app") }
+                        false
+                    } else true
+                }
+                else -> s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
             }
             2 -> s.limitType != null
             3 -> {

@@ -119,6 +119,11 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         }
     }
 
+    override fun onCreate() {
+        super.onCreate()
+        AdultDomains.loadDomains(this)
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Timber.d("AppDetectionAccessibilityService connected")
@@ -371,21 +376,16 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
         val adultBlockingActive = TrackedAppEventBus.adultBlockingActive.value
 
-        // ── Adult domain check ────────────────────────────────────────────────
-        if (adultBlockingActive) {
-            val matchedAdult = AdultDomains.BLOCKED_DOMAINS.firstOrNull { domain ->
-                url.contains(domain, ignoreCase = true)
+        // ── Adult domain check (O(1) HashSet lookup) ─────────────────────────
+        if (adultBlockingActive && AdultDomains.isBlocked(url)) {
+            val now = System.currentTimeMillis()
+            if (now - lastAdultBlockTimeMs >= adultBlockCooldownMs) {
+                lastAdultBlockTimeMs = now
+                Timber.d("URL detected: $url in $packageName → adult domain blocked")
+                showBlockedToast()
+                goHome()
             }
-            if (matchedAdult != null) {
-                val now = System.currentTimeMillis()
-                if (now - lastAdultBlockTimeMs >= adultBlockCooldownMs) {
-                    lastAdultBlockTimeMs = now
-                    Timber.d("URL detected: $url in $packageName → blocked=$matchedAdult (adult)")
-                    showBlockedToast()
-                    goHome()
-                }
-                return  // Don't also fire the custom-domain overlay for the same URL
-            }
+            return  // Don't also fire the custom-domain overlay for the same URL
         }
 
         Timber.d("URL detected: $url in $packageName → blocked=false")

@@ -844,6 +844,29 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    // ── Adult Domain Debug (Section 10) ──────────────────────────────────────
+
+    fun debugGetAdultDomainStats(): Pair<Int, String> =
+        com.detox.app.domain.model.AdultDomains.domainsCount to
+            com.detox.app.domain.model.AdultDomains.domainSource
+
+    fun debugTriggerAdultDomainsUpdate(context: Context, onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val request = androidx.work.OneTimeWorkRequestBuilder<
+                    com.detox.app.service.AdultDomainsUpdateWorker>().build()
+                WorkManager.getInstance(context).enqueue(request)
+                onResult("Update worker enqueued — check Logcat for progress")
+            } catch (e: Exception) {
+                onResult("Error: ${e.message}")
+            }
+        }
+    }
+
+    fun debugTestAdultDomain(domain: String): Boolean =
+        com.detox.app.domain.model.AdultDomains.isDomainBlocked(domain)
+
     companion object {
         const val TAG_MANUAL_EVALUATION = "manual_evaluation"
     }

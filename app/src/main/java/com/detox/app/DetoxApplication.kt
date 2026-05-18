@@ -9,10 +9,13 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.service.AdultDomainsUpdateWorker
 import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.service.DailyReminderWorker
 import com.detox.app.service.GroupChallengeAutoStartWorker
@@ -84,6 +87,7 @@ class DetoxApplication : Application(), Configuration.Provider {
         scheduleGroupChallengeAutoStart()
         schedulePermissionCheck()
         scheduleServiceWatchdog()
+        scheduleAdultDomainsUpdate()
         observeAppForeground()
         startGroupChallengeSyncing()
     }
@@ -262,6 +266,22 @@ class DetoxApplication : Application(), Configuration.Provider {
             }
     }
 
+    private fun scheduleAdultDomainsUpdate() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = PeriodicWorkRequestBuilder<AdultDomainsUpdateWorker>(30, TimeUnit.DAYS)
+            .setConstraints(constraints)
+            .addTag(TAG_ADULT_DOMAINS_UPDATE)
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            AdultDomainsUpdateWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+        Timber.d("Adult domains update worker scheduled (every 30 days, requires network)")
+    }
+
     private fun scheduleServiceWatchdog() {
         val request = PeriodicWorkRequestBuilder<ServiceWatchdogWorker>(15, TimeUnit.MINUTES)
             .build()
@@ -274,10 +294,11 @@ class DetoxApplication : Application(), Configuration.Provider {
     }
 
     companion object {
-        const val TAG_DAILY_EVALUATION  = "daily_evaluation"
-        const val TAG_DAILY_REMINDER    = "daily_reminder"
-        const val WORK_NAME_DAILY_REMINDER = "daily_reminder"
-        const val TAG_GROUP_AUTO_START  = "group_auto_start"
+        const val TAG_DAILY_EVALUATION       = "daily_evaluation"
+        const val TAG_DAILY_REMINDER         = "daily_reminder"
+        const val WORK_NAME_DAILY_REMINDER   = "daily_reminder"
+        const val TAG_GROUP_AUTO_START       = "group_auto_start"
         const val WORK_NAME_GROUP_AUTO_START = "group_auto_start"
+        const val TAG_ADULT_DOMAINS_UPDATE   = "adult_domains_update"
     }
 }

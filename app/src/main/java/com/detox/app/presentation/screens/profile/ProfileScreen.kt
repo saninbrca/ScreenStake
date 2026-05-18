@@ -51,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -94,9 +96,9 @@ fun ProfileScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val stats by viewModel.stats.collectAsStateWithLifecycle()
-    val recentChallenges by viewModel.recentChallenges.collectAsStateWithLifecycle()
-    val payoutState by viewModel.payoutState.collectAsStateWithLifecycle()
-    val pendingPayoutCents by viewModel.pendingPayoutCents.collectAsStateWithLifecycle()
+    // val recentChallenges by viewModel.recentChallenges.collectAsStateWithLifecycle() // Removed
+    // val payoutState by viewModel.payoutState.collectAsStateWithLifecycle() // Removed
+    // val pendingPayoutCents by viewModel.pendingPayoutCents.collectAsStateWithLifecycle() // Removed
     val payoutClaimState by viewModel.payoutClaimState.collectAsStateWithLifecycle()
     val ibanData by viewModel.ibanData.collectAsStateWithLifecycle()
     val pendingBalance by viewModel.pendingBalance.collectAsStateWithLifecycle()
@@ -514,7 +516,7 @@ internal fun SimpleHistoryRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(0.5.dp, Color(0x0F000000))
     ) {
@@ -533,12 +535,12 @@ internal fun SimpleHistoryRow(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Box(
                     modifier = Modifier
-                        .background(statusBgColor, androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                        .background(statusBgColor, RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
@@ -645,19 +647,19 @@ private fun PayoutChallengeCard(
     }
 
     Card(
-        modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = androidx.compose.ui.Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             // Header
             Row(
-                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = androidx.compose.ui.Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f)) {
                     val modeLabel = when {
                         payout.isGroup -> "Group Challenge"
                         payout.isRedemption -> "Comeback"
@@ -687,9 +689,9 @@ private fun PayoutChallengeCard(
                 }
             }
 
-            Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             HorizontalDivider()
-            Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Stake refund row
             PayoutRow(
@@ -730,9 +732,9 @@ private fun PayoutChallengeCard(
                 )
             }
 
-            Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             HorizontalDivider()
-            Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Total
             val total = payout.stakeRefundCents + payout.prizeShareCents
@@ -782,7 +784,7 @@ private fun PayoutChallengeCard(
             if (payout.payoutStatus == "pending_payout" && payout.prizeShareCents > 0) {
                 TextButton(
                     onClick = onIbanSetupClick,
-                    modifier = androidx.compose.ui.Modifier.align(Alignment.End)
+                    modifier = Modifier.align(Alignment.End)
                 ) {
                     Text(
                         text = stringResource(R.string.payout_iban_setup_button),
@@ -802,14 +804,14 @@ private fun PayoutChallengeCard(
 @Composable
 private fun PayoutRow(label: String, statusIcon: String?) {
     Row(
-        modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            modifier = androidx.compose.ui.Modifier.weight(1f)
+            modifier = Modifier.weight(1f)
         )
         if (statusIcon != null) {
             Text(text = statusIcon, style = MaterialTheme.typography.bodySmall)
@@ -817,6 +819,9 @@ private fun PayoutRow(label: String, statusIcon: String?) {
     }
 }
 
+// ── Debug Panel ───────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DebugPanel(viewModel: ProfileViewModel) {
     val context = LocalContext.current
@@ -842,6 +847,10 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
     // Section 9 dialogs
     var showPermissionsDialog by remember { mutableStateOf(false) }
     var permissionsText by remember { mutableStateOf("") }
+
+    // Section 10 state
+    var adultDomainTestInput by remember { mutableStateOf("") }
+    var adultDomainTestResult by remember { mutableStateOf<String?>(null) }
 
     val activeGroupChallenges by viewModel.debugActiveGroupChallenges.collectAsStateWithLifecycle()
     val debugDailyLogs by viewModel.debugDailyLogs.collectAsStateWithLifecycle()
@@ -916,10 +925,7 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
                     } else {
                         debugDailyLogs.forEach { log ->
                             Text(
-                                text = "${log.challengeId.take(8)}…\n" +
-                                    "opens=${log.consciousOpens}  " +
-                                    "used=${log.budgetUsedMs / 60_000}min  " +
-                                    "rem=${log.budgetRemainingMs / 60_000}min",
+                                text = """${log.challengeId.take(8)}…\nopens=${log.consciousOpens}  used=${log.budgetUsedMs / 60_000}min  rem=${log.budgetRemainingMs / 60_000}min""".trimIndent(),
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(vertical = 4.dp)
                             )
@@ -956,7 +962,8 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
                 Column {
                     if (debugActiveChallenges.isEmpty()) {
                         Text("No active challenges", style = MaterialTheme.typography.bodySmall)
-                    } else {
+                    }
+                    else {
                         debugActiveChallenges.forEach { c ->
                             Text(
                                 text = "${c.id.take(8)}… | ${c.limitType} | ${c.status}",
@@ -1192,9 +1199,9 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
                     val overlay = Settings.canDrawOverlays(context)
                     val accessibility = isAccessibilityEnabled()
                     val usageStats = isUsageStatsGranted()
-                    permissionsText = "Overlay: ${if (overlay) "✅" else "❌"}\n" +
-                        "Accessibility: ${if (accessibility) "✅" else "❌"}\n" +
-                        "Usage Stats: ${if (usageStats) "✅" else "❌"}"
+                    permissionsText = """Overlay: ${if (overlay) "✅" else "❌"}
+Accessibility: ${if (accessibility) "✅" else "❌"}
+Usage Stats: ${if (usageStats) "✅" else "❌"}""".trimIndent()
                     showPermissionsDialog = true
                 }
                 DebugButton("Simulate Permission Lost") {
@@ -1274,6 +1281,81 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
                     ) {
                         Text("Huawei: Open Protected Apps 🔋", fontSize = 13.sp)
                     }
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = DebugOrangeBorder.copy(alpha = 0.2f)
+                )
+
+                // ── SECTION 10: Adult Domain Stats ────────────────────────────
+                DebugSectionHeader("ADULT DOMAIN STATS")
+
+                val (domainCount, domainSource) = remember(Unit) {
+                    viewModel.debugGetAdultDomainStats()
+                }
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = DebugOrange.copy(alpha = 0.08f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            "Domains loaded: $domainCount",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = DebugOrange
+                        )
+                        Text(
+                            "Source: $domainSource",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DebugOrange
+                        )
+                    }
+                }
+
+                DebugButton("Force update now") {
+                    viewModel.debugTriggerAdultDomainsUpdate(context) { msg ->
+                        toast(msg)
+                    }
+                }
+
+                // Test domain input
+                OutlinedTextField(
+                    value = adultDomainTestInput,
+                    onValueChange = {
+                        adultDomainTestInput = it
+                        adultDomainTestResult = null
+                    },
+                    label = { Text("Test domain (e.g. pornhub.com)", fontSize = 12.sp) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    trailingIcon = {
+                        TextButton(onClick = {
+                            val domain = adultDomainTestInput.trim()
+                            if (domain.isNotEmpty()) {
+                                adultDomainTestResult = if (viewModel.debugTestAdultDomain(domain))
+                                    "🔴 BLOCKED"
+                                else
+                                    "🟢 ALLOWED"
+                            }
+                        }) {
+                            Text("Test", color = DebugOrange, fontSize = 12.sp)
+                        }
+                    }
+                )
+                adultDomainTestResult?.let { result ->
+                    Text(
+                        result,
+                        fontWeight = FontWeight.Bold,
+                        color = if (result.startsWith("🔴")) Color(0xFFFF3B30) else Color(0xFF00C853),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

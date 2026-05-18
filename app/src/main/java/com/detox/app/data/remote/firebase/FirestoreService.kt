@@ -98,6 +98,26 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    /**
+     * Deletes the challenge document from Firestore.
+     * Called when a Solo challenge is marked failed/cancelled so it cannot reappear
+     * on the next sync (fetchActiveChallenges filters status="active"; if the document
+     * still exists with status="active" it would be re-inserted into Room on restart).
+     * Firestore rules block client status updates but allow the owner to delete.
+     */
+    suspend fun deleteChallenge(userId: String, challengeId: String) {
+        try {
+            firestore
+                .collection("users").document(userId)
+                .collection("challenges").document(challengeId)
+                .delete()
+                .await()
+            Timber.d("FirestoreService: deleted challenge $challengeId for uid=$userId")
+        } catch (e: Exception) {
+            Timber.e(e, "FirestoreService: failed to delete challenge $challengeId")
+        }
+    }
+
     suspend fun updateChallengePayoutStatus(userId: String, challengeId: String, amountCents: Int) {
         try {
             firestore

@@ -15,6 +15,97 @@
 
 ## [Unreleased] — May 2026
 
+### FIXED — Website challenge icon and domains disappear after Recents kill (incomplete prior fix)
+
+**Root causes (3, compounding):**
+
+1. **Guard used in-memory bus instead of Room** (`UsageTrackingService`):
+   The race-condition guard checked `TrackedAppEventBus.trackedPackages.value.isNotEmpty()` as
+   `busHasData`. After a Recents kill, the entire process dies — the bus is always empty on
+   restart. So `busHasData` was always `false`, the guard never fired, and the first empty
+   Room emission always cleared the bus. Fix: guard now calls `challengeRepository.getActiveChallengesList()`
+   directly. If Room has active challenges but the emission is all-empty → skip. Only accept
+   an empty update when Room is also empty (genuinely no active challenges).
+
+2. **Guard didn't cover partial block paths/sections** (`UsageTrackingService`):
+   The old `newDataIsEmpty` check only tested `packages.isEmpty() && blockedDomains.isEmpty()`.
+   For website-only challenges with only partial paths (e.g. `youtube.com/shorts`), both were
+   already empty → guard would incorrectly allow overwriting with empty even if the bus had data.
+   Fix: `allNewDataIsEmpty` now also checks `partialPaths.isEmpty() && partialSections.isEmpty()`.
+
+3. **`partialBlockDomains` missing from sync mapper** (`SyncRepositoryImpl`):
+   `SyncRepositoryImpl.Challenge.toEntity()` mapped `blockedDomains` but NOT `partialBlockDomains`.
+   Every `syncUserData()` call overwrote the challenge entity via `INSERT OR REPLACE` with
+   `partialBlockDomains = null`, silently clearing partial block paths from Room on every restart.
+   Fix: added `partialBlockDomains = partialBlockDomains.joinToString(",").ifEmpty { null }`.
+
+**Additional fix — Part B (post-sync bus push):**
+After `syncUserData()` fully populates Room (end of step 4), explicitly push packages, domains,
+partial paths, and sections to `TrackedAppEventBus`. Guarantees the bus is correct immediately
+after sync, even if the Room Flow re-emission was suppressed by the guard or arrived before
+sync completed. Non-fatal — wrapped in try/catch, logged as `SyncRepository: post-sync bus update`.
+
+**Also improved logging** in `UsageTrackingService`:
+- Pre-guard log: `"updating packages=N domains=M from X challenges"` (always printed)
+- Guard log: `"skipping empty update — Room has N active challenges"` (when guard fires)
+
+**Files changed:** `UsageTrackingService.kt`, `SyncRepositoryImpl.kt`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe changes.**
+
+---
+
+### FIXED — 3 bugs after app restart from Recents
+
+**Bug 1 — Deleted challenge reappears after Recents**
+
+Root cause: When `updateChallengeStatus(FAILED)` is called, Room is updated correctly to
+"failed" but Firestore rules block the client from updating `status` → Firestore document
+stays "active". On restart, `syncUserData()` calls `fetchActiveChallenges()` (filters
+`status="active"`) → challenge is re-inserted into Room via `insertChallenge(REPLACE)` →
+challenge reappears on Dashboard.
+
+Fixes:
+- `firestore.rules`: `allow delete: if false` → `allow delete: if request.auth != null && request.auth.uid == userId`
+  for `/users/{userId}/challenges/{challengeId}`. Allows client to delete own challenge docs.
+- `FirestoreService.kt`: New `deleteChallenge(userId, challengeId)` method (`.delete().await()`).
+- `ChallengeRepositoryImpl.kt`: `updateChallengeStatus` — when status is FAILED, delete the
+  Firestore document instead of calling `updateChallengeStatus` (which is blocked by rules).
+  Room row kept as "failed" so History still shows the challenge.
+- `SyncRepositoryImpl.kt`: Guard in step 1 — skip inserting a Firestore "active" challenge if
+  Room already has that id with a non-active status (safety net while async delete propagates).
+
+**Bug 2 — Website/App icon and domains reset after Recents**
+
+Root cause: `UsageTrackingService.onCreate()` subscribes to `getActiveChallenges()`. The
+first emission may be empty (race condition — Room not yet populated when the service starts,
+or service restarted by Huawei while sync is in flight). This clears `TrackedAppEventBus`
+→ `AppDetectionAccessibilityService` sees no packages/domains → apps are unblocked.
+
+Fix:
+- `UsageTrackingService.kt`: Added race condition guard at the top of the collect block.
+  If the derived lists (packages + domains) are ALL empty AND the bus currently has non-empty
+  data, the update is skipped with `Timber.w`. The bus retains the previously loaded state
+  until the next legitimate emission (non-empty or genuine all-deleted).
+
+**Bug 3 — PERMISSION_DENIED for dailyLogs**
+
+Root cause: Firestore rules for `/users/{userId}/challenges/{challengeId}` do NOT
+automatically cover sub-collections. The nested `dailyLogs` sub-collection at
+`/users/{userId}/challenges/{challengeId}/dailyLogs/{logId}` had no explicit rule →
+`PERMISSION_DENIED` on any read or write to that path.
+
+Fix:
+- `firestore.rules`: Added `match /dailyLogs/{logId}` nested inside the `challenges` match
+  block with `allow read, write: if request.auth != null && request.auth.uid == userId`.
+
+**Files changed:** `firestore.rules`, `FirestoreService.kt`, `ChallengeRepositoryImpl.kt`, `SyncRepositoryImpl.kt`, `UsageTrackingService.kt`
+**Requires deploy:** `firebase deploy --only firestore:rules`
+**No Cloud Function changes. No Room schema changes.**
+
+---
+
+## [Unreleased] — May 2026
+
 ### Added
 - **Adult Content Blocking — 133,713-domain blocklist + auto-update (Stufe 1):**
   Expanded adult domain coverage from ~60 hardcoded entries to 133,713 unique domains.

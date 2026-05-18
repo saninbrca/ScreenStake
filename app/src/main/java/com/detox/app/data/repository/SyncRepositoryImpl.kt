@@ -15,6 +15,7 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.SyncRepository
 import com.detox.app.service.OverlayManager
+import com.detox.app.service.TrackedAppEventBus
 import com.detox.app.util.DateUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -40,10 +41,21 @@ class SyncRepositoryImpl @Inject constructor(
             Timber.d("SyncRepository: starting sync for uid=$userId")
 
             // 1. Fetch and upsert active challenges (challenges must be inserted before
-            //    daily logs due to the Room foreign-key constraint on daily_logs.challengeId)
+            //    daily logs due to the Room foreign-key constraint on daily_logs.challengeId).
+            // Guard: skip overwriting a locally-failed challenge with Firestore "active" data.
+            // Firestore rules block client status updates, so a failed challenge may temporarily
+            // still be "active" in Firestore if the async delete hasn't completed yet.
             val challenges = firestoreService.fetchActiveChallenges(userId)
             Timber.d("SyncRepository: fetched ${challenges.size} active challenges")
             challenges.forEach { challenge ->
+                val existing = challengeDao.getChallengeById(challenge.id)
+                if (existing != null && existing.status != "active") {
+                    Timber.w(
+                        "SyncRepository: skipping ghost challenge %s — local status=%s, Firestore=active",
+                        challenge.id, existing.status
+                    )
+                    return@forEach
+                }
                 challengeDao.insertChallenge(challenge.toEntity())
             }
 
@@ -162,6 +174,56 @@ class SyncRepositoryImpl @Inject constructor(
                 if (budgetUsedMs != null) Timber.d("Budget restored from Firestore: ${budgetUsedMs}ms used for $challengeId")
             }
 
+            // Part B: after Room is fully populated, push correct data to TrackedAppEventBus.
+            // The UsageTrackingService Flow re-emission may arrive late (or be suppressed by
+            // the race-condition guard) if Room was empty when the service first subscribed.
+            // This explicit push guarantees the bus reflects current Room state immediately
+            // after sync — critical for Huawei where service and sync race on every restart.
+            try {
+                val synced = challengeDao.getActiveChallengesList()
+                if (synced.isNotEmpty()) {
+                    val pkgs = synced
+                        .filter { it.isPartialBlockOnly == 0 }
+                        .flatMap { e ->
+                            e.appPackageNames
+                                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                                ?: if (e.appPackageName.isNotBlank()) listOf(e.appPackageName) else emptyList()
+                        }
+                        .toSet()
+                    val doms = synced
+                        .flatMap { e ->
+                            e.blockedDomains
+                                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                                ?: emptyList()
+                        }
+                        .toSet()
+                    val paths = synced
+                        .flatMap { e ->
+                            e.partialBlockDomains
+                                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                                ?: emptyList()
+                        }
+                        .toSet()
+                    val sections = synced
+                        .flatMap { e ->
+                            e.partialBlockSections
+                                .split(",").filter { it.isNotBlank() }
+                                .mapNotNull { PartialBlockSection.fromId(it.trim()) }
+                        }
+                        .distinct()
+                    TrackedAppEventBus.updateTrackedPackages(pkgs)
+                    TrackedAppEventBus.updateBlockedDomains(doms)
+                    TrackedAppEventBus.updatePartialBlockDomains(paths)
+                    TrackedAppEventBus.updateActivePartialBlockSections(sections)
+                    Timber.d(
+                        "SyncRepository: post-sync bus update — " +
+                            "packages=${pkgs.size} domains=${doms.size} from ${synced.size} challenges"
+                    )
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "SyncRepository: post-sync bus update failed (non-fatal)")
+            }
+
             Timber.d("SyncRepository: sync completed")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -190,6 +252,7 @@ class SyncRepositoryImpl @Inject constructor(
         dailyBudgetMinutes = dailyBudgetMinutes,
         appPackageNames = appPackageNames.joinToString(",").ifEmpty { null },
         blockedDomains = blockedDomains.joinToString(",").ifEmpty { null },
+        partialBlockDomains = partialBlockDomains.joinToString(",").ifEmpty { null },
         blockingType = blockingType.name.lowercase(),
         blockAdultContent = if (blockAdultContent) 1 else 0,
         scheduleStartTime = scheduleStartTime,

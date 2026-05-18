@@ -99,28 +99,50 @@ class UsageTrackingService : Service() {
 
         serviceScope.launch {
             challengeRepository.getActiveChallenges().collect { challenges ->
-                // Include every package from multi-app challenges (skip partial-only challenges)
-                val packageNames = challenges
+                // Include every package from multi-app challenges (skip partial-only challenges).
+                // Filter blank strings — website-only challenges have no app package.
+                val packages = challenges
                     .filter { !it.isPartialBlockOnly }
                     .flatMap { it.appPackageNames }
+                    .filter { it.isNotBlank() }
                     .toSet()
-                TrackedAppEventBus.updateTrackedPackages(packageNames)
-                Timber.d("Updated tracked packages: $packageNames")
+                val domains = challenges.flatMap { it.blockedDomains }.toSet()
+                val partialPaths = challenges.flatMap { it.partialBlockDomains }.toSet()
+                val partialSections = challenges.flatMap { it.partialBlockSections }.distinct()
 
-                // Aggregate blocked domains across all active challenges (for the event bus only)
-                val blockedDomains = challenges.flatMap { it.blockedDomains }.toSet()
-                TrackedAppEventBus.updateBlockedDomains(blockedDomains)
-                Timber.d("Updated blocked domains: $blockedDomains")
+                Timber.d(
+                    "UsageTrackingService: updating packages=${packages.size} " +
+                        "domains=${domains.size} from ${challenges.size} challenges"
+                )
 
-                // Aggregate partial-block URL path prefixes for feature-level blocking
-                val partialBlockDomains = challenges.flatMap { it.partialBlockDomains }.toSet()
-                TrackedAppEventBus.updatePartialBlockDomains(partialBlockDomains)
-                Timber.d("Updated partial block paths: $partialBlockDomains")
+                // Race condition guard: Room may emit an empty list before sync populates it
+                // (process restart after Recents kill — bus is always empty then, so the old
+                // busHasData check was always false and never protected anything).
+                // Fix: check Room directly. Only skip if ALL derived lists are empty AND Room
+                // still has active challenges. If Room is genuinely empty, allow the update.
+                val allNewDataIsEmpty = packages.isEmpty() && domains.isEmpty() &&
+                    partialPaths.isEmpty() && partialSections.isEmpty()
+                if (allNewDataIsEmpty) {
+                    val roomActive = challengeRepository.getActiveChallengesList()
+                        .getOrElse { emptyList() }
+                    if (roomActive.isNotEmpty()) {
+                        Timber.w(
+                            "UsageTrackingService: skipping empty update — " +
+                                "Room has ${roomActive.size} active challenges (race condition guard)"
+                        )
+                        return@collect
+                    }
+                }
 
-                // Aggregate native in-app section blocks (AccessibilityService hot path — no DB queries)
-                val partialSections = challenges
-                    .flatMap { it.partialBlockSections }
-                    .distinct()
+                TrackedAppEventBus.updateTrackedPackages(packages)
+                Timber.d("Updated tracked packages: $packages")
+
+                TrackedAppEventBus.updateBlockedDomains(domains)
+                Timber.d("Updated blocked domains: $domains")
+
+                TrackedAppEventBus.updatePartialBlockDomains(partialPaths)
+                Timber.d("Updated partial block paths: $partialPaths")
+
                 TrackedAppEventBus.updateActivePartialBlockSections(partialSections)
                 Timber.d("Updated partial block sections: ${partialSections.map { it.id }}")
 

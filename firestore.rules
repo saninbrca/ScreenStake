@@ -20,6 +20,9 @@ service cloud.firestore {
     // App creates challenge docs with paymentIntentId + amountCents after the
     // Stripe PaymentSheet completes. Post-creation, status/payout/Stripe fields
     // are immutable from the client — Cloud Functions own those writes.
+    // Delete is allowed so the client can remove failed/cancelled challenges;
+    // this prevents them from reappearing on the next Firestore sync (which
+    // filters status="active" and would re-insert a still-active Firestore doc).
     match /users/{userId}/challenges/{challengeId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow create: if request.auth != null && request.auth.uid == userId;
@@ -32,10 +35,18 @@ service cloud.firestore {
             'finalPayout', 'endDate', 'startDate',
             'amountCents', 'paymentIntentId'
           ]);
-      allow delete: if false;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+
+      // ── Daily logs nested under a challenge (sub-collection) ───────────────
+      // Written by saveDailyLog() / fetchDailyLogs() in FirestoreService.
+      // Must be declared explicitly — parent challenge rules do NOT cover
+      // sub-collections. Missing rule caused PERMISSION_DENIED on dailyLogs reads.
+      match /dailyLogs/{logId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
-    // ── Daily logs (sub-collection under users) ───────────────────────────────
+    // ── Daily logs (flat sub-collection under users) ──────────────────────────
     // Written from Android every 10 s (consciousOpens, budgetUsedMs, etc.).
     // Full read/write for the owning user — no field restrictions needed here.
     match /users/{userId}/dailyLogs/{logId} {

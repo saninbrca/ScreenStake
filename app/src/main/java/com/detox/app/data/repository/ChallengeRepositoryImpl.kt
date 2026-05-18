@@ -116,12 +116,20 @@ class ChallengeRepositoryImpl @Inject constructor(
         return try {
             val statusStr = status.name.lowercase()
             challengeDao.updateStatus(id, statusStr)
-            // Fire-and-forget Firestore sync
+            // Fire-and-forget Firestore sync.
+            // For FAILED/CANCELLED: delete the Firestore document so it never reappears on the
+            // next sync (fetchActiveChallenges filters status="active"; Firestore rules block
+            // client status updates so the doc would otherwise stay "active" and be re-inserted
+            // into Room on every restart). Room row is kept at "failed"/"cancelled" for History.
+            // For other statuses: best-effort status update (may be blocked by rules for some).
             appScope.launch {
                 firebaseAuthService.logAuthState("ChallengeRepo.updateChallengeStatus")
                 val uid = firebaseAuthService.currentUserId()
                 if (uid == null) {
                     Timber.w("updateChallengeStatus: skipping Firestore sync — user not signed in")
+                } else if (status == ChallengeStatus.FAILED) {
+                    Timber.d("updateChallengeStatus: deleting Firestore doc for %s (status=%s)", id, statusStr)
+                    firestoreService.deleteChallenge(uid, id)
                 } else {
                     Timber.d("updateChallengeStatus: challenge=%s status=%s uid=%s", id, statusStr, uid)
                     firestoreService.updateChallengeStatus(uid, id, statusStr)

@@ -485,6 +485,60 @@ internal fun WebsitesTabContent(
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5)),
+            border = BorderStroke(0.5.dp, Color(0xFFFFD0D0)),
+            elevation = CardDefaults.cardElevation(0.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(50.dp))
+                        .background(Color(0xFFFF3B30)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "18+",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.app_selection_adult_content_block),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.Black,
+                    )
+                    Text(
+                        text = stringResource(R.string.app_selection_adult_content_desc),
+                        fontSize = 12.sp,
+                        color = Color(0xFF8E8E93),
+                    )
+                }
+                Switch(
+                    checked = blockAdultContent,
+                    onCheckedChange = onBlockAdultContentChange,
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = Color(0xFFFF3B30),
+                        uncheckedTrackColor = Color(0xFFE0E0E5),
+                    ),
+                )
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -627,60 +681,6 @@ internal fun WebsitesTabContent(
             }
         }
 
-        Spacer(Modifier.height(if (visibleFeatures.isNotEmpty()) 8.dp else 16.dp))
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5)),
-            border = BorderStroke(0.5.dp, Color(0xFFFFD0D0)),
-            elevation = CardDefaults.cardElevation(0.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(50.dp))
-                        .background(Color(0xFFFF3B30)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "18+",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.app_selection_adult_content_block),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.Black,
-                    )
-                    Text(
-                        text = stringResource(R.string.app_selection_adult_content_desc),
-                        fontSize = 12.sp,
-                        color = Color(0xFF8E8E93),
-                    )
-                }
-                Switch(
-                    checked = blockAdultContent,
-                    onCheckedChange = onBlockAdultContentChange,
-                    colors = SwitchDefaults.colors(
-                        checkedTrackColor = Color(0xFFFF3B30),
-                        uncheckedTrackColor = Color(0xFFE0E0E5),
-                    ),
-                )
-            }
-        }
         Spacer(Modifier.height(24.dp))
     }
 }

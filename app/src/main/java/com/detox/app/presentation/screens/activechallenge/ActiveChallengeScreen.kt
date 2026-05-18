@@ -65,7 +65,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.presentation.components.AppIconImage
+import com.detox.app.presentation.components.FaviconImage
+import com.detox.app.presentation.components.websiteDisplayName
+import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.ChallengeMode
+import com.detox.app.presentation.screens.challengecreation.FEATURE_BLOCK_MAP
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.DailyLimitStatus
@@ -401,9 +405,16 @@ private fun ActiveChallengeContent(
                     }
                 }
 
-                // App name
+                // App / website name
+                val displayTitle = remember(challenge) {
+                    if (challenge.blockingType == BlockingType.WEBSITE) {
+                        websiteDisplayName(challenge.blockedDomains, challenge.partialBlockDomains)
+                    } else {
+                        challenge.appDisplayName
+                    }
+                }
                 Text(
-                    text = challenge.appDisplayName,
+                    text = displayTitle,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black,
@@ -570,6 +581,69 @@ private fun ActiveChallengeContent(
                             }
                         }
                         if (index < challenge.appPackageNames.lastIndex) InfoDivider()
+                    }
+                }
+            }
+        }
+
+        // ── BLOCKIERTE WEBSITES section ───────────────────────────────────────
+        if (challenge.blockingType == BlockingType.WEBSITE &&
+            (challenge.blockedDomains.isNotEmpty() || challenge.partialBlockDomains.isNotEmpty())) {
+
+            Text(
+                text = stringResource(R.string.detail_blocked_websites_section),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(600),
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            )
+            DetoxCard {
+                Column {
+                    // Build list: features first, then domains not already covered by a feature
+                    val websiteItems = remember(challenge.partialBlockDomains, challenge.blockedDomains) {
+                        buildList {
+                            challenge.partialBlockDomains.forEach { path ->
+                                val domain = path.substringBefore('/')
+                                val pathSuffix = path.substringAfter('/', "")
+                                val name = FEATURE_BLOCK_MAP[path] ?: path
+                                add(Triple(domain, name, pathSuffix))
+                            }
+                            val featureDomains = challenge.partialBlockDomains
+                                .map { it.substringBefore('/') }.toSet()
+                            challenge.blockedDomains
+                                .filter { it !in featureDomains }
+                                .forEach { domain -> add(Triple(domain, domain, "")) }
+                        }
+                    }
+                    websiteItems.forEachIndexed { index, (domain, name, pathSuffix) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FaviconImage(
+                                domain = domain,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = name,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight(600),
+                                    color = Color.Black
+                                )
+                                if (pathSuffix.isNotEmpty()) {
+                                    Text(
+                                        text = "/$pathSuffix",
+                                        fontSize = 12.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                            }
+                        }
+                        if (index < websiteItems.lastIndex) InfoDivider()
                     }
                 }
             }

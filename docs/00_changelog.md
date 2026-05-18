@@ -15,6 +15,139 @@
 
 ## [Unreleased] — May 2026
 
+### Added
+- **Adult Content Blocking — 133,713-domain blocklist + auto-update (Stufe 1):**
+  Expanded adult domain coverage from ~60 hardcoded entries to 133,713 unique domains.
+  Added monthly auto-update mechanism via WorkManager. Zero impact on blocking logic or VPN.
+
+  **Step 1 — Domain list:**
+  - New script `scripts/update_adult_domains.py` downloads and merges:
+    OISD Small (AdBlock Plus format, 57k domains) + StevenBlack porn-only (hosts format, 77k domains).
+    Deduplicates, validates, writes one domain per line to `assets/adult_domains.txt`.
+    Run `python3 scripts/update_adult_domains.py` from project root to regenerate.
+  - Result: 133,713 unique domains in `assets/adult_domains.txt` (up from ~60).
+
+  **Step 2 — Optimised service loading:**
+  - `AdultDomains.kt` rewritten from hardcoded `Set<String>` to a dynamic singleton.
+    - `loadDomains(context)`: reads `filesDir/adult_domains_updated.txt` if present (worker output),
+      falls back to `assets/adult_domains.txt`. Stores result in a `HashSet<String>`.
+    - `isBlocked(url)`: O(1) host-based lookup — extracts host, then strips subdomains one label
+      at a time. `"www.pornhub.com"` → checks `"www.pornhub.com"`, then `"pornhub.com"`.
+    - `isDomainBlocked(domain)`: same logic for a bare domain string (debug panel test).
+    - Exposes `domainsCount: Int` and `domainSource: String` for the debug panel.
+  - `AppDetectionAccessibilityService` gains `override fun onCreate()` that calls
+    `AdultDomains.loadDomains(this)`.
+    Timber.d log: `"Adult domains loaded: 133713 (source: bundled)"`.
+  - O(n) `firstOrNull { url.contains(domain) }` loop replaced with single `AdultDomains.isBlocked(url)` call.
+
+  **Step 3 — Auto-update worker:**
+  - New `AdultDomainsUpdateWorker` (`@HiltWorker`, `CoroutineWorker`):
+    Downloads OISD Small (`https://small.oisd.nl/`), parses AdBlock Plus format,
+    saves result to `context.filesDir/adult_domains_updated.txt`, then calls
+    `AdultDomains.loadDomains(context)` so the running service reloads immediately.
+    Returns `Result.retry()` if fewer than 10,000 domains parsed.
+  - Scheduled in `DetoxApplication.onCreate()` as `enqueueUniquePeriodicWork` with
+    interval 30 days, `ExistingPeriodicWorkPolicy.KEEP`, requires network.
+    Work name: `"adult_domains_update"`.
+
+  **Step 4 — Debug Panel (Section 10: ADULT DOMAIN STATS):**
+  - "Domains loaded: X" + "Source: bundled / updated (DD. MMM YYYY)" info card.
+  - "Force update now" button — enqueues `AdultDomainsUpdateWorker` as one-time work.
+  - "Test domain" input + Test button → shows 🔴 BLOCKED or 🟢 ALLOWED.
+  - New `ProfileViewModel` methods: `debugGetAdultDomainStats()`, `debugTriggerAdultDomainsUpdate()`,
+    `debugTestAdultDomain()`.
+
+**Files changed:** `scripts/update_adult_domains.py` (new), `AdultDomains.kt`,
+`AppDetectionAccessibilityService.kt`, `AdultDomainsUpdateWorker.kt` (new),
+`DetoxApplication.kt`, `ProfileViewModel.kt`, `ProfileScreen.kt`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No blocking logic changes.**
+
+---
+
+## [Unreleased] — May 2026
+
+### Changed
+- **App & Website Selection Step — extracted shared composable (refactor):**
+  The App/Website selection UI (formerly duplicated between Solo Wizard Step 2 and Group Wizard Step 1)
+  is now a single shared composable in `presentation/components/AppWebsiteSelectionStep.kt`.
+  Both wizards now render the exact same iOS-style UI with no duplication.
+  - New file: `AppWebsiteSelectionStep.kt` — contains `AppWebsiteSelectionStep` + helpers
+    (`AppsTabContent`, `WebsitesTabContent`, `AppSelectionRow`, `PartialSectionSubRow`,
+    `DomainSuggestionsSection`, `PlatformAppIconWithBadge`, `DOMAIN_TO_PACKAGE`, `DOMAIN_BRAND_COLOR`).
+  - `ChallengeCreationScreen.kt`: removed ~500 lines of now-duplicate local composables
+    (`Step2AppOrWebsite`, `AppsTabContent`, `WebsitesTabContent`, `AppListRow`, etc.);
+    Step 2 now calls the shared `AppWebsiteSelectionStep`.
+  - `GroupChallengeCreateScreen.kt`: removed ~250 lines of local composables
+    (`Step1AppSelection`, `GroupAppListRow`, `GroupDomainSuggestionsSection`);
+    Step 1 now calls the shared `AppWebsiteSelectionStep`.
+  - `GroupChallengeCreateViewModel.kt`: `GroupCreateFormState` gains 5 new fields:
+    `activeTab`, `manualDomainError`, `blockAdultContent`, `partialBlockDomains`, `partialBlockSections`.
+    New ViewModel methods: `updateActiveTab`, `updateBlockAdultContent`,
+    `togglePartialBlockDomain`, `togglePartialSection`.
+    `canGoNext()` and `validateCurrentStep()` for Step 1 updated to be tab-aware
+    (matching Solo wizard logic). `computeBlockedDomains()` includes `partialBlockDomains`.
+
+**Files changed:** `AppWebsiteSelectionStep.kt` (new), `ChallengeCreationScreen.kt`, `GroupChallengeCreateScreen.kt`, `GroupChallengeCreateViewModel.kt`
+**No Cloud Function changes. No Room schema changes. No business logic changes. No Firestore structure changes.**
+
+---
+
+## [Unreleased] — May 2026
+
+### Fixed
+- **Website Challenge — icon and name display (Dashboard Card & Detail Screen):**
+  Website challenges now show real favicons and meaningful names instead of a generic "W" placeholder and "Website".
+  - New `FaviconImage` composable: loads favicon via `https://www.google.com/s2/favicons?domain={domain}&sz=64` (Coil `SubcomposeAsyncImage`). Shape: 10dp rounded corners. Fallback: grey circle (`#AEAEB2`) with first letter of domain in white, 14sp bold.
+  - `websiteDisplayName()` helper (priority: features first, then full domains):
+    - 1 item → item name (e.g. "Instagram Reels", "instagram.com")
+    - 2 items → "A & B"
+    - 3+ items → "A +X weitere"
+  - `websitePrimaryDomain()` helper: extracts base domain from first feature path or first blocked domain.
+  - Dashboard Card: website challenges show favicon icon stack (same overlap logic as multi-app) + computed name. Both `AppIconStack` and `AppNameLabel` updated with optional website parameters.
+  - Detail Screen Card 1: title computed from `websiteDisplayName()` when `blockingType == WEBSITE`.
+  - Detail Screen: new "BLOCKIERTE WEBSITES" section (same style as "BLOCKIERTE APPS") showing favicon + name (15sp 600) + URL path subtitle (12sp #8E8E93) for each feature; pure domains shown without path subtitle.
+  - `DailyStats` gains `partialBlockDomains: List<String>` field; `GetDailyStatsUseCase` populates it.
+  - 2 new German strings: `detail_blocked_websites_section`, `website_name_more`.
+
+**Files changed:** `DailyStats.kt`, `GetDailyStatsUseCase.kt`, `ChallengeCard.kt`, `ActiveChallengeScreen.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No blocking logic changes.**
+
+---
+
+## [Unreleased] — May 2026
+
+### Changed
+- **App & Website Selection Screen — iOS-style redesign (visual only):**
+  Redesigned Step 2 of the Solo Challenge Wizard and Step 1 of the Group Challenge Wizard
+  to match an iOS Screen Time–inspired aesthetic. Zero logic changes.
+  - Tab bar: replaced Material3 `TabRow` with custom pill-shaped switcher
+    (`#F2F2F7` container, white active pill with shadow, `#8E8E93` inactive text).
+  - Search field: replaced `OutlinedTextField` with pill-shaped `BasicTextField`
+    (`#F2F2F7` bg, no border, `#8E8E93` search icon).
+  - App rows: removed all `HorizontalDivider` separators; app icons get 12dp rounded
+    corners (iOS style); usage stats subtitle removed; selected state shows `#F9FFF9`
+    row background + `#00C853` 24dp checkmark; unselected has no indicator.
+  - Websites tab — URL input: pill-shaped input + `#00C853` "Add" button, 50dp radius.
+  - Websites tab — chips: custom `#F2F2F7` rounded chips (8dp) with `#8E8E93` ✕ button.
+  - Websites tab — feature cards: white `Card` with 14dp radius + 0.5px border,
+    real platform app icon via `PackageManager` (40dp, 10dp radius) with 8dp `#FF3B30`
+    badge bottom-right; fallback colored circle + domain initial if app not installed.
+    `DOMAIN_TO_PACKAGE` + `DOMAIN_BRAND_COLOR` maps + `PlatformAppIconWithBadge` composable added.
+  - Websites tab — adult content card: `#FFF5F5` bg, `#FFD0D0` border,
+    40dp `#FF3B30` circle with "18+" (12sp bold white) replacing emoji,
+    red `Switch` (`#FF3B30`) when on.
+  - Group wizard Step 1 domain input: `OutlinedTextField` → pill `BasicTextField`
+    (`#F2F2F7` bg, 50dp radius); Add button → `#00C853` pill; added domain display →
+    `FlowRow` chips matching Solo wizard style.
+  - 5 new German strings added to `strings.xml`.
+
+**Files changed:** `ChallengeCreationScreen.kt`, `GroupChallengeCreateScreen.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No business logic changes.**
+
+---
+
+## [Unreleased] — May 2026
+
 ### Fixed
 - **Multi-app display in Dashboard Card, Detail Screen & Overlay:**
   When a challenge tracks multiple apps, all apps are now displayed properly.

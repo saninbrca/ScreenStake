@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -42,14 +43,86 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.request.ImageRequest
 import com.detox.app.R
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
+import com.detox.app.presentation.screens.challengecreation.FEATURE_BLOCK_MAP
 import com.detox.app.ui.theme.DetoxWarning
 
 private val TextSecondary = Color(0xFF8E8E93)
 private val FallbackBg = Color(0xFFF2F2F7)
+private val FaviconFallbackBg = Color(0xFFAEAEB2)
+
+// ── Website challenge helpers ─────────────────────────────────────────────────
+
+internal fun websiteDisplayName(blockedDomains: List<String>, partialBlockDomains: List<String>): String {
+    if (partialBlockDomains.isNotEmpty()) {
+        val names = partialBlockDomains.map { path -> FEATURE_BLOCK_MAP[path] ?: path }
+        return when (names.size) {
+            1 -> names[0]
+            2 -> "${names[0]} & ${names[1]}"
+            else -> "${names[0]} +${names.size - 1} weitere"
+        }
+    }
+    if (blockedDomains.isNotEmpty()) {
+        return when (blockedDomains.size) {
+            1 -> blockedDomains[0]
+            2 -> "${blockedDomains[0]} & ${blockedDomains[1]}"
+            else -> "${blockedDomains[0]} +${blockedDomains.size - 1} weitere"
+        }
+    }
+    return "Website"
+}
+
+internal fun websitePrimaryDomain(blockedDomains: List<String>, partialBlockDomains: List<String>): String? =
+    partialBlockDomains.firstOrNull()?.substringBefore('/') ?: blockedDomains.firstOrNull()
+
+/** Loads a website favicon via Google's Favicon Service. Fallback: grey rounded square with first letter. */
+@Composable
+internal fun FaviconImage(domain: String, modifier: Modifier) {
+    SubcomposeAsyncImage(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data("https://www.google.com/s2/favicons?domain=$domain&sz=64")
+            .crossfade(true)
+            .build(),
+        contentDescription = domain,
+        modifier = modifier.clip(RoundedCornerShape(10.dp)),
+        contentScale = ContentScale.Fit,
+        loading = {
+            FaviconFallbackContent(domain = domain)
+        },
+        error = {
+            FaviconFallbackContent(domain = domain)
+        },
+        success = {
+            SubcomposeAsyncImageContent()
+        }
+    )
+}
+
+@Composable
+private fun FaviconFallbackContent(domain: String) {
+    val letter = domain.firstOrNull()?.uppercaseChar()?.toString() ?: "W"
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        shape = RoundedCornerShape(10.dp),
+        color = FaviconFallbackBg
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = letter,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
 
 @Composable
 fun ChallengeCard(
@@ -86,6 +159,21 @@ fun ChallengeCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
+        val packageNames = remember(dailyStats.appPackageNames, dailyStats.appPackageName) {
+            dailyStats.appPackageNames.ifEmpty { listOfNotNull(dailyStats.appPackageName) }
+        }
+        val websiteDomains = remember(dailyStats.blockedDomains, dailyStats.partialBlockDomains) {
+            if (packageNames.isEmpty()) {
+                val featureDomains = dailyStats.partialBlockDomains.map { it.substringBefore('/') }.distinct()
+                (featureDomains + dailyStats.blockedDomains).distinct()
+            } else emptyList()
+        }
+        val websiteDisplayText = remember(dailyStats.blockedDomains, dailyStats.partialBlockDomains) {
+            if (packageNames.isEmpty() && websiteDomains.isNotEmpty())
+                websiteDisplayName(dailyStats.blockedDomains, dailyStats.partialBlockDomains)
+            else null
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -96,11 +184,10 @@ fun ChallengeCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AppIconStack(
-                    packageNames = dailyStats.appPackageNames.ifEmpty {
-                        listOfNotNull(dailyStats.appPackageName)
-                    },
+                    packageNames = packageNames,
                     appDisplayName = dailyStats.appDisplayName,
-                    isGroup = dailyStats.isGroup
+                    isGroup = dailyStats.isGroup,
+                    websiteDomains = websiteDomains
                 )
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -111,11 +198,10 @@ fun ChallengeCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         AppNameLabel(
-                            packageNames = dailyStats.appPackageNames.ifEmpty {
-                                listOfNotNull(dailyStats.appPackageName)
-                            },
+                            packageNames = packageNames,
                             appDisplayName = dailyStats.appDisplayName,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            websiteDisplayText = websiteDisplayText
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         ModeBadge(dailyStats = dailyStats)
@@ -216,14 +302,17 @@ fun ChallengeCard(
     }
 }
 
-/** Overlapping icon stack with solo/group badge. Handles 1 / 2-3 / 4+ apps. */
+/** Overlapping icon stack with solo/group badge. Handles 1 / 2-3 / 4+ apps and website favicons. */
 @Composable
 private fun AppIconStack(
     packageNames: List<String>,
     appDisplayName: String,
-    isGroup: Boolean
+    isGroup: Boolean,
+    websiteDomains: List<String> = emptyList()
 ) {
-    val n = packageNames.size.coerceAtLeast(1)
+    val isWebsite = websiteDomains.isNotEmpty()
+    val items = if (isWebsite) websiteDomains else packageNames
+    val n = items.size.coerceAtLeast(1)
     val iconSize = if (n == 1) 32.dp else 28.dp
     val overlap = 18 // dp each additional icon is offset
 
@@ -235,16 +324,27 @@ private fun AppIconStack(
     Box(modifier = Modifier.size(width = boxWidth, height = iconSize)) {
         val slotsToShow = if (n >= 4) 3 else n
         for (i in 0 until slotsToShow) {
-            val pkg = packageNames.getOrNull(i)
-            val label = pkg?.let { appDisplayName } ?: appDisplayName
-            AppIconImage(
-                packageName = pkg,
-                appName = label,
-                modifier = Modifier
-                    .size(iconSize)
-                    .offset(x = (i * overlap).dp)
-                    .border(1.5.dp, Color.White, CircleShape)
-            )
+            if (isWebsite) {
+                val domain = items.getOrNull(i) ?: continue
+                FaviconImage(
+                    domain = domain,
+                    modifier = Modifier
+                        .size(iconSize)
+                        .offset(x = (i * overlap).dp)
+                        .border(1.5.dp, Color.White, RoundedCornerShape(10.dp))
+                )
+            } else {
+                val pkg = packageNames.getOrNull(i)
+                val label = pkg?.let { appDisplayName } ?: appDisplayName
+                AppIconImage(
+                    packageName = pkg,
+                    appName = label,
+                    modifier = Modifier
+                        .size(iconSize)
+                        .offset(x = (i * overlap).dp)
+                        .border(1.5.dp, Color.White, CircleShape)
+                )
+            }
         }
 
         // "+X" overflow circle for 4+ apps
@@ -288,15 +388,30 @@ private fun AppIconStack(
     }
 }
 
-/** App name label that adapts to number of apps. */
+/** App name label that adapts to number of apps. For website challenges pass websiteDisplayText. */
 @Composable
 private fun AppNameLabel(
     packageNames: List<String>,
     appDisplayName: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    websiteDisplayText: String? = null
 ) {
     val context = LocalContext.current
     val n = packageNames.size
+
+    // Website challenge: always show computed name
+    if (websiteDisplayText != null) {
+        Text(
+            text = websiteDisplayText,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier
+        )
+        return
+    }
 
     when {
         n <= 1 -> Text(

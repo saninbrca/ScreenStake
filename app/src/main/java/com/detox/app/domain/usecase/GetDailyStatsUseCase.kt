@@ -142,6 +142,7 @@ class GetDailyStatsUseCase @Inject constructor(
                         participantCount = participantCount,
                         maxParticipants = maxParticipants,
                         userRank = userRank,
+                        appPackageNames = challenge.appPackageNames,
                     )
                 }
 
@@ -207,6 +208,7 @@ class GetDailyStatsUseCase @Inject constructor(
                     participantCount = participantCount,
                     maxParticipants = maxParticipants,
                     userRank = userRank,
+                    appPackageNames = challenge.appPackageNames,
                 )
             }
 

@@ -3,19 +3,20 @@ package com.detox.app.presentation.components
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Shield
@@ -37,13 +38,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.detox.app.R
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
 import com.detox.app.ui.theme.DetoxWarning
+
+private val TextSecondary = Color(0xFF8E8E93)
+private val FallbackBg = Color(0xFFF2F2F7)
 
 @Composable
 fun ChallengeCard(
@@ -89,29 +95,13 @@ fun ChallengeCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // App icon with solo/group indicator badge at bottom-start
-                Box(modifier = Modifier.size(48.dp)) {
-                    AppIconImage(
-                        packageName = dailyStats.appPackageName,
-                        appName = dailyStats.appDisplayName,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .size(16.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface
-                    ) {
-                        Icon(
-                            imageVector = if (dailyStats.isGroup) Icons.Filled.Group else Icons.Filled.Person,
-                            contentDescription = null,
-                            modifier = Modifier.padding(2.dp),
-                            tint = if (dailyStats.isGroup) Color(0xFF5C6BC0)
-                            else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
+                AppIconStack(
+                    packageNames = dailyStats.appPackageNames.ifEmpty {
+                        listOfNotNull(dailyStats.appPackageName)
+                    },
+                    appDisplayName = dailyStats.appDisplayName,
+                    isGroup = dailyStats.isGroup
+                )
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -120,13 +110,11 @@ fun ChallengeCard(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = dailyStats.appDisplayName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                        AppNameLabel(
+                            packageNames = dailyStats.appPackageNames.ifEmpty {
+                                listOfNotNull(dailyStats.appPackageName)
+                            },
+                            appDisplayName = dailyStats.appDisplayName,
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -228,6 +216,128 @@ fun ChallengeCard(
     }
 }
 
+/** Overlapping icon stack with solo/group badge. Handles 1 / 2-3 / 4+ apps. */
+@Composable
+private fun AppIconStack(
+    packageNames: List<String>,
+    appDisplayName: String,
+    isGroup: Boolean
+) {
+    val n = packageNames.size.coerceAtLeast(1)
+    val iconSize = if (n == 1) 32.dp else 28.dp
+    val overlap = 18 // dp each additional icon is offset
+
+    // Total Box width: for 1 app → 32dp; for n apps → 28 + (n-1)*18; for 4+ → 3 icons + 1 "+X"
+    val displayCount = if (n >= 4) 4 else n  // 4 slots when 4+ (3 icons + "+X")
+    val stackSlots = if (n == 1) 1 else displayCount
+    val boxWidth = if (n == 1) iconSize else (28 + (stackSlots - 1) * overlap).dp
+
+    Box(modifier = Modifier.size(width = boxWidth, height = iconSize)) {
+        val slotsToShow = if (n >= 4) 3 else n
+        for (i in 0 until slotsToShow) {
+            val pkg = packageNames.getOrNull(i)
+            val label = pkg?.let { appDisplayName } ?: appDisplayName
+            AppIconImage(
+                packageName = pkg,
+                appName = label,
+                modifier = Modifier
+                    .size(iconSize)
+                    .offset(x = (i * overlap).dp)
+                    .border(1.5.dp, Color.White, CircleShape)
+            )
+        }
+
+        // "+X" overflow circle for 4+ apps
+        if (n >= 4) {
+            val remaining = n - 3
+            Surface(
+                modifier = Modifier
+                    .size(iconSize)
+                    .offset(x = (3 * overlap).dp),
+                shape = CircleShape,
+                color = FallbackBg
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "+$remaining",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        // Solo/group badge at bottom-start
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .size(14.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Icon(
+                imageVector = if (isGroup) Icons.Filled.Group else Icons.Filled.Person,
+                contentDescription = null,
+                modifier = Modifier.padding(2.dp),
+                tint = if (isGroup) Color(0xFF5C6BC0)
+                else MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+/** App name label that adapts to number of apps. */
+@Composable
+private fun AppNameLabel(
+    packageNames: List<String>,
+    appDisplayName: String,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val n = packageNames.size
+
+    when {
+        n <= 1 -> Text(
+            text = appDisplayName,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier
+        )
+        n <= 3 -> {
+            val labels = remember(packageNames) {
+                packageNames.joinToString(", ") { pkg ->
+                    try {
+                        val info = context.packageManager.getApplicationInfo(pkg, 0)
+                        context.packageManager.getApplicationLabel(info).toString()
+                    } catch (e: Exception) {
+                        pkg.substringAfterLast('.')
+                    }
+                }
+            }
+            Text(
+                text = labels,
+                fontSize = 13.sp,
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = modifier
+            )
+        }
+        else -> Text(
+            text = stringResource(R.string.challenge_apps_count, n),
+            fontSize = 13.sp,
+            color = TextSecondary,
+            maxLines = 1,
+            modifier = modifier
+        )
+    }
+}
+
 @Composable
 private fun ModeBadge(dailyStats: DailyStats) {
     val (label, color) = when {
@@ -272,8 +382,9 @@ private fun DaysLeftBadge(daysRemaining: Int) {
     }
 }
 
+/** Loads app icon via PackageManager. Fallback: grey circle with first letter. */
 @Composable
-private fun AppIconImage(packageName: String?, appName: String, modifier: Modifier) {
+internal fun AppIconImage(packageName: String?, appName: String, modifier: Modifier) {
     val context = LocalContext.current
     val bitmap = remember(packageName) {
         if (packageName == null) return@remember null
@@ -301,19 +412,21 @@ private fun AppIconImage(packageName: String?, appName: String, modifier: Modifi
             contentScale = ContentScale.Fit
         )
     } else {
+        val firstLetter = appName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
         Surface(
             modifier = modifier,
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant
+            color = FallbackBg
         ) {
-            Icon(
-                imageVector = Icons.Filled.Android,
-                contentDescription = appName,
-                modifier = Modifier
-                    .padding(10.dp)
-                    .size(28.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = firstLetter,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

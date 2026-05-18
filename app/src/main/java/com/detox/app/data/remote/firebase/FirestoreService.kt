@@ -213,6 +213,8 @@ class FirestoreService @Inject constructor(
                             ?.mapNotNull { PartialBlockSection.fromId(it) }
                             ?: emptyList(),
                         isPartialBlockOnly = d["isPartialBlockOnly"] as? Boolean ?: false,
+                        pendingLimitValue = (d["pendingLimitValue"] as? Long)?.toInt(),
+                        pendingLimitAppliesAt = d["pendingLimitAppliesAt"] as? Long,
                     )
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to parse challenge document ${doc.id}")
@@ -458,6 +460,27 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    suspend fun updateChallengePendingLimit(
+        userId: String, challengeId: String, pendingValue: Int, appliesAt: Long
+    ) {
+        try {
+            firestore.collection("users").document(userId)
+                .collection("challenges").document(challengeId)
+                .set(
+                    mapOf(
+                        "pendingLimitValue" to pendingValue,
+                        "pendingLimitAppliesAt" to appliesAt
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                .await()
+            Timber.d("updateChallengePendingLimit: challengeId=$challengeId pendingValue=$pendingValue appliesAt=$appliesAt")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to update pending limit for challengeId=$challengeId")
+            throw e
+        }
+    }
+
     // ── Mapping helpers ────────────────────────────────────────────────────────
 
     private fun Challenge.toMap(): Map<String, Any?> = mapOf(
@@ -490,6 +513,8 @@ class FirestoreService @Inject constructor(
         "originalChallengeId" to originalChallengeId,
         "originalPaymentIntentId" to originalPaymentIntentId,
         "refundAmountCents" to refundAmountCents,
+        "pendingLimitValue" to pendingLimitValue,
+        "pendingLimitAppliesAt" to pendingLimitAppliesAt,
         "syncedAt" to com.google.firebase.Timestamp.now()
     )
 

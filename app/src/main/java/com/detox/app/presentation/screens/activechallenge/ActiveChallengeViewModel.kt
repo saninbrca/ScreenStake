@@ -23,6 +23,13 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
+sealed interface ReduceLimitState {
+    data object Idle : ReduceLimitState
+    data object Loading : ReduceLimitState
+    data object Success : ReduceLimitState
+    data class Error(val message: String) : ReduceLimitState
+}
+
 sealed interface ActiveChallengeUiState {
     data object Loading : ActiveChallengeUiState
     data class Success(
@@ -51,6 +58,9 @@ class ActiveChallengeViewModel @Inject constructor(
 
     private val _abandonState = MutableStateFlow(false)
     val abandonSuccess: StateFlow<Boolean> = _abandonState.asStateFlow()
+
+    private val _reduceLimitState = MutableStateFlow<ReduceLimitState>(ReduceLimitState.Idle)
+    val reduceLimitState: StateFlow<ReduceLimitState> = _reduceLimitState.asStateFlow()
 
     /** Tracks the active load+observe coroutine so refresh() can cancel and restart it cleanly. */
     private var loadJob: Job? = null
@@ -175,6 +185,27 @@ class ActiveChallengeViewModel @Inject constructor(
     private fun computeSuccessRate(logs: List<DailyLog>): Int {
         if (logs.isEmpty()) return 0
         return logs.count { !it.limitExceeded } * 100 / logs.size
+    }
+
+    fun reducePendingLimit(newValue: Int) {
+        viewModelScope.launch {
+            _reduceLimitState.value = ReduceLimitState.Loading
+            val nextMidnight = DateUtils.nextMidnightTimestamp()
+            challengeRepository.updatePendingLimit(challengeId, newValue, nextMidnight)
+                .onSuccess {
+                    Timber.d("Pending limit set: challengeId=$challengeId newValue=$newValue appliesAt=$nextMidnight")
+                    _reduceLimitState.value = ReduceLimitState.Success
+                    loadChallenge()
+                }
+                .onFailure { e ->
+                    Timber.e(e, "Failed to set pending limit for $challengeId")
+                    _reduceLimitState.value = ReduceLimitState.Error(e.message ?: "Fehler")
+                }
+        }
+    }
+
+    fun resetReduceLimitState() {
+        _reduceLimitState.value = ReduceLimitState.Idle
     }
 
     fun abandonChallenge() {

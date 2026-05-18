@@ -18,7 +18,7 @@ import com.detox.app.data.local.db.entity.GroupChallengeEntity
         DailyLogEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -308,6 +308,19 @@ abstract class DetoxDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE challenges ADD COLUMN originalPaymentIntentId TEXT DEFAULT NULL")
                 database.execSQL("ALTER TABLE challenges ADD COLUMN refundAmountCents INTEGER DEFAULT NULL")
                 Timber.d("DB migration 21→22: added Redemption Challenge columns")
+            }
+        }
+
+        /** Adds pending limit reduction fields to challenges. */
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE challenges ADD COLUMN pending_limit_value INTEGER DEFAULT NULL"
+                )
+                database.execSQL(
+                    "ALTER TABLE challenges ADD COLUMN pending_limit_applies_at INTEGER DEFAULT NULL"
+                )
+                Timber.d("DB migration 23→24: added pending_limit_value and pending_limit_applies_at columns")
             }
         }
 

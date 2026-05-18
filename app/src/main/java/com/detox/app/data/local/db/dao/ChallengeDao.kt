@@ -76,6 +76,20 @@ interface ChallengeDao {
     @Query("UPDATE challenges SET redemptionChallengeId = :redemptionChallengeId WHERE id = :id")
     suspend fun updateRedemptionChallengeId(id: String, redemptionChallengeId: String)
 
+    @Query("UPDATE challenges SET pending_limit_value = :value, pending_limit_applies_at = :appliesAt WHERE id = :id")
+    suspend fun updatePendingLimit(id: String, value: Int, appliesAt: Long)
+
+    /** Applies the pending limit to the appropriate field and clears the pending columns. Pass only the field that matches the challenge's limitType; leave others null. */
+    @Query(
+        "UPDATE challenges SET " +
+        "pending_limit_value = NULL, pending_limit_applies_at = NULL, " +
+        "limitValueSessions = COALESCE(:newSessions, limitValueSessions), " +
+        "limitValueMinutes = COALESCE(:newMinutes, limitValueMinutes), " +
+        "dailyBudgetMinutes = COALESCE(:newBudget, dailyBudgetMinutes) " +
+        "WHERE id = :id"
+    )
+    suspend fun applyPendingLimit(id: String, newSessions: Int?, newMinutes: Int?, newBudget: Int?)
+
     /** Returns failed Hard Mode Solo challenges with an active (not expired) redemption window that hasn't been used yet. */
     @Query("""
         SELECT * FROM challenges

@@ -91,6 +91,54 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     continue
                 }
 
+                // ── Apply pending limit reduction if due ──────────────────────────────
+                if (challenge.pendingLimitValue != null &&
+                    now >= (challenge.pendingLimitAppliesAt ?: Long.MAX_VALUE)) {
+                    val newLimit = challenge.pendingLimitValue!!
+                    val currentLimit = when (challenge.limitType) {
+                        LimitType.SESSIONS    -> challenge.limitValueSessions ?: Int.MAX_VALUE
+                        LimitType.TIME        -> challenge.limitValueMinutes
+                        LimitType.TIME_BUDGET -> challenge.dailyBudgetMinutes ?: Int.MAX_VALUE
+                        else -> Int.MAX_VALUE
+                    }
+                    if (newLimit < currentLimit) {
+                        Timber.d(
+                            "DailyEvaluationWorker: applying pending limit id=${challenge.id} " +
+                            "newLimit=$newLimit limitType=${challenge.limitType}"
+                        )
+                        val userId = firebaseAuthService.currentUserId()
+                        if (userId != null) {
+                            val limitFieldKey = when (challenge.limitType) {
+                                LimitType.SESSIONS    -> "limitValueSessions"
+                                LimitType.TIME        -> "limitValueMinutes"
+                                LimitType.TIME_BUDGET -> "dailyBudgetMinutes"
+                                else -> null
+                            }
+                            if (limitFieldKey != null) {
+                                firestore.collection("users").document(userId)
+                                    .collection("challenges").document(challenge.id)
+                                    .update(mapOf(
+                                        limitFieldKey to newLimit,
+                                        "pendingLimitValue" to null,
+                                        "pendingLimitAppliesAt" to null
+                                    )).await()
+                            }
+                        }
+                        challengeDao.applyPendingLimit(
+                            id = challenge.id,
+                            newSessions = if (challenge.limitType == LimitType.SESSIONS) newLimit else null,
+                            newMinutes  = if (challenge.limitType == LimitType.TIME) newLimit else null,
+                            newBudget   = if (challenge.limitType == LimitType.TIME_BUDGET) newLimit else null
+                        )
+                    } else {
+                        Timber.w(
+                            "DailyEvaluationWorker: discarding pending limit that would not reduce " +
+                            "id=${challenge.id} newLimit=$newLimit currentLimit=$currentLimit"
+                        )
+                        challengeDao.applyPendingLimit(challenge.id, null, null, null)
+                    }
+                }
+
                 // Skip full evaluation if already evaluated today (e.g. OverlayManager wrote
                 // the log intra-day after a Hard Mode capture), but STILL check whether the
                 // challenge reached its end date so status is updated correctly.

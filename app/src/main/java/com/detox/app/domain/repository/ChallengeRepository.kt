@@ -17,4 +17,6 @@ interface ChallengeRepository {
     suspend fun markCompletionShown(id: String): Result<Unit>
     /** Returns the first completed Hard Mode challenge whose overlay has not yet been shown, or null. */
     suspend fun getUnshownCompletedHardChallenge(): Result<Challenge?>
+    /** Writes pendingLimitValue + pendingLimitAppliesAt to Firestore first, then Room. */
+    suspend fun updatePendingLimit(challengeId: String, pendingValue: Int, appliesAt: Long): Result<Unit>
 }

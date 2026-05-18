@@ -385,6 +385,10 @@
     <string name="challenge_setup_apps_add">Add more apps</string>
     <string name="challenge_setup_apps_hide">Hide app list</string>
 
+    <!-- Multi-app display (Dashboard card, Detail screen, Overlay) -->
+    <string name="detail_blocked_apps_section">BLOCKIERTE APPS</string>
+    <string name="challenge_apps_count">%d Apps</string>
+
     <!-- Website blocking in Challenge Setup -->
     <string name="challenge_setup_websites_label">Block Websites</string>
     <string name="challenge_setup_no_detected_domains">No known domains detected for selected apps. Add domains manually below.</string>
@@ -1052,5 +1056,21 @@
     <string name="notif_group_expired_body">Die Group Challenge wurde nicht rechtzeitig gestartet. Dein Geld wurde vollständig zurückgegeben.</string>
     <string name="notif_group_start_warning_title">⚠️ Starte deine Challenge!</string>
     <string name="notif_group_start_warning_body">Deine Group Challenge läuft morgen ab. Starte sie jetzt oder alle Teilnehmer bekommen ihr Geld zurück.</string>
+
+    <!-- Limit Reduction (Solo Challenge Detail Screen) -->
+    <string name="limit_reduce_section_title">LIMIT ANPASSEN</string>
+    <string name="limit_reduce_row_label">Limit reduzieren</string>
+    <string name="limit_reduce_row_sub">Gilt ab morgen · Kann nicht mehr erhöht werden</string>
+    <string name="limit_reduce_pending">Neues Limit ab morgen: %1$d %2$s</string>
+    <string name="limit_reduce_sheet_title">Limit reduzieren</string>
+    <string name="limit_reduce_warning">⚠️ Diese Änderung ist dauerhaft und kann nicht rückgängig gemacht werden.</string>
+    <string name="limit_reduce_button">Ab morgen auf %1$d %2$s reduzieren</string>
+    <string name="limit_reduce_confirm_title">Wirklich reduzieren?</string>
+    <string name="limit_reduce_confirm_body">Dein Limit wird morgen dauerhaft auf %1$d %2$s reduziert. Diese Änderung kann nicht rückgängig gemacht werden.</string>
+    <string name="limit_reduce_confirm_ok">Bestätigen</string>
+    <string name="limit_reduce_confirm_cancel">Abbrechen</string>
+    <string name="limit_unit_opens">Öffnungen</string>
+    <string name="limit_unit_minutes">Minuten</string>
+    <string name="limit_unit_minutes_budget">Minuten Budget</string>
 
 </resources>

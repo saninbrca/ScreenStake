@@ -15,7 +15,33 @@
 
 ## [Unreleased] — May 2026
 
+### Fixed
+- **Multi-app display in Dashboard Card, Detail Screen & Overlay:**
+  When a challenge tracks multiple apps, all apps are now displayed properly.
+  - Dashboard Card: 1 app → single 32dp icon + name; 2-3 apps → overlapping 28dp icons with white border + comma-separated names; 4+ apps → 3 icons + "+X" grey overflow circle + "X Apps" label.
+  - Detail Screen: new "BLOCKIERTE APPS" section card between progress card and info list. Shows each app with 40dp circular icon, app name (15sp, 600), and package name (12sp, #8E8E93). Dividers between rows, none after last.
+  - Overlay: 2 apps → "App1, App2"; 3+ apps → "X Apps" display name.
+  - `AppIconImage` fallback changed from Android icon to grey circle with first letter of app name.
+  - `DailyStats` model gains `appPackageNames: List<String>` field, populated by `GetDailyStatsUseCase`.
+  **Files changed:** `DailyStats.kt`, `GetDailyStatsUseCase.kt`, `ChallengeCard.kt`, `ActiveChallengeScreen.kt`, `OverlayManager.kt`, `strings.xml`
+  **No Room schema changes. No Firestore changes. No Cloud Function changes.**
+
+---
+
 ### Added
+- **Solo Challenge — Reduce limit during active challenge (next day):**
+  Users can permanently reduce their daily limit (opens / minutes / budget) while a Solo Challenge is active. The change takes effect at the next midnight and can never be increased again.
+  - 2 new nullable DB columns on `challenges`: `pending_limit_value`, `pending_limit_applies_at`. Room migration 23→24.
+  - `ChallengeDao.updatePendingLimit()` + `applyPendingLimit()` (COALESCE-based targeted UPDATE — never touches FK-cascade-sensitive INSERT).
+  - `ChallengeRepository.updatePendingLimit()` writes Firestore first (source of truth), then Room.
+  - `FirestoreService.updateChallengePendingLimit()` uses `SetOptions.merge()`.
+  - `DailyEvaluationWorker`: applies pending reduction at midnight, discards silently if would not reduce. Firestore write before Room write.
+  - `ActiveChallengeViewModel`: `ReduceLimitState` sealed interface + `reducePendingLimit()` + `resetReduceLimitState()`.
+  - UI (`ActiveChallengeScreen`): "LIMIT ANPASSEN" section visible for Solo ACTIVE challenges (not TIME_WINDOW, not group shadow, currentLimitValue > 1, no pending yet). `ModalBottomSheet` with `DetoxHorizontalPicker` (range 1..currentLimit-1) + warning text + confirm `AlertDialog`. Pending indicator (orange text) shown when `pendingLimitValue != null`.
+  - `DateUtils.nextMidnightTimestamp()` added.
+  - 14 new German strings in `strings.xml`.
+  - Group Challenges: NEVER show this option.
+
 - **Group Challenge — Leave (participant) and Delete (creator) for WAITING status:**
   Regular participants can leave a WAITING challenge → 100% Stripe refund.
   Creator can delete a WAITING challenge → ALL participants get 100% refund.

@@ -14,6 +14,14 @@ object DateUtils {
         return cal.timeInMillis
     }
 
+    fun nextMidnightTimestamp(): Long = Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
     fun addBusinessDays(timestampMs: Long, days: Int): Long {
         val cal = Calendar.getInstance()
         cal.timeInMillis = timestampMs

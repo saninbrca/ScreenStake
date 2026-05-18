@@ -26,4 +26,5 @@ data class DailyStats(
     val participantCount: Int = 0,
     val maxParticipants: Int = 0,
     val userRank: Int? = null,
+    val appPackageNames: List<String> = emptyList(),
 )

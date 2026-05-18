@@ -69,4 +69,11 @@ data class Challenge(
     val originalPaymentIntentId: String? = null,
     /** For Redemption Challenges: partial refund amount in cents on win. */
     val refundAmountCents: Int? = null,
+
+    // ── Pending limit reduction ────────────────────────────────────────────────
+
+    /** New limit value to apply at next midnight. Null = no pending change. */
+    val pendingLimitValue: Int? = null,
+    /** Timestamp (millis) when pendingLimitValue should be applied (= next midnight). */
+    val pendingLimitAppliesAt: Long? = null,
 )

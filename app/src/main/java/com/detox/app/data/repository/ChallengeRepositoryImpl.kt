@@ -93,6 +93,17 @@ class ChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun updatePendingLimit(
+        challengeId: String, pendingValue: Int, appliesAt: Long
+    ): Result<Unit> = runCatching {
+        val uid = firebaseAuthService.currentUserId() ?: error("Nicht authentifiziert")
+        // Firestore FIRST (source of truth — survives reinstall)
+        firestoreService.updateChallengePendingLimit(uid, challengeId, pendingValue, appliesAt)
+        // Then Room
+        challengeDao.updatePendingLimit(challengeId, pendingValue, appliesAt)
+        Timber.d("updatePendingLimit: challengeId=$challengeId pendingValue=$pendingValue")
+    }
+
     override suspend fun getUnshownCompletedHardChallenge(): Result<Challenge?> {
         return try {
             Result.success(challengeDao.getUnshownCompletedHardChallenge()?.toDomain())
@@ -188,6 +199,8 @@ class ChallengeRepositoryImpl @Inject constructor(
             originalChallengeId = originalChallengeId,
             originalPaymentIntentId = originalPaymentIntentId,
             refundAmountCents = refundAmountCents,
+            pendingLimitValue = pendingLimitValue,
+            pendingLimitAppliesAt = pendingLimitAppliesAt,
         )
     }
 
@@ -231,5 +244,7 @@ class ChallengeRepositoryImpl @Inject constructor(
         originalChallengeId = originalChallengeId,
         originalPaymentIntentId = originalPaymentIntentId,
         refundAmountCents = refundAmountCents,
+        pendingLimitValue = pendingLimitValue,
+        pendingLimitAppliesAt = pendingLimitAppliesAt,
     )
 }

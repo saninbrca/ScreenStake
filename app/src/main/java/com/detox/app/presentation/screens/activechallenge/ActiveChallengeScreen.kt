@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,18 +33,22 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.detox.app.presentation.components.DetoxHorizontalPicker
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,10 +58,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.Challenge
+import com.detox.app.presentation.components.AppIconImage
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
@@ -72,6 +81,7 @@ private val CardWhite = Color.White
 private val CardBorder = Color(0x0F000000)
 private val TextSecondary = Color(0xFF8E8E93)
 private val AccentGreen = Color(0xFF00C853)
+private val AccentOrange = Color(0xFFFF9500)
 private val AbandonRed = Color(0xFFFF3B30)
 private val DividerColor = Color(0xFFF2F2F7)
 
@@ -83,9 +93,14 @@ fun ActiveChallengeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val abandonSuccess by viewModel.abandonSuccess.collectAsStateWithLifecycle()
+    val reduceLimitState by viewModel.reduceLimitState.collectAsStateWithLifecycle()
 
     LaunchedEffect(abandonSuccess) {
         if (abandonSuccess) onBack()
+    }
+
+    LaunchedEffect(reduceLimitState) {
+        if (reduceLimitState is ReduceLimitState.Success) viewModel.resetReduceLimitState()
     }
 
     Scaffold(
@@ -132,7 +147,9 @@ fun ActiveChallengeScreen(
                         streak = state.streak,
                         bestStreak = state.bestStreak,
                         successRatePct = state.successRatePct,
-                        onAbandon = { viewModel.abandonChallenge() }
+                        onAbandon = { viewModel.abandonChallenge() },
+                        onReduceLimit = { viewModel.reducePendingLimit(it) },
+                        isReducing = reduceLimitState is ReduceLimitState.Loading
                     )
                 }
             }
@@ -140,6 +157,7 @@ fun ActiveChallengeScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ActiveChallengeContent(
     challenge: Challenge,
@@ -147,11 +165,38 @@ private fun ActiveChallengeContent(
     streak: Int,
     bestStreak: Int,
     successRatePct: Int,
-    onAbandon: () -> Unit
+    onAbandon: () -> Unit,
+    onReduceLimit: (Int) -> Unit,
+    isReducing: Boolean,
 ) {
     val isHardMode = challenge.mode == ChallengeMode.HARD
     val darkGreen = Color(0xFF2E7D32)
     var showAbandonDialog by remember { mutableStateOf(false) }
+
+    // ── Limit reduction state ────────────────────────────────────────────────
+    val currentLimitValue = remember(challenge) {
+        when (challenge.limitType) {
+            LimitType.SESSIONS    -> challenge.limitValueSessions ?: 0
+            LimitType.TIME        -> challenge.limitValueMinutes
+            LimitType.TIME_BUDGET -> challenge.dailyBudgetMinutes ?: 0
+            LimitType.TIME_WINDOW -> 0
+        }
+    }
+    val limitUnit = when (challenge.limitType) {
+        LimitType.SESSIONS    -> stringResource(R.string.limit_unit_opens)
+        LimitType.TIME        -> stringResource(R.string.limit_unit_minutes)
+        LimitType.TIME_BUDGET -> stringResource(R.string.limit_unit_minutes_budget)
+        LimitType.TIME_WINDOW -> ""
+    }
+    val showLimitSection = challenge.groupChallengeId == null &&
+        challenge.limitType != LimitType.TIME_WINDOW &&
+        currentLimitValue > 1 &&
+        challenge.pendingLimitValue == null &&
+        challenge.status == ChallengeStatus.ACTIVE
+    var showReduceSheet by remember { mutableStateOf(false) }
+    var showReduceConfirm by remember { mutableStateOf(false) }
+    var pickerValue by remember(currentLimitValue) { mutableIntStateOf(maxOf(1, currentLimitValue - 1)) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // ── Dialogs (business logic unchanged) ────────────────────────────────────
     if (showAbandonDialog) {
@@ -206,6 +251,94 @@ private fun ActiveChallengeContent(
                     }
                 }
             )
+        }
+    }
+
+    // ── Reduce limit confirmation dialog ─────────────────────────────────────
+    if (showReduceConfirm) {
+        AlertDialog(
+            onDismissRequest = { showReduceConfirm = false },
+            title = { Text(stringResource(R.string.limit_reduce_confirm_title)) },
+            text = {
+                Text(stringResource(R.string.limit_reduce_confirm_body, pickerValue, limitUnit))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showReduceConfirm = false
+                        showReduceSheet = false
+                        onReduceLimit(pickerValue)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                ) {
+                    Text(stringResource(R.string.limit_reduce_confirm_ok), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReduceConfirm = false }) {
+                    Text(stringResource(R.string.limit_reduce_confirm_cancel))
+                }
+            }
+        )
+    }
+
+    // ── Reduce limit bottom sheet ─────────────────────────────────────────────
+    if (showReduceSheet && currentLimitValue > 1) {
+        ModalBottomSheet(
+            onDismissRequest = { showReduceSheet = false },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.limit_reduce_sheet_title),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.Black
+                )
+                Text(
+                    text = "Aktuell: $currentLimitValue $limitUnit",
+                    fontSize = 14.sp,
+                    color = TextSecondary
+                )
+                DetoxHorizontalPicker(
+                    values = (1 until currentLimitValue).toList(),
+                    selectedValue = pickerValue,
+                    onValueChange = { pickerValue = it },
+                    unit = limitUnit,
+                    darkMode = false
+                )
+                Text(
+                    text = stringResource(R.string.limit_reduce_warning),
+                    fontSize = 12.sp,
+                    color = AccentOrange
+                )
+                Button(
+                    onClick = { showReduceConfirm = true },
+                    enabled = !isReducing && pickerValue < currentLimitValue,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                ) {
+                    if (isReducing) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.height(20.dp).width(20.dp))
+                    } else {
+                        Text(
+                            text = stringResource(R.string.limit_reduce_button, pickerValue, limitUnit),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
     }
 
@@ -396,6 +529,52 @@ private fun ActiveChallengeContent(
             }
         }
 
+        // ── BLOCKIERTE APPS section ───────────────────────────────────────────
+        if (challenge.appPackageNames.isNotEmpty()) {
+            val ctx = LocalContext.current
+            Text(
+                text = stringResource(R.string.detail_blocked_apps_section),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(600),
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            )
+            DetoxCard {
+                Column {
+                    challenge.appPackageNames.forEachIndexed { index, pkg ->
+                        val appLabel = remember(pkg) { resolveAppLabel(ctx, pkg) ?: pkg }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AppIconImage(
+                                packageName = pkg,
+                                appName = appLabel,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = appLabel,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight(600),
+                                    color = Color.Black
+                                )
+                                Text(
+                                    text = pkg,
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                        if (index < challenge.appPackageNames.lastIndex) InfoDivider()
+                    }
+                }
+            }
+        }
+
         // ── Card 3: Info list ─────────────────────────────────────────────────
         DetoxCard {
             Column {
@@ -468,6 +647,52 @@ private fun ActiveChallengeContent(
                     valueColor = AccentGreen
                 )
             }
+        }
+
+        // ── LIMIT ANPASSEN section ────────────────────────────────────────────
+        if (showLimitSection) {
+            Text(
+                text = stringResource(R.string.limit_reduce_section_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(500),
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            )
+            DetoxCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showReduceSheet = true }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = stringResource(R.string.limit_reduce_row_label),
+                            fontSize = 17.sp,
+                            color = Color.Black
+                        )
+                        Text(
+                            text = stringResource(R.string.limit_reduce_row_sub),
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = Color(0xFFC7C7CC)
+                    )
+                }
+            }
+        } else if (challenge.pendingLimitValue != null && challenge.status == ChallengeStatus.ACTIVE &&
+                   challenge.limitType != LimitType.TIME_WINDOW && challenge.groupChallengeId == null) {
+            Text(
+                text = stringResource(R.string.limit_reduce_pending, challenge.pendingLimitValue!!, limitUnit),
+                fontSize = 13.sp,
+                color = AccentOrange,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
         }
 
         // ── Stripe note (Hard Mode only) ──────────────────────────────────────
@@ -700,3 +925,8 @@ private fun InfoRow(label: String, value: String, valueColor: Color = Color.Blac
 private fun InfoDivider() {
     HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
 }
+
+private fun resolveAppLabel(context: Context, packageName: String): String? = try {
+    val info = context.packageManager.getApplicationInfo(packageName, 0)
+    context.packageManager.getApplicationLabel(info).toString()
+} catch (e: Exception) { null }

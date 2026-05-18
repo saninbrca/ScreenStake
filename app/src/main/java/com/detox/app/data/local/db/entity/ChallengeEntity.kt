@@ -73,4 +73,11 @@ data class ChallengeEntity(
     @androidx.room.ColumnInfo(name = "originalPaymentIntentId", defaultValue = "NULL") val originalPaymentIntentId: String? = null,
     /** For Redemption Challenges: the partial refund amount in cents (floor(originalAmount * 0.60)). */
     @androidx.room.ColumnInfo(name = "refundAmountCents", defaultValue = "NULL") val refundAmountCents: Int? = null,
+
+    // ── Pending limit reduction ────────────────────────────────────────────────
+
+    /** New limit value to apply at next midnight. Null = no pending change. */
+    @androidx.room.ColumnInfo(name = "pending_limit_value", defaultValue = "NULL") val pendingLimitValue: Int? = null,
+    /** Timestamp (millis) when pendingLimitValue should be applied (= next midnight). */
+    @androidx.room.ColumnInfo(name = "pending_limit_applies_at", defaultValue = "NULL") val pendingLimitAppliesAt: Long? = null,
 )

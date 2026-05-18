@@ -438,7 +438,7 @@ class OverlayManager @Inject constructor(
             DetoxTheme {
                 SessionIntentionOverlay(
                     packageName = (challenge.appPackageName ?: ""),
-                    appName = challenge.appDisplayName,
+                    appName = resolveMultiAppDisplayName(challenge),
                     contextHeader = contextHeader,
                     opensUsed = confirmedOpens,
                     maxOpens = maxOpens,
@@ -535,7 +535,7 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
-                    appName = challenge.appDisplayName,
+                    appName = resolveMultiAppDisplayName(challenge),
                     contextHeader = contextHeader,
                     largeNumber = largeNumber,
                     largeNumberLabel = largeNumberLabel,
@@ -820,7 +820,7 @@ class OverlayManager @Inject constructor(
             DetoxTheme {
                 BudgetSelectionOverlay(
                     packageName = packageName,
-                    appName = challenge.appDisplayName,
+                    appName = resolveMultiAppDisplayName(challenge),
                     remainingMinutes = remainingMinutes,
                     budgetTotalMinutes = challenge.dailyBudgetMinutes ?: remainingMinutes,
                     onStart = { selectedMinutes ->
@@ -878,7 +878,7 @@ class OverlayManager @Inject constructor(
             ) {
                 DetoxTheme {
                     SessionLimitReachedOverlay(
-                        appName = challenge.appDisplayName,
+                        appName = resolveMultiAppDisplayName(challenge),
                         contextHeader = budgetExhaustedHeader,
                         largeNumber = 0,
                         largeNumberLabel = budgetExhaustedLabel,
@@ -901,7 +901,7 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 SessionLimitReachedOverlay(
-                    appName = challenge.appDisplayName,
+                    appName = resolveMultiAppDisplayName(challenge),
                     contextHeader = budgetExhaustedHeader,
                     largeNumber = 0,
                     largeNumberLabel = budgetExhaustedLabel,
@@ -1073,7 +1073,7 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 LimitExceededOverlay(
-                    appName = challenge.appDisplayName,
+                    appName = resolveMultiAppDisplayName(challenge),
                     challengeMode = challenge.mode,
                     amountCents = challenge.amountCents,
                     todayMinutes = status.todayMinutes,
@@ -1114,7 +1114,7 @@ class OverlayManager @Inject constructor(
         } else 0
         val info = LockedAppInfo(
             challengeId = challenge.id,
-            appName = challenge.appDisplayName,
+            appName = resolveMultiAppDisplayName(challenge),
             amountCents = challenge.amountCents ?: 0,
             daysRemaining = lockDaysRemaining
         )
@@ -1598,6 +1598,20 @@ class OverlayManager @Inject constructor(
     }
 
     private fun todayKey(): Long = DateUtils.todayKey()
+
+    private fun resolveMultiAppDisplayName(challenge: Challenge): String {
+        val names = challenge.appPackageNames
+        return when {
+            names.size <= 1 -> challenge.appDisplayName
+            names.size == 2 -> names.joinToString(", ") { pkg ->
+                try {
+                    val info = context.packageManager.getApplicationInfo(pkg, 0)
+                    context.packageManager.getApplicationLabel(info).toString()
+                } catch (e: Exception) { pkg.substringAfterLast('.') }
+            }
+            else -> context.getString(R.string.challenge_apps_count, names.size)
+        }
+    }
 
     // ── Data class ─────────────────────────────────────────────────────────────
 

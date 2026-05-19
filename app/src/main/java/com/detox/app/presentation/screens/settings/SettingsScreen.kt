@@ -4,64 +4,70 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import com.detox.app.BuildConfig
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -88,6 +94,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.presentation.screens.profile.IbanSaveState
 import kotlinx.coroutines.launch
+
+// ── Color constants ────────────────────────────────────────────────────────────
+private val BgColor = Color(0xFFF2F2F7)
+private val CardColor = Color.White
+private val CardBorder = Color(0x0F000000)
+private val DividerColor = Color(0xFFF2F2F7)
+private val LabelColor = Color(0xFF000000)
+private val SubtextColor = Color(0xFF8E8E93)
+private val ChevronColor = Color(0xFFC7C7CC)
+private val DestructiveColor = Color(0xFFFF3B30)
+private val GreenColor = Color(0xFF00C853)
+private val OrangeColor = Color(0xFFFF9500)
+private val PurpleColor = Color(0xFF5856D6)
+private val GreyIconBg = Color(0xFF8E8E93)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,6 +162,7 @@ fun SettingsScreen(
         }
     }
 
+    // ── IBAN Bottom Sheet ──────────────────────────────────────────────────────
     if (showIbanSheet) {
         var sheetIban by remember { mutableStateOf(ibanData?.iban ?: "") }
         var sheetName by remember { mutableStateOf(ibanData?.name ?: "") }
@@ -156,8 +177,9 @@ fun SettingsScreen(
             ) {
                 Text(
                     text = stringResource(R.string.settings_payout_iban_sheet_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = LabelColor
                 )
                 OutlinedTextField(
                     value = sheetName,
@@ -187,7 +209,7 @@ fun SettingsScreen(
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF00C853),
+                        containerColor = GreenColor,
                         contentColor = Color.White
                     ),
                     enabled = ibanValid && sheetName.isNotBlank() &&
@@ -211,14 +233,13 @@ fun SettingsScreen(
         }
     }
 
-    // Time picker dialog state
+    // ── Time Picker Dialog ─────────────────────────────────────────────────────
     var showTimePicker by remember { mutableStateOf(false) }
     val timePickerState = rememberTimePickerState(
         initialHour = state.dailyReminderHour,
         initialMinute = state.dailyReminderMinute,
         is24Hour = true
     )
-
     if (showTimePicker) {
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
@@ -232,9 +253,7 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     viewModel.setReminderTime(timePickerState.hour, timePickerState.minute)
                     showTimePicker = false
-                }) {
-                    Text(stringResource(R.string.dialog_ok))
-                }
+                }) { Text(stringResource(R.string.dialog_ok)) }
             },
             dismissButton = {
                 TextButton(onClick = { showTimePicker = false }) {
@@ -244,7 +263,26 @@ fun SettingsScreen(
         )
     }
 
-    // Delete account confirmation dialog
+    // ── Logout Confirmation Dialog ─────────────────────────────────────────────
+    if (state.showLogoutConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissLogoutConfirmDialog() },
+            title = { Text(stringResource(R.string.settings_logout_confirm_title)) },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.logOut() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = DestructiveColor)
+                ) { Text(stringResource(R.string.settings_logout_confirm_yes)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissLogoutConfirmDialog() }) {
+                    Text(stringResource(R.string.dialog_cancel))
+                }
+            }
+        )
+    }
+
+    // ── Delete Account Confirmation Dialog ─────────────────────────────────────
     if (state.showDeleteConfirmDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissDeleteConfirmDialog() },
@@ -253,12 +291,8 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.deleteAccount() },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text(stringResource(R.string.settings_delete_account_confirm_yes))
-                }
+                    colors = ButtonDefaults.textButtonColors(contentColor = DestructiveColor)
+                ) { Text(stringResource(R.string.settings_delete_account_confirm_yes)) }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissDeleteConfirmDialog() }) {
@@ -271,19 +305,28 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.settings_title),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LabelColor
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.nav_back)
+                            contentDescription = stringResource(R.string.nav_back),
+                            tint = GreenColor
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = BgColor)
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = BgColor
     ) { innerPadding ->
 
         if (state.isLoading) {
@@ -292,9 +335,7 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .padding(innerPadding),
                 contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+            ) { CircularProgressIndicator(color = GreenColor) }
             return@Scaffold
         }
 
@@ -303,525 +344,495 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
+                .padding(bottom = 32.dp)
         ) {
 
-            // ── 1. ACCOUNT ─────────────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_account))
-
-            if (state.email.isNotBlank()) {
-                SettingsRow(
-                    icon = Icons.Filled.AccountCircle,
-                    title = state.email,
-                    subtitle = state.displayName.ifBlank { null },
-                    onClick = null
+            // ── 1. KONTO ───────────────────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_account)) {
+                // Email (non-tappable)
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Person, GreyIconBg) },
+                    label = state.email.ifBlank { "—" },
+                    labelColor = SubtextColor,
+                    labelSize = 14
+                )
+                IosRowDivider()
+                // Passwort ändern
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Lock, GreyIconBg) },
+                    label = stringResource(R.string.settings_change_password),
+                    subtitle = stringResource(R.string.settings_change_password_subtitle),
+                    showChevron = true,
+                    onClick = { viewModel.sendPasswordReset() }
+                )
+                IosRowDivider()
+                // Abmelden
+                IosRow(
+                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.ExitToApp, DestructiveColor) },
+                    label = stringResource(R.string.settings_logout),
+                    labelColor = DestructiveColor,
+                    onClick = { viewModel.showLogoutConfirmDialog() }
+                )
+                IosRowDivider()
+                // Konto löschen
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Delete, DestructiveColor) },
+                    label = stringResource(R.string.settings_delete_account),
+                    labelColor = DestructiveColor,
+                    subtitle = stringResource(R.string.settings_delete_account_subtitle),
+                    onClick = { viewModel.showDeleteConfirmDialog() }
                 )
             }
-
-            SettingsRow(
-                icon = Icons.Filled.Lock,
-                title = stringResource(R.string.settings_change_password),
-                subtitle = stringResource(R.string.settings_change_password_subtitle),
-                onClick = { viewModel.sendPasswordReset() }
-            )
-
-            SettingsRow(
-                icon = Icons.Filled.ExitToApp,
-                title = stringResource(R.string.settings_logout),
-                subtitle = null,
-                onClick = { viewModel.logOut() },
-                destructive = true
-            )
-
-            SettingsRow(
-                icon = Icons.Filled.Delete,
-                title = stringResource(R.string.settings_delete_account),
-                subtitle = stringResource(R.string.settings_delete_account_subtitle),
-                onClick = { viewModel.showDeleteConfirmDialog() },
-                destructive = true
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             // ── 2. AKTIVITÄT ───────────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_activity))
-
-            SettingsRow(
-                icon = Icons.Filled.AccessTime,
-                title = stringResource(R.string.settings_history_row_title),
-                subtitle = null,
-                onClick = onNavigateToHistory,
-                showChevron = true
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            IosSection(stringResource(R.string.settings_section_activity)) {
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.History, GreenColor) },
+                    label = stringResource(R.string.settings_history_row_title),
+                    showChevron = true,
+                    onClick = onNavigateToHistory
+                )
+            }
 
             // ── 3. AUSZAHLUNGSKONTO ────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_payout_account))
-
-            if (ibanData == null) {
-                SettingsRow(
-                    icon = Icons.Filled.AccountBalance,
-                    title = stringResource(R.string.settings_payout_add_iban),
-                    subtitle = stringResource(R.string.settings_payout_add_iban_subtitle),
-                    onClick = { showIbanSheet = true }
-                )
-            } else {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showIbanSheet = true },
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.AccountBalance,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = stringResource(
-                                R.string.payout_balance_iban_stored,
-                                ibanData!!.iban.takeLast(4)
-                            ),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_payout_edit_label),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF00C853)
-                        )
-                    }
+            IosSection(stringResource(R.string.settings_section_payout_account)) {
+                if (ibanData == null) {
+                    IosRow(
+                        iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
+                        label = stringResource(R.string.settings_payout_add_iban),
+                        subtitle = stringResource(R.string.settings_payout_add_iban_subtitle),
+                        showChevron = true,
+                        onClick = { showIbanSheet = true }
+                    )
+                } else {
+                    IosRow(
+                        iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
+                        label = "AT•••• ${ibanData!!.iban.takeLast(4)}",
+                        trailingContent = {
+                            Text(
+                                text = stringResource(R.string.settings_payout_edit_label),
+                                fontSize = 14.sp,
+                                color = GreenColor
+                            )
+                        },
+                        onClick = { showIbanSheet = true }
+                    )
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // ── 3. APPEARANCE ──────────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_appearance))
-
-            SwitchRow(
-                icon = Icons.Filled.DarkMode,
-                title = stringResource(R.string.settings_dark_mode),
-                subtitle = stringResource(R.string.settings_dark_mode_subtitle),
-                checked = state.darkModeEnabled,
-                onCheckedChange = { viewModel.setDarkModeEnabled(it) }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // ── 3. NOTIFICATIONS ───────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_notifications))
-
-            SwitchRow(
-                icon = Icons.Filled.Notifications,
-                title = stringResource(R.string.settings_daily_reminder),
-                subtitle = stringResource(R.string.settings_daily_reminder_subtitle),
-                checked = state.dailyReminderEnabled,
-                onCheckedChange = { viewModel.setDailyReminderEnabled(it) }
-            )
-
-            if (state.dailyReminderEnabled) {
-                SettingsRow(
-                    icon = Icons.Filled.AccessTime,
-                    title = stringResource(R.string.settings_reminder_time),
-                    subtitle = "%02d:%02d".format(state.dailyReminderHour, state.dailyReminderMinute),
-                    onClick = { showTimePicker = true }
+            // ── 4. ERSCHEINUNGSBILD ────────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_appearance)) {
+                IosSwitchRow(
+                    iconContent = { IosIconBox(Icons.Filled.DarkMode, PurpleColor) },
+                    label = stringResource(R.string.settings_dark_mode),
+                    extraLabel = {
+                        Text(
+                            text = stringResource(R.string.settings_dark_mode_experimental),
+                            fontSize = 12.sp,
+                            color = OrangeColor
+                        )
+                    },
+                    checked = state.darkModeEnabled,
+                    onCheckedChange = { viewModel.setDarkModeEnabled(it) }
                 )
             }
 
-            SwitchRow(
-                icon = Icons.Filled.Tune,
-                title = stringResource(R.string.settings_challenge_updates),
-                subtitle = stringResource(R.string.settings_challenge_updates_subtitle),
-                checked = state.challengeUpdatesEnabled,
-                onCheckedChange = { viewModel.setChallengeUpdatesEnabled(it) }
-            )
-
-            SwitchRow(
-                icon = Icons.Filled.People,
-                title = stringResource(R.string.settings_friend_alerts),
-                subtitle = stringResource(R.string.settings_friend_alerts_subtitle),
-                checked = state.friendAlertsEnabled,
-                onCheckedChange = { viewModel.setFriendAlertsEnabled(it) }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // ── 4. PERMISSIONS ─────────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_permissions))
-
-            val allGranted = state.accessibilityGranted && state.overlayGranted && state.usageStatsGranted
-            if (allGranted) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.settings_all_permissions_active),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+            // ── 5. BENACHRICHTIGUNGEN ──────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_notifications)) {
+                IosSwitchRow(
+                    iconContent = { IosIconBox(Icons.Filled.Notifications, OrangeColor) },
+                    label = stringResource(R.string.settings_daily_reminder),
+                    checked = state.dailyReminderEnabled,
+                    onCheckedChange = { viewModel.setDailyReminderEnabled(it) }
+                )
+                if (state.dailyReminderEnabled) {
+                    IosRowDivider()
+                    IosRow(
+                        iconContent = { IosIconBox(Icons.Filled.AccessTime, OrangeColor) },
+                        label = stringResource(R.string.settings_reminder_time),
+                        trailingContent = {
+                            Text(
+                                text = "%02d:%02d".format(
+                                    state.dailyReminderHour,
+                                    state.dailyReminderMinute
+                                ),
+                                fontSize = 14.sp,
+                                color = SubtextColor
+                            )
+                        },
+                        showChevron = true,
+                        onClick = { showTimePicker = true }
                     )
                 }
+                IosRowDivider()
+                IosSwitchRow(
+                    iconContent = { IosIconBox(Icons.Filled.Check, GreenColor) },
+                    label = stringResource(R.string.settings_challenge_updates),
+                    subtitle = stringResource(R.string.settings_challenge_updates_subtitle),
+                    checked = state.challengeUpdatesEnabled,
+                    onCheckedChange = { viewModel.setChallengeUpdatesEnabled(it) }
+                )
             }
 
-            PermissionRow(
-                title = stringResource(R.string.settings_permission_accessibility),
-                subtitle = stringResource(R.string.settings_permission_accessibility_subtitle),
-                granted = state.accessibilityGranted,
-                onOpenSettings = {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            )
-
-            PermissionRow(
-                title = stringResource(R.string.settings_permission_overlay),
-                subtitle = stringResource(R.string.settings_permission_overlay_subtitle),
-                granted = state.overlayGranted,
-                onOpenSettings = {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}")
-                        )
-                    )
-                }
-            )
-
-            PermissionRow(
-                title = stringResource(R.string.settings_permission_usage),
-                subtitle = stringResource(R.string.settings_permission_usage_subtitle),
-                granted = state.usageStatsGranted,
-                onOpenSettings = {
-                    context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // ── 5. PRIVACY ─────────────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_privacy))
-
-            SettingsRow(
-                icon = Icons.Filled.Policy,
-                title = stringResource(R.string.settings_privacy_policy),
-                subtitle = null,
-                onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-app.com/privacy"))
-                    )
-                }
-            )
-
-            SettingsRow(
-                icon = Icons.Filled.Policy,
-                title = stringResource(R.string.settings_terms_of_service),
-                subtitle = null,
-                onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-app.com/terms"))
-                    )
-                }
-            )
-
-            SettingsRow(
-                icon = Icons.Filled.Share,
-                title = stringResource(R.string.settings_export_data),
-                subtitle = stringResource(R.string.settings_export_data_subtitle),
-                onClick = {
-                    scope.launch {
-                        val json = viewModel.buildExportJson()
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "application/json"
-                            putExtra(Intent.EXTRA_TEXT, json)
-                            putExtra(Intent.EXTRA_SUBJECT, "Detox Data Export")
-                        }
-                        context.startActivity(
-                            Intent.createChooser(shareIntent, "Export Detox Data")
-                        )
+            // ── 6. BERECHTIGUNGEN ──────────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_permissions)) {
+                IosPermissionRow(
+                    icon = Icons.Filled.Tune,
+                    title = stringResource(R.string.settings_permission_accessibility),
+                    subtitle = stringResource(R.string.settings_permission_accessibility_subtitle),
+                    granted = state.accessibilityGranted,
+                    activateLabel = stringResource(R.string.settings_permission_activate),
+                    onActivate = {
+                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                     }
-                }
-            )
-
-            SettingsRow(
-                icon = Icons.Filled.Delete,
-                title = stringResource(R.string.settings_delete_all_data),
-                subtitle = stringResource(R.string.settings_delete_all_data_subtitle),
-                onClick = { viewModel.showDeleteConfirmDialog() },
-                destructive = true
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // ── 6. APP INFO ────────────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.settings_section_app_info))
-
-            SettingsRow(
-                icon = Icons.Filled.Info,
-                title = stringResource(R.string.settings_version),
-                subtitle = state.appVersion,
-                onClick = null
-            )
-
-            SettingsRow(
-                icon = Icons.Filled.Star,
-                title = stringResource(R.string.settings_rate_app),
-                subtitle = null,
-                onClick = {
-                    try {
+                )
+                IosRowDivider()
+                IosPermissionRow(
+                    icon = Icons.Filled.PhoneAndroid,
+                    title = stringResource(R.string.settings_permission_overlay),
+                    subtitle = stringResource(R.string.settings_permission_overlay_subtitle),
+                    granted = state.overlayGranted,
+                    activateLabel = stringResource(R.string.settings_permission_activate),
+                    onActivate = {
                         context.startActivity(
                             Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("market://details?id=${context.packageName}")
-                            )
-                        )
-                    } catch (e: Exception) {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}")
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
                             )
                         )
                     }
-                }
-            )
+                )
+                IosRowDivider()
+                IosPermissionRow(
+                    icon = Icons.Filled.BarChart,
+                    title = stringResource(R.string.settings_permission_usage),
+                    subtitle = stringResource(R.string.settings_permission_usage_subtitle),
+                    granted = state.usageStatsGranted,
+                    activateLabel = stringResource(R.string.settings_permission_activate),
+                    onActivate = {
+                        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    }
+                )
+            }
 
-            SettingsRow(
-                icon = Icons.Filled.Email,
-                title = stringResource(R.string.settings_send_feedback),
-                subtitle = null,
-                onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_SENDTO).apply {
-                            data = Uri.parse("mailto:support@detox-app.com")
-                            putExtra(Intent.EXTRA_SUBJECT, "Detox App Feedback")
-                        }
-                    )
-                }
-            )
-
-            SettingsRow(
-                icon = Icons.Filled.Email,
-                title = stringResource(R.string.settings_contact_support),
-                subtitle = "support@detox-app.com",
-                onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_SENDTO).apply {
-                            data = Uri.parse("mailto:support@detox-app.com")
-                            putExtra(Intent.EXTRA_SUBJECT, "Detox App Support Request")
-                        }
-                    )
-                }
-            )
-
-            // ── 7. DEBUG (visible only in debug builds) ────────────────────────
-            if (BuildConfig.DEBUG) {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                SectionHeader(stringResource(R.string.settings_section_debug))
-                val evalQueuedMsg = stringResource(R.string.profile_evaluation_queued)
-                SettingsRow(
-                    icon = Icons.Filled.PlayArrow,
-                    title = stringResource(R.string.profile_run_evaluation),
-                    subtitle = null,
+            // ── 7. DATENSCHUTZ ─────────────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_privacy)) {
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Policy, PurpleColor) },
+                    label = stringResource(R.string.settings_privacy_policy),
+                    showChevron = true,
                     onClick = {
-                        viewModel.runEvaluationNow()
-                        scope.launch { snackbarHostState.showSnackbar(evalQueuedMsg) }
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-app.com/privacy"))
+                        )
+                    }
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Policy, PurpleColor) },
+                    label = stringResource(R.string.settings_terms_of_service),
+                    showChevron = true,
+                    onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-app.com/terms"))
+                        )
+                    }
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Share, GreenColor) },
+                    label = stringResource(R.string.settings_export_data),
+                    subtitle = stringResource(R.string.settings_export_data_subtitle),
+                    showChevron = true,
+                    onClick = {
+                        scope.launch {
+                            val json = viewModel.buildExportJson()
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_TEXT, json)
+                                putExtra(Intent.EXTRA_SUBJECT, "Detox Data Export")
+                            }
+                            context.startActivity(
+                                Intent.createChooser(shareIntent, "Export Detox Data")
+                            )
+                        }
+                    }
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Delete, DestructiveColor) },
+                    label = stringResource(R.string.settings_delete_all_data),
+                    labelColor = DestructiveColor,
+                    subtitle = stringResource(R.string.settings_delete_all_data_subtitle),
+                    onClick = { viewModel.showDeleteConfirmDialog() }
+                )
+            }
+
+            // ── 8. APP INFO ────────────────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_app_info)) {
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Info, GreyIconBg) },
+                    label = stringResource(R.string.settings_version),
+                    trailingContent = {
+                        Text(
+                            text = state.appVersion,
+                            fontSize = 14.sp,
+                            color = SubtextColor
+                        )
+                    }
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Star, OrangeColor) },
+                    label = stringResource(R.string.settings_rate_app),
+                    showChevron = true,
+                    onClick = {
+                        try {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("market://details?id=${context.packageName}")
+                                )
+                            )
+                        } catch (e: Exception) {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}")
+                                )
+                            )
+                        }
+                    }
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Email, GreenColor) },
+                    label = stringResource(R.string.settings_send_feedback),
+                    showChevron = true,
+                    onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("mailto:support@detox-app.com")
+                                putExtra(Intent.EXTRA_SUBJECT, "Detox App Feedback")
+                            }
+                        )
+                    }
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Email, GreyIconBg) },
+                    label = stringResource(R.string.settings_contact_support),
+                    subtitle = stringResource(R.string.settings_contact_support_subtitle),
+                    showChevron = true,
+                    onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("mailto:support@detox-app.com")
+                                putExtra(Intent.EXTRA_SUBJECT, "Detox App Support Request")
+                            }
+                        )
                     }
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // ── 9. ENTWICKLER (debug only) ─────────────────────────────────────
+            if (BuildConfig.DEBUG) {
+                IosSection(stringResource(R.string.settings_section_debug)) {
+                    val evalQueuedMsg = stringResource(R.string.profile_evaluation_queued)
+                    IosRow(
+                        iconContent = { IosIconBox(Icons.Filled.PlayArrow, GreyIconBg) },
+                        label = stringResource(R.string.profile_run_evaluation),
+                        onClick = {
+                            viewModel.runEvaluationNow()
+                            scope.launch { snackbarHostState.showSnackbar(evalQueuedMsg) }
+                        }
+                    )
+                }
+            }
         }
     }
 }
 
-// ── Reusable composables ───────────────────────────────────────────────────────
+// ── Layout helpers ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun SectionHeader(title: String) {
+private fun IosSection(
+    header: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Text(
-        text = title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+        text = header,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Normal,
+        color = SubtextColor,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
+    )
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardColor),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(content = content)
+    }
+}
+
+@Composable
+private fun IosRowDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 64.dp),
+        thickness = 0.5.dp,
+        color = DividerColor
     )
 }
 
 @Composable
-private fun SettingsRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String?,
-    onClick: (() -> Unit)?,
-    destructive: Boolean = false,
-    showChevron: Boolean = false
-) {
-    val titleColor = if (destructive) MaterialTheme.colorScheme.error
-    else MaterialTheme.colorScheme.onSurface
-    val iconTint = if (destructive) MaterialTheme.colorScheme.error
-    else MaterialTheme.colorScheme.onSurfaceVariant
+private fun IosIconBox(icon: ImageVector, backgroundColor: Color) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .background(backgroundColor, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
 
-    Surface(
+@Composable
+private fun IosRow(
+    iconContent: @Composable () -> Unit,
+    label: String,
+    labelColor: Color = LabelColor,
+    labelSize: Int = 16,
+    subtitle: String? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
+    showChevron: Boolean = false,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        color = MaterialTheme.colorScheme.surface
+            .heightIn(min = 56.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(24.dp)
+        iconContent()
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                fontSize = labelSize.sp,
+                fontWeight = FontWeight.Normal,
+                color = labelColor
             )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            if (!subtitle.isNullOrBlank()) {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = titleColor
-                )
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            if (showChevron) {
-                Icon(
-                    imageVector = Icons.Filled.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    text = subtitle,
+                    fontSize = 14.sp,
+                    color = SubtextColor
                 )
             }
+        }
+        if (trailingContent != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            trailingContent()
+        }
+        if (showChevron) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = ChevronColor,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun SwitchRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String?,
+private fun IosSwitchRow(
+    iconContent: @Composable () -> Unit,
+    label: String,
+    subtitle: String? = null,
+    extraLabel: (@Composable () -> Unit)? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
+        iconContent()
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Normal,
+                color = LabelColor
             )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            if (!subtitle.isNullOrBlank()) {
+                Text(text = subtitle, fontSize = 14.sp, color = SubtextColor)
             }
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange
-            )
+            if (extraLabel != null) {
+                extraLabel()
+            }
         }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = GreenColor,
+                checkedThumbColor = Color.White
+            )
+        )
     }
 }
 
 @Composable
-private fun PermissionRow(
+private fun IosPermissionRow(
+    icon: ImageVector,
     title: String,
     subtitle: String,
     granted: Boolean,
-    onOpenSettings: () -> Unit
+    activateLabel: String,
+    onActivate: () -> Unit
 ) {
-    val indicatorColor = if (granted) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.error
+    val iconBg = if (granted) GreenColor else DestructiveColor
+    val statusIcon = if (granted) Icons.Filled.Check else Icons.Filled.Close
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (granted) Icons.Filled.Check else Icons.Filled.Close,
-                contentDescription = null,
-                tint = indicatorColor,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (!granted) {
-                Spacer(modifier = Modifier.width(8.dp))
-                OutlinedButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.height(36.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.settings_open_settings),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
+        IosIconBox(icon = statusIcon, backgroundColor = iconBg)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Normal, color = LabelColor)
+            Text(text = subtitle, fontSize = 14.sp, color = SubtextColor)
+        }
+        if (!granted) {
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(
+                onClick = onActivate,
+                colors = ButtonDefaults.textButtonColors(contentColor = GreenColor)
+            ) {
+                Text(text = activateLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

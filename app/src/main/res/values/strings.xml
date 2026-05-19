@@ -227,18 +227,18 @@
     <string name="nav_profile">Profile</string>
 
     <!-- Profile screen -->
-    <string name="profile_title">Profile</string>
+    <string name="profile_title">Profil</string>
     <string name="profile_run_evaluation">Run Daily Evaluation Now</string>
     <string name="profile_evaluation_queued">Evaluation queued — check Logcat for results</string>
     <string name="profile_points_label">%1$d pts</string>
     <string name="profile_unknown_email">Unknown user</string>
-    <string name="profile_settings">Settings</string>
+    <string name="profile_settings">Einstellungen</string>
     <string name="profile_logout">Log Out</string>
     <string name="profile_logout_confirm_title">Log Out?</string>
     <string name="profile_logout_confirm_message">This will sign you out and clear your local data.</string>
     <string name="profile_logout_confirm_yes">Log Out</string>
     <string name="profile_logout_confirm_no">Cancel</string>
-    <string name="profile_member_since">Member since %1$s</string>
+    <string name="profile_member_since">Mitglied seit %1$s</string>
     <string name="profile_stat_streak_label">Current streak</string>
     <string name="profile_stat_completed_label">Challenges done</string>
     <string name="profile_stat_apps_label">Apps blocked</string>
@@ -589,56 +589,61 @@
     <string name="challenge_setup_schedule_time_error">End time must be after start time</string>
 
     <!-- Settings screen -->
-    <string name="settings_title">Settings</string>
+    <string name="settings_title">Einstellungen</string>
 
     <!-- Settings — Account section -->
-    <string name="settings_section_account">Account</string>
-    <string name="settings_section_activity">Aktivität</string>
+    <string name="settings_section_account">KONTO</string>
+    <string name="settings_section_activity">AKTIVITÄT</string>
     <string name="settings_history_row_title">Verlauf</string>
-    <string name="settings_change_password">Change Password</string>
-    <string name="settings_change_password_subtitle">Send a password reset link to your email</string>
-    <string name="settings_logout">Log Out</string>
-    <string name="settings_delete_account">Delete Account</string>
-    <string name="settings_delete_account_subtitle">Permanently delete your account and all data</string>
-    <string name="settings_delete_account_confirm_title">Delete Account?</string>
-    <string name="settings_delete_account_confirm_message">This will permanently delete your account, all challenges, and all data. This cannot be undone.</string>
-    <string name="settings_delete_account_confirm_yes">Delete permanently</string>
+    <string name="settings_change_password">Passwort ändern</string>
+    <string name="settings_change_password_subtitle">Link wird an deine E-Mail gesendet</string>
+    <string name="settings_logout">Abmelden</string>
+    <string name="settings_logout_confirm_title">Wirklich abmelden?</string>
+    <string name="settings_logout_confirm_yes">Abmelden</string>
+    <string name="settings_delete_account">Konto löschen</string>
+    <string name="settings_delete_account_subtitle">Alle Daten werden permanent gelöscht</string>
+    <string name="settings_delete_account_confirm_title">Konto löschen?</string>
+    <string name="settings_delete_account_confirm_message">Alle Challenges und Daten werden permanent gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.</string>
+    <string name="settings_delete_account_confirm_yes">Permanent löschen</string>
+    <string name="settings_password_reset_sent">E-Mail wurde gesendet</string>
 
     <!-- Settings — Notifications section -->
-    <string name="settings_section_notifications">Notifications</string>
-    <string name="settings_daily_reminder">Daily Reminder</string>
-    <string name="settings_daily_reminder_subtitle">Get a daily nudge to check your progress</string>
-    <string name="settings_reminder_time">Reminder Time</string>
-    <string name="settings_reminder_time_picker_title">Pick reminder time</string>
+    <string name="settings_section_notifications">BENACHRICHTIGUNGEN</string>
+    <string name="settings_daily_reminder">Tägliche Erinnerung</string>
+    <string name="settings_daily_reminder_subtitle">Tägliche Erinnerung an deinen Fortschritt</string>
+    <string name="settings_reminder_time">Erinnerungszeit</string>
+    <string name="settings_reminder_time_picker_title">Uhrzeit wählen</string>
     <string name="settings_challenge_updates">Challenge Updates</string>
-    <string name="settings_challenge_updates_subtitle">Notifications when challenges complete or fail</string>
+    <string name="settings_challenge_updates_subtitle">Bei Abschluss oder Fehler</string>
     <string name="settings_friend_alerts">Friend Alerts</string>
     <string name="settings_friend_alerts_subtitle">Notifications when friends reach milestones</string>
 
     <!-- Settings — Permissions section -->
-    <string name="settings_section_permissions">Permissions</string>
-    <string name="settings_all_permissions_active">All permissions active ✅</string>
-    <string name="settings_open_settings">Open Settings</string>
+    <string name="settings_section_permissions">BERECHTIGUNGEN</string>
+    <string name="settings_all_permissions_active">Alle Berechtigungen aktiv ✅</string>
+    <string name="settings_open_settings">Einstellungen öffnen</string>
+    <string name="settings_permission_activate">Aktivieren</string>
     <string name="settings_permission_accessibility">Accessibility Service</string>
-    <string name="settings_permission_accessibility_subtitle">Required to detect app launches</string>
-    <string name="settings_permission_overlay">Display Over Other Apps</string>
-    <string name="settings_permission_overlay_subtitle">Required to show the blocking overlay</string>
-    <string name="settings_permission_usage">Usage Data Access</string>
-    <string name="settings_permission_usage_subtitle">Required to track your screen time</string>
+    <string name="settings_permission_accessibility_subtitle">Erforderlich für App-Erkennung</string>
+    <string name="settings_permission_overlay">Display über anderen Apps</string>
+    <string name="settings_permission_overlay_subtitle">Erforderlich für den Sperrbildschirm</string>
+    <string name="settings_permission_usage">Nutzungsstatistiken</string>
+    <string name="settings_permission_usage_subtitle">Erforderlich für die Bildschirmzeit</string>
 
     <!-- Settings — Privacy section -->
-    <string name="settings_section_privacy">Privacy</string>
-    <string name="settings_privacy_policy">Privacy Policy</string>
-    <string name="settings_terms_of_service">Terms of Service</string>
-    <string name="settings_export_data">Export My Data</string>
-    <string name="settings_export_data_subtitle">Download all your challenges and logs as JSON</string>
-    <string name="settings_delete_all_data">Delete All My Data</string>
-    <string name="settings_delete_all_data_subtitle">Permanently erase your account and all data</string>
+    <string name="settings_section_privacy">DATENSCHUTZ</string>
+    <string name="settings_privacy_policy">Datenschutzerklärung</string>
+    <string name="settings_terms_of_service">Nutzungsbedingungen</string>
+    <string name="settings_export_data">Daten exportieren</string>
+    <string name="settings_export_data_subtitle">Als JSON herunterladen</string>
+    <string name="settings_delete_all_data">Alle Daten löschen</string>
+    <string name="settings_delete_all_data_subtitle">Konto und alle Daten permanent löschen</string>
 
     <!-- Settings — Appearance section -->
-    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_appearance">ERSCHEINUNGSBILD</string>
     <string name="settings_dark_mode">Dark Mode</string>
-    <string name="settings_dark_mode_subtitle">Switch to dark theme</string>
+    <string name="settings_dark_mode_subtitle">Dunkles Design aktivieren</string>
+    <string name="settings_dark_mode_experimental">Experimentell</string>
 
     <!-- Group Challenge Detail — redesign strings -->
     <string name="group_detail_end_date">Endet: %1$s</string>
@@ -704,12 +709,13 @@
     <string name="notif_accessibility_huawei_hint">Huawei: Einstellungen → Apps → Detox → Autostart → Aktivieren</string>
 
     <!-- Settings — App Info section -->
-    <string name="settings_section_app_info">App Info</string>
-    <string name="settings_section_debug">Developer</string>
+    <string name="settings_section_app_info">APP INFO</string>
+    <string name="settings_section_debug">ENTWICKLER</string>
     <string name="settings_version">Version</string>
-    <string name="settings_rate_app">Rate the App</string>
-    <string name="settings_send_feedback">Send Feedback</string>
-    <string name="settings_contact_support">Contact Support</string>
+    <string name="settings_rate_app">App bewerten</string>
+    <string name="settings_send_feedback">Feedback senden</string>
+    <string name="settings_contact_support">Support kontaktieren</string>
+    <string name="settings_contact_support_subtitle">support@detox-app.com</string>
 
     <!-- Welcome Onboarding — Page 0: Willkommen -->
     <string name="welcome_p0_stat_value">4.2h</string>

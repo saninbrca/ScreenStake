@@ -10,6 +10,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.detox.app.R
 import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.BuildConfig
 import com.detox.app.DetoxApplication
@@ -64,7 +65,8 @@ data class SettingsState(
     val usageStatsGranted: Boolean = false,
     val darkModeEnabled: Boolean = false,
     val isLoading: Boolean = false,
-    val showDeleteConfirmDialog: Boolean = false
+    val showDeleteConfirmDialog: Boolean = false,
+    val showLogoutConfirmDialog: Boolean = false
 )
 
 sealed interface SettingsEvent {
@@ -195,14 +197,15 @@ class SettingsViewModel @Inject constructor(
             val result = firebaseAuthService.sendPasswordReset(email)
             _state.update { it.copy(isLoading = false) }
             if (result.isSuccess) {
-                _events.send(SettingsEvent.ShowSnackbar("Password reset email sent to $email"))
+                _events.send(SettingsEvent.ShowSnackbar(context.getString(R.string.settings_password_reset_sent)))
             } else {
-                _events.send(SettingsEvent.ShowSnackbar("Failed to send reset email. Try again."))
+                _events.send(SettingsEvent.ShowSnackbar("Fehler beim Senden. Bitte versuche es erneut."))
             }
         }
     }
 
     fun logOut() {
+        _state.update { it.copy(showLogoutConfirmDialog = false) }
         viewModelScope.launch {
             withContext(Dispatchers.IO) { database.clearAllTables() }
             firebaseAuthService.signOut()
@@ -216,6 +219,14 @@ class SettingsViewModel @Inject constructor(
 
     fun dismissDeleteConfirmDialog() {
         _state.update { it.copy(showDeleteConfirmDialog = false) }
+    }
+
+    fun showLogoutConfirmDialog() {
+        _state.update { it.copy(showLogoutConfirmDialog = true) }
+    }
+
+    fun dismissLogoutConfirmDialog() {
+        _state.update { it.copy(showLogoutConfirmDialog = false) }
     }
 
     fun deleteAccount() {

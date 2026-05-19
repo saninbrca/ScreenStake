@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Person
@@ -41,7 +42,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -93,9 +93,7 @@ fun ProfileScreen(
     onSoloChallengeClick: (String) -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
-    var showLogoutDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val stats by viewModel.stats.collectAsStateWithLifecycle()
     // val recentChallenges by viewModel.recentChallenges.collectAsStateWithLifecycle() // Removed
     // val payoutState by viewModel.payoutState.collectAsStateWithLifecycle() // Removed
     // val pendingPayoutCents by viewModel.pendingPayoutCents.collectAsStateWithLifecycle() // Removed
@@ -145,27 +143,6 @@ fun ProfileScreen(
         }
     }
 
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            title = { Text(stringResource(R.string.profile_logout_confirm_title)) },
-            text = { Text(stringResource(R.string.profile_logout_confirm_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showLogoutDialog = false
-                    viewModel.logout(onComplete = onLoggedOut)
-                }) {
-                    Text(stringResource(R.string.profile_logout_confirm_yes))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) {
-                    Text(stringResource(R.string.profile_logout_confirm_no))
-                }
-            }
-        )
-    }
-
     if (showPayoutConfirmDialog) {
         val balance = pendingBalance
         val iban = ibanData?.iban
@@ -203,14 +180,13 @@ fun ProfileScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.profile_title)) },
-                actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = stringResource(R.string.profile_settings)
-                        )
-                    }
+                title = {
+                    Text(
+                        text = stringResource(R.string.profile_title),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight(700),
+                        color = Color.Black
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
@@ -273,24 +249,10 @@ fun ProfileScreen(
                 ?: stringResource(R.string.profile_unknown_email)
             Text(
                 text = nameToShow,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+                fontSize = 17.sp,
+                fontWeight = FontWeight(600),
+                color = Color.Black
             )
-
-            // Email (shown separately if display name is available)
-            viewModel.userEmail?.let { email ->
-                if (viewModel.displayName != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = email,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
 
             // Member since
             viewModel.memberSinceMs?.let { ms ->
@@ -298,38 +260,15 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = stringResource(R.string.profile_member_since, dateStr),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 13.sp,
+                    color = Color(0xFF8E8E93)
                 )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── Stats Row ─────────────────────────────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StatCard(
-                    value = "🔥 ${stats.currentStreak}",
-                    label = stringResource(R.string.profile_stat_streak_label),
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    value = "✅ ${stats.challengesCompleted}",
-                    label = stringResource(R.string.profile_stat_completed_label),
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    value = "📱 ${stats.appsBlocked}",
-                    label = stringResource(R.string.profile_stat_apps_label),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
             // ── 💰 Guthaben card ──────────────────────────────────────────────
             pendingBalance?.let { balance ->
-                Spacer(modifier = Modifier.height(16.dp))
                 GuthabenCard(
                     balance = balance,
                     ibanData = ibanData,
@@ -337,43 +276,53 @@ fun ProfileScreen(
                     onRequestPayout = { showPayoutConfirmDialog = true },
                     payoutRequestState = payoutRequestState
                 )
+                Spacer(modifier = Modifier.height(12.dp))
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-            Spacer(modifier = Modifier.height(24.dp))
+            // ── Settings Card ─────────────────────────────────────────────────
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenSettings() },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = BorderStroke(0.5.dp, Color(0x0F000000))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.profile_settings),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight(600),
+                        color = Color.Black,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ChevronRight,
+                        contentDescription = null,
+                        tint = Color(0xFF8E8E93),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
 
             if (BuildConfig.DEBUG) {
-                DebugPanel(viewModel = viewModel)
                 Spacer(modifier = Modifier.height(16.dp))
+                DebugPanel(viewModel = viewModel)
             }
 
-            // ── Settings ──────────────────────────────────────────────────────
-            OutlinedButton(
-                onClick = onOpenSettings,
-                modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                )
-            ) {
-                Text(stringResource(R.string.profile_settings))
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // ── Log Out ───────────────────────────────────────────────────────
-            OutlinedButton(
-                onClick = { showLogoutDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                )
-            ) {
-                Text(stringResource(R.string.profile_logout))
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -470,33 +419,6 @@ internal fun GuthabenCard(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-internal fun StatCard(value: String, label: String, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

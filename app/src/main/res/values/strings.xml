@@ -970,6 +970,7 @@
     <!-- Overlay redesign v2 — time window texts -->
     <string name="overlay_v2_time_window_status">Noch nicht verfügbar</string>
     <string name="overlay_v2_time_window_sub">Dein Zeitfenster beginnt um %1$s</string>
+    <string name="overlay_v2_group_stake_warning">💰 €%1$.2f auf dem Spiel</string>
 
     <!-- Guthaben card (ProfileScreen) -->
     <string name="payout_balance_title">💰 Guthaben</string>

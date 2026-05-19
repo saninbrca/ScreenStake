@@ -1029,7 +1029,14 @@ class OverlayManager @Inject constructor(
     }
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
-        val streak = getStreak(status.challenge)
+        val challenge = status.challenge
+        val streak = getStreak(challenge)
+        val contextHeader = buildContextHeader(challenge, streak)
+        val labelText = context.getString(R.string.overlay_v2_label_time, challenge.limitValueMinutes)
+        val showStakeWarning = challenge.groupChallengeId != null
+            && challenge.mode == ChallengeMode.HARD
+            && (challenge.amountCents ?: 0) > 0
+
         val composeView = createSessionComposeView(
             onBack = {
                 analyticsService.logBlockingScreenAction("back_button")
@@ -1039,24 +1046,29 @@ class OverlayManager @Inject constructor(
         ) {
             DetoxTheme {
                 BlockingScreenOverlay(
-                    status = status,
-                    streak = streak,
-                    onOpenAnyway = {
-                        analyticsService.logBlockingScreenAction("opened_anyway")
-                        status.challenge.appPackageName?.let {
-                            AppDetectionAccessibilityService.allowTemporarily(it)
-                        }
-                        dismissOverlay("open_anyway")
-                    },
-                    onSkip = {
+                    appName = resolveMultiAppDisplayName(challenge),
+                    contextHeader = contextHeader,
+                    valueUsed = status.todayMinutes,
+                    maxValue = challenge.limitValueMinutes,
+                    labelText = labelText,
+                    amountCents = challenge.amountCents,
+                    showStakeWarning = showStakeWarning,
+                    onStayStrong = {
                         analyticsService.logBlockingScreenAction("skipped")
                         dismissOverlay("skip")
                         goHome()
+                    },
+                    onOpenAnyway = {
+                        analyticsService.logBlockingScreenAction("opened_anyway")
+                        challenge.appPackageName?.let {
+                            AppDetectionAccessibilityService.allowTemporarily(it)
+                        }
+                        dismissOverlay("open_anyway")
                     }
                 )
             }
         }
-        showOverlay(composeView, status.challenge.id)
+        showOverlay(composeView, challenge.id)
     }
 
     // ── Limit-exceeded overlay (time-limit challenges only) ────────────────────

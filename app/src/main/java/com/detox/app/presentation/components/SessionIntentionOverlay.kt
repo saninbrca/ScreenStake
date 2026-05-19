@@ -1,21 +1,24 @@
 package com.detox.app.presentation.components
 
+import android.graphics.BlurMaskFilter
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -25,7 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +46,7 @@ private val TextSecond   = Color(0xFF666666)
 private val TextHint     = Color(0xFF555555)
 private val SurfaceDark  = Color(0xFF111111)
 private val BorderDark   = Color(0xFF222222)
+private val TrackDark    = Color(0xFF333333)
 
 /**
  * Stage 1 — Intention Check Overlay (v2 redesign).
@@ -71,8 +79,9 @@ fun SessionIntentionOverlay(
         // App name top-right
         Text(
             text = appName,
-            fontSize = 11.sp,
-            color = Color(0xFF333333),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextSecond,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 16.dp, end = 16.dp)
@@ -82,10 +91,12 @@ fun SessionIntentionOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 28.dp)
-                .padding(top = 72.dp, bottom = 36.dp),
+                .padding(top = 60.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Context header (CHANGE 1) ──────────────────────────────────────
+            Spacer(Modifier.height(16.dp))
+
+            // ── Context header ─────────────────────────────────────────────────
             Text(
                 text = contextHeader,
                 fontSize = 13.sp,
@@ -94,9 +105,9 @@ fun SessionIntentionOverlay(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(32.dp))
 
-            // ── Large number (CHANGE 2) ────────────────────────────────────────
+            // ── Large number ───────────────────────────────────────────────────
             Text(
                 text = opensUsed.toString(),
                 fontSize = 64.sp,
@@ -106,7 +117,7 @@ fun SessionIntentionOverlay(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(12.dp))
 
             // ── Label below number ─────────────────────────────────────────────
             Text(
@@ -116,27 +127,27 @@ fun SessionIntentionOverlay(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(28.dp))
 
-            // ── Progress bar (unchanged component) ────────────────────────────
-            OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = BorderDark, fillColor = AccentGreen)
+            // ── Progress bar ───────────────────────────────────────────────────
+            OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = TrackDark, fillColor = AccentGreen)
 
-            // ── Labels below bar (CHANGE 3) ────────────────────────────────────
+            // ── Labels below bar ───────────────────────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
+                    .padding(top = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = stringResource(R.string.overlay_v2_progress_sessions_remaining, remaining),
-                    fontSize = 11.sp,
-                    color = Color(0xFF333333)
+                    fontSize = 13.sp,
+                    color = Color(0xFFAAAAAA)
                 )
                 Text(
                     text = "${(progress * 100).toInt()}%",
-                    fontSize = 11.sp,
-                    color = Color(0xFF333333)
+                    fontSize = 13.sp,
+                    color = Color(0xFFAAAAAA)
                 )
             }
 
@@ -179,22 +190,48 @@ fun SessionIntentionOverlay(
 @Composable
 internal fun OverlayProgressBar(
     progress: Float,
-    trackColor: Color = Color(0xFF222222),
+    trackColor: Color = Color(0xFF333333),
     fillColor: Color = Color(0xFF00C853),
     modifier: Modifier = Modifier.fillMaxWidth()
 ) {
-    Box(
-        modifier = modifier
-            .height(3.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(trackColor)
-    ) {
+    Box(modifier = modifier.height(8.dp)) {
+        // Track
         Box(
             modifier = Modifier
-                .fillMaxWidth(progress)
-                .height(3.dp)
-                .background(fillColor)
+                .fillMaxSize()
+                .clip(RoundedCornerShape(4.dp))
+                .background(trackColor)
         )
+        // Fill with glow — Canvas is not clipped by parent so glow bleeds naturally
+        if (progress > 0f) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth(progress)
+                    .fillMaxHeight()
+            ) {
+                val radius = 4.dp.toPx()
+                val blurRadius = 8.dp.toPx()
+                drawIntoCanvas { canvas ->
+                    val glowPaint = Paint().apply {
+                        asFrameworkPaint().apply {
+                            isAntiAlias = true
+                            color = fillColor.copy(alpha = 0.4f).toArgb()
+                            maskFilter = BlurMaskFilter(blurRadius, BlurMaskFilter.Blur.NORMAL)
+                        }
+                    }
+                    canvas.drawRoundRect(
+                        left = 0f, top = 0f,
+                        right = size.width, bottom = size.height,
+                        radiusX = radius, radiusY = radius,
+                        paint = glowPaint
+                    )
+                }
+                drawRoundRect(
+                    color = fillColor,
+                    cornerRadius = CornerRadius(radius)
+                )
+            }
+        }
     }
 }
 

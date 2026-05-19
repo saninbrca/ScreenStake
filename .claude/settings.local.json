@@ -43,7 +43,8 @@
       "Bash(./gradlew compileDebugKotlin)",
       "Bash(./gradlew :app:compileDebugKotlin)",
       "Bash(./gradlew :app:compileDebugKotlin --quiet)",
-      "Bash(xargs cat *)"
+      "Bash(xargs cat *)",
+      "Bash(./gradlew assembleDebug --no-daemon -q)"
     ]
   }
 }

@@ -11,183 +11,173 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.detox.app.R
-import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.domain.model.LimitType
-import com.detox.app.domain.usecase.DailyLimitStatus
+
+private val BlockingBgColor      = Color(0xFF0A0A0A)
+private val BlockingAccentGreen  = Color(0xFF00C853)
+private val BlockingAccentOrange = Color(0xFFFF9500)
+private val BlockingSurfaceDark  = Color(0xFF111111)
 
 @Composable
 fun BlockingScreenOverlay(
-    status: DailyLimitStatus,
-    /** Current consecutive-day streak (before today). Hidden when 0. */
-    streak: Int = 0,
-    onOpenAnyway: () -> Unit,
-    onSkip: () -> Unit
+    appName: String,
+    contextHeader: String,
+    valueUsed: Int,
+    maxValue: Int,
+    labelText: String,
+    amountCents: Int?,
+    showStakeWarning: Boolean,
+    onStayStrong: () -> Unit,
+    onOpenAnyway: () -> Unit
 ) {
+    val remaining = (maxValue - valueUsed).coerceAtLeast(0)
+    val progress  = if (maxValue > 0) valueUsed.toFloat() / maxValue else 0f
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0D0D)), // fully opaque — nothing bleeds through from app
-        contentAlignment = Alignment.Center
+            .background(BlockingBgColor)
     ) {
-        Card(
+        // App name top-right
+        Text(
+            text = appName,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF666666),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 16.dp)
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp)
+                .padding(top = 60.dp, bottom = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
+            Spacer(Modifier.height(16.dp))
+
+            // Context header
+            Text(
+                text = contextHeader,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BlockingAccentGreen,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(32.dp))
+
+            // Large number
+            Text(
+                text = valueUsed.toString(),
+                fontSize = 64.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                letterSpacing = (-3).sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Label below number
+            Text(
+                text = labelText,
+                fontSize = 13.sp,
+                color = Color(0xFF444444),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(28.dp))
+
+            // Progress bar
+            OverlayProgressBar(
+                progress = progress.coerceIn(0f, 1f),
+                trackColor = Color(0xFF333333),
+                fillColor = BlockingAccentGreen
+            )
+
+            // Progress labels
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = stringResource(R.string.blocking_overlay_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    textAlign = TextAlign.Center
+                    text = stringResource(R.string.overlay_v2_progress_time_remaining, remaining),
+                    fontSize = 13.sp,
+                    color = Color(0xFFAAAAAA)
                 )
-
-                // Custom motivation (fallback to default if null or blank)
-                val motivationText = status.challenge.customMotivation
-                    ?.takeIf { it.isNotBlank() }
-                    ?: stringResource(R.string.default_motivation_text)
                 Text(
-                    text = motivationText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+                    text = "${(progress * 100).toInt()}%",
+                    fontSize = 13.sp,
+                    color = Color(0xFFAAAAAA)
                 )
+            }
 
-                // Hard Mode: amount at stake banner
-                val amountCents = status.challenge.amountCents
-                if (status.challenge.mode == ChallengeMode.HARD && amountCents != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = stringResource(
-                                R.string.blocking_overlay_amount_stake,
-                                amountCents / 100f
-                            ),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Usage progress
-                val progressText = when (status.challenge.limitType) {
-                    LimitType.TIME -> stringResource(
-                        R.string.blocking_overlay_usage_time,
-                        status.todayMinutes,
-                        status.challenge.limitValueMinutes
-                    )
-                    LimitType.SESSIONS -> stringResource(
-                        R.string.blocking_overlay_usage_sessions,
-                        status.todayOpens,
-                        status.challenge.limitValueSessions ?: 0
-                    )
-                    // TIME_BUDGET is handled by BudgetSelectionOverlay; this fallback is
-                    // defensive only (should never be reached for budget challenges).
-                    LimitType.TIME_BUDGET -> stringResource(
-                        R.string.blocking_overlay_usage_time,
-                        status.todayMinutes,
-                        status.challenge.dailyBudgetMinutes ?: 0
-                    )
-                    LimitType.TIME_WINDOW -> stringResource(
-                        R.string.challenge_card_time_window_progress,
-                        status.todayMinutes
-                    )
-                }
-                Text(
-                    text = progressText,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                val progress = when (status.challenge.limitType) {
-                    LimitType.TIME -> {
-                        if (status.challenge.limitValueMinutes > 0)
-                            status.todayMinutes.toFloat() / status.challenge.limitValueMinutes
-                        else 0f
-                    }
-                    LimitType.SESSIONS -> {
-                        val max = status.challenge.limitValueSessions ?: 1
-                        if (max > 0) status.todayOpens.toFloat() / max else 0f
-                    }
-                    LimitType.TIME_BUDGET -> {
-                        val budget = status.challenge.dailyBudgetMinutes ?: 1
-                        if (budget > 0) status.todayMinutes.toFloat() / budget else 0f
-                    }
-                    LimitType.TIME_WINDOW -> 0f
-                }.coerceIn(0f, 1f)
-
-                LinearProgressIndicator(
-                    progress = { progress },
+            // Stake warning card — Group Hard Mode only
+            if (showStakeWarning && (amountCents ?: 0) > 0) {
+                Spacer(Modifier.height(20.dp))
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Streak badge — shown above buttons when streak > 0
-                if (streak > 0) {
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(BlockingSurfaceDark)
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = stringResource(R.string.streak_display, streak),
-                        style = MaterialTheme.typography.titleMedium,
+                        text = stringResource(
+                            R.string.overlay_v2_group_stake_warning,
+                            (amountCents ?: 0) / 100f
+                        ),
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+                        color = BlockingAccentOrange,
+                        textAlign = TextAlign.Center
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
+            }
 
-                Button(
-                    onClick = onSkip,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(text = stringResource(R.string.blocking_overlay_skip))
-                }
+            Spacer(Modifier.weight(1f))
 
-                OutlinedButton(
+            // Primary button
+            OverlayPrimaryButton(
+                text = stringResource(R.string.stay_strong_button),
+                onClick = onStayStrong
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Ghost button — intentionally barely visible
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                TextButton(
                     onClick = onOpenAnyway,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.height(32.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
                 ) {
-                    Text(text = stringResource(R.string.blocking_overlay_open_anyway))
+                    Text(
+                        text = stringResource(R.string.overlay_ghost_open),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Normal
+                    )
                 }
             }
         }

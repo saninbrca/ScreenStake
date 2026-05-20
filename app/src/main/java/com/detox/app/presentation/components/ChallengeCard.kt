@@ -51,6 +51,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.screens.challengecreation.FEATURE_BLOCK_MAP
+import com.detox.app.presentation.util.pressScaleFeedback
 import com.detox.app.ui.theme.DetoxWarning
 
 private val TextSecondary = Color(0xFF8E8E93)
@@ -154,7 +155,7 @@ fun ChallengeCard(
 
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().pressScaleFeedback(),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)

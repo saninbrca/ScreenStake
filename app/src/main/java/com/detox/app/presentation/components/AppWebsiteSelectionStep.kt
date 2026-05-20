@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import com.detox.app.util.HapticManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -696,11 +697,15 @@ internal fun AppSelectionRow(
     dimmed: Boolean = false,
 ) {
     val isBusy = conflictChallengeName != null
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (isSelected) Color(0xFFF9FFF9) else Color.Transparent)
-            .clickable(enabled = !dimmed && !isBusy, onClick = onToggle)
+            .clickable(enabled = !dimmed && !isBusy) {
+                HapticManager.light(context)
+                onToggle()
+            }
             .alpha(if (dimmed || isBusy) 0.4f else 1f),
     ) {
         Row(

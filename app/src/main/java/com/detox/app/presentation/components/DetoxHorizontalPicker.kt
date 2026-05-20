@@ -27,9 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import com.detox.app.util.HapticManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,7 +71,7 @@ fun DetoxHorizontalPicker(
     val fartherClr   = if (darkMode) Color(0xFF222222) else Color(0xFFE0E0E0)
     val unitClr      = if (darkMode) Color(0xFF666666) else Color(0xFF8E8E93)
 
-    val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     val snapFling = rememberSnapFlingBehavior(listState)
 
@@ -102,7 +102,7 @@ fun DetoxHorizontalPicker(
         if (!initialized) return@LaunchedEffect
         val newValue = values.getOrNull(centeredIndex) ?: return@LaunchedEffect
         if (newValue != selectedValue) {
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            HapticManager.light(context)
             onValueChange(newValue)
         }
     }

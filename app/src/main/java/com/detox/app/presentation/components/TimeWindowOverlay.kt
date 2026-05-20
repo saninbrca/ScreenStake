@@ -1,5 +1,10 @@
 package com.detox.app.presentation.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +68,17 @@ fun TimeWindowOverlay(
     val minutes = remaining % 60
     val countdownText = "%02d:%02d".format(hours, minutes)
 
+    // Entrance animation
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(200)) + scaleIn(
+            animationSpec = tween(200, easing = FastOutSlowInEasing),
+            initialScale = 0.95f
+        )
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -194,11 +210,12 @@ fun TimeWindowOverlay(
 
             Spacer(Modifier.weight(1f))
 
-            // ── Primary button: "Stark bleiben 💪" (CHANGE 7) ─────────────────
+            // ── Primary button: "Stark bleiben 💪" ────────────────────────────
             OverlayPrimaryButton(
                 text = stringResource(R.string.stay_strong_button),
                 onClick = onDismiss
             )
         }
     }
+    } // AnimatedVisibility
 }

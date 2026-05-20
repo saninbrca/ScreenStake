@@ -1,5 +1,14 @@
 package com.detox.app.presentation.screens.dashboard
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ButtonDefaults
@@ -37,9 +46,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,7 +66,11 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.presentation.components.ChallengeCard
+import com.detox.app.presentation.util.pressScaleFeedback
+import androidx.compose.ui.platform.LocalContext
 import com.detox.app.util.DateUtils
+import com.detox.app.util.HapticManager
+import kotlinx.coroutines.delay
 import timber.log.Timber
 
 @Composable
@@ -67,12 +85,32 @@ fun DashboardScreen(
     val completedChallenge by viewModel.completedChallenge.collectAsStateWithLifecycle()
     val redemptionChallenges by viewModel.redemptionChallenges.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
+
+    LaunchedEffect(completedChallenge) {
+        if (completedChallenge != null) {
+            HapticManager.success(context)
+        }
+    }
 
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.loadStats()
         }
     }
+
+    val isEmpty = uiState is DashboardUiState.Empty
+    val fabInfiniteTransition = rememberInfiniteTransition(label = "fabPulse")
+    val fabRawPulse by fabInfiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "fabPulseScale"
+    )
+    val fabScale = if (isEmpty) fabRawPulse else 1f
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -81,7 +119,8 @@ fun DashboardScreen(
                 FloatingActionButton(
                     onClick = onAddChallenge,
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.graphicsLayer(scaleX = fabScale, scaleY = fabScale)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Add,
@@ -154,14 +193,30 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
-                        items(
+                        itemsIndexed(
                             items = state.activeChallenges,
-                            key = { it.challengeId }
-                        ) { stats ->
-                            ChallengeCard(
-                                dailyStats = stats,
-                                onClick = { onChallengeClick(stats.challengeId) }
-                            )
+                            key = { _, it -> it.challengeId }
+                        ) { index, stats ->
+                            val density = LocalDensity.current
+                            val offsetPx = with(density) { 30.dp.roundToPx() }
+                            var cardVisible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                delay(index * 80L)
+                                cardVisible = true
+                            }
+                            AnimatedVisibility(
+                                visible = cardVisible,
+                                enter = fadeIn(tween(350, easing = FastOutSlowInEasing)) +
+                                    slideInVertically(
+                                        initialOffsetY = { offsetPx },
+                                        animationSpec = tween(350, easing = FastOutSlowInEasing)
+                                    )
+                            ) {
+                                ChallengeCard(
+                                    dailyStats = stats,
+                                    onClick = { onChallengeClick(stats.challengeId) }
+                                )
+                            }
                         }
                     }
                 }
@@ -239,7 +294,7 @@ private fun EmptyState(
 
         Button(
             onClick = onAddChallenge,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().pressScaleFeedback(),
             shape = MaterialTheme.shapes.medium,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary

@@ -8,6 +8,13 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import timber.log.Timber
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -116,93 +125,104 @@ fun OnboardingScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            when (state.currentStep) {
-                // ── Step 0: Usage Stats ─────────────────────────────────────────
-                0 -> PermissionStep(
-                    title = stringResource(R.string.permission_usage_title),
-                    description = stringResource(R.string.permission_usage_description),
-                    isGranted = state.usageStatsGranted,
-                    onRequest = {
-                        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                    },
-                    onNext = { viewModel.advanceStep() }
-                )
+            AnimatedContent(
+                targetState = state.currentStep,
+                transitionSpec = {
+                    val direction = if (targetState > initialState) 1 else -1
+                    (slideInHorizontally(tween(250)) { it * direction } + fadeIn(tween(250))) togetherWith
+                            (slideOutHorizontally(tween(250)) { -it * direction } + fadeOut(tween(250)))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = "onboarding_step"
+            ) { step ->
+                when (step) {
+                    // ── Step 0: Usage Stats ─────────────────────────────────────────
+                    0 -> PermissionStep(
+                        title = stringResource(R.string.permission_usage_title),
+                        description = stringResource(R.string.permission_usage_description),
+                        isGranted = state.usageStatsGranted,
+                        onRequest = {
+                            context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                        },
+                        onNext = { viewModel.advanceStep() }
+                    )
 
-                // ── Step 1: Overlay ─────────────────────────────────────────────
-                1 -> PermissionStep(
-                    title = stringResource(R.string.permission_overlay_title),
-                    description = stringResource(R.string.permission_overlay_description),
-                    isGranted = state.overlayGranted,
-                    onRequest = {
-                        Timber.d("Onboarding: launching ACTION_MANAGE_OVERLAY_PERMISSION for ${context.packageName}")
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
+                    // ── Step 1: Overlay ─────────────────────────────────────────────
+                    1 -> PermissionStep(
+                        title = stringResource(R.string.permission_overlay_title),
+                        description = stringResource(R.string.permission_overlay_description),
+                        isGranted = state.overlayGranted,
+                        onRequest = {
+                            Timber.d("Onboarding: launching ACTION_MANAGE_OVERLAY_PERMISSION for ${context.packageName}")
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
                             )
-                        )
-                    },
-                    onNext = { viewModel.advanceStep() }
-                )
+                        },
+                        onNext = { viewModel.advanceStep() }
+                    )
 
-                // ── Step 2: Accessibility ───────────────────────────────────────
-                2 -> PermissionStep(
-                    title = stringResource(R.string.permission_accessibility_title),
-                    description = stringResource(R.string.permission_accessibility_description),
-                    isGranted = state.accessibilityGranted,
-                    onRequest = {
-                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    },
-                    onNext = { viewModel.advanceStep() }
-                )
+                    // ── Step 2: Accessibility ───────────────────────────────────────
+                    2 -> PermissionStep(
+                        title = stringResource(R.string.permission_accessibility_title),
+                        description = stringResource(R.string.permission_accessibility_description),
+                        isGranted = state.accessibilityGranted,
+                        onRequest = {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        },
+                        onNext = { viewModel.advanceStep() }
+                    )
 
-                // ── Step 3: Notifications (Android 13+) / Battery (Huawei <13) / done ──
-                3 -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        PermissionStep(
-                            title = stringResource(R.string.permission_notifications_title),
-                            description = stringResource(R.string.permission_notifications_description),
-                            isGranted = state.notificationsGranted,
-                            onRequest = {
-                                notificationPermissionLauncher.launch(
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                )
-                            },
-                            onNext = {
-                                if (isHuawei) viewModel.advanceStep() else onOnboardingComplete()
-                            }
-                        )
-                    } else if (isHuawei) {
-                        HuaweiBatteryStep(
-                            onRequest = {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                )
-                            },
-                            onNext = { onOnboardingComplete() }
-                        )
-                    } else {
-                        LaunchedEffect(Unit) { onOnboardingComplete() }
+                    // ── Step 3: Notifications (Android 13+) / Battery (Huawei <13) / done ──
+                    3 -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            PermissionStep(
+                                title = stringResource(R.string.permission_notifications_title),
+                                description = stringResource(R.string.permission_notifications_description),
+                                isGranted = state.notificationsGranted,
+                                onRequest = {
+                                    notificationPermissionLauncher.launch(
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    )
+                                },
+                                onNext = {
+                                    if (isHuawei) viewModel.advanceStep() else onOnboardingComplete()
+                                }
+                            )
+                        } else if (isHuawei) {
+                            HuaweiBatteryStep(
+                                onRequest = {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    )
+                                },
+                                onNext = { onOnboardingComplete() }
+                            )
+                        } else {
+                            LaunchedEffect(Unit) { onOnboardingComplete() }
+                        }
                     }
-                }
 
-                // ── Step 4: Battery (Android 13+ Huawei) / done otherwise ───────
-                4 -> {
-                    if (isHuawei) {
-                        HuaweiBatteryStep(
-                            onRequest = {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                )
-                            },
-                            onNext = { onOnboardingComplete() }
-                        )
-                    } else {
-                        LaunchedEffect(Unit) { onOnboardingComplete() }
+                    // ── Step 4: Battery (Android 13+ Huawei) / done otherwise ───────
+                    4 -> {
+                        if (isHuawei) {
+                            HuaweiBatteryStep(
+                                onRequest = {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    )
+                                },
+                                onNext = { onOnboardingComplete() }
+                            )
+                        } else {
+                            LaunchedEffect(Unit) { onOnboardingComplete() }
+                        }
                     }
-                }
 
-                else -> LaunchedEffect(Unit) { onOnboardingComplete() }
+                    else -> LaunchedEffect(Unit) { onOnboardingComplete() }
+                }
             }
         }
     }
@@ -291,6 +311,7 @@ private fun PermissionStep(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (isGranted) {
+            val haptic = LocalHapticFeedback.current
             Text(
                 text = stringResource(R.string.permission_granted),
                 style = MaterialTheme.typography.titleMedium,
@@ -298,7 +319,10 @@ private fun PermissionStep(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Button(
-                onClick = onNext,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onNext()
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = stringResource(R.string.onboarding_next))

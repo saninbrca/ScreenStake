@@ -371,16 +371,14 @@ class OverlayManager @Inject constructor(
         }
 
         // Source of truth for opensToday:
-        //  - Group challenges: read from Firestore participants (live, authoritative)
+        //  - Group challenges: TrackedAppEventBus.groupSessionInfos — initialized from
+        //    Firestore→Room on service start, then incremented in-memory on each conscious open.
         //  - Solo challenges: in-memory map → TrackedAppEventBus → DailyLog (fallback chain)
         val isGroup = challenge.groupChallengeId != null
         if (isGroup) {
-            val groupId = challenge.groupChallengeId!!
-            val uid = firebaseAuthService.currentUserId()
-            val gc = groupChallengeRepository.getGroupChallengeById(groupId)
-            val opens = gc?.participants?.firstOrNull { it.userId == uid }?.opensToday ?: 0
+            val opens = TrackedAppEventBus.groupSessionInfos.value[packageName]?.opensToday ?: 0
             consciousOpensToday[packageName] = opens
-            Timber.d("Group overlay: opensToday=$opens from Firestore (groupId=$groupId)")
+            Timber.d("Group overlay: opensToday=$opens from TrackedAppEventBus (groupId=${challenge.groupChallengeId})")
         } else if (!consciousOpensToday.containsKey(packageName)) {
             val busOpens = TrackedAppEventBus.groupSessionInfos.value[packageName]?.opensToday
             if (busOpens != null) {

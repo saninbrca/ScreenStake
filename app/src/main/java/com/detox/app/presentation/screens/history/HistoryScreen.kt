@@ -31,6 +31,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -215,10 +218,15 @@ private fun VerlaufFilterTab(
             color = if (selected) Color.Black else Color(0xFF8E8E93)
         )
         Spacer(modifier = Modifier.height(4.dp))
+        val indicatorWidth by animateDpAsState(
+            targetValue = if (selected) 24.dp else 0.dp,
+            animationSpec = tween(200, easing = FastOutSlowInEasing),
+            label = "filterIndicator"
+        )
         Box(
             modifier = Modifier
                 .height(2.dp)
-                .width(if (selected) 24.dp else 0.dp)
+                .width(indicatorWidth)
                 .background(Color(0xFF00C853), RoundedCornerShape(1.dp))
         )
     }

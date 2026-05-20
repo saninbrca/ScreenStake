@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +46,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -500,12 +504,38 @@ private fun GroupDetailContent(
                     )
                 }
             } else {
-                item {
-                    LeaderboardCard(
-                        sorted = sorted,
-                        gc = gc,
-                        currentUserId = currentUserId
-                    )
+                itemsIndexed(
+                    items = sorted,
+                    key = { _, p -> "lb_${p.userId}" }
+                ) { index, participant ->
+                    val isFirst = index == 0
+                    val isLast = index == sorted.lastIndex
+                    val shape = when {
+                        isFirst && isLast -> RoundedCornerShape(16.dp)
+                        isFirst -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                        isLast -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+                        else -> RoundedCornerShape(0.dp)
+                    }
+                    val rowBg = if (participant.userId == currentUserId) Color(0xFFF9FFF9) else CardWhite
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem(placementSpec = tween(300)),
+                        shape = shape,
+                        colors = CardDefaults.cardColors(containerColor = rowBg),
+                        elevation = CardDefaults.cardElevation(0.dp),
+                        border = BorderStroke(0.5.dp, CardBorder)
+                    ) {
+                        LeaderboardRow(
+                            rank = index + 1,
+                            participant = participant,
+                            gc = gc,
+                            isCurrentUser = participant.userId == currentUserId
+                        )
+                        if (!isLast) {
+                            HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+                        }
+                    }
                 }
             }
         }
@@ -840,31 +870,6 @@ private fun GroupStatColumn(
     }
 }
 
-// ── Leaderboard card (single white card, rows with dividers) ──────────────────
-
-@Composable
-private fun LeaderboardCard(
-    sorted: List<Participant>,
-    gc: GroupChallenge,
-    currentUserId: String?
-) {
-    GroupDetoxCard {
-        Column {
-            sorted.forEachIndexed { index, participant ->
-                LeaderboardRow(
-                    rank = index + 1,
-                    participant = participant,
-                    gc = gc,
-                    isCurrentUser = participant.userId == currentUserId
-                )
-                if (index < sorted.size - 1) {
-                    HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
-                }
-            }
-        }
-    }
-}
-
 @Composable
 private fun LeaderboardRow(
     rank: Int,
@@ -896,12 +901,9 @@ private fun LeaderboardRow(
             )
     }
 
-    val rowBg = if (isCurrentUser) Color(0xFFF9FFF9) else Color.Transparent
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(rowBg)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1029,12 +1031,17 @@ private fun SessionCard(
         else ->
             stringResource(R.string.group_detail_noch_verfuegbar_min, stillAvailable)
     }
-    val progress = when (gc.limitType) {
+    val progressRaw = when (gc.limitType) {
         LimitType.SESSIONS ->
             if (limit > 0) myOpensToday.toFloat() / limit else 0f
         else ->
             if (limitMin > 0) myTimeUsedMinutes.toFloat() / limitMin else 0f
     }.coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = progressRaw,
+        animationSpec = tween(600, delayMillis = 300, easing = FastOutSlowInEasing),
+        label = "groupProgressAnim"
+    )
 
     GroupDetoxCard {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1052,9 +1059,9 @@ private fun SessionCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // EXISTING PROGRESS BAR — component unchanged
+            // EXISTING PROGRESS BAR — animated fill on screen open
             LinearProgressIndicator(
-                progress = { progress },
+                progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(10.dp),

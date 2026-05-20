@@ -52,6 +52,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -207,6 +211,17 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // ── Avatar ────────────────────────────────────────────────────────
+            var avatarVisible by remember { mutableStateOf(false) }
+            val avatarScale by animateFloatAsState(
+                targetValue = if (avatarVisible) 1f else 0.8f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                label = "avatarScale"
+            )
+            LaunchedEffect(Unit) { avatarVisible = true }
+
             val initials = viewModel.displayName
                 ?.split(" ")
                 ?.filter { it.isNotBlank() }
@@ -220,6 +235,7 @@ fun ProfileScreen(
             Box(
                 modifier = Modifier
                     .size(80.dp)
+                    .graphicsLayer(scaleX = avatarScale, scaleY = avatarScale)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center

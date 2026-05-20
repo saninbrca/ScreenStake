@@ -1,5 +1,10 @@
 package com.detox.app.presentation.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +22,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
+import kotlinx.coroutines.delay
 
 private val BlockingBgColor      = Color(0xFF0A0A0A)
 private val BlockingAccentGreen  = Color(0xFF00C853)
@@ -48,136 +60,163 @@ fun BlockingScreenOverlay(
     val remaining = (maxValue - valueUsed).coerceAtLeast(0)
     val progress  = if (maxValue > 0) valueUsed.toFloat() / maxValue else 0f
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BlockingBgColor)
-    ) {
-        // App name top-right
-        Text(
-            text = appName,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = Color(0xFF666666),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 16.dp, end = 16.dp)
-        )
+    // Entrance animation
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
 
-        Column(
+    // Count-up animation for large number
+    var displayedValue by remember { mutableIntStateOf(if (valueUsed > 0) 0 else valueUsed) }
+    LaunchedEffect(Unit) {
+        if (valueUsed > 0) {
+            delay(100L)
+            val steps = valueUsed.coerceAtMost(20)
+            val stepDelay = 300L / steps
+            for (i in 1..steps) {
+                displayedValue = valueUsed * i / steps
+                delay(stepDelay)
+            }
+            displayedValue = valueUsed
+        }
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(200)) + scaleIn(
+            animationSpec = tween(200, easing = FastOutSlowInEasing),
+            initialScale = 0.95f
+        )
+    ) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 28.dp)
-                .padding(top = 60.dp, bottom = 36.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(BlockingBgColor)
         ) {
-            Spacer(Modifier.height(16.dp))
-
-            // Context header
+            // App name top-right
             Text(
-                text = contextHeader,
+                text = appName,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = BlockingAccentGreen,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            // Large number
-            Text(
-                text = valueUsed.toString(),
-                fontSize = 64.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                letterSpacing = (-3).sp,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Label below number
-            Text(
-                text = labelText,
-                fontSize = 13.sp,
-                color = Color(0xFF444444),
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(28.dp))
-
-            // Progress bar
-            OverlayProgressBar(
-                progress = progress.coerceIn(0f, 1f),
-                trackColor = Color(0xFF333333),
-                fillColor = BlockingAccentGreen
-            )
-
-            // Progress labels
-            Row(
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF666666),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = stringResource(R.string.overlay_v2_progress_time_remaining, remaining),
-                    fontSize = 13.sp,
-                    color = Color(0xFFAAAAAA)
-                )
-                Text(
-                    text = "${(progress * 100).toInt()}%",
-                    fontSize = 13.sp,
-                    color = Color(0xFFAAAAAA)
-                )
-            }
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp, end = 16.dp)
+            )
 
-            // Stake warning card — Group Hard Mode only
-            if (showStakeWarning && (amountCents ?: 0) > 0) {
-                Spacer(Modifier.height(20.dp))
-                Box(
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 28.dp)
+                    .padding(top = 60.dp, bottom = 36.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(16.dp))
+
+                // Context header
+                Text(
+                    text = contextHeader,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BlockingAccentGreen,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(32.dp))
+
+                // Large number (animated count-up)
+                Text(
+                    text = displayedValue.toString(),
+                    fontSize = 64.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    letterSpacing = (-3).sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Label below number
+                Text(
+                    text = labelText,
+                    fontSize = 13.sp,
+                    color = Color(0xFF444444),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(28.dp))
+
+                // Progress bar
+                OverlayProgressBar(
+                    progress = progress.coerceIn(0f, 1f),
+                    trackColor = Color(0xFF333333),
+                    fillColor = BlockingAccentGreen
+                )
+
+                // Progress labels
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(BlockingSurfaceDark)
-                        .padding(14.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = stringResource(
-                            R.string.overlay_v2_group_stake_warning,
-                            (amountCents ?: 0) / 100f
-                        ),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = BlockingAccentOrange,
-                        textAlign = TextAlign.Center
+                        text = stringResource(R.string.overlay_v2_progress_time_remaining, remaining),
+                        fontSize = 13.sp,
+                        color = Color(0xFFAAAAAA)
+                    )
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        fontSize = 13.sp,
+                        color = Color(0xFFAAAAAA)
                     )
                 }
-            }
 
-            Spacer(Modifier.weight(1f))
+                // Stake warning card — Group Hard Mode only
+                if (showStakeWarning && (amountCents ?: 0) > 0) {
+                    Spacer(Modifier.height(20.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(BlockingSurfaceDark)
+                            .padding(14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.overlay_v2_group_stake_warning,
+                                (amountCents ?: 0) / 100f
+                            ),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BlockingAccentOrange,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
 
-            // Primary button
-            OverlayPrimaryButton(
-                text = stringResource(R.string.stay_strong_button),
-                onClick = onStayStrong
-            )
+                Spacer(Modifier.weight(1f))
 
-            Spacer(Modifier.height(12.dp))
+                // Primary button
+                OverlayPrimaryButton(
+                    text = stringResource(R.string.stay_strong_button),
+                    onClick = onStayStrong
+                )
 
-            // Ghost button — intentionally barely visible
-            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                TextButton(
-                    onClick = onOpenAnyway,
-                    modifier = Modifier.height(32.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
-                ) {
-                    Text(
-                        text = stringResource(R.string.overlay_ghost_open),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal
-                    )
+                Spacer(Modifier.height(12.dp))
+
+                // Ghost button — intentionally barely visible
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    TextButton(
+                        onClick = onOpenAnyway,
+                        modifier = Modifier.height(32.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
+                    ) {
+                        Text(
+                            text = stringResource(R.string.overlay_ghost_open),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
                 }
             }
         }

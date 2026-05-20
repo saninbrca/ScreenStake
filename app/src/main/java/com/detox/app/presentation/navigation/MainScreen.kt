@@ -1,9 +1,12 @@
 package com.detox.app.presentation.navigation
 
 import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -35,10 +38,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import com.detox.app.service.TrackedAppEventBus
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -165,9 +170,23 @@ fun MainScreen(
                             }
                         },
                         icon = {
+                            val iconScale = remember { Animatable(1f) }
+                            LaunchedEffect(isSelected) {
+                                if (isSelected) {
+                                    iconScale.animateTo(1.2f, tween(100))
+                                    iconScale.animateTo(
+                                        1f,
+                                        spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                                    )
+                                }
+                            }
                             Icon(
                                 imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                contentDescription = null
+                                contentDescription = null,
+                                modifier = Modifier.graphicsLayer(
+                                    scaleX = iconScale.value,
+                                    scaleY = iconScale.value
+                                )
                             )
                         },
                         label = {

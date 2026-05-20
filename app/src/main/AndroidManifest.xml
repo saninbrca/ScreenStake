@@ -20,6 +20,9 @@
     <!-- Internet for Firebase & Stripe -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Haptic feedback / vibration -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
     <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

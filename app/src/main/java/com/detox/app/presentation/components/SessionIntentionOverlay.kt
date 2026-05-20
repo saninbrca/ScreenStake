@@ -1,6 +1,12 @@
 package com.detox.app.presentation.components
 
 import android.graphics.BlurMaskFilter
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +47,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
+import com.detox.app.presentation.util.pressScaleFeedback
+import kotlinx.coroutines.delay
 
 private val BgColor      = Color(0xFF0A0A0A)
 private val AccentGreen  = Color(0xFF00C853)
@@ -71,118 +81,145 @@ fun SessionIntentionOverlay(
     val remaining = (maxOpens - opensUsed).coerceAtLeast(0)
     val progress  = if (maxOpens > 0) opensUsed.toFloat() / maxOpens else 0f
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BgColor)
-    ) {
-        // App name top-right
-        Text(
-            text = appName,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = TextSecond,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 16.dp, end = 16.dp)
-        )
+    // Entrance animation
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
 
-        Column(
+    // Count-up animation for large number
+    var displayedOpens by remember { mutableIntStateOf(if (opensUsed > 0) 0 else opensUsed) }
+    LaunchedEffect(Unit) {
+        if (opensUsed > 0) {
+            delay(100L)
+            val steps = opensUsed.coerceAtMost(20)
+            val stepDelay = 300L / steps
+            for (i in 1..steps) {
+                displayedOpens = opensUsed * i / steps
+                delay(stepDelay)
+            }
+            displayedOpens = opensUsed
+        }
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(200)) + scaleIn(
+            animationSpec = tween(200, easing = FastOutSlowInEasing),
+            initialScale = 0.95f
+        )
+    ) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 28.dp)
-                .padding(top = 60.dp, bottom = 36.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(BgColor)
         ) {
-            Spacer(Modifier.height(16.dp))
-
-            // ── Context header ─────────────────────────────────────────────────
+            // App name top-right
             Text(
-                text = contextHeader,
+                text = appName,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = AccentGreen,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            // ── Large number ───────────────────────────────────────────────────
-            Text(
-                text = opensUsed.toString(),
-                fontSize = 64.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                letterSpacing = (-3).sp,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // ── Label below number ─────────────────────────────────────────────
-            Text(
-                text = stringResource(R.string.overlay_v2_label_sessions, maxOpens),
-                fontSize = 13.sp,
-                color = Color(0xFF444444),
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(28.dp))
-
-            // ── Progress bar ───────────────────────────────────────────────────
-            OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = TrackDark, fillColor = AccentGreen)
-
-            // ── Labels below bar ───────────────────────────────────────────────
-            Row(
+                fontWeight = FontWeight.Medium,
+                color = TextSecond,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = stringResource(R.string.overlay_v2_progress_sessions_remaining, remaining),
-                    fontSize = 13.sp,
-                    color = Color(0xFFAAAAAA)
-                )
-                Text(
-                    text = "${(progress * 100).toInt()}%",
-                    fontSize = 13.sp,
-                    color = Color(0xFFAAAAAA)
-                )
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            // ── Primary button ─────────────────────────────────────────────────
-            OverlayPrimaryButton(
-                text = stringResource(R.string.stay_strong_button),
-                onClick = onNo
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp, end = 16.dp)
             )
 
-            Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 28.dp)
+                    .padding(top = 60.dp, bottom = 36.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(16.dp))
 
-            // ── Ghost button (CHANGE 4) — barely visible, 10sp #222, 32dp ─────
-            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                TextButton(
-                    onClick = { showCountdown = true },
-                    modifier = Modifier.height(32.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
+                // ── Context header ─────────────────────────────────────────────────
+                Text(
+                    text = contextHeader,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AccentGreen,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(32.dp))
+
+                // ── Large number (animated count-up) ───────────────────────────────
+                Text(
+                    text = displayedOpens.toString(),
+                    fontSize = 64.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    letterSpacing = (-3).sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // ── Label below number ─────────────────────────────────────────────
+                Text(
+                    text = stringResource(R.string.overlay_v2_label_sessions, maxOpens),
+                    fontSize = 13.sp,
+                    color = Color(0xFF444444),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(28.dp))
+
+                // ── Progress bar (animated fill via OverlayProgressBar) ────────────
+                OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = TrackDark, fillColor = AccentGreen)
+
+                // ── Labels below bar ───────────────────────────────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = stringResource(R.string.overlay_ghost_open),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal
+                        text = stringResource(R.string.overlay_v2_progress_sessions_remaining, remaining),
+                        fontSize = 13.sp,
+                        color = Color(0xFFAAAAAA)
+                    )
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        fontSize = 13.sp,
+                        color = Color(0xFFAAAAAA)
                     )
                 }
-            }
-        }
 
-        if (showCountdown) {
-            CountdownScreen(
-                packageName = packageName,
-                onComplete = onYes,
-                onCancel = onNo
-            )
+                Spacer(Modifier.weight(1f))
+
+                // ── Primary button ─────────────────────────────────────────────────
+                OverlayPrimaryButton(
+                    text = stringResource(R.string.stay_strong_button),
+                    onClick = onNo
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // ── Ghost button — barely visible, 10sp #222, 32dp ─────────────────
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    TextButton(
+                        onClick = { showCountdown = true },
+                        modifier = Modifier.height(32.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
+                    ) {
+                        Text(
+                            text = stringResource(R.string.overlay_ghost_open),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
+            }
+
+            if (showCountdown) {
+                CountdownScreen(
+                    packageName = packageName,
+                    onComplete = onYes,
+                    onCancel = onNo
+                )
+            }
         }
     }
 }
@@ -194,6 +231,11 @@ internal fun OverlayProgressBar(
     fillColor: Color = Color(0xFF00C853),
     modifier: Modifier = Modifier.fillMaxWidth()
 ) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 400, delayMillis = 150),
+        label = "progressBar"
+    )
     Box(modifier = modifier.height(8.dp)) {
         // Track
         Box(
@@ -203,10 +245,10 @@ internal fun OverlayProgressBar(
                 .background(trackColor)
         )
         // Fill with glow — Canvas is not clipped by parent so glow bleeds naturally
-        if (progress > 0f) {
+        if (animatedProgress > 0f) {
             Canvas(
                 modifier = Modifier
-                    .fillMaxWidth(progress)
+                    .fillMaxWidth(animatedProgress)
                     .fillMaxHeight()
             ) {
                 val radius = 4.dp.toPx()
@@ -243,7 +285,7 @@ internal fun OverlayPrimaryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(52.dp),
+        modifier = modifier.height(52.dp).pressScaleFeedback(),
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color(0xFF00C853),

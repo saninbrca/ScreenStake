@@ -41,6 +41,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +58,9 @@ import com.detox.app.presentation.components.DetoxHorizontalPicker
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -422,23 +431,69 @@ private fun ActiveChallengeContent(
                 )
 
                 // Stats row (3 columns)
+                val animatedStreak by animateIntAsState(
+                    targetValue = streak,
+                    animationSpec = tween(600, delayMillis = 200, easing = FastOutSlowInEasing),
+                    label = "streakAnim"
+                )
+                val animatedBestStreak by animateIntAsState(
+                    targetValue = bestStreak,
+                    animationSpec = tween(600, delayMillis = 200, easing = FastOutSlowInEasing),
+                    label = "bestStreakAnim"
+                )
+                val animatedDaysLeft by animateIntAsState(
+                    targetValue = daysLeft ?: 0,
+                    animationSpec = tween(600, delayMillis = 200, easing = FastOutSlowInEasing),
+                    label = "daysLeftAnim"
+                )
+                val streakScale = remember { Animatable(1f) }
+                var streakGreenPulse by remember { mutableStateOf(false) }
+                val streakColor by animateColorAsState(
+                    targetValue = if (streakGreenPulse) AccentGreen else Color.Black,
+                    animationSpec = tween(200),
+                    label = "streakColor"
+                )
+                var previousStreak by remember { mutableIntStateOf(streak) }
+                var isFirstLoad by remember { mutableStateOf(true) }
+                LaunchedEffect(streak) {
+                    if (isFirstLoad) {
+                        isFirstLoad = false
+                        previousStreak = streak
+                        return@LaunchedEffect
+                    }
+                    if (streak > previousStreak) {
+                        launch {
+                            streakScale.animateTo(1.3f, tween(200))
+                            streakScale.animateTo(1f, tween(200))
+                        }
+                        launch {
+                            streakGreenPulse = true
+                            delay(300L)
+                            streakGreenPulse = false
+                        }
+                    }
+                    previousStreak = streak
+                }
                 Row(modifier = Modifier.fillMaxWidth()) {
                     DetailStatColumn(
                         label = stringResource(R.string.detail_streak_current_label),
-                        value = "🔥 $streak",
-                        modifier = Modifier.weight(1f)
+                        value = "🔥 $animatedStreak",
+                        modifier = Modifier
+                            .weight(1f)
+                            .graphicsLayer(scaleX = streakScale.value, scaleY = streakScale.value),
+                        valueColor = streakColor
                     )
                     DetailStatColumn(
                         label = if (isHardMode) stringResource(R.string.detail_einsatz_label)
                                 else stringResource(R.string.detail_streak_best_label),
                         value = if (isHardMode) "€${"%.0f".format((challenge.amountCents ?: 0) / 100f)}"
-                                else "$bestStreak",
+                                else "$animatedBestStreak",
                         valueColor = TextSecondary,
                         modifier = Modifier.weight(1f)
                     )
                     DetailStatColumn(
                         label = stringResource(R.string.detail_days_left_label),
-                        value = daysLeft?.toString() ?: "∞",
+                        value = if (daysLeft != null) animatedDaysLeft.toString() else "∞",
                         valueColor = AccentGreen,
                         modifier = Modifier.weight(1f)
                     )
@@ -481,7 +536,7 @@ private fun ActiveChallengeContent(
                         )
                     }
 
-                    // EXISTING PROGRESS BAR — component unchanged
+                    // EXISTING PROGRESS BAR — animated fill on open
                     val progressValue = when (challenge.limitType) {
                         LimitType.TIME ->
                             if (challenge.limitValueMinutes > 0)
@@ -496,8 +551,13 @@ private fun ActiveChallengeContent(
                         }
                         LimitType.TIME_WINDOW -> 0f
                     }
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = progressValue.coerceIn(0f, 1f),
+                        animationSpec = tween(600, delayMillis = 300, easing = FastOutSlowInEasing),
+                        label = "progressAnim"
+                    )
                     LinearProgressIndicator(
-                        progress = { progressValue.coerceIn(0f, 1f) },
+                        progress = { animatedProgress },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(10.dp),

@@ -46,11 +46,17 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 .catch { e -> Timber.e(e, "GroupChallengeRepo: global listener error uid=%s", userId) }
                 .collect { challenges ->
                     challenges.forEach { gc ->
+                        // Always upsert ACTIVE challenges so participant data (opensToday,
+                        // timeUsedMinutes) stays current in Room after every Firestore snapshot.
+                        // The status-change guard below only protects the expensive
+                        // syncGroupChallengeToLocalTracking() call.
+                        if (gc.status == GroupChallengeStatus.ACTIVE) {
+                            groupChallengeDao.upsert(gc.toEntity())
+                        }
                         if (gc.status == syncedStatuses[gc.groupId]) return@forEach
                         syncedStatuses[gc.groupId] = gc.status
                         when (gc.status) {
                             GroupChallengeStatus.ACTIVE -> {
-                                groupChallengeDao.upsert(gc.toEntity())
                                 val myParticipant = gc.participants.find { it.userId == userId }
                                 if (myParticipant?.status == ParticipantStatus.FAILED) {
                                     challengeDao.deleteById("group_${gc.groupId}")

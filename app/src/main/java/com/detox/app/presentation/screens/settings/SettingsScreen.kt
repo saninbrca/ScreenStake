@@ -69,6 +69,11 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -93,6 +98,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.presentation.screens.profile.IbanSaveState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ── Color constants ────────────────────────────────────────────────────────────
@@ -348,7 +354,7 @@ fun SettingsScreen(
         ) {
 
             // ── 1. KONTO ───────────────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_account)) {
+            IosSection(stringResource(R.string.settings_section_account), entranceDelayMs = 0) {
                 // Email (non-tappable)
                 IosRow(
                     iconContent = { IosIconBox(Icons.Filled.Person, GreyIconBg) },
@@ -385,7 +391,7 @@ fun SettingsScreen(
             }
 
             // ── 2. AKTIVITÄT ───────────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_activity)) {
+            IosSection(stringResource(R.string.settings_section_activity), entranceDelayMs = 60) {
                 IosRow(
                     iconContent = { IosIconBox(Icons.Filled.History, GreenColor) },
                     label = stringResource(R.string.settings_history_row_title),
@@ -395,7 +401,7 @@ fun SettingsScreen(
             }
 
             // ── 3. AUSZAHLUNGSKONTO ────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_payout_account)) {
+            IosSection(stringResource(R.string.settings_section_payout_account), entranceDelayMs = 120) {
                 if (ibanData == null) {
                     IosRow(
                         iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
@@ -421,7 +427,7 @@ fun SettingsScreen(
             }
 
             // ── 4. ERSCHEINUNGSBILD ────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_appearance)) {
+            IosSection(stringResource(R.string.settings_section_appearance), entranceDelayMs = 180) {
                 IosSwitchRow(
                     iconContent = { IosIconBox(Icons.Filled.DarkMode, PurpleColor) },
                     label = stringResource(R.string.settings_dark_mode),
@@ -438,7 +444,7 @@ fun SettingsScreen(
             }
 
             // ── 5. BENACHRICHTIGUNGEN ──────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_notifications)) {
+            IosSection(stringResource(R.string.settings_section_notifications), entranceDelayMs = 240) {
                 IosSwitchRow(
                     iconContent = { IosIconBox(Icons.Filled.Notifications, OrangeColor) },
                     label = stringResource(R.string.settings_daily_reminder),
@@ -475,7 +481,7 @@ fun SettingsScreen(
             }
 
             // ── 6. BERECHTIGUNGEN ──────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_permissions)) {
+            IosSection(stringResource(R.string.settings_section_permissions), entranceDelayMs = 300) {
                 IosPermissionRow(
                     icon = Icons.Filled.Tune,
                     title = stringResource(R.string.settings_permission_accessibility),
@@ -516,7 +522,7 @@ fun SettingsScreen(
             }
 
             // ── 7. DATENSCHUTZ ─────────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_privacy)) {
+            IosSection(stringResource(R.string.settings_section_privacy), entranceDelayMs = 360) {
                 IosRow(
                     iconContent = { IosIconBox(Icons.Filled.Policy, PurpleColor) },
                     label = stringResource(R.string.settings_privacy_policy),
@@ -569,7 +575,7 @@ fun SettingsScreen(
             }
 
             // ── 8. APP INFO ────────────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_app_info)) {
+            IosSection(stringResource(R.string.settings_section_app_info), entranceDelayMs = 420) {
                 IosRow(
                     iconContent = { IosIconBox(Icons.Filled.Info, GreyIconBg) },
                     label = stringResource(R.string.settings_version),
@@ -658,25 +664,42 @@ fun SettingsScreen(
 @Composable
 private fun IosSection(
     header: String,
+    entranceDelayMs: Int = 0,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Text(
-        text = header,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Normal,
-        color = SubtextColor,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
-    )
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardColor),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, CardBorder),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(entranceDelayMs.toLong())
+        visible = true
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
+            slideInHorizontally(
+                initialOffsetX = { 40 },
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            )
     ) {
-        Column(content = content)
+        Column {
+            Text(
+                text = header,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                color = SubtextColor,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
+            )
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardColor),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, CardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(content = content)
+            }
+        }
     }
 }
 

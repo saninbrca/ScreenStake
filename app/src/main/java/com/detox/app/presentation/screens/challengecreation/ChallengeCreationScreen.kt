@@ -58,6 +58,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.detox.app.presentation.util.pressScaleFeedback
+import com.detox.app.util.HapticManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -242,11 +245,15 @@ fun ChallengeCreationScreen(
             }
 
             if (state.currentStep < TOTAL_STEPS) {
+                val context = LocalContext.current
                 HorizontalDivider()
                 Box(modifier = Modifier.padding(16.dp)) {
                     Button(
-                        onClick = viewModel::goNext,
-                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            HapticManager.light(context)
+                            viewModel.goNext()
+                        },
+                        modifier = Modifier.fillMaxWidth().pressScaleFeedback(),
                         enabled = viewModel.canGoNext(),
                     ) {
                         Text("Next")
@@ -987,8 +994,12 @@ private fun Step7Confirm(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        val context = LocalContext.current
         Button(
-            onClick = onCreateChallenge,
+            onClick = {
+                HapticManager.light(context)
+                onCreateChallenge()
+            },
             modifier = Modifier.fillMaxWidth(),
             enabled = !isLoading,
             colors = if (state.selectedMode == ChallengeMode.HARD)

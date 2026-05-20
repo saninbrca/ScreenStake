@@ -380,6 +380,11 @@ DEBUG only:
 - Partial path blocking supported: `youtube.com/shorts` blocks only Shorts, not all of YouTube
 - Implementation: `AppDetectionAccessibilityService` monitors URL bar content in all major browsers
 
+### Website Challenge — Icon + Name Display
+- Favicons loaded via Google Favicon Service: `https://www.google.com/s2/favicons?domain=X&sz=48`
+- Name shows feature name (e.g. "Instagram Reels") when a partial section is selected, or domain (e.g. "instagram.com") for plain URL blocks
+- Detail Screen shows "BLOCKIERTE WEBSITES" section: favicon + name + URL path per row
+
 ---
 
 ## Partial App Blocking (Reels / Shorts / Feed)
@@ -468,8 +473,8 @@ NEVER query Room in `TYPE_WINDOW_STATE_CHANGED` handler.
 
 ## Known Issues (Soft Mode / Core)
 
-1. **`opensToday` in overlay shows wrong value for Group Challenges:**
-   Overlay reads from `DailyLog` (Room) but Group Challenge tracking uses `participants` array in Firestore. These are not always in sync.
+1. **`opensToday` in overlay (Group Challenges): FIXED** — OverlayManager now reads from
+   `TrackedAppEventBus.groupSessionInfos`. Room upsert runs unconditionally on every ACTIVE Firestore snapshot.
 
 2. **Group Challenge blocking unreliable:**
    `AppDetectionAccessibilityService` doesn't always block for Group Challenge participants because sync from Firestore to local Room can be delayed or missed.
@@ -565,6 +570,25 @@ Duration Hard:  min 14 (1 in DEBUG)
 Duration Group: min 3
 Buy-in:         min 10 (€)
 ```
+
+---
+
+## Limit Reduction Feature
+
+Allows users to reduce their daily limit mid-challenge. Rules:
+
+- Available in **Soft Mode and Hard Mode only** (not Group Challenge)
+- The new (lower) limit is stored as `pendingLimit` in both Firestore and Room
+- `pendingLimit` is applied at **midnight** (by `DailyEvaluationWorker`) — never immediately
+- Reductions are **never reversible** — once `pendingLimit` is applied it becomes the new `limitValue`
+- Users can see "Neues Limit ab morgen: X" in the Detail Screen when a `pendingLimit` is set
+- Increasing the limit is not allowed (not exposed in UI)
+
+Firestore fields added to challenge document:
+  `pendingLimitValue: Int?`  — null when no reduction pending
+  `pendingLimitApplyAt: Long?`  — Unix ms of next midnight when it applies
+
+Room: same fields added to `ChallengeEntity`.
 
 ---
 

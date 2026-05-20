@@ -217,6 +217,36 @@ fun isUsageStatsPermissionGranted(): Boolean {
 
 ---
 
+## Profile Screen (minimal — current)
+
+Layout (top to bottom):
+- Avatar (80dp circle) + username (20sp bold) + "Mitglied seit …" (13sp, #8E8E93)
+- Guthaben Card — shown only when user has pending balance or winnings
+- Settings card row: "Einstellungen →" navigates to SettingsScreen
+
+Removed: streak 🔥 | challenges done ✅ | apps blocked 🚫 stats row.
+
+---
+
+## Settings Screen (iOS-style — current)
+
+Full redesign: grouped white cards (#FFFFFF), colored icon circles (28dp), section headers
+(13sp, #8E8E93, uppercase). Sections in order:
+
+1. **Konto** — E-Mail ändern, Passwort ändern, Konto löschen
+2. **Aktivität** — Daily Reminder toggle + time picker
+3. **Auszahlungskonto** — IBAN hinterlegen / bearbeiten
+4. **Erscheinungsbild** — Dark Mode (marked "Experimentell")
+5. **Benachrichtigungen** — toggle per notification type
+6. **Berechtigungen** — live status: Overlay ✅/❌, Accessibility ✅/❌, Usage Stats ✅/❌
+7. **Datenschutz** — privacy policy link
+8. **App Info** — version number, Rate App (opens Play Store)
+9. **Entwickler** — debug panel (DEBUG builds only)
+
+Friend Alerts row: removed (feature not implemented).
+
+---
+
 ## Known Issues
 
 1. Google Sign-In not available on Huawei — by design, not a bug

@@ -95,6 +95,7 @@ fun GroupChallengeDetailScreen(
     onBack: () -> Unit,
     onNavigateToProfile: () -> Unit = {},
     onNavigateToFriendsHub: () -> Unit = {},
+    onNavigateToResults: (groupId: String) -> Unit = {},
     viewModel: GroupChallengeDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -107,6 +108,22 @@ fun GroupChallengeDetailScreen(
     val currentUserId = viewModel.currentUserId
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    // Navigate to results screen once — marks podium shown before navigating to prevent re-show
+    // on system-back without tapping "Weiter".
+    val navigatedToResults = remember { mutableStateOf(false) }
+    LaunchedEffect(uiState) {
+        val s = uiState
+        if (!navigatedToResults.value &&
+            s is GroupDetailUiState.Success &&
+            s.groupChallenge.status == GroupChallengeStatus.COMPLETED &&
+            viewModel.shouldShowPodium
+        ) {
+            navigatedToResults.value = true
+            viewModel.markPodiumShown()
+            onNavigateToResults(s.groupChallenge.groupId)
+        }
+    }
 
     LaunchedEffect(startState) {
         when (startState) {

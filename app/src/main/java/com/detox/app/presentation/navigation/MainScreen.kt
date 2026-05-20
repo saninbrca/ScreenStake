@@ -64,6 +64,7 @@ import com.detox.app.presentation.screens.dashboard.DashboardScreen
 import com.detox.app.presentation.screens.friends.FriendsHubScreen
 import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCreateScreen
 import com.detox.app.presentation.screens.groupchallenge.detail.GroupChallengeDetailScreen
+import com.detox.app.presentation.screens.groupchallenge.results.GroupChallengeResultsScreen
 import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoinScreen
 import com.detox.app.presentation.screens.history.HistoryScreen
 import com.detox.app.presentation.screens.profile.ProfileScreen
@@ -352,7 +353,22 @@ fun MainScreen(
                             }
                             launchSingleTop = true
                         }
+                    },
+                    onNavigateToResults = { groupId ->
+                        navController.navigate("group_challenge_results/$groupId") {
+                            launchSingleTop = true
+                        }
                     }
+                )
+            }
+
+            // ── Group Challenge — Results / Podium ───────────────────────────────
+            composable(
+                route = "group_challenge_results/{groupId}",
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) {
+                GroupChallengeResultsScreen(
+                    onWeiter = { navController.popBackStack() }
                 )
             }
 

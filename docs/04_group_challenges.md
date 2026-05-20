@@ -262,10 +262,10 @@ SYNC RULE: When DailyLog is written → also update participants array.
 Use arrayRemove + arrayUnion pattern (NEVER dot notation).
 opensToday in participants must always match consciousOpens in DailyLog.
 
-### Known Sync Issue (not yet fixed)
-opensToday in overlay reads from DailyLog (Room).
-opensToday in leaderboard reads from Firestore participants array.
-These can briefly differ — fix pending.
+### opensToday Sync — FIXED
+OverlayManager now reads `opensToday` from `TrackedAppEventBus.groupSessionInfos` (not stale Room DAO).
+Room upsert runs unconditionally on every ACTIVE Firestore snapshot (not only on status change).
+opensToday in overlay and leaderboard are now in sync.
 
 ---
 
@@ -415,6 +415,69 @@ payoutRequests/{requestId}/status = "paid"
 - "Neue Challenge" → starts GroupChallengeCreateScreen wizard
 - "Beitreten" → code input → GroupChallengeJoinScreen
 - Real-time updates via Firestore `participantUserIds` array queries
+
+---
+
+## Group Challenge Results Screen
+
+Shown once after a Group Challenge ends.
+Guard: `SharedPreferences` key `"podium_shown_{groupId}"` — set to `true` after first display, never shown again.
+
+### Layout
+- Background: #0A0A0A (dark fullscreen)
+- Konfetti rain animation on entry (top 3 winners only)
+- Lottie trophy animation for Platz 1
+
+### Podium
+Center column (Platz 1 / tallest), left column (Platz 2), right column (Platz 3).
+Each column rises sequentially with enter animation.
+
+Podium column colors:
+  Platz 1: #FFD700 (gold)
+  Platz 2: #C0C0C0 (silver)
+  Platz 3: #CD7F32 (bronze)
+
+### User Result Card
+Shows win/loss outcome + payout info for the current user.
+"Weiter" button → navigates to GroupChallengeDetailScreen.
+
+### Failed Participants
+Shown below the podium, greyed out, no animation.
+
+---
+
+## Leave / Delete Flow
+
+Two distinct Cloud Functions (both use `onRequest`):
+
+### leaveGroupChallenge
+Called when a **non-creator** participant quits a **waiting** challenge before it starts.
+- Full Stripe PaymentIntent cancel (no money captured, challenge not yet active)
+- Participant removed from `participants` array + `participantUserIds`
+- If last participant leaves → challenge stays in `waiting`, creator can cancel
+
+### deleteGroupChallenge
+Called by the **creator** to cancel a challenge in `waiting` status.
+- Stripe PaymentIntent cancel for ALL participants (full refund)
+- Challenge status → `"cancelled"`
+- All participants notified via local notification
+
+**Rule:** A `active` challenge can NOT be deleted — only individual participants can quit via "Aufgeben".
+
+---
+
+## 5-Day Stripe Authorization Window
+
+Stripe PaymentIntents created with `capture_method: "manual"` are only authorized for **5 days**.
+After 5 days the authorization expires and capture becomes impossible.
+
+**Rule for challenge start timing:**
+- `joinGroupChallenge` CF creates the PaymentIntent (authorization clock starts)
+- Challenge MUST be started within 5 days of the last participant joining
+- If `endDate - startDate` would push any capture beyond 5 days → creator must be warned
+
+**Current workaround:** No automatic expiry enforcement. Founder monitors admin dashboard.
+**Future:** CF should check `created + 5d > now` before attempting capture; if expired → mark participant failed without capture, notify founder.
 
 ---
 

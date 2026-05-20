@@ -15,6 +15,88 @@
 
 ## [Unreleased] — May 2026
 
+### Added
+- **Group Challenge Results Screen:** Fullscreen podium celebration
+  shown once after Group Challenge ends. Animated podium with top 3
+  players (Platz 1 center/tallest, Platz 2 left, Platz 3 right),
+  each rising sequentially. Konfetti rain + Lottie trophy animation
+  for Platz 1. User result card shows win/loss + payout info.
+  "Weiter" button navigates to Detail Screen. Shown only once per
+  challenge via SharedPreferences guard "podium_shown_{groupId}".
+  Failed participants shown below podium.
+- **Haptic Feedback:** Added HapticManager (direct Vibrator API,
+  Huawei-compatible). Light haptic on wizard Next buttons, app
+  selection taps, and DetoxHorizontalPicker number changes.
+  DetoxHorizontalPicker upgraded from TextHandleMove to LongPress.
+  All haptic removed from overlays.
+- **UI Animations:** Staggered card entrance on Dashboard,
+  FAB pulse when no challenges exist, stats count-up animation
+  in Detail Screen, animated progress bar fill on screen open,
+  Settings sections slide in, Profile avatar bounce, Verlauf
+  filter tab indicator slide, Group leaderboard animateItemPlacement,
+  challenge card scale on tap, bottom nav icon bounce.
+- **Overlay Redesign:** Solo overlay progress bar increased to 8dp,
+  progress labels improved contrast (#AAAAAA), better vertical
+  balance. Group overlay redesigned from white card dialog to
+  full-screen dark overlay matching Solo structure. All English
+  strings replaced with German. Ghost button "trotzdem öffnen"
+  aligned with Solo design.
+- **Adult Content — Domain List Expansion:** Expanded from ~100
+  to 50,000+ domains using OISD, StevenBlack, and ut1 blocklists.
+  Auto-update via AdultDomainsUpdateWorker (monthly, WorkManager).
+  Domains saved to filesDir for updates without app reinstall.
+  Debug Panel shows domain count + source + force update button.
+- **Adult Content — Block moved to top of Websites Tab:** Adult
+  Content card now appears at top of Websites tab in wizard
+  (before URL input and feature cards).
+- **Website Challenge — Icon + Name Display:** Favicons loaded
+  via Google Favicon Service. Name shows feature name
+  (e.g. "Instagram Reels") or domain (e.g. "instagram.com").
+  Detail Screen shows "BLOCKIERTE WEBSITES" section with
+  favicon + name + URL path per row.
+- **Group Challenge — shared App/Website selection:** Group
+  Challenge Wizard now uses same App/Website selection component
+  as Solo Wizard (1:1 identical, shared Composable).
+- **Profile Screen — minimized:** Removed stats row (streak,
+  challenges done, apps blocked). Only Avatar, username,
+  member since, Guthaben Card (if applicable) remain.
+  Settings accessible via card row.
+- **Settings Screen — iOS-style redesign:** Full redesign with
+  grouped white cards, colored icon circles, section headers.
+  Sections: Konto, Aktivität, Auszahlungskonto, Erscheinungsbild,
+  Benachrichtigungen, Berechtigungen, Datenschutz, App Info,
+  Entwickler. Friend Alerts removed (not implemented).
+  Rate App opens Play Store. Dark Mode marked "Experimentell".
+- **App/Website Selection — iOS-style redesign:** Pill-shaped
+  search field, no dividers between app rows, 48dp rounded icons,
+  green checkmark + #F9FFF9 background on selection. Websites tab:
+  platform app icons for feature cards with red 8dp badge,
+  Adult Content card with "18+" circle. Pill tab switcher animation.
+
+### Fixed
+- **Group Challenge opensToday bug:** opensToday showed 5/5 or
+  6/5 instead of 0. Two fixes: (1) Room upsert now runs
+  unconditionally for every ACTIVE Firestore snapshot instead
+  of only on status change. (2) OverlayManager now reads
+  opensToday from TrackedAppEventBus.groupSessionInfos instead
+  of stale Room DAO value.
+- **Deleted challenge reappears after Recents kill:** Challenge
+  now deleted from Firestore before Room. SyncRepository skips
+  cancelled/deleted/completed challenges on refresh.
+- **Website challenge icon/domain reset after Recents:** Added
+  empty list guard in UsageTrackingService — never overwrites
+  non-empty cache with empty list when active challenges exist.
+- **PERMISSION_DENIED for dailyLogs:** Added explicit Firestore
+  rule for /users/{userId}/challenges/{challengeId}/dailyLogs/{logId}
+  allowing read/write by owner. Deployed to production.
+- **Lottie compile errors:** Fixed wrong imports in
+  GroupChallengeResultsScreen — replaced with correct
+  rememberLottieComposition + animateLottieCompositionAsState API.
+
+---
+
+## [Unreleased] — May 2026
+
 ### FIXED — Website challenge icon and domains disappear after Recents kill (incomplete prior fix)
 
 **Root causes (3, compounding):**

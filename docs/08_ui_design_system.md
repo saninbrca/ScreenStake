@@ -133,7 +133,7 @@ Selected indicator: 2dp green underline (#00C853) below selected item
 ### Behavior
 - LazyRow + snapFlingBehavior
 - Hard stop at min and max (no wrapping)
-- Haptic: HapticFeedbackType.TextHandleMove on each change
+- Haptic: HapticFeedbackType.LongPress on each change
 - Auto-scroll to selected on first composition
 - Step: always 1
 
@@ -159,8 +159,8 @@ Selected indicator: 2dp green underline (#00C853) below selected item
 2. Context header (13sp, bold, #00C853)
 3. Large number 64sp OR status text
 4. Label below number (13sp, #444)
-5. Progress bar (existing component, unchanged)
-6. Progress labels (11sp, #333)
+5. Progress bar (8dp height)
+6. Progress labels (11sp, #AAAAAA)
 7. Additional content (chips / inset / limit text)
 8. Spacer flex:1
 9. Primary button (52dp, #00C853, #000 text)
@@ -215,6 +215,11 @@ FLAG_SECURE: MANDATORY on all overlays
 Handler(Looper.getMainLooper()).post: MANDATORY for showOverlay()
 Pre-cache ALL overlay views in AccessibilityService.onCreate()
 Never re-inflate — only update dynamic content
+
+### Group Challenge Overlay (dark fullscreen — same as Solo)
+The Group overlay uses the same dark fullscreen design as the Solo overlay (background #0A0A0A).
+It is NOT a white card dialog. All English strings replaced with German.
+Ghost button "trotzdem öffnen" aligned with Solo design.
 
 ---
 
@@ -296,3 +301,78 @@ Group card:
 Light screens (wizard, detail, dashboard): isAppearanceLightStatusBars = true
 Dark screens (overlays): isAppearanceLightStatusBars = false
 Onboarding: isAppearanceLightStatusBars = true
+
+---
+
+## Group Challenge Results Screen
+
+Shown once after a Group Challenge ends (guard: SharedPreferences `"podium_shown_{groupId}"`).
+Background: #0A0A0A (dark fullscreen). isAppearanceLightStatusBars = false.
+
+### Podium Colors
+```
+Platz 1 (center / tallest): #FFD700  — gold
+Platz 2 (left):             #C0C0C0  — silver
+Platz 3 (right):            #CD7F32  — bronze
+```
+Each column rises sequentially with an enter animation.
+Konfetti rain on entry (top 3 only). Lottie trophy animation for Platz 1.
+
+### User Result Card
+Win/loss outcome + payout info for current user.
+"Weiter" button (primary, #00C853) → navigates to Detail Screen.
+
+### Failed Participants
+Shown below podium, greyed out (#8E8E93), no animation.
+
+---
+
+## Profile Screen (minimal — current)
+
+Background: #F2F2F7. No stats row.
+
+Layout (top to bottom):
+- Avatar 80dp circle + username 20sp bold + "Mitglied seit …" 13sp #8E8E93
+- **Guthaben Card** — shown only when user has pending balance/winnings
+  Contains: pending amount + "Auszahlen" button + payout status indicator
+- Settings card row: "Einstellungen →" (taps navigate to SettingsScreen)
+
+Removed: streak 🔥 | challenges done ✅ | apps blocked 🚫 stats row.
+
+---
+
+## Settings Screen (iOS-style — current)
+
+Background: #F2F2F7. Grouped white cards (#FFFFFF, 16dp radius).
+Section headers: 13sp, #8E8E93, uppercase.
+Each row: colored icon circle (28dp) + label + disclosure arrow or toggle.
+
+Sections in order:
+1. **Konto** — E-Mail ändern, Passwort ändern, Konto löschen
+2. **Aktivität** — Daily Reminder toggle + time picker
+3. **Auszahlungskonto** — IBAN hinterlegen / bearbeiten (moved from ProfileScreen)
+4. **Erscheinungsbild** — Dark Mode (row labeled "Experimentell")
+5. **Benachrichtigungen** — toggle per notification type
+6. **Berechtigungen** — live status rows: Overlay ✅/❌, Accessibility ✅/❌, Usage Stats ✅/❌
+7. **Datenschutz** — privacy policy link
+8. **App Info** — version number, Rate App (opens Play Store)
+9. **Entwickler** — debug panel (DEBUG builds only)
+
+Friend Alerts row: removed (feature not implemented).
+
+---
+
+## App/Website Selection (iOS-style — current)
+
+### Search Field
+Pill-shaped (fully rounded corners), no dividers between app rows.
+
+### App Tab
+- App icons: 48dp with rounded corners
+- Selected row: green checkmark overlay + #F9FFF9 background
+- No divider lines between rows
+
+### Websites Tab
+- Feature cards (Instagram Reels, YouTube Shorts, etc.): platform app icon with red 8dp badge
+- Adult Content card: "18+" red circle icon — always at top of the list
+- Pill tab switcher: animated indicator slides between "Apps" and "Websites" tabs

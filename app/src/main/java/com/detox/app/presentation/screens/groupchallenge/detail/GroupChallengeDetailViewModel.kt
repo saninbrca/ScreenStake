@@ -114,6 +114,10 @@ class GroupChallengeDetailViewModel @Inject constructor(
     private val prefs = context.getSharedPreferences("detox_win_popup", android.content.Context.MODE_PRIVATE)
     private val winPopupKey get() = "win_popup_shown_$groupId"
 
+    private val podiumPrefs = context.getSharedPreferences("detox_podium", android.content.Context.MODE_PRIVATE)
+    val shouldShowPodium: Boolean get() = !podiumPrefs.getBoolean("podium_shown_$groupId", false)
+    fun markPodiumShown() { podiumPrefs.edit().putBoolean("podium_shown_$groupId", true).apply() }
+
     /** In-memory taunt count per target userId for the current session. */
     private val tauntCountsToday = mutableMapOf<String, Int>()
 

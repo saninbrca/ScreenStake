@@ -136,6 +136,11 @@ dependencies {
     // Image loading
     implementation(libs.coil.compose)
 
+    // Lottie (trophy animation)
+    implementation("com.airbnb.android:lottie-compose:6.3.0")
+    // Konfetti (confetti particle effect)
+    implementation("nl.dionsegijn:konfetti-compose:2.0.4")
+
     // Logging
     implementation(libs.timber)
 

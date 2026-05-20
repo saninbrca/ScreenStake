@@ -244,6 +244,29 @@ payoutRequests/{requestId}/:
 
 ---
 
+## Manual Payout Flow (current implementation)
+
+Winners request payout via **"Auszahlen"** button in ProfileScreen → Guthaben Card.
+Payout is NEVER automatic. Pressing the button creates a `payoutRequests` document with:
+  status: "requested"  ← new status (in addition to "pending" | "paid" | "rejected")
+
+Firestore: payoutRequests/{requestId}/status values:
+  "requested"  — user tapped "Auszahlen" (new, pending founder action)
+  "pending"    — legacy / queued
+  "paid"       — founder marked as paid in admin dashboard
+  "rejected"   — rejected by founder
+
+IBAN is set in **Settings → Auszahlungskonto** (not in ProfileScreen).
+Prize share still requires Stripe Connected Account for automatic transfer.
+Own stake refund always goes back to original card (no IBAN needed).
+
+### Guthaben Card (ProfileScreen)
+Shown when user has pending balance or unprocessed winnings.
+Displays: pending amount, "Auszahlen" button, current payout status.
+Balance includes: prize share not yet transferred + stake refunds in progress.
+
+---
+
 ## Known Issues
 
 1. Stripe Connect automatic payouts not yet live

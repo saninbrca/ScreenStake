@@ -236,8 +236,9 @@ Silent redirect to home screen + brief Toast only.
 // AppDetectionAccessibilityService monitors URL bar content
 // in ALL major browsers (Chrome, Firefox, Samsung Browser, etc.)
 
-// Domain list: assets/adult_domains.txt (100+ domains)
-// Loaded at service start, cached in memory as HashSet<String>
+// Domain list: 50,000+ domains (OISD, StevenBlack, ut1 blocklists)
+// Updated monthly by AdultDomainsUpdateWorker (WorkManager) — saves to filesDir
+// Loaded at service start from filesDir (assets/ fallback), cached in HashSet<String>
 
 // Subdomain matching:
 fun isDomainBlocked(url: String): Boolean {
@@ -310,6 +311,36 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 ```
+
+---
+
+## HapticManager
+
+Direct `Vibrator` API is required for Huawei compatibility.
+Compose `LocalHapticFeedback` (which calls `HapticFeedbackType.*`) is NOT reliable on Huawei EMUI.
+
+```kotlin
+// HapticManager.kt — wraps Vibrator directly
+object HapticManager {
+    fun light(context: Context) {
+        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(30)
+        }
+    }
+}
+```
+
+### Where haptic is used
+- Wizard "Weiter" / "Next" buttons → `HapticManager.light()`
+- App selection row taps → `HapticManager.light()`
+- `DetoxHorizontalPicker` number change → `HapticFeedbackType.LongPress` (Compose local, sufficient for picker)
+
+### Where haptic is NOT used
+- ALL overlays (SessionIntentionOverlay, SessionLimitReachedOverlay, etc.) — no haptic at all
 
 ---
 

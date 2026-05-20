@@ -1089,4 +1089,17 @@
     <string name="limit_unit_minutes">Minuten</string>
     <string name="limit_unit_minutes_budget">Minuten Budget</string>
 
+    <!-- Group Challenge Results Screen -->
+    <string name="results_title">Challenge beendet! 🏁</string>
+    <string name="results_medal_1">🥇</string>
+    <string name="results_medal_2">🥈</string>
+    <string name="results_medal_3">🥉</string>
+    <string name="results_winner_headline">🎉 Du hast gewonnen!</string>
+    <string name="results_winner_sub">Dein Einsatz wird zurückgebucht</string>
+    <string name="results_winner_prize">Gewinnanteil: +€%1$s</string>
+    <string name="results_loser_headline">Du hast verloren</string>
+    <string name="results_loser_sub">Weiter so — beim nächsten Mal!</string>
+    <string name="results_failed_label">❌ Ausgeschieden</string>
+    <string name="results_weiter">Weiter →</string>
+
 </resources>

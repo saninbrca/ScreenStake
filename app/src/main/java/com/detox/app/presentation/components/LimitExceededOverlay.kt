@@ -11,10 +11,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.detox.app.R
 import com.detox.app.domain.model.ChallengeMode
 
@@ -47,8 +49,8 @@ fun LimitExceededOverlay(
 ) {
     @Suppress("KotlinConstantConditions")
     val isHardMode = challengeMode == ChallengeMode.HARD && amountCents != null
-    val bgColor = if (isHardMode) Color(0xFF1A0000) else Color(0xFF0D0D0D)
-    val accentColor = if (isHardMode) Color(0xFFFF4444) else MaterialTheme.colorScheme.primary
+    val bgColor = Color(0xFF0A0A0A)
+    val accentColor = if (isHardMode) Color(0xFFFF4444) else Color(0xFF00C853)
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -84,14 +86,16 @@ fun LimitExceededOverlay(
                 }
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.headlineMedium,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
                     color = if (isHardMode) Color(0xFFFF6B6B) else Color.White,
                     textAlign = TextAlign.Center
                 )
 
                 Text(
                     text = appName,
-                    style = MaterialTheme.typography.titleLarge,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
                     color = Color.White,
                     textAlign = TextAlign.Center
                 )
@@ -99,7 +103,7 @@ fun LimitExceededOverlay(
                 if (limitMinutes > 0) {
                     Text(
                         text = stringResource(R.string.limit_exceeded_time_used, todayMinutes, limitMinutes),
-                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = accentColor,
                         textAlign = TextAlign.Center
@@ -113,7 +117,7 @@ fun LimitExceededOverlay(
                 }
                 Text(
                     text = message,
-                    style = MaterialTheme.typography.bodyLarge,
+                    fontSize = 14.sp,
                     color = Color.White.copy(alpha = 0.75f),
                     textAlign = TextAlign.Center
                 )
@@ -126,7 +130,7 @@ fun LimitExceededOverlay(
                 } else {
                     stringResource(R.string.streak_overlay_zero)
                 },
-                style = MaterialTheme.typography.titleLarge,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 textAlign = TextAlign.Center
@@ -135,14 +139,19 @@ fun LimitExceededOverlay(
             // ── Bottom: single action button ──────────────────────────────────────
             Button(
                 onClick = onStop,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF2E7D32)
+                    containerColor = Color(0xFF00C853),
+                    contentColor = Color.Black
                 )
             ) {
                 Text(
-                    text = stringResource(R.string.stay_strong_button),
-                    style = MaterialTheme.typography.titleMedium
+                    text = stringResource(R.string.overlay_primary_not_open),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

@@ -48,6 +48,8 @@ fun SessionLimitReachedOverlay(
     contextHeader: String = "",
     largeNumber: Int = 0,
     largeNumberLabel: String = "",
+    /** When > 0 and ≤ 10, shows filled dot indicators instead of the progress bar. */
+    limitCount: Int = 0,
     onNo: () -> Unit
 ) {
     val AccentOrange = Color(0xFFFF9500)
@@ -139,26 +141,28 @@ fun SessionLimitReachedOverlay(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Progress bar (100%, orange) ────────────────────────────────────
-                OverlayProgressBar(progress = 1f, trackColor = BorderDark, fillColor = AccentOrange)
-
-                // ── Labels below bar ───────────────────────────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.overlay_v2_progress_limit_reached),
-                        fontSize = 11.sp,
-                        color = Color(0xFF333333)
-                    )
-                    Text(
-                        text = "100%",
-                        fontSize = 11.sp,
-                        color = Color(0xFF333333)
-                    )
+                // ── Progress indicator: all-filled dots if limitCount ≤ 10, orange bar otherwise ──
+                if (limitCount in 1..10) {
+                    OverlayDotsIndicator(used = limitCount, total = limitCount)
+                } else {
+                    OverlayProgressBar(progress = 1f, trackColor = BorderDark, fillColor = AccentOrange)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.overlay_v2_progress_limit_reached),
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                        Text(
+                            text = "100%",
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(20.dp))
@@ -185,7 +189,7 @@ fun SessionLimitReachedOverlay(
 
                 // ── Single primary button — no ghost ───────────────────────────────
                 OverlayPrimaryButton(
-                    text = stringResource(R.string.stay_strong_button),
+                    text = stringResource(R.string.overlay_primary_not_open),
                     onClick = onNo
                 )
             }

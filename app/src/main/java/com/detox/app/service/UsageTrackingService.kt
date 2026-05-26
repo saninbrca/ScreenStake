@@ -170,6 +170,7 @@ class UsageTrackingService : Service() {
         startUsagePolling()
         startGroupChallengeStatsPolling()
         startGroupSessionLimitTracking()
+        startGroupTimeLimitPolling()
         startOverlayPermissionMonitoring()
         startBudgetSessionPolling()
     }
@@ -449,10 +450,17 @@ class UsageTrackingService : Service() {
 
         for (challenge in challenges) {
             val groupId = challenge.groupChallengeId ?: continue
+
+            // TIME_LIMIT is handled exclusively by startGroupTimeLimitPolling (10-second loop).
+            // UsageStatsManager must NOT be used for TIME_LIMIT — it counts ALL app time
+            // including overlay display time and time when the user is not in the app.
+            if (challenge.limitType == LimitType.TIME) continue
+
             val timeMinutes: Int = if (challenge.limitType == LimitType.TIME_BUDGET) {
                 val log = dailyLogRepository.getLogForDate(challenge.id, today).getOrNull()
                 ((log?.budgetUsedMs ?: 0L) / 60_000L).toInt()
             } else {
+                // SESSION_LIMIT: timeUsedMinutes is a secondary leaderboard sort key only.
                 val packageName = challenge.appPackageName ?: continue
                 runCatching { usageStatsRepository.getTodayUsageForApp(packageName) }
                     .getOrNull()?.minutes ?: continue
@@ -463,6 +471,83 @@ class UsageTrackingService : Service() {
                 timeUsedMinutes = timeMinutes
             )
             Timber.d("Leaderboard time updated: userId=$uid groupId=$groupId time=$timeMinutes")
+        }
+    }
+
+    // ── GROUP TIME_LIMIT active-session polling (10-second) ───────────────────
+
+    /**
+     * Every 10 seconds: reads the time accumulated in [OverlayManager]'s SharedPreferences
+     * for GROUP TIME_LIMIT challenges and mirrors the absolute total to the Firestore
+     * participants array (arrayRemove+arrayUnion via [GroupChallengeFirestoreService]).
+     *
+     * This is the ONLY path that writes [Participant.timeUsedMinutes] for TIME_LIMIT group
+     * challenges. [updateGroupChallengeStats] explicitly skips [LimitType.TIME].
+     *
+     * The timer in SharedPreferences only advances while:
+     *   - the user is inside the blocked app (foreground), AND
+     *   - no overlay is currently visible.
+     * It is paused by [OverlayManager.pauseGroupTimeLimitTracking] and resumed by
+     * [OverlayManager.startGroupTimeLimitTracking].
+     */
+    private fun startGroupTimeLimitPolling() {
+        serviceScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(10_000L)
+                updateGroupTimeLimitStats()
+            }
+        }
+    }
+
+    private suspend fun updateGroupTimeLimitStats() {
+        val uid = firebaseAuthService.currentUserId() ?: return
+        val prefs = getSharedPreferences(OverlayManager.GROUP_TIME_TRACKING_PREFS_NAME, MODE_PRIVATE)
+        val challenges = runCatching {
+            challengeRepository.getActiveChallengesList().getOrThrow()
+        }.getOrElse { return }
+        val today = todayKey()
+
+        for (challenge in challenges) {
+            if (challenge.limitType != LimitType.TIME) continue
+            val groupId = challenge.groupChallengeId ?: continue
+
+            // Stale-data guard: if the stored date doesn't match today (service survived midnight
+            // without a reset, typical on Huawei), treat accumulated time as 0.
+            val storedDate = prefs.getLong(
+                "${OverlayManager.GROUP_TIME_DATE_KEY_PREFIX}${challenge.id}", 0L
+            )
+            val accumMs = if (storedDate == today) {
+                prefs.getLong("${OverlayManager.GROUP_TIME_ACCUM_KEY_PREFIX}${challenge.id}", 0L)
+            } else {
+                0L
+            }
+            val startMs = if (storedDate == today) {
+                prefs.getLong("${OverlayManager.GROUP_TIME_START_KEY_PREFIX}${challenge.id}", 0L)
+            } else {
+                0L
+            }
+
+            // Current session elapsed — only count if timer is actively running (startMs > 0)
+            val currentMs = if (startMs > 0L) {
+                (System.currentTimeMillis() - startMs).coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            val totalMs = accumMs + currentMs
+
+            // Skip Firestore write if no data has been tracked yet
+            if (totalMs == 0L) continue
+
+            val totalMinutes = (totalMs / 60_000L).toInt()
+            val limitMinutes = challenge.limitValueMinutes
+
+            serviceScope.launch {
+                groupChallengeRepository.updateParticipantTimeUsed(groupId, uid, totalMinutes)
+                Timber.d(
+                    "GroupTimer: WRITE timeUsedMinutes=$totalMinutes limit=$limitMinutes " +
+                        "to Firestore (groupId=$groupId challengeId=${challenge.id})"
+                )
+            }
         }
     }
 

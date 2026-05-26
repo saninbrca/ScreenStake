@@ -42,6 +42,9 @@ RULE: Any fix applied to Soft Mode blocking/overlay/DailyLog logic
 MUST be applied to Hard Mode as well. They share the same code paths.
 Never create separate implementations for Hard vs Soft Mode overlays.
 
+**CONFIRMED (code analysis, May 2026):** Hard Mode overlay flow is identical to Soft Mode
+end-to-end. No separate Hard Mode overlay composable exists or is needed.
+
 ---
 
 ## Stripe Configuration
@@ -377,6 +380,15 @@ Data source: Room (solo) + Firestore group doc (prizePerWinner, appFee) + pendin
 - Never store IBAN in Room — only Firestore + Stripe
 - All Stripe calls in Cloud Functions — never in Android code directly
 - After any CF change: `firebase deploy --only functions`
+
+---
+
+## Dead Code Removed
+
+- **`captureAndLock`** — removed. This was an unused code path that attempted to combine
+  Stripe capture with an immediate lockout overlay. It was never triggered in production
+  and has been deleted. Hard Mode lockout is handled via `DailyEvaluationWorker` (planned
+  fail path) or Emergency Unlock (user-initiated), not via `captureAndLock`.
 
 ---
 

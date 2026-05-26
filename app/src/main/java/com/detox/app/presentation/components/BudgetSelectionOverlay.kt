@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -37,14 +40,15 @@ import kotlinx.coroutines.delay
 /**
  * Full-screen daily budget overlay (v2 redesign).
  *
- * Context header = "⏱ X min übrig heute" computed from remainingMinutes.
+ * contextHeader: "👥 Platz #X von Y" for Group, "🔥 X Tage Streak" / "💰 €X auf dem Spiel" for Solo.
  * Dark chip picker for session duration.
- * No ghost button (ghost only on SessionIntentionOverlay).
+ * Ghost button "stark bleiben 💪" below primary — this overlay inverts ghost/primary priority.
  */
 @Composable
 fun BudgetSelectionOverlay(
     packageName: String,
     appName: String,
+    contextHeader: String,
     remainingMinutes: Int,
     budgetTotalMinutes: Int = remainingMinutes,
     onStart: (Int) -> Unit,
@@ -112,8 +116,9 @@ fun BudgetSelectionOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // ── Context header ─────────────────────────────────────────────────
+                // Group: "👥 Platz #X von Y" | Solo Soft: "🔥 X Tage Streak" | Solo Hard: "💰 €X auf dem Spiel"
                 Text(
-                    text = stringResource(R.string.overlay_v2_header_budget, remainingMinutes),
+                    text = contextHeader,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF00C853),
@@ -144,30 +149,32 @@ fun BudgetSelectionOverlay(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Progress bar (used %, orange) ──────────────────────────────────
-                OverlayProgressBar(
-                    progress = usedProgress.coerceIn(0f, 1f),
-                    trackColor = BorderDark,
-                    fillColor = AccentOrange
-                )
-
-                // ── Labels below bar ───────────────────────────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.overlay_v2_progress_budget_used, usedMinutes),
-                        fontSize = 11.sp,
-                        color = Color(0xFF333333)
+                // ── Progress indicator: dots if budget ≤ 10 min, bar otherwise ─────
+                if (budgetTotalMinutes <= 10) {
+                    OverlayDotsIndicator(used = usedMinutes, total = budgetTotalMinutes)
+                } else {
+                    OverlayProgressBar(
+                        progress = usedProgress.coerceIn(0f, 1f),
+                        trackColor = BorderDark,
+                        fillColor = AccentOrange
                     )
-                    Text(
-                        text = "${(usedProgress * 100).toInt()}%",
-                        fontSize = 11.sp,
-                        color = Color(0xFF333333)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.overlay_v2_progress_budget_used, usedMinutes),
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                        Text(
+                            text = "${(usedProgress * 100).toInt()}%",
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(24.dp))
@@ -198,6 +205,23 @@ fun BudgetSelectionOverlay(
                     text = stringResource(R.string.overlay_budget_start_session, selectedMinutes),
                     onClick = { showCountdown = true }
                 )
+
+                Spacer(Modifier.height(4.dp))
+
+                // ── Ghost button: stark bleiben (inverted — this is the psychologically primary action) ──
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    TextButton(
+                        onClick = onGoBack,
+                        modifier = Modifier.height(32.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.stay_strong_button),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = Color(0xFF222222),
+                        )
+                    }
+                }
             }
 
             if (showCountdown) {

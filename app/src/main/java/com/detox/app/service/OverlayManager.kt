@@ -88,6 +88,19 @@ class OverlayManager @Inject constructor(
         const val BUDGET_SESSION_CHALLENGE_KEY = "budget_session_challenge_id"
         const val BUDGET_SESSION_PACKAGE_KEY   = "budget_session_package"
         const val BUDGET_COMMITTED_MS_KEY      = "budget_committed_ms"
+
+        // Shared preferences keys for GROUP TIME_LIMIT active-session tracking.
+        // Written by OverlayManager; read by UsageTrackingService every 10 s.
+        // Timer only runs while user is inside the blocked app AND no overlay is shown.
+        const val GROUP_TIME_TRACKING_PREFS_NAME = "detox_group_time_tracking"
+        /** Accumulated ms from all completed sessions today (paused/stopped total). */
+        const val GROUP_TIME_ACCUM_KEY_PREFIX  = "group_time_accum_"   // + challengeId
+        /** Epoch-ms when the current active session started; 0 = timer not running. */
+        const val GROUP_TIME_START_KEY_PREFIX  = "group_time_start_"   // + challengeId
+        /** Reverse mapping: packageName → challengeId (for foreground-change lookup). */
+        const val GROUP_TIME_PKG_KEY_PREFIX    = "group_time_pkg_"     // + packageName
+        /** todayKey() stamp — used to detect stale data after a missed midnight reset. */
+        const val GROUP_TIME_DATE_KEY_PREFIX   = "group_time_date_"    // + challengeId
     }
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -213,6 +226,9 @@ class OverlayManager @Inject constructor(
                         "OverlayManager: $timed left foreground (now: $current) " +
                                 "— session timer continues running in background"
                     )
+                    // Stop GROUP TIME_LIMIT timer when user leaves the blocked app.
+                    // pauseGroupTimeLimitTracking is a no-op if no timer was active.
+                    pauseGroupTimeLimitTracking(timed, "userLeft")
                 }
             }
         }
@@ -329,9 +345,10 @@ class OverlayManager @Inject constructor(
             LimitType.TIME_BUDGET -> handleTimeBudgetApp(status, scope)
             LimitType.TIME -> {
                 when {
-                    status.limitExceeded || exceededAppsToday.contains(packageName) ->
-                        if (groupChallengeId != null) showSessionLimitReachedOverlay(status, scope)
-                        else showLimitExceededOverlay(status, scope)
+                    status.limitExceeded || exceededAppsToday.contains(packageName) -> {
+                        Timber.d("Fix2: TIME_LIMIT exceeded — showLimitExceededOverlay (groupId=$groupChallengeId)")
+                        showLimitExceededOverlay(status, scope)
+                    }
                     else ->
                         showBlockingOverlay(status, scope)
                 }
@@ -375,11 +392,19 @@ class OverlayManager @Inject constructor(
         //    Firestore→Room on service start, then incremented in-memory on each conscious open.
         //  - Solo challenges: in-memory map → TrackedAppEventBus → DailyLog (fallback chain)
         val isGroup = challenge.groupChallengeId != null
-        if (isGroup) {
-            val opens = TrackedAppEventBus.groupSessionInfos.value[packageName]?.opensToday ?: 0
-            consciousOpensToday[packageName] = opens
-            Timber.d("Group overlay: opensToday=$opens from TrackedAppEventBus (groupId=${challenge.groupChallengeId})")
-        } else if (!consciousOpensToday.containsKey(packageName)) {
+        if (isGroup && !consciousOpensToday.containsKey(packageName)) {
+            val busOpens = TrackedAppEventBus.groupSessionInfos.value[packageName]?.opensToday
+            if (busOpens != null) {
+                consciousOpensToday[packageName] = busOpens
+                Timber.d("Fix1: Group opensToday=$busOpens from TrackedAppEventBus (groupId=${challenge.groupChallengeId})")
+            } else {
+                // Room fallback — same as Solo
+                val today = todayKey()
+                val persisted = dailyLogRepository.getConsciousOpens(challenge.id, today).getOrElse { 0 }
+                consciousOpensToday[packageName] = persisted
+                Timber.d("Fix1: Group opensToday=$persisted from Room fallback (groupId=${challenge.groupChallengeId})")
+            }
+        } else if (!isGroup && !consciousOpensToday.containsKey(packageName)) {
             val busOpens = TrackedAppEventBus.groupSessionInfos.value[packageName]?.opensToday
             if (busOpens != null) {
                 consciousOpensToday[packageName] = busOpens
@@ -537,9 +562,10 @@ class OverlayManager @Inject constructor(
                     contextHeader = contextHeader,
                     largeNumber = largeNumber,
                     largeNumberLabel = largeNumberLabel,
+                    limitCount = maxOpens,
                     onNo = {
                         Timber.d(
-                            "OverlayManager: Stage 2 'Stark bleiben' tapped " +
+                            "OverlayManager: Stage 2 'Nicht öffnen' tapped " +
                                     "— going home for ${challenge.appDisplayName}"
                         )
                         dismissOverlay()
@@ -789,7 +815,9 @@ class OverlayManager @Inject constructor(
         if (remainingMs <= 0L) {
             showBudgetExhaustedOverlay(status, scope)
         } else {
-            showBudgetSelectionOverlay(status, remainingMinutes, scope)
+            val streak = getStreak(challenge)
+            val contextHeader = buildContextHeader(challenge, streak)
+            showBudgetSelectionOverlay(status, remainingMinutes, contextHeader, scope)
         }
     }
 
@@ -797,13 +825,14 @@ class OverlayManager @Inject constructor(
     private fun showBudgetSelectionOverlay(
         status: DailyLimitStatus,
         remainingMinutes: Int,
+        contextHeader: String,
         scope: CoroutineScope
     ) {
         val challenge = status.challenge
         val packageName = (challenge.appPackageName ?: "")
         Timber.d(
             "OverlayManager: showing BudgetSelectionOverlay for ${challenge.appDisplayName} " +
-                    "(remaining=${remainingMinutes}min)"
+                    "(remaining=${remainingMinutes}min, header=$contextHeader)"
         )
 
         val composeView = createSessionComposeView(
@@ -819,6 +848,7 @@ class OverlayManager @Inject constructor(
                 BudgetSelectionOverlay(
                     packageName = packageName,
                     appName = resolveMultiAppDisplayName(challenge),
+                    contextHeader = contextHeader,
                     remainingMinutes = remainingMinutes,
                     budgetTotalMinutes = challenge.dailyBudgetMinutes ?: remainingMinutes,
                     onStart = { selectedMinutes ->
@@ -851,7 +881,7 @@ class OverlayManager @Inject constructor(
      * Both Group Challenge and Solo Soft Mode: shows [SessionLimitReachedOverlay], app stays blocked.
      * Group Challenge NEVER auto-fails here — Stripe only captured on manual "Aufgeben".
      */
-    private fun showBudgetExhaustedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
+    private suspend fun showBudgetExhaustedOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
         val groupChallengeId = challenge.groupChallengeId
         val packageName = challenge.appPackageName ?: ""
@@ -860,14 +890,16 @@ class OverlayManager @Inject constructor(
                     "(mode=${challenge.mode}, groupId=$groupChallengeId)"
         )
 
-        val budgetExhaustedHeader = context.getString(R.string.overlay_v2_header_budget, 0)
         val budgetExhaustedLabel  = context.getString(
             R.string.overlay_v2_label_budget, challenge.dailyBudgetMinutes ?: 0
         )
 
         if (groupChallengeId != null) {
-            // Group Challenge: never auto-fail. Show SessionLimitReachedOverlay (identical to Solo
-            // Soft Mode blocking). Stripe only captured on manual "Aufgeben" in Detail screen.
+            // Group Challenge: never auto-fail. Show SessionLimitReachedOverlay with rank header.
+            // Stripe only captured on manual "Aufgeben" in Detail screen.
+            val streak = getStreak(challenge)
+            val contextHeader = buildContextHeader(challenge, streak)
+            Timber.d("Fix3: Group DAILY_BUDGET exhausted — contextHeader=$contextHeader (groupId=$groupChallengeId)")
             val composeView = createSessionComposeView(
                 onBack = {
                     dismissOverlay()
@@ -877,7 +909,7 @@ class OverlayManager @Inject constructor(
                 DetoxTheme {
                     SessionLimitReachedOverlay(
                         appName = resolveMultiAppDisplayName(challenge),
-                        contextHeader = budgetExhaustedHeader,
+                        contextHeader = contextHeader,
                         largeNumber = 0,
                         largeNumberLabel = budgetExhaustedLabel,
                         onNo = {
@@ -890,6 +922,8 @@ class OverlayManager @Inject constructor(
             showSessionOverlay(composeView, challenge.id)
             return
         }
+
+        val budgetExhaustedHeader = context.getString(R.string.overlay_v2_header_budget, 0)
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -1028,6 +1062,15 @@ class OverlayManager @Inject constructor(
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
+        val isGroupTimeLimit = challenge.groupChallengeId != null
+
+        // Pause GROUP TIME_LIMIT timer while the overlay is visible — the user is not
+        // inside the blocked app during this time and it must not count as usage.
+        if (isGroupTimeLimit) {
+            val pkg = challenge.appPackageName ?: ""
+            pauseGroupTimeLimitTracking(pkg, "overlayShown")
+        }
+
         val streak = getStreak(challenge)
         val contextHeader = buildContextHeader(challenge, streak)
         val labelText = context.getString(R.string.overlay_v2_label_time, challenge.limitValueMinutes)
@@ -1038,6 +1081,11 @@ class OverlayManager @Inject constructor(
         val composeView = createSessionComposeView(
             onBack = {
                 analyticsService.logBlockingScreenAction("back_button")
+                val pkg = challenge.appPackageName ?: ""
+                sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$pkg").apply()
+                cancelSessionTimer()
+                Timber.d("TIME_LIMIT: back button — session cleared for $pkg")
+                if (isGroupTimeLimit) Timber.d("GroupTimer: STOP pkg=$pkg userLeft")
                 dismissOverlay("back")
                 goHome()
             }
@@ -1053,13 +1101,29 @@ class OverlayManager @Inject constructor(
                     showStakeWarning = showStakeWarning,
                     onStayStrong = {
                         analyticsService.logBlockingScreenAction("skipped")
+                        val pkg = challenge.appPackageName ?: ""
+                        sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$pkg").apply()
+                        cancelSessionTimer()
+                        Timber.d("TIME_LIMIT: Stark bleiben — session cleared for $pkg")
+                        if (isGroupTimeLimit) Timber.d("GroupTimer: STOP pkg=$pkg userChoseStayStrong")
                         dismissOverlay("skip")
                         goHome()
                     },
                     onOpenAnyway = {
                         analyticsService.logBlockingScreenAction("opened_anyway")
-                        challenge.appPackageName?.let {
-                            AppDetectionAccessibilityService.allowTemporarily(it)
+                        val pkg = challenge.appPackageName ?: ""
+                        AppDetectionAccessibilityService.allowTemporarily(pkg)
+                        val sessionDuration = challenge.sessionDurationMinutes.takeIf { it > 0 } ?: 5
+                        startSessionTimer(
+                            packageName = pkg,
+                            durationMinutes = sessionDuration,
+                            challengeId = challenge.id,
+                            scope = scope
+                        )
+                        Timber.d("TIME_LIMIT session started: ${sessionDuration}min for $pkg")
+                        // Resume GROUP TIME_LIMIT timer — user is consciously entering the app.
+                        if (isGroupTimeLimit) {
+                            startGroupTimeLimitTracking(challenge.id, pkg)
                         }
                         dismissOverlay("open_anyway")
                     }
@@ -1206,64 +1270,6 @@ class OverlayManager @Inject constructor(
         showOverlay(composeView, info.challengeId)
     }
 
-    // ── Group challenge fail overlay ───────────────────────────────────────────
-
-    /**
-     * Called when the current user exceeds their limit in a group challenge.
-     * Shows a full-screen fail overlay, calls the Cloud Function to capture their payment,
-     * updates the local Room status, and prevents any future overlays for this group.
-     */
-    private fun handleGroupChallengeFail(
-        status: DailyLimitStatus,
-        groupId: String,
-        packageName: String,
-        scope: CoroutineScope,
-    ) {
-        Timber.d("User failed group challenge %s — entering read only mode", groupId)
-        val challenge = status.challenge
-
-        failedGroupChallengeIds.add(groupId)
-        TrackedAppEventBus.markPackageFreeForToday(packageName)
-
-        scope.launch {
-            val userId = firebaseAuthService.currentUserId()
-            if (userId != null) {
-                cloudFunctionsService.failGroupParticipant(groupId, userId)
-                    .onSuccess { Timber.d("failGroupParticipant succeeded for group %s", groupId) }
-                    .onFailure { e -> Timber.e(e, "failGroupParticipant failed for group %s", groupId) }
-            }
-            // Mark the local shadow challenge as failed
-            groupChallengeRepository.finishLocalGroupChallenge(groupId, succeeded = false)
-                .onFailure { e -> Timber.e(e, "finishLocalGroupChallenge failed for group %s", groupId) }
-        }
-
-        val composeView = createSessionComposeView(
-            onBack = {
-                dismissOverlay("back")
-                goHome()
-            }
-        ) {
-            DetoxTheme {
-                GroupChallengeFailOverlay(
-                    buyInCents = challenge.amountCents ?: 0,
-                    onLeaderboard = {
-                        dismissOverlay("leaderboard")
-                        TrackedAppEventBus.emitNavigateToGroupDetail(groupId)
-                        val launchIntent = context.packageManager
-                            .getLaunchIntentForPackage(context.packageName)
-                            ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP) }
-                        if (launchIntent != null) context.startActivity(launchIntent)
-                    },
-                    onGoHome = {
-                        dismissOverlay("go_home")
-                        goHome()
-                    }
-                )
-            }
-        }
-        showOverlay(composeView, challenge.id)
-    }
-
     // ── 5-minute re-trigger timer (time-limit Soft Mode) ──────────────────────
 
     private fun startLimitReachedTimer(packageName: String, scope: CoroutineScope) {
@@ -1309,6 +1315,8 @@ class OverlayManager @Inject constructor(
             }
             sessionTimerPackage = null
             budgetSessionPrefs.edit().clear().apply()
+            context.getSharedPreferences(GROUP_TIME_TRACKING_PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().clear().apply()
             scheduleMidnightReset()
         }, delay)
     }
@@ -1605,6 +1613,56 @@ class OverlayManager @Inject constructor(
             Timber.e(e, "OverlayManager: computeGroupRank failed for $groupId")
             Pair(1, 1)
         }
+    }
+
+    // ── GROUP TIME_LIMIT active-session timer ──────────────────────────────────
+
+    /**
+     * Starts (or resumes) the GROUP TIME_LIMIT active-session timer for [challengeId].
+     * Called when the user taps "trotzdem öffnen" in the BlockingScreenOverlay.
+     * If the stored date doesn't match today (stale data after a missed midnight reset),
+     * accumulated time is reset to 0 so yesterday's usage doesn't carry over.
+     */
+    private fun startGroupTimeLimitTracking(challengeId: String, packageName: String) {
+        val prefs = context.getSharedPreferences(GROUP_TIME_TRACKING_PREFS_NAME, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val today = DateUtils.todayKey()
+        val storedDate = prefs.getLong("${GROUP_TIME_DATE_KEY_PREFIX}${challengeId}", 0L)
+        val accumMs = if (storedDate == today) {
+            prefs.getLong("${GROUP_TIME_ACCUM_KEY_PREFIX}${challengeId}", 0L)
+        } else {
+            0L  // new day — discard stale data from a missed midnight reset
+        }
+        prefs.edit()
+            .putLong("${GROUP_TIME_DATE_KEY_PREFIX}${challengeId}", today)
+            .putLong("${GROUP_TIME_ACCUM_KEY_PREFIX}${challengeId}", accumMs)
+            .putLong("${GROUP_TIME_START_KEY_PREFIX}${challengeId}", now)
+            .putString("${GROUP_TIME_PKG_KEY_PREFIX}${packageName}", challengeId)
+            .apply()
+        val action = if (accumMs > 0L) "RESUME" else "START"
+        Timber.d("GroupTimer: $action pkg=$packageName challengeId=$challengeId accumMs=${accumMs}ms")
+    }
+
+    /**
+     * Pauses the GROUP TIME_LIMIT timer for the challenge associated with [packageName].
+     * Elapsed time since the last start is accumulated; the start key is cleared so the
+     * polling loop in UsageTrackingService does not keep counting while the overlay is up
+     * or while the user is outside the blocked app.
+     * No-op if no timer was active for this package.
+     */
+    private fun pauseGroupTimeLimitTracking(packageName: String, reason: String = "overlayShown") {
+        val prefs = context.getSharedPreferences(GROUP_TIME_TRACKING_PREFS_NAME, Context.MODE_PRIVATE)
+        val challengeId = prefs.getString("${GROUP_TIME_PKG_KEY_PREFIX}${packageName}", null) ?: return
+        val startMs = prefs.getLong("${GROUP_TIME_START_KEY_PREFIX}${challengeId}", 0L)
+        if (startMs <= 0L) return
+        val elapsed = (System.currentTimeMillis() - startMs).coerceAtLeast(0L)
+        val accum = prefs.getLong("${GROUP_TIME_ACCUM_KEY_PREFIX}${challengeId}", 0L)
+        val newAccum = accum + elapsed
+        prefs.edit()
+            .putLong("${GROUP_TIME_ACCUM_KEY_PREFIX}${challengeId}", newAccum)
+            .putLong("${GROUP_TIME_START_KEY_PREFIX}${challengeId}", 0L)
+            .apply()
+        Timber.d("GroupTimer: PAUSE pkg=$packageName reason=$reason accumulated=${newAccum}ms")
     }
 
     private fun todayKey(): Long = DateUtils.todayKey()

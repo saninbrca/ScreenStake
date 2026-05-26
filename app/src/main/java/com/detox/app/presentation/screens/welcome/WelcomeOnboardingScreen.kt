@@ -9,7 +9,12 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,6 +83,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.ui.theme.PoppinsFamily
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -93,6 +99,8 @@ private val OrangeAccent = Color(0xFFFF6B35)
 private val OrangeLight = Color(0xFFFFF0E8)
 private val PurpleAccent = Color(0xFF7B61FF)
 private val PurpleLight = Color(0xFFEEF0FF)
+private val GreenBadgeText = Color(0xFF1E7A3C)
+private val OrangeBadgeText = Color(0xFFC05A00)
 private val DotInactive = Color(0xFFD1D1D6)
 
 private val CardShape = RoundedCornerShape(16.dp)
@@ -263,43 +271,7 @@ private fun WelcomePage(
             )
         )
 
-        // Stat card
-        OnboardingCard {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.welcome_p0_stat_value),
-                    style = TextStyle(
-                        fontFamily = PoppinsFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 48.sp,
-                        color = GreenPrimary
-                    )
-                )
-                Text(
-                    text = stringResource(R.string.welcome_p0_stat_title),
-                    style = TextStyle(
-                        fontFamily = PoppinsFamily,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = TextPrimary
-                    ),
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    text = stringResource(R.string.welcome_p0_stat_sub),
-                    style = TextStyle(
-                        fontFamily = PoppinsFamily,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 13.sp,
-                        color = TextSecondary
-                    ),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
+        RotatingStatCard()
 
         // Feature card
         OnboardingCard {
@@ -555,7 +527,7 @@ private fun ModesPage(
             subtitle = stringResource(R.string.welcome_p2_soft_sub),
             badge = stringResource(R.string.welcome_p2_soft_badge),
             badgeBg = GreenLight,
-            badgeColor = GreenPrimary
+            badgeColor = GreenBadgeText
         )
         ModeCard(
             iconBg = OrangeLight,
@@ -565,7 +537,7 @@ private fun ModesPage(
             subtitle = stringResource(R.string.welcome_p2_hard_sub),
             badge = stringResource(R.string.welcome_p2_hard_badge),
             badgeBg = OrangeLight,
-            badgeColor = OrangeAccent
+            badgeColor = OrangeBadgeText
         )
         ModeCard(
             iconBg = PurpleLight,
@@ -599,7 +571,7 @@ private fun ModeCard(
             .fillMaxWidth()
             .clip(CardShape)
             .background(CardBg)
-            .border(1.dp, CardBorder, CardShape)
+            .border(0.5.dp, Color(0x0F000000), CardShape)
             .padding(16.dp)
     ) {
         Row(
@@ -642,7 +614,7 @@ private fun ModeCard(
             }
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(4.dp))
                     .background(badgeBg)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
@@ -973,6 +945,82 @@ private fun RecommendationRow(text: String) {
 // ── Shared composables ─────────────────────────────────────────────────────────
 
 @Composable
+private fun RotatingStatCard() {
+    val stats = listOf(
+        Pair(stringResource(R.string.welcome_p0_stat1_value), stringResource(R.string.welcome_p0_stat1_desc)),
+        Pair(stringResource(R.string.welcome_p0_stat2_value), stringResource(R.string.welcome_p0_stat2_desc)),
+        Pair(stringResource(R.string.welcome_p0_stat3_value), stringResource(R.string.welcome_p0_stat3_desc)),
+    )
+
+    var currentStatIndex by remember { mutableStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(3000)
+            currentStatIndex = (currentStatIndex + 1) % 3
+        }
+    }
+
+    OnboardingCard {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            AnimatedContent(
+                targetState = currentStatIndex,
+                transitionSpec = {
+                    fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+                },
+                label = "stat_rotation"
+            ) { index ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stats[index].first,
+                        style = TextStyle(
+                            fontFamily = PoppinsFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 48.sp,
+                            color = GreenPrimary
+                        ),
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = stats[index].second,
+                        style = TextStyle(
+                            fontFamily = PoppinsFamily,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 14.sp,
+                            color = TextSecondary
+                        ),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            // Stat dot indicators
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(3) { i ->
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(if (i == currentStatIndex) GreenPrimary else Color(0xFFC7C7CC))
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DetoxLogoIcon() {
     Box(
         modifier = Modifier
@@ -997,7 +1045,7 @@ private fun OnboardingCard(content: @Composable () -> Unit) {
             .fillMaxWidth()
             .clip(CardShape)
             .background(CardBg)
-            .border(1.dp, CardBorder, CardShape)
+            .border(0.5.dp, Color(0x0F000000), CardShape)
             .padding(20.dp)
     ) {
         content()

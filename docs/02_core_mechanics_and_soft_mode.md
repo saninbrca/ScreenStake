@@ -78,6 +78,10 @@ Quit only via: Dashboard → Detail → "Aufgeben"
 ```
 User opens blocked app
 ↓
+Check SharedPreferences: active session running? ("session_end_time_{packageName}")
+  YES + not expired → allow app directly (no overlay)
+  NO or expired →
+↓
 OverlayManager reads timeUsedMs from Room DailyLog (DateUtils.todayKey())
 ↓
 timeUsedMs < limitMs → SessionIntentionOverlay (Stage 1)
@@ -85,10 +89,27 @@ timeUsedMs < limitMs → SessionIntentionOverlay (Stage 1)
   After allow: UsageTrackingService starts tracking time
     → writes timeUsedMs to Room every 10s
     → writes timeUsedMs to Firestore every 10s (fire-and-forget)
+    → stores session_end_time_{packageName} in SharedPreferences
 ↓
-timeUsedMs >= limitMs → SessionLimitReachedOverlay (Stage 2)
+timeUsedMs >= limitMs → LimitExceededOverlay (Stage 2)
   "Stark bleiben 💪" only → dismiss + home
 ```
+
+**TIME_LIMIT has NO per-session countdown** (by design — LimitType difference):
+- `SESSION_LIMIT` and `DAILY_BUDGET` have session-scoped timers (user picks or counts down).
+- `TIME_LIMIT` tracks cumulative daily usage only — there is no per-open session timer
+  shown to the user. The total daily limit is the only constraint.
+
+**Session persistence for TIME_LIMIT:**
+Session end time is stored as `"session_end_time_{packageName}"` in SharedPreferences.
+Brief app switches (Recents, pull-down notification shade) do NOT reset the session.
+The session is considered active until `session_end_time` passes or the user explicitly
+taps "Stark bleiben" (which clears the key and cancels the session timer).
+
+**Timer runs only during active app usage:**
+- Pauses while overlay is visible.
+- Stops when user navigates away from the blocked app.
+- This prevents `timeUsedMinutes` from inflating due to overlay display time.
 
 ### DAILY_BUDGET
 ```
@@ -484,7 +505,11 @@ NEVER query Room in `TYPE_WINDOW_STATE_CHANGED` handler.
 ## Universal Challenge Pattern
 
 All challenge types share identical overlay logic and DailyLog structure.
-The ONLY differences are what is added on top:
+The ONLY differences are what is added on top.
+
+**CONFIRMED (code analysis):** Soft Mode and Hard Mode use the exact same overlay flow
+end-to-end. There is no separate "Hard Mode overlay" implementation. Any overlay bug fix
+applied to Soft Mode automatically covers Hard Mode.
 
 | Layer | Soft Mode | Hard Mode | Group Challenge |
 |-------|-----------|-----------|-----------------|

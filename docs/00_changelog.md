@@ -15,6 +15,153 @@
 
 ## [Unreleased] — May 2026
 
+### Fixed — Design consistency audit (typography, spacing, colors, border radius)
+
+**Overlays:**
+- `BlockingScreenOverlay.kt`: App name top-right 13sp→11sp, color #666666→#333333. Progress labels 13sp→11sp.
+- `SessionIntentionOverlay.kt`: App name 13sp→11sp, color TextSecond(#666)→#333333. Progress labels 13sp→11sp.
+- `SessionLimitReachedOverlay.kt`: Progress labels color #333333→#AAAAAA (spec: 11sp #AAAAAA).
+- `BudgetSelectionOverlay.kt`: Progress labels color #333333→#AAAAAA.
+- `LimitExceededOverlay.kt`: Background #1A0000/#0D0D0D→#0A0A0A. All `MaterialTheme.typography.*` replaced with explicit sp values (title 15sp bold, appName 15sp, time 13sp bold, message 14sp, streak 13sp bold). Button #2E7D32→#00C853, 52dp height, 14dp radius, black text.
+
+**Detail Screen (ActiveChallengeScreen.kt):**
+- Progress bar height 10dp→8dp. Colors: MaterialTheme.primary→AccentGreen (#00C853), surfaceVariant→#E0E0E5.
+- Soft Mode badge: bg #E8F5E9→#E8F8EF, text #2E7D32→#1E7A3C. Badge radius 50dp pill→4dp.
+
+**Onboarding (WelcomeOnboardingScreen.kt):**
+- OnboardingCard and ModeCard borders: 1dp #E0E0E5→0.5dp rgba(0,0,0,0.06).
+- ModeCard badge radius: 8dp→4dp.
+
+**strings.xml:**
+- `limit_exceeded_title`: "Limit Reached"→"Tageslimit erreicht"
+- `limit_exceeded_hard_title`: "You'll lose €%.2f!"→"Du verlierst €%.2f!"
+- `limit_exceeded_hard_message`, `limit_exceeded_message`, `limit_exceeded_time_used`: English→German
+
+**Files changed:** `BlockingScreenOverlay.kt`, `SessionIntentionOverlay.kt`, `SessionLimitReachedOverlay.kt`, `BudgetSelectionOverlay.kt`, `LimitExceededOverlay.kt`, `ActiveChallengeScreen.kt`, `WelcomeOnboardingScreen.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No business logic changes.**
+
+---
+
+### Changed
+- **Onboarding Screen 3 (Modi) — badge text colors:**
+  - Soft Mode badge: text color `#00C853` → `#1E7A3C` (bg #E8F8EF unchanged).
+  - Hard Mode badge: text color `#FF6B35` → `#C05A00` (bg #FFF0E8 unchanged).
+  - Group Challenge badge: `#7B61FF` on `#EEF0FF` — already correct, no change.
+  - Title "Wähle deinen Modus" with "Modus" green — already correct.
+  - Mode descriptions ("Kostenlos. Streak-basiert." etc.) — already correct.
+  - Two new private color constants added: `GreenBadgeText`, `OrangeBadgeText`.
+
+**Files changed:** `WelcomeOnboardingScreen.kt`
+**No strings.xml changes. No Cloud Function changes. No Room schema changes. No other onboarding screens touched.**
+
+---
+
+- **Dashboard — title + card badge labels:**
+  - Screen title changed "Your Challenges" → "Aktive Challenges".
+  - Challenge card badge strings updated: "SOFT" → "SOFT MODE", "HARD" → "HARD MODE",
+    "GROUP" → "LIVE".
+  - No debug button "Demo: blockierte App öffnen" was found — already absent from production code.
+  - FAB confirmed bottom-right (Scaffold default `floatingActionButton` slot — no change needed).
+  - Note: streak/stake/pot fields absent from `DailyStats`; adding them requires model/ViewModel
+    changes outside the scope of UI-only tasks.
+
+**Files changed:** `strings.xml`
+**No Cloud Function changes. No Room schema changes. No business logic changes.**
+
+---
+
+- **Challenge Detail Screen — stats row & info list cleanup (Soft + Hard Mode):**
+  - Stats row reduced from 3 columns to 2: only "Streak" and "Tage noch" remain.
+    "Beste Streak" column removed for Soft Mode; "Einsatz" column removed from stat row for
+    Hard Mode (still available in the info list below).
+  - Fire emoji `🔥` removed from streak value; label changed "Aktuelle Streak" → "Streak".
+  - "Erfolgsrate" row removed from the info list card.
+  - Top padding before "Challenge aufgeben" link increased from 16dp → 40dp.
+
+**Files changed:** `ActiveChallengeScreen.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No business logic changes. Group Challenge Detail Screen untouched.**
+
+---
+
+### Added
+- **Onboarding Screen 1 — rotating motivational statistics:**
+  Static stat card replaced with `RotatingStatCard` composable that cycles through 3 German
+  statistics every 3 seconds with 300ms fade transition (`AnimatedContent`):
+  1. "96 Mal" / "So oft entsperrst du dein Handy täglich"
+  2. "4,2 Stunden" / "Durchschnittliche tägliche Bildschirmzeit"
+  3. "63 Tage" / "Lebenszeit pro Jahr am Handy verschwendet"
+  - Stat number: 48sp bold #00C853; description: 14sp #8E8E93, centered.
+  - 3 dot indicators below: 6dp circles, active=#00C853, inactive=#C7C7CC, 6dp gap.
+  - `LaunchedEffect(Unit)` loop with `delay(3000)`.
+  - No changes to any other onboarding screen, navigation, or auth logic.
+  - 6 new strings added: `welcome_p0_stat1_value/desc`, `welcome_p0_stat2_value/desc`,
+    `welcome_p0_stat3_value/desc`.
+
+**Files changed:** `WelcomeOnboardingScreen.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No auth logic changes.**
+
+---
+
+### Changed
+- **Overlay redesign — dots indicator + button text:**
+  - Progress bar replaced by circular dot indicators (10dp, 8dp gap) for all overlays
+    where `limit ≤ 10`. Filled dots = `#00C853` (used), empty dots = `#333333` (remaining).
+    If limit > 10, progress bar is kept unchanged.
+  - Primary button text changed from "Stark bleiben 💪" → "Nicht öffnen" across all overlays
+    (`SessionIntentionOverlay`, `BlockingScreenOverlay`, `SessionLimitReachedOverlay`,
+    `BudgetSelectionOverlay`, `TimeWindowOverlay`, `LimitExceededOverlay`).
+  - Emoji removed from `stay_strong_button` string: "Stark bleiben 💪" → "Stark bleiben".
+  - Ghost button "trotzdem öffnen" text color changed from `#222222` → `#FFFFFF` in
+    `SessionIntentionOverlay` and `BlockingScreenOverlay`.
+  - `SessionLimitReachedOverlay` gains new `limitCount: Int = 0` parameter —
+    passed from `OverlayManager.showSessionLimitReachedOverlay` as `maxOpens`.
+  - New `OverlayDotsIndicator` internal composable added to `SessionIntentionOverlay.kt`
+    (shared across the overlay package via same-package visibility).
+  - New string resource: `overlay_primary_not_open` = "Nicht öffnen".
+
+**Files changed:** `SessionIntentionOverlay.kt`, `BlockingScreenOverlay.kt`,
+`SessionLimitReachedOverlay.kt`, `BudgetSelectionOverlay.kt`, `TimeWindowOverlay.kt`,
+`LimitExceededOverlay.kt`, `OverlayManager.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No Stripe changes. No business logic changes.**
+
+---
+
+### Added
+- **Sentry SDK integration planned** (not yet implemented).
+  Sentry Android SDK is Huawei-compatible — does not require Google Play Services.
+- **Group Challenge Results Screen:** Animated podium with top 3 players (Platz 1 center/tallest,
+  Platz 2 left, Platz 3 right), each column rising sequentially. Konfetti rain + Lottie trophy
+  animation for Platz 1. Shown once per challenge via SharedPreferences guard
+  `"podium_shown_{groupId}"`.
+
+### Fixed
+- **Group Challenge TIME_LIMIT:** `timeUsedMinutes` was counted incorrectly — incremented
+  during overlay display and when user was not in the app. Timer now only runs during
+  active app usage, pauses during overlay, stops when user leaves app.
+- **Group Challenge SESSION_LIMIT:** `opensToday` had no Room fallback. Added `containsKey`
+  guard + Room fallback matching Solo behavior.
+- **Group Challenge TIME_LIMIT exceeded:** Now shows `LimitExceededOverlay` same as Solo,
+  instead of `SessionLimitReachedOverlay`.
+- **Group Challenge DAILY_BUDGET exhausted:** Context header now shows rank
+  `"👥 Platz #X von Y"` instead of hardcoded `"⏱ 0 min"`.
+- **Group Challenge DAILY_BUDGET:** Added `BudgetSelectionOverlay` (horizontal picker)
+  + 5-second countdown matching Solo behavior.
+- **Session persistence:** `TIME_LIMIT` session end time now stored in SharedPreferences
+  (`"session_end_time_{packageName}"`) so brief app switches don't reset the session.
+- **Dead code removed:** `captureAndLock` and `handleGroupChallengeFail` removed.
+- **Lottie compile errors fixed:** Correct imports for `rememberLottieComposition`
+  + `animateLottieCompositionAsState`.
+- **Haptic feedback on Huawei:** Replaced `LocalHapticFeedback` with direct `Vibrator` API
+  via `HapticManager`.
+
+### Changed
+- **Haptic feedback:** Removed from all overlays. Kept only in wizard Next buttons,
+  app selection taps, and `DetoxHorizontalPicker` number changes.
+
+---
+
+## [Unreleased] — May 2026
+
 ### Added
 - **Group Challenge Results Screen:** Fullscreen podium celebration
   shown once after Group Challenge ends. Animated podium with top 3
@@ -74,6 +221,16 @@
   Adult Content card with "18+" circle. Pill tab switcher animation.
 
 ### Fixed
+- **Group DAILY_BUDGET — BudgetSelectionOverlay context header:**
+  `BudgetSelectionOverlay` hardcoded "⏱ X min übrig heute" for all
+  challenge types. Group challenges must show "👥 Platz #X von Y".
+  Fix: added `contextHeader: String` parameter to the composable.
+  `OverlayManager.handleTimeBudgetApp()` now calls `buildContextHeader()`
+  (same as every other overlay) and passes the result down.
+- **BudgetSelectionOverlay — missing "stark bleiben 💪" ghost button:**
+  Ghost button (10sp, #222222, height 32dp) now shown below the
+  primary button, matching the design spec. Tapping it calls `onGoBack`
+  (dismiss + go home) without starting or consuming any budget.
 - **Group Challenge opensToday bug:** opensToday showed 5/5 or
   6/5 instead of 0. Two fixes: (1) Room upsert now runs
   unconditionally for every ACTIVE Firestore snapshot instead
@@ -96,6 +253,20 @@
 ---
 
 ## [Unreleased] — May 2026
+
+### FIXED — Group Challenge TIME_LIMIT session lost when user briefly leaves app
+- **Root cause 1 (`OverlayManager`):** `showBlockingOverlay` (TIME_LIMIT) never called
+  `startSessionTimer()` on "trotzdem öffnen". Only `allowTemporarily()` (5s in-memory)
+  was called, so `session_end_{pkg}` was never written to SharedPreferences. On return,
+  `sessionEndTime=0` and the overlay fired again immediately.
+  **Fix:** `onOpenAnyway` now calls `startSessionTimer(sessionDurationMinutes ?: 5)`,
+  persisting the session end time. `onStayStrong` and `onBack` now clear the key and
+  call `cancelSessionTimer()`.
+- **Root cause 2 (`AppDetectionAccessibilityService`):** The `TYPE_WINDOW_CONTENT_CHANGED`
+  re-entry path (Recents-based return) had a DAILY_BUDGET session check but no
+  `session_end_{pkg}` check. Even if the key was present, CONTENT_CHANGED would bypass it.
+  **Fix:** Added session end-time check in the CONTENT_CHANGED path, matching the existing
+  check in the `TYPE_WINDOW_STATE_CHANGED` path. Expired sessions are cleaned up inline.
 
 ### FIXED — Website challenge icon and domains disappear after Recents kill (incomplete prior fix)
 

@@ -191,6 +191,23 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                     return
                 }
 
+                // Allow re-entry if a TIME_LIMIT or SESSION_LIMIT session timer is still active
+                val sessionPrefs = applicationContext.getSharedPreferences(
+                    OverlayManager.SESSION_PREFS_NAME, Context.MODE_PRIVATE
+                )
+                val sessionEndTime = sessionPrefs.getLong(
+                    "${OverlayManager.SESSION_END_KEY_PREFIX}$packageName", 0L
+                )
+                val nowMs = System.currentTimeMillis()
+                if (sessionEndTime > 0L && nowMs < sessionEndTime) {
+                    val remaining = sessionEndTime - nowMs
+                    Timber.d("CONTENT_CHANGED: session active for $packageName, ${remaining}ms remaining — skip overlay")
+                    return
+                } else if (sessionEndTime > 0L) {
+                    Timber.d("CONTENT_CHANGED: session expired for $packageName — clearing and showing overlay")
+                    sessionPrefs.edit().remove("${OverlayManager.SESSION_END_KEY_PREFIX}$packageName").apply()
+                }
+
                 lastForegroundPackage = packageName
                 lastDetectedPackage = packageName
                 TrackedAppEventBus.updateForegroundPackage(packageName)

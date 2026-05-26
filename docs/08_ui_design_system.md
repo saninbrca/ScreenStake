@@ -216,6 +216,17 @@ Handler(Looper.getMainLooper()).post: MANDATORY for showOverlay()
 Pre-cache ALL overlay views in AccessibilityService.onCreate()
 Never re-inflate — only update dynamic content
 
+### Progress Bar
+Height: 8dp (all overlays)
+Progress labels below bar: 11sp, #AAAAAA (left = context text, right = percentage)
+
+### Haptic Rule
+Haptic feedback is used ONLY in:
+- Wizard "Weiter" / "Next" buttons → `HapticManager.light()`
+- App selection row taps → `HapticManager.light()`
+- `DetoxHorizontalPicker` number change → `HapticFeedbackType.LongPress`
+**NEVER in any overlay** — not on button taps, not on dismiss, not on show.
+
 ### Group Challenge Overlay (dark fullscreen — same as Solo)
 The Group overlay uses the same dark fullscreen design as the Solo overlay (background #0A0A0A).
 It is NOT a white card dialog. All English strings replaced with German.
@@ -315,7 +326,7 @@ Platz 1 (center / tallest): #FFD700  — gold
 Platz 2 (left):             #C0C0C0  — silver
 Platz 3 (right):            #CD7F32  — bronze
 ```
-Each column rises sequentially with an enter animation.
+Each column rises sequentially with an enter animation: Platz 3 → Platz 2 → Platz 1.
 Konfetti rain on entry (top 3 only). Lottie trophy animation for Platz 1.
 
 ### User Result Card

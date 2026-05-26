@@ -314,6 +314,18 @@ class BootReceiver : BroadcastReceiver() {
 
 ---
 
+## Sentry SDK — Huawei Compatible
+
+Sentry Android SDK does **not** require Google Play Services.
+It uses its own HTTP transport layer directly. Safe to add on Huawei.
+
+Integration planned (not yet implemented). When adding:
+- Use `SentryAndroid.init` in `DetoxApplication.onCreate()`
+- No FCM dependency — Sentry works on Huawei out of the box
+- Do NOT use Sentry's Firebase Performance monitoring integration (requires Play Services)
+
+---
+
 ## HapticManager
 
 Direct `Vibrator` API is required for Huawei compatibility.
@@ -340,7 +352,9 @@ object HapticManager {
 - `DetoxHorizontalPicker` number change → `HapticFeedbackType.LongPress` (Compose local, sufficient for picker)
 
 ### Where haptic is NOT used
-- ALL overlays (SessionIntentionOverlay, SessionLimitReachedOverlay, etc.) — no haptic at all
+- ALL overlays (SessionIntentionOverlay, SessionLimitReachedOverlay, BudgetSelectionOverlay,
+  TimeWindowOverlay, WebsiteBlockedOverlay, HardModeLockoutOverlay, LimitExceededOverlay) —
+  **no haptic at all**. This is intentional: overlays are moments of friction, not reward.
 
 ---
 

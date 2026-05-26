@@ -436,11 +436,6 @@ private fun ActiveChallengeContent(
                     animationSpec = tween(600, delayMillis = 200, easing = FastOutSlowInEasing),
                     label = "streakAnim"
                 )
-                val animatedBestStreak by animateIntAsState(
-                    targetValue = bestStreak,
-                    animationSpec = tween(600, delayMillis = 200, easing = FastOutSlowInEasing),
-                    label = "bestStreakAnim"
-                )
                 val animatedDaysLeft by animateIntAsState(
                     targetValue = daysLeft ?: 0,
                     animationSpec = tween(600, delayMillis = 200, easing = FastOutSlowInEasing),
@@ -477,19 +472,11 @@ private fun ActiveChallengeContent(
                 Row(modifier = Modifier.fillMaxWidth()) {
                     DetailStatColumn(
                         label = stringResource(R.string.detail_streak_current_label),
-                        value = "🔥 $animatedStreak",
+                        value = "$animatedStreak",
                         modifier = Modifier
                             .weight(1f)
                             .graphicsLayer(scaleX = streakScale.value, scaleY = streakScale.value),
                         valueColor = streakColor
-                    )
-                    DetailStatColumn(
-                        label = if (isHardMode) stringResource(R.string.detail_einsatz_label)
-                                else stringResource(R.string.detail_streak_best_label),
-                        value = if (isHardMode) "€${"%.0f".format((challenge.amountCents ?: 0) / 100f)}"
-                                else "$animatedBestStreak",
-                        valueColor = TextSecondary,
-                        modifier = Modifier.weight(1f)
                     )
                     DetailStatColumn(
                         label = stringResource(R.string.detail_days_left_label),
@@ -560,10 +547,9 @@ private fun ActiveChallengeContent(
                         progress = { animatedProgress },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(10.dp),
-                        color = if (s.limitExceeded) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            .height(8.dp),
+                        color = if (s.limitExceeded) AbandonRed else AccentGreen,
+                        trackColor = Color(0xFFE0E0E5)
                     )
 
                     // Footer row
@@ -774,12 +760,6 @@ private fun ActiveChallengeContent(
                     label = stringResource(R.string.detail_info_ends),
                     value = endDateStr ?: stringResource(R.string.active_challenge_no_end_date)
                 )
-                InfoDivider()
-                InfoRow(
-                    label = stringResource(R.string.detail_info_success_rate),
-                    value = stringResource(R.string.detail_info_success_rate_val, successRatePct),
-                    valueColor = AccentGreen
-                )
             }
         }
 
@@ -859,7 +839,7 @@ private fun ActiveChallengeContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showAbandonDialog = true }
-                    .padding(top = 16.dp, bottom = 24.dp),
+                    .padding(top = 40.dp, bottom = 24.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -998,11 +978,11 @@ fun DetoxCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
 
 @Composable
 private fun ModeBadge(isHardMode: Boolean) {
-    val bgColor = if (isHardMode) Color(0xFFFFF0E8) else Color(0xFFE8F5E9)
-    val textColor = if (isHardMode) Color(0xFFC05A00) else Color(0xFF2E7D32)
+    val bgColor = if (isHardMode) Color(0xFFFFF0E8) else Color(0xFFE8F8EF)
+    val textColor = if (isHardMode) Color(0xFFC05A00) else Color(0xFF1E7A3C)
     val label = if (isHardMode) stringResource(R.string.active_challenge_mode_hard)
                 else stringResource(R.string.active_challenge_mode_soft)
-    Surface(shape = RoundedCornerShape(50), color = bgColor) {
+    Surface(shape = RoundedCornerShape(4.dp), color = bgColor) {
         Text(
             text = label,
             fontSize = 11.sp,

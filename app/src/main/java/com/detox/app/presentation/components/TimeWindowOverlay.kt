@@ -210,9 +210,9 @@ fun TimeWindowOverlay(
 
             Spacer(Modifier.weight(1f))
 
-            // ── Primary button: "Stark bleiben 💪" ────────────────────────────
+            // ── Primary button ─────────────────────────────────────────────────
             OverlayPrimaryButton(
-                text = stringResource(R.string.stay_strong_button),
+                text = stringResource(R.string.overlay_primary_not_open),
                 onClick = onDismiss
             )
         }

@@ -86,7 +86,7 @@
     <string name="challenge_setup_start_button">Start Challenge</string>
 
     <!-- Dashboard -->
-    <string name="dashboard_title">Your Challenges</string>
+    <string name="dashboard_title">Aktive Challenges</string>
     <string name="dashboard_active_count">%d active challenges</string>
     <string name="dashboard_empty">No active challenges yet. Start one to take control of your screen time!</string>
     <string name="dashboard_empty_title">No active challenges</string>
@@ -118,11 +118,11 @@
     <string name="blocking_overlay_skip">No, I\'ll skip it</string>
 
     <!-- Limit Exceeded Overlay -->
-    <string name="limit_exceeded_title">Limit Reached</string>
-    <string name="limit_exceeded_message">You\'ve reached your limit. Do you really want to continue and risk your points?</string>
-    <string name="limit_exceeded_continue">Continue anyway</string>
-    <string name="limit_exceeded_stop">Stay strong 💪</string>
-    <string name="limit_exceeded_time_used">%1$d / %2$d min used today</string>
+    <string name="limit_exceeded_title">Tageslimit erreicht</string>
+    <string name="limit_exceeded_message">Du hast dein Tageslimit erreicht. Komm morgen wieder.</string>
+    <string name="limit_exceeded_continue">Trotzdem öffnen</string>
+    <string name="limit_exceeded_stop">Stark bleiben</string>
+    <string name="limit_exceeded_time_used">%1$d / %2$d Min. heute</string>
     <string name="streak_display">🔥 %1$d day streak</string>
 
     <!-- Notification -->
@@ -211,9 +211,9 @@
     <string name="blocking_overlay_amount_stake">⚠ €%.2f at stake</string>
 
     <!-- Limit Exceeded Overlay — Hard Mode -->
-    <string name="limit_exceeded_hard_title">You\'ll lose €%.2f!</string>
-    <string name="limit_exceeded_hard_message">Your daily limit is up. If you continue, your money will be charged immediately and the app will be locked for the rest of the day.</string>
-    <string name="limit_exceeded_hard_continue">Continue anyway</string>
+    <string name="limit_exceeded_hard_title">Du verlierst €%.2f!</string>
+    <string name="limit_exceeded_hard_message">Dein Tageslimit ist aufgebraucht. Dein Einsatz wird jetzt eingezogen und die App für heute gesperrt.</string>
+    <string name="limit_exceeded_hard_continue">Trotzdem öffnen</string>
     <!-- Hard Mode Lockout Overlay -->
     <string name="lockout_title">🔒 Locked for Today</string>
     <string name="lockout_subtitle">You exceeded your limit for %1$s. The app is locked until midnight.</string>
@@ -309,9 +309,9 @@
     <!-- Challenge card — Hard Mode payment captured -->
     <string name="challenge_card_payment_captured">Payment captured — €%.2f lost today</string>
     <!-- Challenge card — mode / type badges -->
-    <string name="challenge_card_badge_hard">HARD</string>
-    <string name="challenge_card_badge_soft">SOFT</string>
-    <string name="challenge_card_badge_group">GROUP</string>
+    <string name="challenge_card_badge_hard">HARD MODE</string>
+    <string name="challenge_card_badge_soft">SOFT MODE</string>
+    <string name="challenge_card_badge_group">LIVE</string>
     <string name="challenge_card_participants">%1$d/%2$d Spieler</string>
     <string name="challenge_card_rank">Platz %1$d 🏆</string>
 
@@ -436,7 +436,8 @@
     <string name="website_blocked_challenge_label">Part of your %1$s challenge</string>
 
     <!-- Psychological friction buttons (SessionIntentionOverlay + BudgetSelectionOverlay) -->
-    <string name="stay_strong_button">Stark bleiben 💪</string>
+    <string name="stay_strong_button">Stark bleiben</string>
+    <string name="overlay_primary_not_open">Nicht öffnen</string>
     <string name="open_anyway_button">Trotzdem öffnen</string>
     <string name="open_anyway_hint">Wenn du wirklich willst…</string>
     <string name="countdown_top_text">Letzte Chance umzukehren</string>
@@ -721,6 +722,13 @@
     <string name="welcome_p0_stat_value">4.2h</string>
     <string name="welcome_p0_stat_title">Durchschnittliche tägliche Bildschirmzeit in Deutschland</string>
     <string name="welcome_p0_stat_sub">Das sind 63 Tage pro Jahr. Bereit, das zu ändern?</string>
+    <!-- Rotating stats (Screen 1) -->
+    <string name="welcome_p0_stat1_value">96 Mal</string>
+    <string name="welcome_p0_stat1_desc">So oft entsperrst du dein Handy täglich</string>
+    <string name="welcome_p0_stat2_value">4,2 Stunden</string>
+    <string name="welcome_p0_stat2_desc">Durchschnittliche tägliche Bildschirmzeit</string>
+    <string name="welcome_p0_stat3_value">63 Tage</string>
+    <string name="welcome_p0_stat3_desc">Lebenszeit pro Jahr am Handy verschwendet</string>
     <string name="welcome_p0_card2_title">Nimm dein Leben zurück 💪</string>
     <string name="welcome_p0_card2_sub">Detox hilft dir, bewusster mit deiner Zeit umzugehen.</string>
     <string name="welcome_p0_btn_start">Jetzt starten</string>
@@ -881,7 +889,7 @@
     <string name="overlay_lockout_back_button">Zurück</string>
 
     <!-- Detail Screen Redesign — Soft / Hard Mode -->
-    <string name="detail_streak_current_label">Aktuelle Streak</string>
+    <string name="detail_streak_current_label">Streak</string>
     <string name="detail_streak_best_label">Beste Streak</string>
     <string name="detail_days_left_label">Tage noch</string>
     <string name="detail_header_today">Heute</string>

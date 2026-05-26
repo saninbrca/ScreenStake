@@ -441,8 +441,21 @@ Podium column colors:
 Shows win/loss outcome + payout info for the current user.
 "Weiter" button → navigates to GroupChallengeDetailScreen.
 
+### Sequential Reveal
+Columns animate in order: Platz 3 → Platz 2 → Platz 1 (lowest to highest).
+
 ### Failed Participants
 Shown below the podium, greyed out, no animation.
+
+---
+
+## Removed Dead Code
+
+- `captureAndLock` — removed. Was an unused code path that attempted to combine
+  Stripe capture with a lockout overlay in a single call. Never triggered in production.
+- `handleGroupChallengeFail` — removed. Group Challenge never auto-fails (see
+  "DECISION — Group Challenge never auto-fails for any limit type" above).
+  The only fail path is manual "Aufgeben" via `failParticipant` Cloud Function.
 
 ---
 
@@ -534,20 +547,41 @@ consciousOpens >= limit → SessionLimitReachedOverlay ("Stark bleiben 💪" onl
 App stays blocked. Participant stays active. NO auto-fail.
 Manual "Aufgeben" in Detail screen is the only way to quit.
 
+**SESSION_LIMIT Room fallback fix:** `opensToday` now has a `containsKey` guard + Room fallback
+that matches Solo behavior. Previously `opensToday` showed 5/5 or 6/5 instead of 0 on challenge start.
+
 ### TIME_LIMIT (Group)
 Same as SESSION_LIMIT flow but:
-timeUsedMs tracked via UsageTrackingService
+timeUsedMs tracked via UsageTrackingService — ONLY during active app usage.
+Timer pauses when overlay is shown. Timer stops when user leaves the app.
 timeUsedMinutes mirrored to participants array every 10s
-Limit reached: timeUsedMs >= limitValueMinutes * 60000 → SessionLimitReachedOverlay
+Limit reached: timeUsedMs >= limitValueMinutes * 60000 → **LimitExceededOverlay** (same as Solo)
 NO auto-fail. Manual "Aufgeben" only.
+
+**TIME_LIMIT session persistence:** Session end time stored in SharedPreferences as
+`"session_end_time_{packageName}"`. Brief app switches (Recents, notifications) no longer
+reset the session — the end time survives and the overlay is not re-shown if the session
+is still valid on return.
+
+**TIME_LIMIT timer fix:** Timer previously incremented `timeUsedMinutes` during overlay
+display and when the user was not in the app. Both cases are now correctly excluded.
 
 ### DAILY_BUDGET (Group)
 Same as Solo DAILY_BUDGET flow but:
 budgetUsedMs tracked via UsageTrackingService
 budgetUsedMs written to Room + Firestore dailyLogs every 10s
 budgetUsedMinutes mirrored to participants array every 10s
-Limit reached: budgetUsedMs >= dailyBudgetMinutes * 60000 → SessionLimitReachedOverlay
+Limit reached: budgetUsedMs >= dailyBudgetMinutes * 60000 → BudgetSelectionOverlay
+  → if remaining > 0: BudgetSelectionOverlay (horizontal picker, matches Solo behavior)
+  → if remaining <= 0: SessionLimitReachedOverlay
 NO auto-fail. Manual "Aufgeben" only.
+
+**DAILY_BUDGET context header fix:** Context header now shows `"👥 Platz #X von Y"` (same as
+every other Group Challenge overlay). Previously hardcoded `"⏱ 0 min"`.
+
+**DAILY_BUDGET BudgetSelectionOverlay fix:** Now shows `BudgetSelectionOverlay` with
+`DetoxHorizontalPicker` + 5-second countdown, matching Solo behavior. Previously the
+exhausted path jumped straight to `SessionLimitReachedOverlay`.
 
 ---
 

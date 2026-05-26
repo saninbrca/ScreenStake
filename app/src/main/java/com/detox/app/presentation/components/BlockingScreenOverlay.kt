@@ -94,9 +94,9 @@ fun BlockingScreenOverlay(
             // App name top-right
             Text(
                 text = appName,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color(0xFF666666),
+                color = Color(0xFF333333),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 16.dp, end = 16.dp)
@@ -144,30 +144,32 @@ fun BlockingScreenOverlay(
 
                 Spacer(Modifier.height(28.dp))
 
-                // Progress bar
-                OverlayProgressBar(
-                    progress = progress.coerceIn(0f, 1f),
-                    trackColor = Color(0xFF333333),
-                    fillColor = BlockingAccentGreen
-                )
-
-                // Progress labels
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.overlay_v2_progress_time_remaining, remaining),
-                        fontSize = 13.sp,
-                        color = Color(0xFFAAAAAA)
+                // Progress indicator: dots if limit ≤ 10, bar otherwise
+                if (maxValue <= 10) {
+                    OverlayDotsIndicator(used = valueUsed, total = maxValue)
+                } else {
+                    OverlayProgressBar(
+                        progress = progress.coerceIn(0f, 1f),
+                        trackColor = Color(0xFF333333),
+                        fillColor = BlockingAccentGreen
                     )
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        fontSize = 13.sp,
-                        color = Color(0xFFAAAAAA)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.overlay_v2_progress_time_remaining, remaining),
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                        Text(
+                            text = "${(progress * 100).toInt()}%",
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                    }
                 }
 
                 // Stake warning card — Group Hard Mode only
@@ -198,18 +200,18 @@ fun BlockingScreenOverlay(
 
                 // Primary button
                 OverlayPrimaryButton(
-                    text = stringResource(R.string.stay_strong_button),
+                    text = stringResource(R.string.overlay_primary_not_open),
                     onClick = onStayStrong
                 )
 
                 Spacer(Modifier.height(12.dp))
 
-                // Ghost button — intentionally barely visible
+                // Ghost button — white text, 10sp, barely noticeable
                 CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                     TextButton(
                         onClick = onOpenAnyway,
                         modifier = Modifier.height(32.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
                     ) {
                         Text(
                             text = stringResource(R.string.overlay_ghost_open),

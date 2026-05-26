@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -115,9 +117,9 @@ fun SessionIntentionOverlay(
             // App name top-right
             Text(
                 text = appName,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
-                color = TextSecond,
+                color = Color(0xFF333333),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 16.dp, end = 16.dp)
@@ -165,44 +167,46 @@ fun SessionIntentionOverlay(
 
                 Spacer(Modifier.height(28.dp))
 
-                // ── Progress bar (animated fill via OverlayProgressBar) ────────────
-                OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = TrackDark, fillColor = AccentGreen)
-
-                // ── Labels below bar ───────────────────────────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.overlay_v2_progress_sessions_remaining, remaining),
-                        fontSize = 13.sp,
-                        color = Color(0xFFAAAAAA)
-                    )
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        fontSize = 13.sp,
-                        color = Color(0xFFAAAAAA)
-                    )
+                // ── Progress indicator: dots if limit ≤ 10, bar otherwise ──────────
+                if (maxOpens <= 10) {
+                    OverlayDotsIndicator(used = opensUsed, total = maxOpens)
+                } else {
+                    OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = TrackDark, fillColor = AccentGreen)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.overlay_v2_progress_sessions_remaining, remaining),
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                        Text(
+                            text = "${(progress * 100).toInt()}%",
+                            fontSize = 11.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                    }
                 }
 
                 Spacer(Modifier.weight(1f))
 
                 // ── Primary button ─────────────────────────────────────────────────
                 OverlayPrimaryButton(
-                    text = stringResource(R.string.stay_strong_button),
+                    text = stringResource(R.string.overlay_primary_not_open),
                     onClick = onNo
                 )
 
                 Spacer(Modifier.height(12.dp))
 
-                // ── Ghost button — barely visible, 10sp #222, 32dp ─────────────────
+                // ── Ghost button — barely visible, 10sp, 32dp ─────────────────────
                 CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                     TextButton(
                         onClick = { showCountdown = true },
                         modifier = Modifier.height(32.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF222222))
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
                     ) {
                         Text(
                             text = stringResource(R.string.overlay_ghost_open),
@@ -297,5 +301,31 @@ internal fun OverlayPrimaryButton(
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold
         )
+    }
+}
+
+/**
+ * Row of circular dot indicators replacing the progress bar when limit ≤ 10.
+ * Filled dots (#00C853) represent used slots; empty dots (#333333) represent remaining.
+ */
+@Composable
+internal fun OverlayDotsIndicator(
+    used: Int,
+    total: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(total) { index ->
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(if (index < used) Color(0xFF00C853) else Color(0xFF333333))
+            )
+        }
     }
 }

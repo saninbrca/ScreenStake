@@ -3,7 +3,6 @@ package com.detox.app.presentation.screens.appselection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.domain.model.AppUsageInfo
-import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
@@ -39,9 +38,6 @@ class AppSelectionViewModel @Inject constructor(
 
     private val _selectedPackages = MutableStateFlow<Set<String>>(emptySet())
     val selectedPackages: StateFlow<Set<String>> = _selectedPackages.asStateFlow()
-
-    private val _selectedPartialSections = MutableStateFlow<Set<String>>(emptySet())
-    val selectedPartialSections: StateFlow<Set<String>> = _selectedPartialSections.asStateFlow()
 
     fun loadApps() {
         if (!usageStatsRepository.hasUsageStatsPermission()) {
@@ -83,9 +79,4 @@ class AppSelectionViewModel @Inject constructor(
         }
     }
 
-    fun togglePartialSection(sectionId: String) {
-        _selectedPartialSections.update { current ->
-            if (sectionId in current) current - sectionId else current + sectionId
-        }
-    }
 }

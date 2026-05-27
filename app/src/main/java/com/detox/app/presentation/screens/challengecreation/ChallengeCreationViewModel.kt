@@ -11,7 +11,6 @@ import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
-import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CreateChallengeUseCase
@@ -41,24 +40,6 @@ val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
     "com.pinterest"              to listOf("pinterest.com"),
     "com.linkedin.android"       to listOf("linkedin.com"),
 )
-
-/**
- * Maps a URL path prefix → human-readable feature name.
- * Used for PARTIAL_BLOCK: only the specific path is blocked, not the entire domain.
- * The parent domain (before the first '/') must NOT already be in [blockedDomains] for
- * the toggle to be shown — if the whole site is already blocked there is nothing to add.
- */
-val FEATURE_BLOCK_MAP: Map<String, String> = mapOf(
-    "instagram.com/reels"    to "Instagram Reels",
-    "instagram.com/stories"  to "Instagram Stories",
-    "youtube.com/shorts"     to "YouTube Shorts",
-    "tiktok.com/foryou"      to "TikTok For You",
-    "facebook.com/watch"     to "Facebook Watch",
-    "twitter.com/i/timeline" to "Twitter Timeline",
-)
-
-/** App packages that support native in-app section blocking. */
-val PARTIAL_SECTION_PACKAGES: Set<String> = PartialBlockSection.SUPPORTED_PACKAGES
 
 const val NO_END_DATE_DAYS = 36500
 const val TOTAL_STEPS = 7
@@ -92,10 +73,6 @@ data class ChallengeCreationState(
     val manualDomainInput: String = "",
     val manualDomainError: String? = null,
     val blockAdultContent: Boolean = false,
-    /** URL path prefixes selected for partial (feature-level) blocking, e.g. "instagram.com/reels". */
-    val partialBlockDomains: Set<String> = emptySet(),
-    /** Native in-app section IDs selected for blocking, e.g. "instagram_reels". */
-    val partialBlockSections: Set<String> = emptySet(),
     // Step 3
     val limitType: LimitType? = null,
     // Step 4
@@ -282,26 +259,6 @@ class ChallengeCreationViewModel @Inject constructor(
     fun updateBlockAdultContent(enabled: Boolean) =
         _state.update { it.copy(blockAdultContent = enabled) }
 
-    fun togglePartialBlockDomain(path: String) {
-        _state.update { s ->
-            val updated = if (s.partialBlockDomains.contains(path))
-                s.partialBlockDomains - path
-            else
-                s.partialBlockDomains + path
-            s.copy(partialBlockDomains = updated)
-        }
-    }
-
-    fun togglePartialSection(sectionId: String) {
-        _state.update { s ->
-            val updated = if (sectionId in s.partialBlockSections)
-                s.partialBlockSections - sectionId
-            else
-                s.partialBlockSections + sectionId
-            s.copy(partialBlockSections = updated)
-        }
-    }
-
     // ── Step 3: Limit type ────────────────────────────────────────────────────
 
     fun selectLimitType(type: LimitType) = _state.update { it.copy(limitType = type) }
@@ -393,8 +350,7 @@ class ChallengeCreationViewModel @Inject constructor(
         val conflicts = _appListState.value.conflictingPackages
         return when (s.currentStep) {
             1 -> s.selectedMode != null
-            2 -> (s.selectedApps.isNotEmpty() || s.partialBlockSections.isNotEmpty() ||
-                        s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()) &&
+            2 -> (s.selectedApps.isNotEmpty() || s.manualDomains.isNotEmpty() || s.blockAdultContent) &&
                         s.selectedApps.none { conflicts.containsKey(it) }
             3 -> s.limitType != null
             4 -> when (s.limitType) {
@@ -425,11 +381,6 @@ class ChallengeCreationViewModel @Inject constructor(
             s.manualDomains
         }
     }
-
-    private fun computePartialBlockDomains(): List<String> = _state.value.partialBlockDomains.toList()
-
-    private fun computePartialBlockSections(): List<PartialBlockSection> =
-        _state.value.partialBlockSections.mapNotNull { PartialBlockSection.fromId(it) }
 
     // ── Challenge creation ────────────────────────────────────────────────────
 
@@ -464,11 +415,7 @@ class ChallengeCreationViewModel @Inject constructor(
         _uiState.value = ChallengeCreationUiState.Loading
         viewModelScope.launch {
             val (limitMinutes, limitSessions) = resolveLimitPair()
-            val sectionsOnly = !isWebsiteTab && s.selectedApps.isEmpty() && s.partialBlockSections.isNotEmpty()
-            val appPackages = if (!isWebsiteTab) {
-                if (sectionsOnly) computePartialBlockSections().map { it.appPackage }.distinct()
-                else s.selectedApps.toList()
-            } else emptyList()
+            val appPackages = if (!isWebsiteTab) s.selectedApps.toList() else emptyList()
             createChallengeUseCase(
                 appPackageName = appPackages.firstOrNull(),
                 appDisplayName = displayName(),
@@ -480,7 +427,7 @@ class ChallengeCreationViewModel @Inject constructor(
                 mode = ChallengeMode.SOFT,
                 appPackageNames = appPackages,
                 blockedDomains = computeBlockedDomains(),
-                partialBlockDomains = computePartialBlockDomains(),
+                partialBlockDomains = emptyList(),
                 blockingType = if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE,
                 blockAdultContent = s.blockAdultContent,
                 scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
@@ -488,8 +435,8 @@ class ChallengeCreationViewModel @Inject constructor(
                 activeDays = s.activeDays.toList(),
                 sessionDurationMinutes = s.sessionDurationMinutes,
                 dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
-                partialBlockSections = computePartialBlockSections(),
-                isPartialBlockOnly = sectionsOnly,
+                partialBlockSections = emptyList(),
+                isPartialBlockOnly = false,
             ).fold(
                 onSuccess = { result ->
                     analyticsService.logChallengeCreated(
@@ -538,11 +485,7 @@ class ChallengeCreationViewModel @Inject constructor(
         _uiState.value = ChallengeCreationUiState.Loading
         viewModelScope.launch {
             val (limitMinutes, limitSessions) = resolveLimitPair()
-            val sectionsOnlyHard = !isWebsiteTab && s.selectedApps.isEmpty() && s.partialBlockSections.isNotEmpty()
-            val appPackagesHard = if (!isWebsiteTab) {
-                if (sectionsOnlyHard) computePartialBlockSections().map { it.appPackage }.distinct()
-                else s.selectedApps.toList()
-            } else emptyList()
+            val appPackagesHard = if (!isWebsiteTab) s.selectedApps.toList() else emptyList()
             createChallengeUseCase(
                 appPackageName = appPackagesHard.firstOrNull(),
                 appDisplayName = displayName(),
@@ -556,7 +499,7 @@ class ChallengeCreationViewModel @Inject constructor(
                 stripePaymentIntentId = paymentIntentId,
                 appPackageNames = appPackagesHard,
                 blockedDomains = computeBlockedDomains(),
-                partialBlockDomains = computePartialBlockDomains(),
+                partialBlockDomains = emptyList(),
                 blockingType = if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE,
                 blockAdultContent = s.blockAdultContent,
                 scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
@@ -564,8 +507,8 @@ class ChallengeCreationViewModel @Inject constructor(
                 activeDays = s.activeDays.toList(),
                 sessionDurationMinutes = s.sessionDurationMinutes,
                 dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
-                partialBlockSections = computePartialBlockSections(),
-                isPartialBlockOnly = sectionsOnlyHard,
+                partialBlockSections = emptyList(),
+                isPartialBlockOnly = false,
             ).fold(
                 onSuccess = { result ->
                     analyticsService.logChallengeCreated(

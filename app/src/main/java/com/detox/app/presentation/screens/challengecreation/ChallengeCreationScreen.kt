@@ -220,8 +220,6 @@ fun ChallengeCreationScreen(
                         manualDomainInput = state.manualDomainInput,
                         manualDomainError = state.manualDomainError,
                         blockAdultContent = state.blockAdultContent,
-                        partialBlockDomains = state.partialBlockDomains,
-                        partialBlockSections = state.partialBlockSections,
                         onSearchQueryChange = viewModel::updateSearchQuery,
                         onToggleApp = viewModel::toggleApp,
                         onReloadApps = viewModel::loadApps,
@@ -231,8 +229,6 @@ fun ChallengeCreationScreen(
                         onAddManualDomain = viewModel::addManualDomain,
                         onRemoveManualDomain = viewModel::removeManualDomain,
                         onBlockAdultContentChange = viewModel::updateBlockAdultContent,
-                        onTogglePartialBlock = viewModel::togglePartialBlockDomain,
-                        onTogglePartialSection = viewModel::togglePartialSection,
                     )
                     3 -> Step3LimitType(
                         selected = state.limitType,

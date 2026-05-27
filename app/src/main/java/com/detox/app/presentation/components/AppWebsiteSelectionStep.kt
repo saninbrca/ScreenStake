@@ -1,7 +1,6 @@
 package com.detox.app.presentation.components
 
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -70,28 +69,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
-import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
-import com.detox.app.presentation.screens.challengecreation.FEATURE_BLOCK_MAP
-
-private val DOMAIN_TO_PACKAGE = mapOf(
-    "instagram.com" to "com.instagram.android",
-    "youtube.com"   to "com.google.android.youtube",
-    "tiktok.com"    to "com.zhiliaoapp.musically",
-    "facebook.com"  to "com.facebook.katana",
-    "twitter.com"   to "com.twitter.android",
-    "x.com"         to "com.twitter.android",
-)
-
-private val DOMAIN_BRAND_COLOR = mapOf(
-    "instagram.com" to Color(0xFFE1306C),
-    "youtube.com"   to Color(0xFFFF0000),
-    "tiktok.com"    to Color(0xFF010101),
-    "facebook.com"  to Color(0xFF1877F2),
-    "twitter.com"   to Color(0xFF010101),
-    "x.com"         to Color(0xFF010101),
-)
 
 // ── Shared App/Website selection step ─────────────────────────────────────────
 // Used identically in Solo Wizard (Step 2) and Group Challenge Wizard (Step 1).
@@ -107,8 +86,6 @@ internal fun AppWebsiteSelectionStep(
     manualDomainInput: String,
     manualDomainError: String?,
     blockAdultContent: Boolean,
-    partialBlockDomains: Set<String>,
-    partialBlockSections: Set<String>,
     onSearchQueryChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
     onReloadApps: () -> Unit,
@@ -118,8 +95,6 @@ internal fun AppWebsiteSelectionStep(
     onAddManualDomain: () -> Unit,
     onRemoveManualDomain: (String) -> Unit,
     onBlockAdultContentChange: (Boolean) -> Unit,
-    onTogglePartialBlock: (String) -> Unit,
-    onTogglePartialSection: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -164,24 +139,20 @@ internal fun AppWebsiteSelectionStep(
                 selectedApps = selectedApps,
                 searchQuery = searchQuery,
                 domainToggles = domainToggles,
-                partialBlockSections = partialBlockSections,
                 onSearchQueryChange = onSearchQueryChange,
                 onToggleApp = onToggleApp,
                 onReloadApps = onReloadApps,
                 onToggleDomain = onToggleDomain,
-                onTogglePartialSection = onTogglePartialSection,
             )
             1 -> WebsitesTabContent(
                 manualDomains = manualDomains,
                 manualDomainInput = manualDomainInput,
                 manualDomainError = manualDomainError,
                 blockAdultContent = blockAdultContent,
-                partialBlockDomains = partialBlockDomains,
                 onManualDomainInputChange = onManualDomainInputChange,
                 onAddManualDomain = onAddManualDomain,
                 onRemoveManualDomain = onRemoveManualDomain,
                 onBlockAdultContentChange = onBlockAdultContentChange,
-                onTogglePartialBlock = onTogglePartialBlock,
             )
         }
     }
@@ -195,12 +166,10 @@ internal fun AppsTabContent(
     selectedApps: Set<String>,
     searchQuery: String,
     domainToggles: Map<String, Boolean>,
-    partialBlockSections: Set<String>,
     onSearchQueryChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
     onReloadApps: () -> Unit,
     onToggleDomain: (String) -> Unit,
-    onTogglePartialSection: (String) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -309,17 +278,6 @@ internal fun AppsTabContent(
                             conflictChallengeName = conflictName,
                             onToggle = { if (conflictName == null) onToggleApp(app.packageName) },
                         )
-                        val sections = PartialBlockSection.BY_PACKAGE[app.packageName]
-                        if (!sections.isNullOrEmpty()) {
-                            sections.forEach { section ->
-                                PartialSectionSubRow(
-                                    section = section,
-                                    app = app,
-                                    isSelected = partialBlockSections.contains(section.id),
-                                    onToggle = { onTogglePartialSection(section.id) },
-                                )
-                            }
-                        }
                     }
 
                     if (nonTrackable.isNotEmpty()) {
@@ -409,63 +367,6 @@ internal fun DomainSuggestionsSection(
     }
 }
 
-// ── Platform icon with badge ──────────────────────────────────────────────────
-
-@Composable
-private fun PlatformAppIconWithBadge(path: String) {
-    val context = LocalContext.current
-    val domain = path.substringBefore('/')
-    val packageName = DOMAIN_TO_PACKAGE[domain]
-
-    val iconBitmap = remember(packageName) {
-        if (packageName == null) return@remember null
-        try {
-            context.packageManager
-                .getApplicationIcon(packageName)
-                .toBitmap(120, 120)
-                .asImageBitmap()
-        } catch (e: PackageManager.NameNotFoundException) {
-            null
-        }
-    }
-
-    Box(modifier = Modifier.size(40.dp)) {
-        if (iconBitmap != null) {
-            Image(
-                painter = BitmapPainter(iconBitmap),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp)),
-            )
-        } else {
-            val brandColor = DOMAIN_BRAND_COLOR[domain] ?: Color(0xFF8E8E93)
-            val initial = domain.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(brandColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = initial,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .align(Alignment.BottomEnd)
-                .clip(RoundedCornerShape(50.dp))
-                .background(Color(0xFFFF3B30)),
-        )
-    }
-}
-
 // ── Websites tab ──────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -475,12 +376,10 @@ internal fun WebsitesTabContent(
     manualDomainInput: String,
     manualDomainError: String?,
     blockAdultContent: Boolean,
-    partialBlockDomains: Set<String>,
     onManualDomainInputChange: (String) -> Unit,
     onAddManualDomain: () -> Unit,
     onRemoveManualDomain: (String) -> Unit,
     onBlockAdultContentChange: (Boolean) -> Unit,
-    onTogglePartialBlock: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -624,65 +523,6 @@ internal fun WebsitesTabContent(
             }
         }
 
-        val visibleFeatures = FEATURE_BLOCK_MAP.filter { (path, _) ->
-            val parentDomain = path.substringBefore('/')
-            manualDomains.none { it.equals(parentDomain, ignoreCase = true) }
-        }
-        if (visibleFeatures.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.app_selection_feature_block_title),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF8E8E93),
-                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
-            )
-            visibleFeatures.forEach { (path, featureName) ->
-                val isEnabled = partialBlockDomains.contains(path)
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(0.5.dp, Color(0x0F000000)),
-                    elevation = CardDefaults.cardElevation(0.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onTogglePartialBlock(path) }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        PlatformAppIconWithBadge(path = path)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = featureName,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.Black,
-                            )
-                            Text(
-                                text = path,
-                                fontSize = 12.sp,
-                                color = Color(0xFF8E8E93),
-                            )
-                        }
-                        Switch(
-                            checked = isEnabled,
-                            onCheckedChange = { onTogglePartialBlock(path) },
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = Color(0xFF00C853),
-                                uncheckedTrackColor = Color(0xFFE0E0E5),
-                            ),
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -756,51 +596,3 @@ internal fun AppSelectionRow(
     }
 }
 
-// ── Partial section sub-row ───────────────────────────────────────────────────
-
-@Composable
-internal fun PartialSectionSubRow(
-    section: PartialBlockSection,
-    app: AppUsageInfo,
-    isSelected: Boolean,
-    onToggle: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggle)
-            .padding(start = 40.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        app.icon?.let { drawable ->
-            val painter = remember(drawable) {
-                BitmapPainter(drawable.toBitmap(36, 36).asImageBitmap())
-            }
-            Image(
-                painter = painter,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp),
-            )
-        } ?: Box(modifier = Modifier.size(36.dp))
-        Spacer(modifier = Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = section.displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
-            )
-            Text(
-                text = section.subRowDescription,
-                style = MaterialTheme.typography.bodySmall,
-                fontSize = 11.sp,
-                color = Color(0xFF8E8E93),
-            )
-        }
-        Checkbox(
-            checked = isSelected,
-            onCheckedChange = { onToggle() },
-        )
-    }
-    HorizontalDivider(modifier = Modifier.padding(start = 40.dp))
-}

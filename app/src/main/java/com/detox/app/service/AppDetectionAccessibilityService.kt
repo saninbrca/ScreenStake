@@ -9,7 +9,6 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import com.detox.app.domain.model.AdultDomains
-import com.detox.app.domain.model.PartialBlockSection
 import timber.log.Timber
 import java.util.Calendar
 
@@ -37,10 +36,6 @@ class AppDetectionAccessibilityService : AccessibilityService() {
     /** Prevents sending the user home on every single content-changed event. */
     private var lastAdultBlockTimeMs: Long = 0L
     private val adultBlockCooldownMs = 2_000L
-
-    // ── Partial section blocking throttle ────────────────────────────────────
-    private var lastPartialBlockTimeMs: Long = 0L
-    private val partialBlockCooldownMs = 1_000L
 
     companion object {
         private val BROWSER_PACKAGES = setOf(
@@ -160,9 +155,6 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             // app-open detection below (so browser tracking still works).
             if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         }
-
-        // Partial section blocking — checked for ALL packages on both event types
-        handlePartialBlock(event, packageName)
 
         // Secondary trigger: CONTENT_CHANGED from a tracked non-browser package whose foreground
         // identity changed. Handles Recents-based re-entry where STATE_CHANGED doesn't always fire
@@ -428,23 +420,6 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             }
         }
 
-        // ── Partial-block check (feature-level URL path) ──────────────────────
-        val partialBlockPaths = TrackedAppEventBus.partialBlockDomains.value
-        if (partialBlockPaths.isEmpty()) return
-
-        val matchedPath = partialBlockPaths.firstOrNull { path ->
-            url.contains(path, ignoreCase = true)
-        } ?: return
-
-        if (TrackedAppEventBus.freedDomainsToday.value.contains(matchedPath)) return
-
-        val now = System.currentTimeMillis()
-        if (matchedPath == lastBlockedDomain && now - lastBlockedTimeMs < 2_000L) return
-        lastBlockedDomain = matchedPath
-        lastBlockedTimeMs = now
-
-        Timber.d("Partial block detected: $url matches $matchedPath in browser=$packageName")
-        TrackedAppEventBus.emitUrlBlocked(matchedPath)
     }
 
     /**
@@ -544,58 +519,6 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         }
 
         return true
-    }
-
-    // ── Partial section blocking ──────────────────────────────────────────────
-
-    /**
-     * Checks whether the current accessibility event corresponds to a blocked native app section
-     * (e.g. Instagram Reels, YouTube Shorts). Runs for ALL packages — not only full-blocked ones.
-     * Uses only in-memory cache from [TrackedAppEventBus] — no DB queries.
-     */
-    private fun handlePartialBlock(event: AccessibilityEvent, packageName: String) {
-        val sections = TrackedAppEventBus.activePartialBlockSections.value
-            .filter { it.appPackage == packageName }
-        if (sections.isEmpty()) return
-
-        for (section in sections) {
-            if (isInBlockedSection(event, section)) {
-                val now = System.currentTimeMillis()
-                if (now - lastPartialBlockTimeMs < partialBlockCooldownMs) return
-                lastPartialBlockTimeMs = now
-                Timber.d("Partial block triggered: ${section.displayName} in $packageName")
-                // Stay in app — use BACK (never HOME) for partial blocks
-                performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                showPartialBlockToast(section.displayName)
-                return
-            }
-        }
-    }
-
-    /**
-     * Returns true when the accessibility event indicates the user is inside a blocked section.
-     * Detection order: activity class name (fastest) → view ID → content description.
-     */
-    private fun isInBlockedSection(event: AccessibilityEvent, section: PartialBlockSection): Boolean {
-        val className = event.className?.toString() ?: ""
-        if (section.activityNames.any { className.contains(it) }) return true
-
-        val source = event.source ?: return false
-        return try {
-            section.viewIds.any { viewId ->
-                source.findAccessibilityNodeInfosByViewId(viewId).isNotEmpty()
-            } || section.contentDescriptions.any { cd ->
-                (event.contentDescription?.toString() ?: "").contains(cd, ignoreCase = true)
-            }
-        } finally {
-            source.recycle()
-        }
-    }
-
-    private fun showPartialBlockToast(sectionName: String) {
-        Handler(Looper.getMainLooper()).post {
-            Toast.makeText(applicationContext, "🔒 $sectionName geblockt", Toast.LENGTH_SHORT).show()
-        }
     }
 
     override fun onInterrupt() {

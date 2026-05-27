@@ -356,6 +356,20 @@ private fun GroupDetailContent(
     })
     Timber.d("Leaderboard sorted: ${sorted.map { "${it.displayName}:${it.status}" }}")
 
+    // Standard competition ranking (1,1,3 — not 1,2,3) for active participants only.
+    // Failed participants get rank 0 (displayed as "—").
+    val rankMap: Map<String, Int> = buildMap {
+        val active = sorted.filter { it.status != ParticipantStatus.FAILED }
+        active.forEachIndexed { index, participant ->
+            val rank = if (index > 0 && participant.opensToday == active[index - 1].opensToday) {
+                this[active[index - 1].userId]!!
+            } else {
+                index + 1
+            }
+            put(participant.userId, rank)
+        }
+    }
+
     // Quit confirmation dialog (business logic unchanged)
     if (showQuitDialog) {
         val amountEuros = gc.buyInCents / 100
@@ -544,7 +558,7 @@ private fun GroupDetailContent(
                         border = BorderStroke(0.5.dp, CardBorder)
                     ) {
                         LeaderboardRow(
-                            rank = index + 1,
+                            rank = rankMap[participant.userId] ?: 0,
                             participant = participant,
                             gc = gc,
                             isCurrentUser = participant.userId == currentUserId
@@ -896,10 +910,10 @@ private fun LeaderboardRow(
 ) {
     val isFailed = participant.status == ParticipantStatus.FAILED
     val rankColor = when (rank) {
-        1 -> Color(0xFFFFD700)
-        2 -> Color(0xFFB0BEC5)
-        3 -> Color(0xFFCD7F32)
-        else -> TextSecondary
+        1 -> Color(0xFFFFD700) // gold
+        2 -> Color(0xFFC0C0C0) // silver
+        3 -> Color(0xFFCD7F32) // bronze
+        else -> Color(0xFF8E8E93) // grey
     }
     val displayName = participant.displayName
         .takeIf { it.isNotBlank() }
@@ -924,12 +938,12 @@ private fun LeaderboardRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Rank
+        // Rank — failed participants show "—", active show shared rank "#N"
         Text(
-            text = "#$rank",
+            text = if (isFailed) "—" else "#$rank",
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
-            color = rankColor,
+            color = if (isFailed) Color(0xFFC7C7CC) else rankColor,
             modifier = Modifier.width(32.dp)
         )
 

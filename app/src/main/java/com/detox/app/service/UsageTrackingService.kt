@@ -107,8 +107,6 @@ class UsageTrackingService : Service() {
                     .filter { it.isNotBlank() }
                     .toSet()
                 val domains = challenges.flatMap { it.blockedDomains }.toSet()
-                val partialPaths = challenges.flatMap { it.partialBlockDomains }.toSet()
-                val partialSections = challenges.flatMap { it.partialBlockSections }.distinct()
 
                 Timber.d(
                     "UsageTrackingService: updating packages=${packages.size} " +
@@ -120,8 +118,7 @@ class UsageTrackingService : Service() {
                 // busHasData check was always false and never protected anything).
                 // Fix: check Room directly. Only skip if ALL derived lists are empty AND Room
                 // still has active challenges. If Room is genuinely empty, allow the update.
-                val allNewDataIsEmpty = packages.isEmpty() && domains.isEmpty() &&
-                    partialPaths.isEmpty() && partialSections.isEmpty()
+                val allNewDataIsEmpty = packages.isEmpty() && domains.isEmpty()
                 if (allNewDataIsEmpty) {
                     val roomActive = challengeRepository.getActiveChallengesList()
                         .getOrElse { emptyList() }
@@ -139,12 +136,6 @@ class UsageTrackingService : Service() {
 
                 TrackedAppEventBus.updateBlockedDomains(domains)
                 Timber.d("Updated blocked domains: $domains")
-
-                TrackedAppEventBus.updatePartialBlockDomains(partialPaths)
-                Timber.d("Updated partial block paths: $partialPaths")
-
-                TrackedAppEventBus.updateActivePartialBlockSections(partialSections)
-                Timber.d("Updated partial block sections: ${partialSections.map { it.id }}")
 
                 // Notify AccessibilityService whether adult content blocking is needed.
                 // It reads this in-memory flag on every browser URL event — no Room query.

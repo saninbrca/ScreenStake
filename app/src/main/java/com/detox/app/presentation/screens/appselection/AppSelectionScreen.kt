@@ -2,7 +2,6 @@ package com.detox.app.presentation.screens.appselection
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,19 +28,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -52,17 +44,15 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
-import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.presentation.components.AppUsageCard
 
 @Composable
 fun AppSelectionScreen(
-    onAppsSelected: (packages: List<String>, primaryDisplayName: String, partialSections: List<String>) -> Unit,
+    onAppsSelected: (packages: List<String>, primaryDisplayName: String) -> Unit,
     viewModel: AppSelectionViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedPackages by viewModel.selectedPackages.collectAsStateWithLifecycle()
-    val selectedPartialSections by viewModel.selectedPartialSections.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(lifecycleOwner) {
@@ -155,17 +145,6 @@ fun AppSelectionScreen(
                                         conflictChallengeName = conflictName,
                                         onToggle = { viewModel.toggleSelection(app.packageName) }
                                     )
-                                    val sections = PartialBlockSection.BY_PACKAGE[app.packageName]
-                                    if (!sections.isNullOrEmpty()) {
-                                        sections.forEach { section ->
-                                            SelectablePartialSectionRow(
-                                                section = section,
-                                                app = app,
-                                                isSelected = selectedPartialSections.contains(section.id),
-                                                onToggle = { viewModel.togglePartialSection(section.id) },
-                                            )
-                                        }
-                                    }
                                 }
                             }
 
@@ -197,7 +176,7 @@ fun AppSelectionScreen(
                 val hasConflictSelected = selectedPackages.any {
                     successState.conflictingPackages.containsKey(it)
                 }
-                val hasSelection = selectedPackages.isNotEmpty() || selectedPartialSections.isNotEmpty()
+                val hasSelection = selectedPackages.isNotEmpty()
                 HorizontalDivider()
                 Column(modifier = Modifier.padding(16.dp)) {
                     Button(
@@ -206,7 +185,7 @@ fun AppSelectionScreen(
                             val primaryName = successState.trackableApps
                                 .firstOrNull { it.packageName == packages.firstOrNull() }
                                 ?.appName ?: packages.firstOrNull() ?: ""
-                            onAppsSelected(packages, primaryName, selectedPartialSections.toList())
+                            onAppsSelected(packages, primaryName)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = hasSelection && !hasConflictSelected
@@ -215,7 +194,7 @@ fun AppSelectionScreen(
                             if (!hasSelection)
                                 stringResource(R.string.app_selection_select_hint)
                             else
-                                stringResource(R.string.app_selection_next, selectedPackages.size + selectedPartialSections.size)
+                                stringResource(R.string.app_selection_next, selectedPackages.size)
                         )
                     }
                 }
@@ -304,50 +283,3 @@ private fun SelectableAppRow(
     }
 }
 
-@Composable
-private fun SelectablePartialSectionRow(
-    section: PartialBlockSection,
-    app: AppUsageInfo,
-    isSelected: Boolean,
-    onToggle: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggle)
-            .padding(start = 40.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        app.icon?.let { drawable ->
-            val painter = remember(drawable) {
-                BitmapPainter(drawable.toBitmap(36, 36).asImageBitmap())
-            }
-            Image(
-                painter = painter,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp),
-            )
-        } ?: Box(modifier = Modifier.size(36.dp))
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = section.displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = section.subRowDescription,
-                style = MaterialTheme.typography.bodySmall,
-                fontSize = 11.sp,
-                color = androidx.compose.ui.graphics.Color(0xFF8E8E93),
-            )
-        }
-        Checkbox(
-            checked = isSelected,
-            onCheckedChange = { onToggle() },
-        )
-    }
-    HorizontalDivider(modifier = Modifier.padding(start = 40.dp, end = 16.dp))
-}

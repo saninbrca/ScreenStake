@@ -9,7 +9,6 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
-import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -197,24 +196,8 @@ class SyncRepositoryImpl @Inject constructor(
                                 ?: emptyList()
                         }
                         .toSet()
-                    val paths = synced
-                        .flatMap { e ->
-                            e.partialBlockDomains
-                                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
-                                ?: emptyList()
-                        }
-                        .toSet()
-                    val sections = synced
-                        .flatMap { e ->
-                            e.partialBlockSections
-                                .split(",").filter { it.isNotBlank() }
-                                .mapNotNull { PartialBlockSection.fromId(it.trim()) }
-                        }
-                        .distinct()
                     TrackedAppEventBus.updateTrackedPackages(pkgs)
                     TrackedAppEventBus.updateBlockedDomains(doms)
-                    TrackedAppEventBus.updatePartialBlockDomains(paths)
-                    TrackedAppEventBus.updateActivePartialBlockSections(sections)
                     Timber.d(
                         "SyncRepository: post-sync bus update — " +
                             "packages=${pkgs.size} domains=${doms.size} from ${synced.size} challenges"

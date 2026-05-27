@@ -50,7 +50,6 @@ import com.detox.app.R
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
-import com.detox.app.presentation.screens.challengecreation.FEATURE_BLOCK_MAP
 import com.detox.app.presentation.util.pressScaleFeedback
 import com.detox.app.ui.theme.DetoxWarning
 
@@ -61,14 +60,6 @@ private val FaviconFallbackBg = Color(0xFFAEAEB2)
 // ── Website challenge helpers ─────────────────────────────────────────────────
 
 internal fun websiteDisplayName(blockedDomains: List<String>, partialBlockDomains: List<String>): String {
-    if (partialBlockDomains.isNotEmpty()) {
-        val names = partialBlockDomains.map { path -> FEATURE_BLOCK_MAP[path] ?: path }
-        return when (names.size) {
-            1 -> names[0]
-            2 -> "${names[0]} & ${names[1]}"
-            else -> "${names[0]} +${names.size - 1} weitere"
-        }
-    }
     if (blockedDomains.isNotEmpty()) {
         return when (blockedDomains.size) {
             1 -> blockedDomains[0]

@@ -1,6 +1,5 @@
 package com.detox.app.service
 
-import com.detox.app.domain.model.PartialBlockSection
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,21 +61,6 @@ object TrackedAppEventBus {
     val blockedDomains: StateFlow<Set<String>> = _blockedDomains.asStateFlow()
 
     /**
-     * URL path prefixes for feature-level (PARTIAL_BLOCK) blocking aggregated across challenges,
-     * e.g. "instagram.com/reels". Checked after full-domain matches in the AccessibilityService.
-     */
-    private val _partialBlockDomains = MutableStateFlow<Set<String>>(emptySet())
-    val partialBlockDomains: StateFlow<Set<String>> = _partialBlockDomains.asStateFlow()
-
-    /**
-     * Aggregated list of native in-app section blocks across all active challenges.
-     * Populated by [UsageTrackingService] when the challenge list changes.
-     * Read by [AppDetectionAccessibilityService] on every accessibility event — never queries DB.
-     */
-    private val _activePartialBlockSections = MutableStateFlow<List<PartialBlockSection>>(emptyList())
-    val activePartialBlockSections: StateFlow<List<PartialBlockSection>> = _activePartialBlockSections.asStateFlow()
-
-    /**
      * Fires when the AccessibilityService detects a blocked domain in a browser address bar.
      * Carries the matched domain string.
      */
@@ -121,14 +105,6 @@ object TrackedAppEventBus {
 
     fun updateBlockedDomains(domains: Set<String>) {
         _blockedDomains.value = domains
-    }
-
-    fun updatePartialBlockDomains(paths: Set<String>) {
-        _partialBlockDomains.value = paths
-    }
-
-    fun updateActivePartialBlockSections(sections: List<PartialBlockSection>) {
-        _activePartialBlockSections.value = sections
     }
 
     fun emitUrlBlocked(domain: String) {

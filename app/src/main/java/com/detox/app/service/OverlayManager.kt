@@ -31,6 +31,7 @@ import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -1599,15 +1600,19 @@ class OverlayManager @Inject constructor(
 
     /**
      * Returns (rank, totalParticipants) for the current user in a group challenge.
-     * Rank is 1-based (1 = fewest opens). Falls back to (1, 1) on any error.
+     * Uses standard competition ranking (1,1,3) — shared rank when opensToday is equal.
+     * Only active (non-failed) participants are counted.
+     * Falls back to (1, 1) on any error.
      */
     private suspend fun computeGroupRank(groupId: String): Pair<Int, Int> {
         return try {
             val gc = groupChallengeRepository.getGroupChallengeById(groupId) ?: return Pair(1, 1)
             val uid = firebaseAuthService.currentUserId() ?: return Pair(1, 1)
-            val sorted = gc.participants.sortedBy { it.opensToday }
-            val myIndex = sorted.indexOfFirst { it.userId == uid }
-            val rank = if (myIndex >= 0) myIndex + 1 else sorted.size + 1
+            val active = gc.participants.filter { it.status != ParticipantStatus.FAILED }
+            val sorted = active.sortedBy { it.opensToday }
+            val myParticipant = sorted.find { it.userId == uid }
+                ?: return Pair(1, sorted.size.coerceAtLeast(1))
+            val rank = sorted.indexOfFirst { it.opensToday == myParticipant.opensToday } + 1
             Pair(rank, sorted.size.coerceAtLeast(1))
         } catch (e: Exception) {
             Timber.e(e, "OverlayManager: computeGroupRank failed for $groupId")

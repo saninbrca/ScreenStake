@@ -15,6 +15,24 @@
 
 ## [Unreleased] — May 2026
 
+### Fixed — Group Challenge leaderboard shared rank (standard competition ranking)
+
+Leaderboard now uses standard competition ranking (1,1,3) instead of sequential (1,2,3).
+When multiple participants have the same `opensToday`, they receive the same rank.
+- `GroupChallengeDetailScreen.kt`: Pre-calculates `rankMap` (userId → rank) for active
+  participants before the leaderboard section. Failed participants get rank 0, displayed as "—".
+- `LeaderboardRow`: rank display now shows "—" for failed participants (was "#N").
+- Rank colors corrected: silver `#B0BEC5` → `#C0C0C0`; Platz 4+ `TextSecondary` → `#8E8E93`.
+- `OverlayManager.kt`: `computeGroupRank()` updated to use shared ranking — finds the index
+  of the first participant with the same `opensToday` as the user. Failed participants excluded
+  from rank calculation. `ParticipantStatus` import added.
+- Context header (`"👥 Platz #X von Y"`) now reflects correct shared rank.
+
+**Files changed:** `GroupChallengeDetailScreen.kt`, `OverlayManager.kt`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe changes.**
+
+---
+
 ### Changed — Permission warning banner redesign (DashboardScreen)
 - Replaced dark-red aggressive banner with clean iOS-style solid red card (#FF3B30).
 - Card: 12dp radius, 16dp padding, no elevation, no shadow.

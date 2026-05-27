@@ -219,8 +219,6 @@ fun GroupChallengeCreateScreen(
                         manualDomainInput = formState.manualDomainInput,
                         manualDomainError = formState.manualDomainError,
                         blockAdultContent = formState.blockAdultContent,
-                        partialBlockDomains = formState.partialBlockDomains,
-                        partialBlockSections = formState.partialBlockSections,
                         onSearchQueryChange = viewModel::updateSearchQuery,
                         onToggleApp = viewModel::toggleApp,
                         onReloadApps = viewModel::loadApps,
@@ -230,8 +228,6 @@ fun GroupChallengeCreateScreen(
                         onAddManualDomain = viewModel::addManualDomain,
                         onRemoveManualDomain = viewModel::removeManualDomain,
                         onBlockAdultContentChange = viewModel::updateBlockAdultContent,
-                        onTogglePartialBlock = viewModel::togglePartialBlockDomain,
-                        onTogglePartialSection = viewModel::togglePartialSection,
                     )
                     2 -> GStep2LimitType(
                         selected = formState.limitType,

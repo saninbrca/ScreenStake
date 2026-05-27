@@ -78,7 +78,6 @@ import com.detox.app.presentation.components.FaviconImage
 import com.detox.app.presentation.components.websiteDisplayName
 import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.presentation.screens.challengecreation.FEATURE_BLOCK_MAP
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.DailyLimitStatus
@@ -417,7 +416,7 @@ private fun ActiveChallengeContent(
                 // App / website name
                 val displayTitle = remember(challenge) {
                     if (challenge.blockingType == BlockingType.WEBSITE) {
-                        websiteDisplayName(challenge.blockedDomains, challenge.partialBlockDomains)
+                        websiteDisplayName(challenge.blockedDomains, emptyList())
                     } else {
                         challenge.appDisplayName
                     }
@@ -633,8 +632,7 @@ private fun ActiveChallengeContent(
         }
 
         // ── BLOCKIERTE WEBSITES section ───────────────────────────────────────
-        if (challenge.blockingType == BlockingType.WEBSITE &&
-            (challenge.blockedDomains.isNotEmpty() || challenge.partialBlockDomains.isNotEmpty())) {
+        if (challenge.blockingType == BlockingType.WEBSITE && challenge.blockedDomains.isNotEmpty()) {
 
             Text(
                 text = stringResource(R.string.detail_blocked_websites_section),
@@ -645,23 +643,7 @@ private fun ActiveChallengeContent(
             )
             DetoxCard {
                 Column {
-                    // Build list: features first, then domains not already covered by a feature
-                    val websiteItems = remember(challenge.partialBlockDomains, challenge.blockedDomains) {
-                        buildList {
-                            challenge.partialBlockDomains.forEach { path ->
-                                val domain = path.substringBefore('/')
-                                val pathSuffix = path.substringAfter('/', "")
-                                val name = FEATURE_BLOCK_MAP[path] ?: path
-                                add(Triple(domain, name, pathSuffix))
-                            }
-                            val featureDomains = challenge.partialBlockDomains
-                                .map { it.substringBefore('/') }.toSet()
-                            challenge.blockedDomains
-                                .filter { it !in featureDomains }
-                                .forEach { domain -> add(Triple(domain, domain, "")) }
-                        }
-                    }
-                    websiteItems.forEachIndexed { index, (domain, name, pathSuffix) ->
+                    challenge.blockedDomains.forEachIndexed { index, domain ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -673,23 +655,14 @@ private fun ActiveChallengeContent(
                                 modifier = Modifier.size(40.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = name,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight(600),
-                                    color = Color.Black
-                                )
-                                if (pathSuffix.isNotEmpty()) {
-                                    Text(
-                                        text = "/$pathSuffix",
-                                        fontSize = 12.sp,
-                                        color = TextSecondary
-                                    )
-                                }
-                            }
+                            Text(
+                                text = domain,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight(600),
+                                color = Color.Black
+                            )
                         }
-                        if (index < websiteItems.lastIndex) InfoDivider()
+                        if (index < challenge.blockedDomains.lastIndex) InfoDivider()
                     }
                 }
             }

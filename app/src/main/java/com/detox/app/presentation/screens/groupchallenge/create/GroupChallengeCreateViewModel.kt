@@ -43,8 +43,6 @@ data class GroupCreateFormState(
     val manualDomains: List<String> = emptyList(),
     val manualDomainError: String? = null,
     val blockAdultContent: Boolean = false,
-    val partialBlockDomains: Set<String> = emptySet(),
-    val partialBlockSections: Set<String> = emptySet(),
     // Step 2 — limit type
     val limitType: LimitType? = null,
     // Step 3 — limit value + duration
@@ -197,32 +195,12 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun updateBlockAdultContent(enabled: Boolean) =
         _formState.update { it.copy(blockAdultContent = enabled) }
 
-    fun togglePartialBlockDomain(path: String) {
-        _formState.update { s ->
-            val updated = if (s.partialBlockDomains.contains(path))
-                s.partialBlockDomains - path
-            else
-                s.partialBlockDomains + path
-            s.copy(partialBlockDomains = updated)
-        }
-    }
-
-    fun togglePartialSection(sectionId: String) {
-        _formState.update { s ->
-            val updated = if (sectionId in s.partialBlockSections)
-                s.partialBlockSections - sectionId
-            else
-                s.partialBlockSections + sectionId
-            s.copy(partialBlockSections = updated)
-        }
-    }
-
     fun computeBlockedDomains(): List<String> {
         val s = _formState.value
         val fromToggles = s.domainToggles
             .filter { it.value }
             .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
-        return (fromToggles + s.manualDomains + s.partialBlockDomains).distinct()
+        return (fromToggles + s.manualDomains).distinct()
     }
 
     // ── Step 2 — limit type ─────────────────────────────────────────────────────
@@ -280,8 +258,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun canGoNext(): Boolean {
         val s = _formState.value
         return when (s.currentStep) {
-            1 -> s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() ||
-                        s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
+            1 -> s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() || s.blockAdultContent
             2 -> s.limitType != null
             3 -> s.durationError == null && s.durationDays >= 3
             4 -> s.buyInEuros >= 10
@@ -294,8 +271,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
         val s = _formState.value
         return when (s.currentStep) {
             1 -> {
-                val hasSelection = s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() ||
-                        s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
+                val hasSelection = s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() || s.blockAdultContent
                 if (!hasSelection) {
                     _formState.update { it.copy(packageNamesError = "Select at least one app or website") }
                 }

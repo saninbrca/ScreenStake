@@ -46,7 +46,6 @@
     <string name="app_selection_already_in_challenge">Already in an active challenge: \'%1$s\'</string>
     <string name="app_selection_search_placeholder">Apps suchen…</string>
     <string name="app_selection_domain_input_hint">z.B. instagram.com</string>
-    <string name="app_selection_feature_block_title">SPEZIFISCHE FEATURES SPERREN</string>
     <string name="app_selection_adult_content_block">Adult Content sperren</string>
     <string name="app_selection_adult_content_desc">Blockiert alle 18+ Websites</string>
 

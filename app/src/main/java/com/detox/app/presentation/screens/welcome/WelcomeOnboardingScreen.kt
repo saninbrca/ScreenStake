@@ -956,7 +956,7 @@ private fun RotatingStatCard() {
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(3000)
+            delay(2000)
             currentStatIndex = (currentStatIndex + 1) % 3
         }
     }

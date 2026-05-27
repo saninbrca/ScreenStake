@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,8 +30,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -38,13 +39,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
@@ -60,12 +61,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import com.detox.app.presentation.util.pressScaleFeedback
-import com.detox.app.util.HapticManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -73,11 +75,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.compose.ui.res.stringResource
 import com.detox.app.R
 import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
+import com.detox.app.presentation.util.pressScaleFeedback
+import com.detox.app.util.HapticManager
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import com.stripe.android.paymentsheet.rememberPaymentSheet
@@ -86,14 +89,38 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Placeholder for APP_DOMAIN_MAP
-// In a real application, this would likely be loaded from a more central location
-// or a dedicated data source. For now, we'll define a simple map to resolve the compilation errors.
+// ── Design tokens ─────────────────────────────────────────────────────────────
+
+private val GWizBg          = Color(0xFFF2F2F7)
+private val GCardBg         = Color(0xFFFFFFFF)
+private val GCardBorder     = Color(0x0F000000)
+private val GGreenPrimary   = Color(0xFF00C853)
+private val GGreenLight     = Color(0xFFE8F8EF)
+private val GGreenSelected  = Color(0xFFF0FDF4)
+private val GTextPrimary    = Color(0xFF000000)
+private val GTextSecondary  = Color(0xFF8E8E93)
+private val GOrangeLight    = Color(0xFFFFF0E8)
+private val GBlueLight      = Color(0xFFE8F0FF)
+private val GPurpleLight    = Color(0xFFEEF0FF)
+private val GGreenBadgeText = Color(0xFF1E7A3C)
+private val GOrangeBadgeText= Color(0xFFC05A00)
+private val GOrangeIcon     = Color(0xFFFF6B35)
+private val GBlueIcon       = Color(0xFF2979FF)
+private val GPurpleIcon     = Color(0xFF7B61FF)
+private val GDisabledBg     = Color(0xFFE0E0E5)
+private val GDisabledText   = Color(0xFF8E8E93)
+private val GDividerColor   = Color(0xFFF2F2F7)
+private val GCardShape      = RoundedCornerShape(16.dp)
+private val GBtnShape       = RoundedCornerShape(14.dp)
+
+// Placeholder — keeps existing review logic working
 val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
     "Social Media" to listOf("facebook.com", "instagram.com", "twitter.com"),
     "Video Streaming" to listOf("youtube.com", "netflix.com"),
-    "News" to listOf("nytimes.com", "cnn.com")
+    "News" to listOf("nytimes.com", "cnn.com"),
 )
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,9 +166,7 @@ fun GroupChallengeCreateScreen(
                     configuration = PaymentSheet.Configuration(merchantDisplayName = "Detox App"),
                 )
             }
-            is GroupCreateUiState.Created -> {
-                onCreated(s.groupId)
-            }
+            is GroupCreateUiState.Created -> onCreated(s.groupId)
             is GroupCreateUiState.Error -> {
                 snackbarHostState.showSnackbar(s.message)
                 viewModel.clearError()
@@ -151,34 +176,32 @@ fun GroupChallengeCreateScreen(
     }
 
     BackHandler {
-        if (formState.currentStep == 1) onBack()
-        else viewModel.goBack()
+        if (formState.currentStep == 1) onBack() else viewModel.goBack()
     }
 
     val isLoading = uiState is GroupCreateUiState.Loading || uiState is GroupCreateUiState.AwaitingPayment
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        color = GWizBg,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             SnackbarHost(snackbarHostState)
 
-            WizardHeader(
+            GWizardHeader(
                 currentStep = formState.currentStep,
                 totalSteps = GROUP_WIZARD_TOTAL_STEPS,
                 onBack = {
-                    if (formState.currentStep == 1) onBack()
-                    else viewModel.goBack()
+                    if (formState.currentStep == 1) onBack() else viewModel.goBack()
                 },
             )
 
             AnimatedContent(
                 targetState = formState.currentStep,
                 transitionSpec = {
-                    val direction = if (targetState > initialState) 1 else -1
-                    (slideInHorizontally { it * direction } + fadeIn()) togetherWith
-                            (slideOutHorizontally { -it * direction } + fadeOut())
+                    val dir = if (targetState > initialState) 1 else -1
+                    (slideInHorizontally { it * dir } + fadeIn()) togetherWith
+                            (slideOutHorizontally { -it * dir } + fadeOut())
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -210,11 +233,11 @@ fun GroupChallengeCreateScreen(
                         onTogglePartialBlock = viewModel::togglePartialBlockDomain,
                         onTogglePartialSection = viewModel::togglePartialSection,
                     )
-                    2 -> Step2LimitType(
+                    2 -> GStep2LimitType(
                         selected = formState.limitType,
                         onSelect = viewModel::setLimitType,
                     )
-                    3 -> Step3LimitAndDuration(
+                    3 -> GStep3LimitAndDuration(
                         formState = formState,
                         onUpdateLimitMinutes = viewModel::setLimitValueMinutes,
                         onUpdateLimitSessions = viewModel::setLimitValueSessions,
@@ -222,11 +245,11 @@ fun GroupChallengeCreateScreen(
                         onUpdateDailyBudget = viewModel::setDailyBudgetMinutes,
                         onUpdateDuration = viewModel::setDurationDays,
                     )
-                    4 -> Step4BuyIn(
+                    4 -> GStep4BuyIn(
                         buyIn = formState.buyInEuros,
                         onBuyInChange = viewModel::setBuyInEuros,
                     )
-                    5 -> Step5StartDateAndBonus(
+                    5 -> GStep5StartDateAndBonus(
                         startDateEnabled = formState.startDateEnabled,
                         startDateMs = formState.startDateMs,
                         startDateError = formState.startDateError,
@@ -235,7 +258,7 @@ fun GroupChallengeCreateScreen(
                         onStartDateChange = viewModel::setStartDate,
                         onBonusToggle = viewModel::setBonusEnabled,
                     )
-                    6 -> Step6Review(
+                    6 -> GStep6Review(
                         formState = formState,
                         isLoading = isLoading,
                         onCreateChallenge = viewModel::createChallenge,
@@ -245,17 +268,32 @@ fun GroupChallengeCreateScreen(
 
             if (formState.currentStep < GROUP_WIZARD_TOTAL_STEPS) {
                 val context = LocalContext.current
-                HorizontalDivider()
-                Box(modifier = Modifier.padding(16.dp)) {
+                HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    val enabled = viewModel.canGoNext() && !isLoading
                     Button(
                         onClick = {
                             HapticManager.light(context)
                             viewModel.goNext()
                         },
-                        modifier = Modifier.fillMaxWidth().pressScaleFeedback(),
-                        enabled = viewModel.canGoNext() && !isLoading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .pressScaleFeedback(),
+                        enabled = enabled,
+                        shape = GBtnShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GGreenPrimary,
+                            contentColor = Color.White,
+                            disabledContainerColor = GDisabledBg,
+                            disabledContentColor = GDisabledText,
+                        ),
                     ) {
-                        Text("Next")
+                        Text(
+                            text = stringResource(R.string.wizard_btn_next),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             }
@@ -266,11 +304,12 @@ fun GroupChallengeCreateScreen(
 // ── Wizard header ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun WizardHeader(
+private fun GWizardHeader(
     currentStep: Int,
     totalSteps: Int,
     onBack: () -> Unit,
 ) {
+    val progress = currentStep.toFloat() / totalSteps.toFloat()
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -279,23 +318,28 @@ private fun WizardHeader(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Zurück",
+                    tint = GTextPrimary,
+                )
             }
             Text(
-                text = "Step $currentStep of $totalSteps",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "Schritt $currentStep von $totalSteps",
+                fontSize = 13.sp,
+                color = GTextSecondary,
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.width(48.dp))
         }
         LinearProgressIndicator(
-            progress = { currentStep.toFloat() / totalSteps.toFloat() },
+            progress = { progress },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp),
-            color = MaterialTheme.colorScheme.primary,
+                .height(2.dp),
+            color = GGreenPrimary,
+            trackColor = GDisabledBg,
         )
     }
 }
@@ -303,7 +347,7 @@ private fun WizardHeader(
 // ── Step 2: Limit type ────────────────────────────────────────────────────────
 
 @Composable
-private fun Step2LimitType(
+private fun GStep2LimitType(
     selected: LimitType?,
     onSelect: (LimitType) -> Unit,
 ) {
@@ -312,38 +356,42 @@ private fun Step2LimitType(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Set a limit type",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.wizard_limit_type_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = GTextPrimary,
         )
         Text(
-            text = "How do you want to restrict the group?",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = stringResource(R.string.group_wizard_limit_type_subtitle),
+            fontSize = 14.sp,
+            color = GTextSecondary,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        GroupLimitTypeCard(
-            emoji = "⏱",
-            title = "Time Limit",
-            description = "Block after X minutes per day",
+        GGroupLimitTypeCard(
+            iconBg = GOrangeLight,
+            iconContent = { Text("⏱", fontSize = 18.sp) },
+            title = stringResource(R.string.wizard_limit_time_title),
+            description = stringResource(R.string.wizard_limit_time_desc),
             isSelected = selected == LimitType.TIME,
             onClick = { onSelect(LimitType.TIME) },
         )
-        GroupLimitTypeCard(
-            emoji = "🔢",
-            title = "Session Limit",
-            description = "Block after X conscious opens per day",
+        GGroupLimitTypeCard(
+            iconBg = GBlueLight,
+            iconContent = { Text("🔢", fontSize = 18.sp) },
+            title = stringResource(R.string.wizard_limit_sessions_title),
+            description = stringResource(R.string.wizard_limit_sessions_desc),
             isSelected = selected == LimitType.SESSIONS,
             onClick = { onSelect(LimitType.SESSIONS) },
         )
-        GroupLimitTypeCard(
-            emoji = "💰",
-            title = "Daily Budget",
-            description = "Split your time across the day",
+        GGroupLimitTypeCard(
+            iconBg = GPurpleLight,
+            iconContent = { Text("💰", fontSize = 18.sp) },
+            title = stringResource(R.string.wizard_limit_budget_title),
+            description = stringResource(R.string.wizard_limit_budget_desc),
             isSelected = selected == LimitType.TIME_BUDGET,
             onClick = { onSelect(LimitType.TIME_BUDGET) },
         )
@@ -351,56 +399,66 @@ private fun Step2LimitType(
 }
 
 @Composable
-private fun GroupLimitTypeCard(
-    emoji: String,
+private fun GGroupLimitTypeCard(
+    iconBg: Color,
+    iconContent: @Composable () -> Unit,
     title: String,
     description: String,
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.outlineVariant
+    val borderColor = if (isSelected) GGreenPrimary else GCardBorder
+    val borderWidth = if (isSelected) 2.dp else 0.5.dp
+    val bgColor = if (isSelected) GGreenSelected else GCardBg
 
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .border(width = 2.dp, color = borderColor, shape = MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        elevation = CardDefaults.cardElevation(2.dp),
+            .clip(GCardShape)
+            .background(bgColor)
+            .border(borderWidth, borderColor, GCardShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = emoji, fontSize = 24.sp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iconBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                iconContent()
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = GTextPrimary,
                 )
                 Text(
                     text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 13.sp,
+                    color = GTextSecondary,
                 )
             }
             if (isSelected) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
+                    tint = GGreenPrimary,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(50))
+                        .border(1.5.dp, GTextSecondary, RoundedCornerShape(50)),
                 )
             }
         }
@@ -410,7 +468,7 @@ private fun GroupLimitTypeCard(
 // ── Step 3: Limit value + duration ────────────────────────────────────────────
 
 @Composable
-private fun Step3LimitAndDuration(
+private fun GStep3LimitAndDuration(
     formState: GroupCreateFormState,
     onUpdateLimitMinutes: (Int) -> Unit,
     onUpdateLimitSessions: (Int) -> Unit,
@@ -426,72 +484,92 @@ private fun Step3LimitAndDuration(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Set your limit",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.wizard_set_limit_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = GTextPrimary,
         )
+        Spacer(modifier = Modifier.height(4.dp))
 
-        when (formState.limitType) {
-            LimitType.TIME -> {
-                DetoxHorizontalPicker(
-                    values = (1..480).toList(),
-                    selectedValue = formState.limitValueMinutes,
-                    onValueChange = onUpdateLimitMinutes,
-                    unit = "Minuten pro Tag",
-                )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(GCardShape)
+                .background(GCardBg)
+                .border(0.5.dp, GCardBorder, GCardShape)
+                .padding(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (formState.limitType) {
+                    LimitType.TIME -> DetoxHorizontalPicker(
+                        values = (1..480).toList(),
+                        selectedValue = formState.limitValueMinutes,
+                        onValueChange = onUpdateLimitMinutes,
+                        unit = stringResource(R.string.wizard_set_limit_minutes_unit),
+                    )
+                    LimitType.SESSIONS -> {
+                        DetoxHorizontalPicker(
+                            values = (1..50).toList(),
+                            selectedValue = formState.limitValueSessions,
+                            onValueChange = onUpdateLimitSessions,
+                            unit = stringResource(R.string.wizard_set_limit_opens_unit),
+                        )
+                        HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                        Text(
+                            text = stringResource(R.string.wizard_set_limit_session_label),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = GTextSecondary,
+                        )
+                        DetoxHorizontalPicker(
+                            values = (1..120).toList(),
+                            selectedValue = formState.sessionMinutes,
+                            onValueChange = onUpdateSessionDuration,
+                            unit = stringResource(R.string.wizard_set_limit_session_unit),
+                        )
+                    }
+                    LimitType.TIME_BUDGET -> DetoxHorizontalPicker(
+                        values = (1..480).toList(),
+                        selectedValue = formState.dailyBudgetMinutes,
+                        onValueChange = onUpdateDailyBudget,
+                        unit = stringResource(R.string.wizard_set_limit_budget_unit),
+                    )
+                    else -> Unit
+                }
             }
-            LimitType.SESSIONS -> {
-                DetoxHorizontalPicker(
-                    values = (1..50).toList(),
-                    selectedValue = formState.limitValueSessions,
-                    onValueChange = onUpdateLimitSessions,
-                    unit = "Öffnungen pro Tag",
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "How long per session?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                DetoxHorizontalPicker(
-                    values = (1..120).toList(),
-                    selectedValue = formState.sessionMinutes,
-                    onValueChange = onUpdateSessionDuration,
-                    unit = "Minuten pro Session",
-                )
-            }
-            LimitType.TIME_BUDGET -> {
-                DetoxHorizontalPicker(
-                    values = (1..480).toList(),
-                    selectedValue = formState.dailyBudgetMinutes,
-                    onValueChange = onUpdateDailyBudget,
-                    unit = "Minuten Tagesbudget",
-                )
-            }
-            else -> Unit
         }
 
-        HorizontalDivider()
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Duration",
-            style = MaterialTheme.typography.bodyMedium,
+            text = stringResource(R.string.wizard_duration_title),
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
+            color = GTextPrimary,
         )
-        DetoxHorizontalPicker(
-            values = (3..365).toList(),
-            selectedValue = formState.durationDays,
-            onValueChange = onUpdateDuration,
-            unit = "Tage",
-        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(GCardShape)
+                .background(GCardBg)
+                .border(0.5.dp, GCardBorder, GCardShape)
+                .padding(16.dp),
+        ) {
+            DetoxHorizontalPicker(
+                values = (3..365).toList(),
+                selectedValue = formState.durationDays,
+                onValueChange = onUpdateDuration,
+                unit = "Tage",
+            )
+        }
     }
 }
 
 // ── Step 4: Buy-in ────────────────────────────────────────────────────────────
 
 @Composable
-private fun Step4BuyIn(
+private fun GStep4BuyIn(
     buyIn: Int,
     onBuyInChange: (Int) -> Unit,
 ) {
@@ -505,28 +583,53 @@ private fun Step4BuyIn(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Buy-In Per Player",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.group_wizard_buyin_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = GTextPrimary,
         )
         Text(
-            text = "How much does each player pay to join?",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = stringResource(R.string.group_wizard_buyin_subtitle),
+            fontSize = 14.sp,
+            color = GTextSecondary,
         )
         Spacer(modifier = Modifier.height(8.dp))
-        DetoxHorizontalPicker(
-            values = (10..500).toList(),
-            selectedValue = buyIn,
-            onValueChange = onBuyInChange,
-            unit = "Euro pro Spieler",
-        )
-        Text(
-            text = "Total pot with 20 players: €$estimatedPot",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(GCardShape)
+                .background(GCardBg)
+                .border(0.5.dp, GCardBorder, GCardShape)
+                .padding(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DetoxHorizontalPicker(
+                    values = (10..500).toList(),
+                    selectedValue = buyIn,
+                    onValueChange = onBuyInChange,
+                    unit = stringResource(R.string.group_wizard_buyin_unit),
+                )
+                HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Pot-Schätzung (20 Spieler)",
+                        fontSize = 13.sp,
+                        color = GTextSecondary,
+                    )
+                    Text(
+                        text = "€$estimatedPot",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GGreenPrimary,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -534,7 +637,7 @@ private fun Step4BuyIn(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Step5StartDateAndBonus(
+private fun GStep5StartDateAndBonus(
     startDateEnabled: Boolean,
     startDateMs: Long,
     startDateError: String?,
@@ -545,7 +648,7 @@ private fun Step5StartDateAndBonus(
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
-    val sdf = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+    val sdf = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -554,10 +657,12 @@ private fun Step5StartDateAndBonus(
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let { onStartDateChange(it) }
                     showDatePicker = false
-                }) { Text("OK") }
+                }) { Text("OK", color = GGreenPrimary) }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text(stringResource(R.string.dialog_cancel), color = GTextSecondary)
+                }
             },
         ) {
             DatePicker(state = datePickerState)
@@ -569,113 +674,173 @@ private fun Step5StartDateAndBonus(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Start date & bonus",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.group_wizard_start_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = GTextPrimary,
         )
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // ── Set start date toggle ────────────────────────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+        // ── Start date card ─────────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(GCardShape)
+                .background(GCardBg)
+                .border(0.5.dp, GCardBorder, GCardShape),
         ) {
-            Text(
-                text = "Set start date",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Switch(checked = startDateEnabled, onCheckedChange = onStartDateEnabledToggle)
-        }
-
-        if (!startDateEnabled) {
-            Text(
-                text = "Challenge will start manually — tap \"Start Challenge\" in the group screen when everyone has joined.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        if (startDateEnabled) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Start Date",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                OutlinedButton(
-                    onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth(),
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                     Text(
-                        if (startDateMs > 0L) sdf.format(Date(startDateMs))
-                        else "Pick a date…"
+                        text = stringResource(R.string.group_wizard_start_date_label),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = GTextPrimary,
+                    )
+                    Switch(
+                        checked = startDateEnabled,
+                        onCheckedChange = onStartDateEnabledToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = GGreenPrimary,
+                        ),
                     )
                 }
-                if (startDateError != null) {
+
+                if (!startDateEnabled) {
+                    HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
                     Text(
-                        text = startDateError,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        text = stringResource(R.string.group_wizard_start_manual_desc),
+                        fontSize = 13.sp,
+                        color = GTextSecondary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                 }
-            }
-        }
 
-        HorizontalDivider()
-
-        val tooltipState = rememberTooltipState()
-        val tooltipScope = rememberCoroutineScope()
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = "Bonus for winner 🏆",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                TooltipBox(
-                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                    tooltip = {
-                        PlainTooltip {
-                            Text("Best performer gets 10% extra from the pot. App takes 5% fee.")
-                        }
-                    },
-                    state = tooltipState,
-                ) {
-                    IconButton(
-                        onClick = { tooltipScope.launch { tooltipState.show() } },
-                        modifier = Modifier.size(28.dp),
+                if (startDateEnabled) {
+                    HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = "Bonus info",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text(
+                            text = stringResource(R.string.group_wizard_start_date_section),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = GTextSecondary,
                         )
+                        OutlinedButton(
+                            onClick = { showDatePicker = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(end = 4.dp),
+                                tint = GGreenPrimary,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (startDateMs > 0L) sdf.format(Date(startDateMs))
+                                else stringResource(R.string.group_wizard_start_date_placeholder),
+                                color = if (startDateMs > 0L) GTextPrimary else GTextSecondary,
+                            )
+                        }
+                        if (startDateError != null) {
+                            Text(
+                                text = startDateError,
+                                fontSize = 12.sp,
+                                color = Color(0xFFFF3B30),
+                            )
+                        }
                     }
                 }
             }
-            Switch(checked = bonusEnabled, onCheckedChange = onBonusToggle)
         }
 
-        if (bonusEnabled) {
-            Text(
-                text = "The participant with the best performance receives an extra 10% of the total pot. The app takes a 5% fee.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        // ── Bonus card ──────────────────────────────────────────────────────
+        val tooltipState = rememberTooltipState()
+        val tooltipScope = rememberCoroutineScope()
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(GCardShape)
+                .background(GCardBg)
+                .border(0.5.dp, GCardBorder, GCardShape),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.group_wizard_bonus_label),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = GTextPrimary,
+                        )
+                        TooltipBox(
+                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                            tooltip = {
+                                PlainTooltip {
+                                    Text(stringResource(R.string.group_wizard_bonus_tooltip))
+                                }
+                            },
+                            state = tooltipState,
+                        ) {
+                            IconButton(
+                                onClick = { tooltipScope.launch { tooltipState.show() } },
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = GTextSecondary,
+                                )
+                            }
+                        }
+                    }
+                    Switch(
+                        checked = bonusEnabled,
+                        onCheckedChange = onBonusToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = GGreenPrimary,
+                        ),
+                    )
+                }
+
+                if (bonusEnabled) {
+                    HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                    Text(
+                        text = stringResource(R.string.group_wizard_bonus_desc),
+                        fontSize = 13.sp,
+                        color = GTextSecondary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -683,12 +848,12 @@ private fun Step5StartDateAndBonus(
 // ── Step 6: Review & create ───────────────────────────────────────────────────
 
 @Composable
-private fun Step6Review(
+private fun GStep6Review(
     formState: GroupCreateFormState,
     isLoading: Boolean,
     onCreateChallenge: () -> Unit,
 ) {
-    val sdf = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+    val sdf = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
     val estimatedPot = formState.buyInEuros * 20
 
     Column(
@@ -699,112 +864,151 @@ private fun Step6Review(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Review & Create",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.group_wizard_review_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = GTextPrimary,
         )
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            elevation = CardDefaults.cardElevation(2.dp),
+        // ── Summary card ────────────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(GCardShape)
+                .background(GCardBg)
+                .border(0.5.dp, GCardBorder, GCardShape),
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            Column {
+                GSummaryDividerRow(
+                    label = stringResource(R.string.wizard_review_mode_label),
+                    value = stringResource(R.string.wizard_review_mode_group),
+                    isFirst = true,
+                )
                 val appSummary = if (formState.packageNames.size == 1) formState.displayName
-                    else "${formState.displayName} +${formState.packageNames.size - 1} more"
-                ReviewRow("Apps", appSummary)
-
+                    else "${formState.displayName} +${formState.packageNames.size - 1}"
+                GSummaryDividerRow(
+                    label = stringResource(R.string.wizard_review_apps_label),
+                    value = appSummary,
+                )
                 val checkedDomains = formState.domainToggles.entries
                     .filter { it.value }
                     .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
                 val allBlockedDomains = (checkedDomains + formState.manualDomains).distinct()
                 if (allBlockedDomains.isNotEmpty()) {
-                    ReviewRow("+ Websites", allBlockedDomains.joinToString(", "))
+                    GSummaryDividerRow(
+                        label = "+ Websites",
+                        value = allBlockedDomains.take(3).joinToString(", ") +
+                                if (allBlockedDomains.size > 3) " +${allBlockedDomains.size - 3}" else "",
+                    )
                 }
-
                 val limitSummary = when (formState.limitType) {
-                    LimitType.TIME -> "⏱ ${formState.limitValueMinutes} min/day"
-                    LimitType.SESSIONS -> "🔢 ${formState.limitValueSessions}× · ${formState.sessionMinutes} min each"
-                    LimitType.TIME_BUDGET -> "💰 ${formState.dailyBudgetMinutes} min budget/day"
+                    LimitType.TIME -> "${formState.limitValueMinutes} Min / Tag"
+                    LimitType.SESSIONS -> "${formState.limitValueSessions} Öffnungen / Tag"
+                    LimitType.TIME_BUDGET -> "${formState.dailyBudgetMinutes} Min Budget"
                     else -> "—"
                 }
-                ReviewRow("Limit", limitSummary)
-                ReviewRow("Duration", "${formState.durationDays} days")
-                ReviewRow("Buy-in", "€${formState.buyInEuros} per player")
-                ReviewRow(
-                    "Start",
-                    if (formState.startDateEnabled && formState.startDateMs > 0L)
-                        sdf.format(Date(formState.startDateMs))
-                    else
-                        "Manual start 🚀"
+                GSummaryDividerRow(
+                    label = stringResource(R.string.wizard_review_limit_label),
+                    value = limitSummary,
                 )
-                ReviewRow("Winner bonus", if (formState.bonusEnabled) "Enabled (10% of pot)" else "Disabled")
-                ReviewRow("Max players", "20")
-
-                HorizontalDivider()
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "Estimated pot:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "Up to €$estimatedPot with 20 players",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                GSummaryDividerRow(
+                    label = stringResource(R.string.wizard_review_duration_label),
+                    value = "${formState.durationDays} Tage",
+                )
+                GSummaryDividerRow(
+                    label = stringResource(R.string.group_wizard_review_einsatz_label),
+                    value = stringResource(R.string.group_wizard_review_einsatz_value, formState.buyInEuros),
+                )
+                GSummaryDividerRow(
+                    label = stringResource(R.string.group_wizard_review_start_label),
+                    value = if (formState.startDateEnabled && formState.startDateMs > 0L)
+                        sdf.format(Date(formState.startDateMs))
+                    else stringResource(R.string.group_wizard_review_start_manual),
+                )
+                GSummaryDividerRow(
+                    label = stringResource(R.string.group_wizard_review_bonus_label),
+                    value = if (formState.bonusEnabled)
+                        stringResource(R.string.group_wizard_review_bonus_on)
+                    else stringResource(R.string.group_wizard_review_bonus_off),
+                )
+                GSummaryDividerRow(
+                    label = stringResource(R.string.group_wizard_review_max_players_label),
+                    value = "20",
+                )
+                GSummaryDividerRow(
+                    label = stringResource(R.string.group_wizard_review_pot_label),
+                    value = stringResource(R.string.group_wizard_review_pot_value, estimatedPot),
+                    valueColor = GGreenPrimary,
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
+        // ── Create button ───────────────────────────────────────────────────
         val context = LocalContext.current
         Button(
             onClick = {
                 HapticManager.light(context)
                 onCreateChallenge()
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(54.dp),
             enabled = !isLoading,
+            shape = GBtnShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = GGreenPrimary,
+                contentColor = Color.White,
+                disabledContainerColor = GDisabledBg,
+                disabledContentColor = GDisabledText,
+            ),
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = Color.White,
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
                 )
             } else {
-                Text("Create Group Challenge")
+                Text(
+                    text = stringResource(R.string.group_wizard_create_btn),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
 }
 
+// ── Shared summary row with divider ──────────────────────────────────────────
+
 @Composable
-private fun ReviewRow(label: String, value: String) {
+private fun GSummaryDividerRow(
+    label: String,
+    value: String,
+    valueColor: Color = GTextPrimary,
+    isFirst: Boolean = false,
+) {
+    if (!isFirst) {
+        HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+    }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            color = GTextSecondary,
+            modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
+            color = valueColor,
         )
     }
 }

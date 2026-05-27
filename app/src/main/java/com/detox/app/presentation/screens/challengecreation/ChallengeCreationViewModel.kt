@@ -393,12 +393,9 @@ class ChallengeCreationViewModel @Inject constructor(
         val conflicts = _appListState.value.conflictingPackages
         return when (s.currentStep) {
             1 -> s.selectedMode != null
-            2 -> when (s.activeTab) {
-                0 -> (s.selectedApps.isNotEmpty() || s.partialBlockSections.isNotEmpty()) &&
+            2 -> (s.selectedApps.isNotEmpty() || s.partialBlockSections.isNotEmpty() ||
+                        s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()) &&
                         s.selectedApps.none { conflicts.containsKey(it) }
-                1 -> s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
-                else -> false
-            }
             3 -> s.limitType != null
             4 -> when (s.limitType) {
                 LimitType.TIME        -> s.limitMinutesError == null

@@ -7,10 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,34 +18,36 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -58,14 +59,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import com.detox.app.presentation.util.pressScaleFeedback
-import com.detox.app.util.HapticManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -73,18 +73,44 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.compose.ui.res.stringResource
 import com.detox.app.R
-import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
-import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.TimeSpinnerPicker
+import com.detox.app.presentation.util.pressScaleFeedback
+import com.detox.app.util.HapticManager
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import com.stripe.android.paymentsheet.rememberPaymentSheet
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+
+private val WizBg         = Color(0xFFF2F2F7)
+private val CardBg        = Color(0xFFFFFFFF)
+private val CardBorder    = Color(0x0F000000)   // rgba(0,0,0,0.06)
+private val GreenPrimary  = Color(0xFF00C853)
+private val GreenLight    = Color(0xFFE8F8EF)
+private val GreenSelected = Color(0xFFF0FDF4)
+private val TextPrimary   = Color(0xFF000000)
+private val TextSecondary = Color(0xFF8E8E93)
+private val TextHint      = Color(0xFFC7C7CC)
+private val OrangeLight   = Color(0xFFFFF0E8)
+private val PurpleLight   = Color(0xFFEEF0FF)
+private val BlueLight     = Color(0xFFE8F0FF)
+private val GreenBadgeText   = Color(0xFF1E7A3C)
+private val OrangeBadgeText  = Color(0xFFC05A00)
+private val OrangeIcon       = Color(0xFFFF6B35)
+private val PurpleIcon       = Color(0xFF7B61FF)
+private val BlueIcon         = Color(0xFF2979FF)
+private val DisabledBg    = Color(0xFFE0E0E5)
+private val DisabledText  = Color(0xFF8E8E93)
+private val DividerColor  = Color(0xFFF2F2F7)
+
+private val CardShape   = RoundedCornerShape(16.dp)
+private val BtnShape    = RoundedCornerShape(14.dp)
+private val PillShape   = RoundedCornerShape(999.dp)
 
 // ── Screen entry point ────────────────────────────────────────────────────────
 
@@ -137,16 +163,16 @@ fun ChallengeCreationScreen(
     if (showDiscardDialog) {
         AlertDialog(
             onDismissRequest = { showDiscardDialog = false },
-            title = { Text("Discard challenge?") },
-            text = { Text("Your progress will be lost.") },
+            title = { Text("Abbrechen?") },
+            text = { Text("Dein Fortschritt geht verloren.") },
             confirmButton = {
                 TextButton(onClick = { showDiscardDialog = false; onDiscarded() }) {
-                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                    Text("Verwerfen", color = Color(0xFFFF3B30))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDiscardDialog = false }) {
-                    Text("Keep editing")
+                    Text("Weiter bearbeiten")
                 }
             },
         )
@@ -154,7 +180,7 @@ fun ChallengeCreationScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        color = WizBg,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
@@ -228,6 +254,7 @@ fun ChallengeCreationScreen(
                         onEndChange = viewModel::updateScheduleEnd,
                         onToggleDay = viewModel::toggleActiveDay,
                         onClearSchedule = viewModel::clearSchedule,
+                        onSkip = viewModel::goNext,
                     )
                     6 -> Step6Duration(
                         state = state,
@@ -237,6 +264,7 @@ fun ChallengeCreationScreen(
                     )
                     7 -> Step7Confirm(
                         state = state,
+                        appListState = appListState,
                         uiState = uiState,
                         onUpdateMotivation = viewModel::updateMotivationText,
                         onCreateChallenge = viewModel::createChallenge,
@@ -246,17 +274,31 @@ fun ChallengeCreationScreen(
 
             if (state.currentStep < TOTAL_STEPS) {
                 val context = LocalContext.current
-                HorizontalDivider()
-                Box(modifier = Modifier.padding(16.dp)) {
+                HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Button(
                         onClick = {
                             HapticManager.light(context)
                             viewModel.goNext()
                         },
-                        modifier = Modifier.fillMaxWidth().pressScaleFeedback(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .pressScaleFeedback(),
                         enabled = viewModel.canGoNext(),
+                        shape = BtnShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GreenPrimary,
+                            contentColor = Color.White,
+                            disabledContainerColor = DisabledBg,
+                            disabledContentColor = DisabledText,
+                        ),
                     ) {
-                        Text("Next")
+                        Text(
+                            text = stringResource(R.string.wizard_btn_next),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             }
@@ -284,13 +326,15 @@ private fun WizardHeader(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = "Zurück",
+                    tint = TextPrimary,
                 )
             }
             Text(
-                text = "Step $currentStep of $totalSteps",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "Schritt $currentStep von $totalSteps",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                color = TextSecondary,
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
@@ -300,8 +344,9 @@ private fun WizardHeader(
             progress = { progress },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp),
-            color = MaterialTheme.colorScheme.primary,
+                .height(2.dp),
+            color = GreenPrimary,
+            trackColor = DisabledBg,
         )
     }
 }
@@ -316,35 +361,47 @@ private fun Step1ModeSelection(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Choose your mode",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.wizard_mode_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = TextPrimary,
         )
         Text(
-            text = "How serious do you want to be?",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = stringResource(R.string.wizard_mode_subtitle),
+            fontSize = 14.sp,
+            color = TextSecondary,
         )
+        Spacer(modifier = Modifier.height(4.dp))
 
         ModeCard(
-            emoji = "🎯",
+            icon = Icons.Default.Star,
+            iconTint = GreenPrimary,
+            iconBg = GreenLight,
             title = "Soft Mode",
-            subtitle = "Build habits with streaks. No money involved.",
+            description = stringResource(R.string.wizard_mode_soft_desc),
+            badge = stringResource(R.string.wizard_mode_soft_badge),
+            badgeBg = GreenLight,
+            badgeText = GreenBadgeText,
             isSelected = selectedMode == ChallengeMode.SOFT,
-            showWarning = false,
             onClick = { onSelectMode(ChallengeMode.SOFT) },
         )
 
         ModeCard(
-            emoji = "💰",
+            icon = null,
+            iconTint = OrangeIcon,
+            iconBg = OrangeLight,
+            euroIcon = true,
             title = "Hard Mode",
-            subtitle = "Real money on the line. Serious commitment.",
+            description = stringResource(R.string.wizard_mode_hard_desc),
+            badge = stringResource(R.string.wizard_mode_hard_badge),
+            badgeBg = OrangeLight,
+            badgeText = OrangeBadgeText,
             isSelected = selectedMode == ChallengeMode.HARD,
-            showWarning = true,
             onClick = { onSelectMode(ChallengeMode.HARD) },
         )
     }
@@ -352,67 +409,108 @@ private fun Step1ModeSelection(
 
 @Composable
 private fun ModeCard(
-    emoji: String,
+    icon: ImageVector?,
+    iconTint: Color,
+    iconBg: Color,
+    euroIcon: Boolean = false,
     title: String,
-    subtitle: String,
+    description: String,
+    badge: String,
+    badgeBg: Color,
+    badgeText: Color,
     isSelected: Boolean,
-    showWarning: Boolean,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (isSelected)
-        MaterialTheme.colorScheme.primary
-    else
-        MaterialTheme.colorScheme.outlineVariant
+    val borderColor = if (isSelected) GreenPrimary else CardBorder
+    val borderWidth = if (isSelected) 2.dp else 0.5.dp
+    val bgColor = if (isSelected) GreenSelected else CardBg
 
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 100.dp)
-            .border(width = 2.dp, color = borderColor, shape = MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            .clip(CardShape)
+            .background(bgColor)
+            .border(borderWidth, borderColor, CardShape)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = emoji, fontSize = 28.sp)
+            // Icon circle
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(iconBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (euroIcon) {
+                    Text(
+                        text = "€",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = iconTint,
+                    )
+                } else if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(badgeBg)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = badge,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = badgeText,
+                        )
+                    }
+                }
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = description,
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    lineHeight = 18.sp,
                 )
             }
-            if (showWarning) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+
+            // Right indicator
             if (isSelected) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
+                    tint = GreenPrimary,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(CardBg)
+                        .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
                 )
             }
         }
@@ -430,46 +528,55 @@ private fun Step3LimitType(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Set a limit type",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.wizard_limit_type_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = TextPrimary,
         )
         Text(
-            text = "How do you want to restrict yourself?",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = stringResource(R.string.wizard_limit_type_subtitle),
+            fontSize = 14.sp,
+            color = TextSecondary,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
         LimitTypeCard(
-            emoji = "⏱",
-            title = "Time Limit",
-            description = "Block after X minutes per day",
+            icon = Icons.Default.AccessTime,
+            iconTint = PurpleIcon,
+            iconBg = PurpleLight,
+            title = stringResource(R.string.wizard_limit_time_title),
+            description = stringResource(R.string.wizard_limit_time_desc),
             isSelected = selected == LimitType.TIME,
             onClick = { onSelect(LimitType.TIME) },
         )
         LimitTypeCard(
-            emoji = "🔢",
-            title = "Session Limit",
-            description = "Block after X conscious opens per day",
+            icon = Icons.Default.Refresh,
+            iconTint = GreenPrimary,
+            iconBg = GreenLight,
+            title = stringResource(R.string.wizard_limit_sessions_title),
+            description = stringResource(R.string.wizard_limit_sessions_desc),
             isSelected = selected == LimitType.SESSIONS,
             onClick = { onSelect(LimitType.SESSIONS) },
         )
         LimitTypeCard(
-            emoji = "💰",
-            title = "Daily Budget",
-            description = "Split your time across the day",
+            icon = Icons.Default.AccessTime,
+            iconTint = OrangeIcon,
+            iconBg = OrangeLight,
+            title = stringResource(R.string.wizard_limit_budget_title),
+            description = stringResource(R.string.wizard_limit_budget_desc),
             isSelected = selected == LimitType.TIME_BUDGET,
             onClick = { onSelect(LimitType.TIME_BUDGET) },
         )
         LimitTypeCard(
-            emoji = "🕐",
-            title = "Time Window Only",
-            description = "Only allow during specific hours",
+            icon = Icons.Default.AccessTime,
+            iconTint = BlueIcon,
+            iconBg = BlueLight,
+            title = stringResource(R.string.wizard_limit_window_title),
+            description = stringResource(R.string.wizard_limit_window_desc),
             isSelected = selected == LimitType.TIME_WINDOW,
             onClick = { onSelect(LimitType.TIME_WINDOW) },
         )
@@ -478,57 +585,73 @@ private fun Step3LimitType(
 
 @Composable
 private fun LimitTypeCard(
-    emoji: String,
+    icon: ImageVector,
+    iconTint: Color,
+    iconBg: Color,
     title: String,
     description: String,
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (isSelected)
-        MaterialTheme.colorScheme.primary
-    else
-        MaterialTheme.colorScheme.outlineVariant
+    val borderColor = if (isSelected) GreenPrimary else CardBorder
+    val borderWidth = if (isSelected) 2.dp else 0.5.dp
+    val bgColor = if (isSelected) GreenSelected else CardBg
 
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .border(width = 2.dp, color = borderColor, shape = MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        elevation = CardDefaults.cardElevation(2.dp),
+            .clip(CardShape)
+            .background(bgColor)
+            .border(borderWidth, borderColor, CardShape)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = emoji, fontSize = 24.sp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(iconBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
                 )
                 Text(
                     text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    maxLines = 2,
                 )
             }
             if (isSelected) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
+                    tint = GreenPrimary,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(CardBg)
+                        .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
                 )
             }
         }
@@ -549,92 +672,81 @@ private fun Step4LimitValues(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Set your limit",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.wizard_set_limit_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = TextPrimary,
         )
 
         when (state.limitType) {
             LimitType.TIME -> {
-                Text(
-                    text = "How many minutes per day?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
                     values = (1..480).toList(),
                     selectedValue = state.limitValueMinutes,
                     onValueChange = onUpdateLimitMinutes,
-                    unit = "Minuten pro Tag",
+                    unit = stringResource(R.string.wizard_set_limit_minutes_unit),
                 )
             }
 
             LimitType.SESSIONS -> {
-                Text(
-                    text = "How many opens per day?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
                     values = (1..50).toList(),
                     selectedValue = state.limitValueSessions,
                     onValueChange = onUpdateLimitSessions,
-                    unit = "Öffnungen pro Tag",
+                    unit = stringResource(R.string.wizard_set_limit_opens_unit),
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "How long per session?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = stringResource(R.string.wizard_set_limit_session_label),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
                     values = (1..120).toList(),
                     selectedValue = state.sessionDurationMinutes,
                     onValueChange = onUpdateSessionDuration,
-                    unit = "Minuten pro Session",
+                    unit = stringResource(R.string.wizard_set_limit_session_unit),
                 )
             }
 
             LimitType.TIME_BUDGET -> {
-                Text(
-                    text = "What's your daily time budget?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
                     values = (1..480).toList(),
                     selectedValue = state.dailyBudgetMinutes,
                     onValueChange = onUpdateDailyBudget,
-                    unit = "Minuten Tagesbudget",
+                    unit = stringResource(R.string.wizard_set_limit_budget_unit),
                 )
             }
 
             LimitType.TIME_WINDOW -> {
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "You'll set the allowed hours in the next step.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "Das Zeitfenster legst du im nächsten Schritt fest.",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
                 )
                 Text(
-                    text = "🕐 App will only be accessible during your scheduled time window.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "Die App ist nur innerhalb deines Zeitfensters zugänglich.",
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = GreenPrimary,
                 )
             }
 
             null -> {
                 Text(
-                    text = "Go back and select a limit type.",
-                    color = MaterialTheme.colorScheme.error,
+                    text = "Bitte gehe zurück und wähle einen Limit-Typ.",
+                    fontSize = 14.sp,
+                    color = Color(0xFFFF3B30),
                 )
             }
         }
@@ -643,10 +755,10 @@ private fun Step4LimitValues(
 
 // ── Step 5: Schedule ──────────────────────────────────────────────────────────
 
-private val ALL_DAYS = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+private val ALL_DAYS   = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 private val DAY_LABELS = mapOf(
-    "MON" to "Mo", "TUE" to "Tu", "WED" to "We",
-    "THU" to "Th", "FRI" to "Fr", "SAT" to "Sa", "SUN" to "Su",
+    "MON" to "Mo", "TUE" to "Di", "WED" to "Mi",
+    "THU" to "Do", "FRI" to "Fr", "SAT" to "Sa", "SUN" to "So",
 )
 
 private fun parseTime(time: String): Pair<Int, Int> =
@@ -664,6 +776,7 @@ private fun Step5Schedule(
     onEndChange: (String) -> Unit,
     onToggleDay: (String) -> Unit,
     onClearSchedule: () -> Unit,
+    onSkip: () -> Unit,
 ) {
     var showTimePicker by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -672,14 +785,14 @@ private fun Step5Schedule(
     val (endH, endM) = parseTime(scheduleEnd)
 
     val timeError: String? = if (scheduleStart.length == 5 && scheduleEnd.length == 5) {
-        if (startH * 60 + startM >= endH * 60 + endM) "End time must be after start time" else null
+        if (startH * 60 + startM >= endH * 60 + endM) "Endzeit muss nach Startzeit liegen" else null
     } else null
 
     val timeDisplay = when {
         scheduleStart.length == 5 && scheduleEnd.length == 5 -> "$scheduleStart – $scheduleEnd"
         scheduleStart.length == 5 -> "$scheduleStart – ??:??"
         scheduleEnd.length == 5   -> "??:?? – $scheduleEnd"
-        else -> "Tap to set time range"
+        else -> stringResource(R.string.wizard_schedule_placeholder)
     }
 
     val hasSchedule = scheduleStart.isNotBlank() || scheduleEnd.isNotBlank() || activeDays.isNotEmpty()
@@ -688,84 +801,118 @@ private fun Step5Schedule(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (!isRequired) {
+            Text(
+                text = stringResource(R.string.wizard_optional_label),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextSecondary,
+                letterSpacing = 0.8.sp,
+            )
+        }
         Text(
-            text = if (isRequired) "Set allowed hours" else "Usage schedule (optional)",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.wizard_schedule_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = TextPrimary,
         )
         Text(
-            text = if (isRequired)
-                "The app will only be accessible during this window."
-            else
-                "Optionally restrict tracking to specific hours and days.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = stringResource(R.string.wizard_schedule_subtitle),
+            fontSize = 13.sp,
+            color = TextSecondary,
+            lineHeight = 18.sp,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        Row(
+        // Time input row
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.small)
-                .border(
-                    width = 1.dp,
-                    color = if (timeError != null) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.outline,
-                    shape = MaterialTheme.shapes.small,
-                )
+                .clip(PillShape)
+                .background(CardBg)
+                .border(0.5.dp, CardBorder, PillShape)
                 .clickable { showTimePicker = true }
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 20.dp, vertical = 14.dp),
         ) {
-            Text(
-                text = timeDisplay,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (scheduleStart.length == 5 || scheduleEnd.length == 5)
-                    MaterialTheme.colorScheme.onSurface
-                else
-                    MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = timeDisplay,
+                    fontSize = 15.sp,
+                    color = if (scheduleStart.length == 5 || scheduleEnd.length == 5)
+                        TextPrimary else TextHint,
+                )
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
 
         if (timeError != null) {
-            Text(text = timeError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(text = timeError, fontSize = 12.sp, color = Color(0xFFFF3B30))
         }
 
+        // Weekday pills
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             ALL_DAYS.forEach { day ->
                 val isSelected = activeDays.contains(day)
-                Surface(
+                Box(
                     modifier = Modifier
                         .weight(1f)
+                        .height(36.dp)
+                        .widthIn(min = 36.dp)
+                        .clip(PillShape)
+                        .background(if (isSelected) GreenPrimary else WizBg)
                         .clickable { onToggleDay(day) },
-                    shape = MaterialTheme.shapes.small,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant,
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = DAY_LABELS[day] ?: day,
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) Color.White else TextSecondary,
                         textAlign = TextAlign.Center,
                     )
                 }
             }
         }
 
+        Text(
+            text = stringResource(R.string.wizard_schedule_days_hint),
+            fontSize = 12.sp,
+            color = TextSecondary,
+        )
+
         if (hasSchedule) {
-            OutlinedButton(onClick = onClearSchedule) {
-                Text("Clear schedule")
+            TextButton(onClick = onClearSchedule) {
+                Text("Zeitplan löschen", color = Color(0xFFFF3B30), fontSize = 14.sp)
+            }
+        }
+
+        if (!isRequired) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.wizard_btn_skip_step),
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.clickable { onSkip() },
+                )
             }
         }
     }
@@ -782,9 +929,10 @@ private fun Step5Schedule(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Set time range",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "Zeitfenster festlegen",
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
@@ -795,13 +943,13 @@ private fun Step5Schedule(
                     TimeSpinnerPicker(
                         hour = startH,
                         minute = startM,
-                        label = "From",
+                        label = "Von",
                         onTimeChange = { h, m -> onStartChange("%02d:%02d".format(h, m)) },
                     )
                     TimeSpinnerPicker(
                         hour = endH,
                         minute = endM,
-                        label = "To",
+                        label = "Bis",
                         onTimeChange = { h, m -> onEndChange("%02d:%02d".format(h, m)) },
                     )
                 }
@@ -809,14 +957,22 @@ private fun Step5Schedule(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = timeError,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        color = Color(0xFFFF3B30),
                         textAlign = TextAlign.Center,
                     )
                 }
                 Spacer(modifier = Modifier.height(24.dp))
-                Button(onClick = { showTimePicker = false }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Done")
+                Button(
+                    onClick = { showTimePicker = false },
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = BtnShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GreenPrimary,
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Text("Fertig", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(32.dp))
             }
@@ -838,12 +994,24 @@ private fun Step6Duration(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Challenge duration", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(
+            text = stringResource(R.string.wizard_duration_title),
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+
         if (isHardMode) {
-            Text("Amount at stake", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Einsatz",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+            )
             Spacer(modifier = Modifier.height(8.dp))
             DetoxHorizontalPicker(
                 values = (5..50).toList(),
@@ -852,30 +1020,46 @@ private fun Step6Duration(
                 unit = "Euro Einsatz",
             )
             Text(
-                text = "⚠️ If you exceed the limit, €${state.amountEuros} will be captured immediately.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
+                text = "Wenn du das Limit überschreitest, werden €${state.amountEuros} sofort eingezogen.",
+                fontSize = 13.sp,
+                color = Color(0xFFFF3B30),
             )
-            HorizontalDivider()
+            HorizontalDivider(color = DividerColor)
         }
+
         if (!isHardMode) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(CardShape)
+                    .background(CardBg)
+                    .border(0.5.dp, CardBorder, CardShape)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                Text("No end date", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                Switch(
-                    checked = state.noEndDate,
-                    onCheckedChange = onToggleNoEndDate,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                        checkedTrackColor = MaterialTheme.colorScheme.primary,
-                        checkedBorderColor = MaterialTheme.colorScheme.primary,
-                    ),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Kein Enddatum",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                    )
+                    Switch(
+                        checked = state.noEndDate,
+                        onCheckedChange = onToggleNoEndDate,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = GreenPrimary,
+                            checkedBorderColor = GreenPrimary,
+                        ),
+                    )
+                }
             }
         }
+
         if (!state.noEndDate) {
             val minDays = if (isHardMode) 14 else 1
             DetoxHorizontalPicker(
@@ -893,6 +1077,7 @@ private fun Step6Duration(
 @Composable
 private fun Step7Confirm(
     state: ChallengeCreationState,
+    appListState: AppListState,
     uiState: ChallengeCreationUiState,
     onUpdateMotivation: (String) -> Unit,
     onCreateChallenge: () -> Unit,
@@ -904,89 +1089,94 @@ private fun Step7Confirm(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Review & start",
-            style = MaterialTheme.typography.titleLarge,
+            text = stringResource(R.string.wizard_review_title),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
+            color = TextPrimary,
         )
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            elevation = CardDefaults.cardElevation(2.dp),
+        // Summary card with dividers
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .background(CardBg)
+                .border(0.5.dp, CardBorder, CardShape),
         ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                SummaryRow("Mode", if (state.selectedMode == ChallengeMode.HARD) "💰 Hard Mode" else "🎯 Soft Mode")
-
-                if (state.activeTab == 0) {
-                    // Apps tab summary
-                    SummaryRow("Apps", "${state.selectedApps.size} selected")
-                    val checkedDomains = state.domainToggles.entries.filter { it.value }
-                        .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
-                    if (checkedDomains.isNotEmpty()) {
-                        SummaryRow("+ Sites", checkedDomains.joinToString(", "))
-                    }
-                } else {
-                    // Websites tab summary
-                    if (state.manualDomains.isNotEmpty()) {
-                        val preview = state.manualDomains.take(3).joinToString(", ") +
-                                if (state.manualDomains.size > 3) " +${state.manualDomains.size - 3}" else ""
-                        SummaryRow("Websites", preview)
-                    }
-                    if (state.blockAdultContent) {
-                        SummaryRow("Adult Content", "🔞 Blocked")
-                    }
+            Column {
+                val modeLabel = when (state.selectedMode) {
+                    ChallengeMode.HARD -> stringResource(R.string.wizard_review_mode_hard)
+                    else -> stringResource(R.string.wizard_review_mode_soft)
                 }
-
-                val limitSummary = when (state.limitType) {
-                    LimitType.TIME        -> "⏱ ${state.limitValueMinutes} min/day"
-                    LimitType.SESSIONS    -> "🔢 ${state.limitValueSessions}× · ${state.sessionDurationMinutes} min each"
-                    LimitType.TIME_BUDGET -> "💰 ${state.dailyBudgetMinutes} min budget/day"
-                    LimitType.TIME_WINDOW -> "🕐 Time window"
+                val appNames = appListState.trackableApps
+                    .filter { it.packageName in state.selectedApps }
+                    .map { it.appName }
+                val appsLabel = when {
+                    appNames.size == 1 -> appNames[0]
+                    appNames.size == 2 -> "${appNames[0]}, ${appNames[1]}"
+                    appNames.size >= 3 -> stringResource(
+                        R.string.wizard_review_apps_overflow_format,
+                        appNames[0], appNames[1], appNames.size - 2,
+                    )
+                    state.selectedApps.isNotEmpty() ->
+                        stringResource(R.string.wizard_review_apps_count, state.selectedApps.size)
+                    else -> stringResource(R.string.wizard_review_apps_count, 0)
+                }
+                val limitLabel = when (state.limitType) {
+                    LimitType.TIME        -> stringResource(R.string.wizard_review_limit_time_format, state.limitValueMinutes)
+                    LimitType.SESSIONS    -> stringResource(R.string.wizard_review_limit_sessions_format, state.limitValueSessions, state.sessionDurationMinutes)
+                    LimitType.TIME_BUDGET -> stringResource(R.string.wizard_review_limit_budget_format, state.dailyBudgetMinutes)
+                    LimitType.TIME_WINDOW -> "Nur Zeitfenster"
                     null                  -> "—"
                 }
-                SummaryRow("Limit", limitSummary)
+                val durationLabel = if (state.noEndDate) "Kein Enddatum"
+                    else "${state.durationDays} Tage"
 
-                if (state.scheduleStart.length == 5 && state.scheduleEnd.length == 5) {
-                    SummaryRow("Schedule", "${state.scheduleStart} – ${state.scheduleEnd}")
-                }
-
-                val durationSummary = if (state.noEndDate) "No end date"
-                    else "${state.durationDays} days"
-                SummaryRow("Duration", durationSummary)
-
-                if (state.selectedMode == ChallengeMode.HARD) {
-                    SummaryRow("At stake", "€${state.amountEuros}")
-                }
+                SummaryDividerRow(stringResource(R.string.wizard_review_mode_label), modeLabel, isFirst = true)
+                SummaryDividerRow(stringResource(R.string.wizard_review_apps_label), appsLabel)
+                SummaryDividerRow(stringResource(R.string.wizard_review_limit_label), limitLabel)
+                SummaryDividerRow(stringResource(R.string.wizard_review_duration_label), durationLabel, isLast = true)
             }
         }
 
+        // Motivation field
         Text(
-            text = "Your motivation (optional)",
-            style = MaterialTheme.typography.bodyMedium,
+            text = stringResource(R.string.wizard_review_motivation_label),
+            fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
+            color = TextPrimary,
         )
-        OutlinedTextField(
-            value = state.motivationText,
-            onValueChange = { if (it.length <= 200) onUpdateMotivation(it) },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Why are you doing this?") },
-            minLines = 2,
-            maxLines = 4,
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .background(CardBg)
+                .border(0.5.dp, CardBorder, CardShape),
+        ) {
+            OutlinedTextField(
+                value = state.motivationText,
+                onValueChange = { if (it.length <= 200) onUpdateMotivation(it) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(
+                        text = stringResource(R.string.wizard_review_motivation_hint),
+                        color = TextHint,
+                    )
+                },
+                minLines = 2,
+                maxLines = 4,
+            )
+        }
 
         if (uiState is ChallengeCreationUiState.Error) {
             Text(
                 text = uiState.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
+                fontSize = 14.sp,
+                color = Color(0xFFFF3B30),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1000,45 +1190,59 @@ private fun Step7Confirm(
                 HapticManager.light(context)
                 onCreateChallenge()
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(54.dp),
             enabled = !isLoading,
-            colors = if (state.selectedMode == ChallengeMode.HARD)
-                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            else
-                ButtonDefaults.buttonColors(),
+            shape = BtnShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = GreenPrimary,
+                contentColor = Color.White,
+                disabledContainerColor = DisabledBg,
+                disabledContentColor = DisabledText,
+            ),
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = Color.White,
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
                 )
             } else {
-                val label = if (state.selectedMode == ChallengeMode.HARD)
-                    "Pay €${state.amountEuros} & Start"
-                else
-                    "Start Challenge"
-                Text(text = label)
+                Text(
+                    text = stringResource(R.string.wizard_review_start_btn),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SummaryRow(label: String, value: String) {
+private fun SummaryDividerRow(
+    label: String,
+    value: String,
+    isFirst: Boolean = false,
+    isLast: Boolean = false,
+) {
+    if (!isFirst) {
+        HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+    }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            color = TextSecondary,
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
+            color = TextPrimary,
         )
     }
 }

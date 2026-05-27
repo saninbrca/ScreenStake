@@ -1110,4 +1110,103 @@
     <string name="results_failed_label">❌ Ausgeschieden</string>
     <string name="results_weiter">Weiter →</string>
 
+    <!-- Wizard redesign — shared -->
+    <string name="wizard_btn_next">Weiter</string>
+    <string name="wizard_btn_skip_step">Diesen Schritt überspringen</string>
+    <string name="wizard_optional_label">OPTIONAL</string>
+
+    <!-- Wizard Step 1 — Mode Selection -->
+    <string name="wizard_mode_title">Wähle deinen Modus</string>
+    <string name="wizard_mode_subtitle">Wie ernst möchtest du es nehmen?</string>
+    <string name="wizard_mode_soft_desc">Gewohnheiten aufbauen mit Streaks. Kein Geld im Spiel.</string>
+    <string name="wizard_mode_soft_badge">Gratis</string>
+    <string name="wizard_mode_hard_desc">Echtes Geld auf dem Spiel. Ernsthafte Verpflichtung.</string>
+    <string name="wizard_mode_hard_badge">Ab €5</string>
+
+    <!-- Wizard Step 3 — Limit Type -->
+    <string name="wizard_limit_type_title">Limit-Typ wählen</string>
+    <string name="wizard_limit_type_subtitle">Wie möchtest du dich einschränken?</string>
+    <string name="wizard_limit_time_title">Zeit-Limit</string>
+    <string name="wizard_limit_time_desc">Nach X Minuten pro Tag blockieren.</string>
+    <string name="wizard_limit_sessions_title">Session-Limit</string>
+    <string name="wizard_limit_sessions_desc">Nach X bewussten Öffnungen pro Tag blockieren.</string>
+    <string name="wizard_limit_budget_title">Tagesbudget</string>
+    <string name="wizard_limit_budget_desc">Verfügbare Zeit über den Tag aufteilen.</string>
+    <string name="wizard_limit_window_title">Nur Zeitfenster</string>
+    <string name="wizard_limit_window_desc">Nur innerhalb bestimmter Stunden erlauben.</string>
+
+    <!-- Wizard Step 4 — Set Limit -->
+    <string name="wizard_set_limit_title">Limit festlegen</string>
+    <string name="wizard_set_limit_opens_unit">Öffnungen pro Tag</string>
+    <string name="wizard_set_limit_minutes_unit">Minuten pro Tag</string>
+    <string name="wizard_set_limit_budget_unit">Minuten Tagesbudget</string>
+    <string name="wizard_set_limit_session_label">Wie lange pro Session?</string>
+    <string name="wizard_set_limit_session_unit">Minuten pro Session</string>
+
+    <!-- Wizard Step 5 — Schedule -->
+    <string name="wizard_schedule_title">Nutzungsplan</string>
+    <string name="wizard_schedule_subtitle">Schränke das Tracking auf bestimmte Stunden und Tage ein — oder überspringe diesen Schritt.</string>
+    <string name="wizard_schedule_days_hint">Keine Auswahl = jeden Tag.</string>
+    <string name="wizard_schedule_placeholder">Zeitfenster festlegen</string>
+
+    <!-- Wizard Step 6 — Duration -->
+    <string name="wizard_duration_title">Challenge-Dauer</string>
+
+    <!-- Wizard Step 7 — Review -->
+    <string name="wizard_review_title">Überprüfen &amp; starten</string>
+    <string name="wizard_review_mode_label">Modus</string>
+    <string name="wizard_review_apps_label">Apps</string>
+    <string name="wizard_review_limit_label">Limit</string>
+    <string name="wizard_review_duration_label">Dauer</string>
+    <string name="wizard_review_apps_count">%1$d ausgewählt</string>
+    <string name="wizard_review_no_end_date">Kein Enddatum</string>
+    <string name="wizard_review_days_format">%1$d Tage</string>
+    <string name="wizard_review_start_btn">Challenge starten</string>
+    <string name="wizard_review_motivation_label">Deine Motivation (optional)</string>
+    <string name="wizard_review_motivation_hint">Warum machst du das?</string>
+    <string name="wizard_review_mode_soft">Soft Mode</string>
+    <string name="wizard_review_mode_hard">Hard Mode</string>
+    <string name="wizard_review_mode_group">Group Challenge</string>
+    <string name="wizard_review_limit_sessions_format">%1$dx Öffnungen · %2$d Min</string>
+    <string name="wizard_review_limit_time_format">%1$d Min / Tag</string>
+    <string name="wizard_review_limit_budget_format">%1$d Min Budget / Tag</string>
+    <string name="wizard_review_apps_overflow_format">%1$s, %2$s +%3$d</string>
+
+    <!-- Group Wizard specific -->
+    <string name="group_wizard_review_title">Überprüfen &amp; erstellen</string>
+    <string name="group_wizard_create_btn">Challenge erstellen</string>
+    <string name="group_wizard_limit_type_subtitle">Wie soll die Gruppe eingeschränkt werden?</string>
+    <string name="group_wizard_buyin_title">Einsatz pro Spieler</string>
+    <string name="group_wizard_buyin_subtitle">Wie viel zahlt jeder Spieler um teilzunehmen?</string>
+    <string name="group_wizard_buyin_unit">Euro pro Spieler</string>
+    <string name="group_wizard_review_einsatz_label">Einsatz</string>
+    <string name="group_wizard_review_einsatz_value">€%1$d pro Spieler</string>
+
+    <!-- Group Wizard Step 5 — Start Date &amp; Bonus -->
+    <string name="group_wizard_start_title">Startdatum &amp; Bonus</string>
+    <string name="group_wizard_start_date_label">Startdatum festlegen</string>
+    <string name="group_wizard_start_manual_desc">Challenge startet manuell — tippe auf „Challenge starten" sobald alle beigetreten sind.</string>
+    <string name="group_wizard_start_date_section">Startdatum</string>
+    <string name="group_wizard_start_date_placeholder">Datum wählen…</string>
+    <string name="group_wizard_bonus_label">Bonus für den Gewinner</string>
+    <string name="group_wizard_bonus_tooltip">Der beste Teilnehmer erhält 10%% extra aus dem Pot. Die App nimmt 5%% Gebühr.</string>
+    <string name="group_wizard_bonus_desc">Der Teilnehmer mit der besten Performance erhält 10%% extra aus dem Topf. Die App nimmt eine 5%%-Gebühr.</string>
+
+    <!-- Group Wizard Step 6 — Review rows -->
+    <string name="group_wizard_review_start_label">Startdatum</string>
+    <string name="group_wizard_review_start_manual">Manueller Start</string>
+    <string name="group_wizard_review_bonus_label">Gewinner-Bonus</string>
+    <string name="group_wizard_review_bonus_on">Aktiviert (10%% des Pots)</string>
+    <string name="group_wizard_review_bonus_off">Deaktiviert</string>
+    <string name="group_wizard_review_max_players_label">Max. Spieler</string>
+    <string name="group_wizard_review_pot_label">Pot-Schätzung</string>
+    <string name="group_wizard_review_pot_value">Bis zu €%1$d mit 20 Spielern</string>
+
+    <!-- Permission Warning Banner -->
+    <string name="permission_banner_title">Berechtigung fehlt</string>
+    <string name="permission_banner_accessibility_body">Accessibility Service deaktiviert — deine Challenge ist nicht geschützt.</string>
+    <string name="permission_banner_overlay_body">Display-Berechtigung fehlt — Overlays können nicht angezeigt werden.</string>
+    <string name="permission_banner_both_body">Berechtigungen fehlen — deine Challenge ist nicht geschützt.</string>
+    <string name="permission_banner_cta">Jetzt beheben →</string>
+
 </resources>

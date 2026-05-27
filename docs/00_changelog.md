@@ -15,6 +15,51 @@
 
 ## [Unreleased] — May 2026
 
+### Changed — Permission warning banner redesign (DashboardScreen)
+- Replaced dark-red aggressive banner with clean iOS-style solid red card (#FF3B30).
+- Card: 12dp radius, 16dp padding, no elevation, no shadow.
+- Layout: title row (⚠️ + "Berechtigung fehlt" 15sp 700 white), body text (13sp white 80% alpha, maxLines=2), right-aligned "Jetzt beheben →" button (white bg, red text, 8dp radius, 8×16dp padding).
+- Pulsing animation: scale 1f→1.01f, 2000ms infinite Reverse repeat via `rememberInfiniteTransition`.
+- Permission check on every RESUME via `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES` + `Settings.canDrawOverlays`.
+- Three message variants: accessibility missing / overlay missing / both missing.
+- Banner visible only when at least one permission is missing AND active challenges exist (Success state only).
+- CTA navigates to `Settings.ACTION_ACCESSIBILITY_SETTINGS`.
+- 5 new German strings added to strings.xml.
+
+**Files changed:** `DashboardScreen.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No business logic changes.**
+
+---
+
+### Feature — Full wizard redesign (Soft, Hard, Group modes)
+
+**ChallengeCreationScreen.kt (Solo wizard — Soft + Hard Mode):**
+- Global: Background #F2F2F7, screen padding 16dp, card radius 16dp, 0.5px border rgba(0,0,0,0.06)
+- WizardHeader: "Schritt X von Y" (13sp, #8E8E93, centered) + 2dp #00C853 progress bar
+- Next button: 54dp height, 14dp radius, #00C853 bg, #FFFFFF text, 16sp bold; disabled: #E0E0E5 bg, #8E8E93 text
+- Step 1 (Mode): redesigned ModeCard with icon circles, badge pills, radio/checkmark indicator
+- Step 3 (Limit Type): redesigned LimitTypeCard with icon circles, radio/checkmark; 4 cards for solo (includes Time Window Only)
+- Step 4 (Set Limit): "Limit festlegen" title, German unit labels, card wrapper
+- Step 5 (Schedule): OPTIONAL label + skip button; German pill day buttons (Mo/Di/Mi/Do/Fr/Sa/So); "Nutzungsplan" title
+- Step 6 (Duration): "Challenge-Dauer" title, card-style no-end-date toggle
+- Step 7 (Review): "Überprüfen & starten" title, summary card with SummaryDividerRow, "Challenge starten" button
+
+**GroupChallengeCreateScreen.kt (Group wizard):**
+- Same design tokens as Solo wizard (private GWiz* color constants)
+- WizardHeader: "Schritt X von Y" + 2dp green progress bar
+- Surface background: #F2F2F7; next button: 54dp, 14dp radius, #00C853, "Weiter"
+- Step 2 (Limit Type): 3 GGroupLimitTypeCard composables (TIME, SESSIONS, TIME_BUDGET — no Time Window); icon circles, radio/checkmark
+- Step 3 (Limit+Duration): "Limit festlegen" title, German unit labels, card wrappers
+- Step 4 (Buy-In): German title/subtitle, pot estimate inline
+- Step 5 (Start Date + Bonus): German text, white card layout with Switch rows
+- Step 6 (Review): "Überprüfen & erstellen" title, GSummaryDividerRow summary card, "Challenge erstellen" button
+- DECISION: Group wizard has no Mode Selection step — user already committed to Group mode when navigating here
+
+**WelcomeOnboardingScreen.kt:**
+- RotatingStatCard: delay(3000) → delay(2000) — stats rotate every 2 seconds
+
+---
+
 ### Fixed — Design consistency audit (typography, spacing, colors, border radius)
 
 **Overlays:**

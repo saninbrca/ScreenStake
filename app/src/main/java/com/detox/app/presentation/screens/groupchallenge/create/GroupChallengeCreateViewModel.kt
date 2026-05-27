@@ -280,11 +280,8 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun canGoNext(): Boolean {
         val s = _formState.value
         return when (s.currentStep) {
-            1 -> when (s.activeTab) {
-                0 -> s.packageNames.isNotEmpty()
-                1 -> s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
-                else -> false
-            }
+            1 -> s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() ||
+                        s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
             2 -> s.limitType != null
             3 -> s.durationError == null && s.durationDays >= 3
             4 -> s.buyInEuros >= 10
@@ -296,14 +293,13 @@ class GroupChallengeCreateViewModel @Inject constructor(
     private fun validateCurrentStep(): Boolean {
         val s = _formState.value
         return when (s.currentStep) {
-            1 -> when (s.activeTab) {
-                0 -> {
-                    if (s.packageNames.isEmpty()) {
-                        _formState.update { it.copy(packageNamesError = "Select at least one app") }
-                        false
-                    } else true
+            1 -> {
+                val hasSelection = s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() ||
+                        s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
+                if (!hasSelection) {
+                    _formState.update { it.copy(packageNamesError = "Select at least one app or website") }
                 }
-                else -> s.manualDomains.isNotEmpty() || s.blockAdultContent || s.partialBlockDomains.isNotEmpty()
+                hasSelection
             }
             2 -> s.limitType != null
             3 -> {

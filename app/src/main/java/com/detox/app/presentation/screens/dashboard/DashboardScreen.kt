@@ -1,5 +1,7 @@
 package com.detox.app.presentation.screens.dashboard
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -57,6 +59,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -87,6 +91,18 @@ fun DashboardScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
 
+    var overlayGranted by remember {
+        mutableStateOf(Settings.canDrawOverlays(context))
+    }
+    var accessibilityGranted by remember {
+        mutableStateOf(
+            Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )?.contains(context.packageName) == true
+        )
+    }
+
     LaunchedEffect(completedChallenge) {
         if (completedChallenge != null) {
             HapticManager.success(context)
@@ -96,6 +112,11 @@ fun DashboardScreen(
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.loadStats()
+            overlayGranted = Settings.canDrawOverlays(context)
+            accessibilityGranted = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )?.contains(context.packageName) == true
         }
     }
 
@@ -182,6 +203,15 @@ fun DashboardScreen(
                                 activeCount = state.activeChallenges.size
                             )
                             Spacer(modifier = Modifier.height(16.dp))
+                        }
+                        if (!accessibilityGranted || !overlayGranted) {
+                            item(key = "permission_banner") {
+                                PermissionWarningBanner(
+                                    accessibilityGranted = accessibilityGranted,
+                                    overlayGranted = overlayGranted
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
                         }
                         if (redemptionChallenges.isNotEmpty()) {
                             item(key = "redemption_banner") {
@@ -380,6 +410,95 @@ private fun HardModeSuccessOverlay(
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Text(text = stringResource(R.string.success_overlay_new_challenge))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionWarningBanner(
+    accessibilityGranted: Boolean,
+    overlayGranted: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val bannerRed = Color(0xFFFF3B30)
+
+    val infiniteTransition = rememberInfiniteTransition(label = "bannerPulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.01f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bannerScale"
+    )
+
+    val bodyText = when {
+        !accessibilityGranted && !overlayGranted -> stringResource(R.string.permission_banner_both_body)
+        !accessibilityGranted -> stringResource(R.string.permission_banner_accessibility_body)
+        else -> stringResource(R.string.permission_banner_overlay_body)
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer(scaleX = scale, scaleY = scale),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = bannerRed),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(text = "⚠️", fontSize = 20.sp)
+                Text(
+                    text = stringResource(R.string.permission_banner_title),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = bodyText,
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Button(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = bannerRed
+                    ),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp
+                    )
+                ) {
+                    Text(
+                        text = stringResource(R.string.permission_banner_cta),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }

@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -698,68 +699,59 @@ internal fun AppSelectionRow(
 ) {
     val isBusy = conflictChallengeName != null
     val context = LocalContext.current
-    Column(
+    val bgColor = when {
+        isBusy -> Color(0xFFF5F5F5)
+        isSelected -> Color(0xFFF9FFF9)
+        else -> Color.Transparent
+    }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (isSelected) Color(0xFFF9FFF9) else Color.Transparent)
+            .background(bgColor)
             .clickable(enabled = !dimmed && !isBusy) {
                 HapticManager.light(context)
                 onToggle()
             }
-            .alpha(if (dimmed || isBusy) 0.4f else 1f),
+            .alpha(if (dimmed) 0.4f else 1f)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            app.icon?.let { drawable ->
-                val painter = remember(drawable) {
-                    BitmapPainter(drawable.toBitmap(48, 48).asImageBitmap())
-                }
-                Image(
-                    painter = painter,
-                    contentDescription = app.appName,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp)),
-                )
-            } ?: Box(modifier = Modifier.size(48.dp))
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = app.appName,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.Black,
-                )
-                if (isBusy) {
-                    Text(
-                        text = "busy",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+        app.icon?.let { drawable ->
+            val painter = remember(drawable) {
+                BitmapPainter(drawable.toBitmap(48, 48).asImageBitmap())
             }
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Color(0xFF00C853),
-                    modifier = Modifier.size(24.dp),
-                )
-            } else {
-                Box(modifier = Modifier.size(24.dp))
-            }
-        }
-        if (conflictChallengeName != null) {
-            Text(
-                text = conflictChallengeName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 80.dp, bottom = 8.dp),
+            Image(
+                painter = painter,
+                contentDescription = app.appName,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .alpha(if (isBusy) 0.5f else 1f),
             )
+        } ?: Box(modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = app.appName,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (isBusy) Color(0xFFC7C7CC) else Color.Black,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        when {
+            isBusy -> Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = Color(0xFFC7C7CC),
+                modifier = Modifier.size(16.dp),
+            )
+            isSelected -> Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = Color(0xFF00C853),
+                modifier = Modifier.size(24.dp),
+            )
+            else -> Box(modifier = Modifier.size(24.dp))
         }
     }
 }

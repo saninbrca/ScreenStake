@@ -57,7 +57,7 @@ Group WAIT:   #F2F2F7 bg, #8E8E93 text
 | Overlay large number | 64sp | 700 | #FFF |
 | Overlay context header | 13sp | 600 | #00C853 |
 | Overlay label | 13sp | 400 | #444 |
-| Overlay ghost button | 10sp | 400 | #222 |
+| Overlay ghost button | 10sp | 400 | #FFFFFF |
 | Detail stat value | 24sp | 700 | #000 |
 | Detail big number | 36sp | 700 | #000 |
 | Section title | 13sp | 600 | #8E8E93 uppercase |
@@ -84,7 +84,7 @@ NEVER transparent bg — invisible against #F2F2F7
 
 ### Ghost Button (overlays — "trotzdem öffnen")
 Height: 32dp, transparent bg, no border
-Text: 10sp, #222222
+Text: 10sp, #FFFFFF
 Intentionally barely visible — psychological design
 SessionIntentionOverlay ONLY
 
@@ -140,13 +140,15 @@ Selected indicator: 2dp green underline (#00C853) below selected item
 ### Where used + defaults
 | Screen | Min | Max | Default | Unit |
 |--------|-----|-----|---------|------|
-| SESSION_LIMIT wizard | 1 | 50 | 5 | Öffnungen |
-| TIME_LIMIT wizard | 1 | 480 | 60 | Minuten |
-| DAILY_BUDGET wizard | 1 | 480 | 10 | Minuten |
-| Duration (Soft) | 1 | 365 | 7 | Tage |
-| Duration (Hard) | 14 (1 debug) | 365 | 14 | Tage |
-| Duration (Group) | 3 | 365 | 7 | Tage |
-| Buy-in (Group) | 10 | 500 | 10 | Euro |
+| SESSION_LIMIT wizard | 1 | 20 | 5 | Öffnungen |
+| TIME_LIMIT wizard | 5 | 120 | 30 | Minuten |
+| DAILY_BUDGET wizard | 5 | 120 | 10 | Minuten |
+| Duration (Soft) | 3 | 90 | 7 | Tage |
+| Duration (Hard) | 7 (1 debug) | 90 | 14 | Tage |
+| Duration (Group) | 3 | 30 | 7 | Tage |
+| Buy-in (Group) | 10 | 50 | 10 | Euro |
+| Hard Mode Einsatz | 5 | 100 | 10 | Euro |
+| Session duration | 1 | 30 | 5 | Minuten |
 | BudgetSelectionOverlay | 1 | remainingMin | min(5,rem) | Minuten |
 
 ---
@@ -180,8 +182,8 @@ Always read LIVE from challenge + DailyLog. Never hardcoded.
 ### SessionIntentionOverlay (Stage 1)
 Large number: consciousOpens / timeUsedMin / budgetRemaining
 Label: "von X Öffnungen heute verbraucht" etc.
-Primary: "Stark bleiben 💪"
-Ghost: "trotzdem öffnen" (10sp, #222, barely visible)
+Primary: "Nicht öffnen"
+Ghost: "trotzdem öffnen" (10sp, #FFFFFF, barely visible)
 
 ### SessionLimitReachedOverlay (Stage 2)
 Large number: limit value (full)
@@ -247,7 +249,7 @@ Info list rows: 12dp 16dp padding, 0.5px #F2F2F7 divider
 Card 1 — Header:
   "SOFT MODE" badge (green) + end date (12sp, #8E8E93) right
   App name: 22sp bold
-  3 stats: Aktuelle Streak 🔥 | Beste Streak (#8E8E93) | Tage noch (#00C853)
+  2 stats: Streak 🔥 | Tage noch (#00C853) — *(Beste Streak removed)*
   All stat values: 24sp bold
 
 Card 2 — Progress:
@@ -263,7 +265,7 @@ Quote: 12sp, #C7C7CC, italic — rotates daily from 5-10 German quotes
 ### Hard Mode Detail
 Same as Soft Mode +
 Badge: "HARD MODE" (#FFF0E8 bg, #C05A00 text)
-Stats: Streak 🔥 | Einsatz €X | Tage noch
+Stats: Streak 🔥 | Tage noch — *(Einsatz shown in info list below)*
 Info adds: "Einsatz" €X | "Bei Erfolg" €X zurück (80%) #00C853
 Below info: "💳 Dein Geld ist sicher verwahrt"
 Quit confirmation mentions: "€X wird eingezogen"
@@ -383,7 +385,39 @@ Pill-shaped (fully rounded corners), no dividers between app rows.
 - Selected row: green checkmark overlay + #F9FFF9 background
 - No divider lines between rows
 
+### App Row — "Busy" State (app already in active challenge)
+- Row background: #F5F5F5
+- App name text: #C7C7CC (grey)
+- Right side: lock icon (grey, 16dp) — no red label, no duplicate name
+- Row is NOT tappable
+
 ### Websites Tab
 - Feature cards (Instagram Reels, YouTube Shorts, etc.): platform app icon with red 8dp badge
 - Adult Content card: "18+" red circle icon — always at top of the list
 - Pill tab switcher: animated indicator slides between "Apps" and "Websites" tabs
+
+---
+
+## Permission Warning Banner (current)
+
+iOS-style solid red card on Dashboard when any required permission is missing.
+
+| Property | Value |
+|----------|-------|
+| Background | #FF3B30 (solid red) |
+| Border radius | 12dp |
+| Padding | 16dp |
+| Elevation | 0 (no shadow) |
+| Title | "Berechtigung fehlt" — 15sp, weight 700, #FFFFFF |
+| Title icon | ⚠️ emoji |
+| Body text | 13sp, white 80% alpha, maxLines=2 |
+| CTA button | "Jetzt beheben →" — white bg, #FF3B30 text, 8dp radius, 8×16dp padding |
+| Animation | Pulse: scale 1f → 1.01f → 1f, 2000ms infinite Reverse repeat |
+
+**Three message variants:**
+1. Accessibility missing only
+2. Overlay missing only
+3. Both missing
+
+**Visibility rule:** Banner shown only when at least one permission is missing AND active
+challenges exist (Success state only). CTA navigates to `Settings.ACTION_ACCESSIBILITY_SETTINGS`.

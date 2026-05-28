@@ -267,10 +267,32 @@ Balance includes: prize share not yet transferred + stake refunds in progress.
 
 ---
 
+## Permission Violation Capture
+
+Hard Mode stakes (and Group Challenge buy-ins) are captured server-side when permissions
+are lost for more than 24 hours, independent of the app being installed or running.
+
+**Trigger paths:**
+- Accessibility or Overlay permission lost → `permissionLostAt` written to Firestore by
+  `PermissionCheckWorker` → `checkPermissionViolations` CF captures after 24h.
+- Accessibility disabled + blocked app used > 1 min → `usageViolationDetectedAt` written by
+  `PermissionCheckWorker` → CF captures after **1 hour** (faster path).
+
+**`failReason` field:** Written as `"permission_violation"` to the challenge document on
+server-side capture (alongside existing `payoutStatus` + `appFeeAmount` fields).
+
+**Capture order:** Stripe FIRST → Firestore update SECOND (same rule as all other capture paths).
+
+**User notification:** Escalating notifications at hours 0, 2, 6, 12, 23 warn the user before
+capture occurs (see `05_huawei_and_permissions.md` for full escalation timeline).
+
+**Firestore rules:** `capturedAt` and `usageCapturedAt` are CF-only fields — client cannot write them.
+
+---
+
 ## Known Issues
 
-1. Stripe Connect automatic payouts not yet live
-   Prize money currently manual SEPA by founder
+1. **Stripe Connect (Custom Account):** IBAN collection + Connected Account creation is implemented. Prize transfers are currently initiated **manually by the founder via Stripe Dashboard**. Full automatic transfer via API is planned post-launch.
    Admin dashboard: admin/index.html
 
 2. Account deletion while Hard Mode active →

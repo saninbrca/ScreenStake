@@ -29,7 +29,8 @@ Debug reset: ProfileScreen Debug Panel → "Reset Onboarding"
 Screen 1 — Willkommen:
 - Logo: 72dp, #00C853, white checkmark SVG, border-radius 20dp
 - App name: "De" #000 + "tox" #00C853, 32sp Poppins Bold
-- Stats card: "4.2h" in #00C853, "Das sind 63 Tage pro Jahr"
+- RotatingStatCard: 3 stats cycling every 2 seconds with fadeIn/fadeOut (300ms).
+  Stats: '4,2 Stunden' / '96 Mal' / '63 Tage'. Dot indicators below.
 - CTA card: "Nimm dein Leben zurück 💪"
 - Buttons: "Jetzt starten" (primary) + "Überspringen" (ghost → Screen 5)
 

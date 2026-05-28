@@ -9,8 +9,10 @@
 | Rule | Value |
 |------|-------|
 | Minimum buy-in | **€10** per participant |
+| Maximum buy-in | **€50** per participant |
 | Minimum participants to start | **2** |
 | Minimum duration | **3 days** |
+| Maximum duration | **30 days** |
 | Maximum participants | **20** (fixed) |
 | Who can start | Creator only (manual start, no auto-start) |
 | Start date | Optional — creator starts manually |
@@ -54,15 +56,14 @@ Never create separate overlay implementations for Group vs Solo challenges.
 
 ---
 
-## Creation Flow (6-Step Wizard)
+## Creation Flow (5-Step Wizard)
 
 ```
-Step 1: Select app(s) to block
-Step 2: Select limit type (sessions / time / budget)
-Step 3: Set limit value
-Step 4: Set duration (days) — minimum 3
-Step 5: Set buy-in amount — minimum €10
-Step 6: Review + confirm → calls createGroupChallenge Cloud Function
+Step 1: Mode (Group auto-selected)
+Step 2: App/Website selection
+Step 3: Limit type + value
+Step 4: Duration + Buy-in
+Step 5: Review & Start → calls createGroupChallenge Cloud Function
     ↓
 Cloud Function creates Firestore document + generates 6-char join code
     ↓
@@ -195,6 +196,7 @@ groupChallenges/{groupId}/
     endDate: Long                    ← Unix ms
     completedAt: Long                ← Unix ms, 0 if not completed
     bonusEnabled: Boolean
+    authorizationExpiresAt: Timestamp? ← 5 days after creation
     status: String                   ← "waiting" | "active" | "completed" | "cancelled"
     participants: Array<Participant>
     participantUserIds: Array<String> ← for Firestore query filtering
@@ -291,6 +293,18 @@ val participants = when (val raw = doc.get("participants")) {
 - User's own row highlighted
 - Rank displayed on Dashboard group card
 
+### Shared Rank (Standard Competition Ranking)
+
+Equal `opensToday` = shared rank. Pattern: 1, 1, 3 (not 1, 2, 3).
+
+- `rankMap` (userId → rank) pre-calculated before leaderboard render.
+- Failed participants get rank 0, displayed as "—".
+- Rank colors: gold (#FFD700) for rank 1, silver (#C0C0C0) for rank 2,
+  bronze (#CD7F32) for rank 3, #8E8E93 for rank 4+.
+- `OverlayManager.computeGroupRank()` uses shared ranking — finds the index of the first
+  participant with the same `opensToday` as the user. Failed participants excluded from rank.
+- Context header (`"👥 Platz #X von Y"`) reflects correct shared rank.
+
 ---
 
 ## Taunt Feature
@@ -360,6 +374,19 @@ Navigate to FriendsHubScreen
 Failed participant stays visible in leaderboard (greyed out / strikethrough)
 ```
 
+### Permission Violation Capture (Group Participants)
+
+Group Challenge participants are also subject to server-side permission violation capture.
+
+- If a participant loses Accessibility or Overlay permission while the challenge is active,
+  `permissionLostAt` is written to `users/{uid}/permissionStatus/current` by `PermissionCheckWorker`.
+- `checkPermissionViolations` CF queries all active Hard Mode + Group Challenge participants.
+- After 24h without permission restore: Stripe capture triggered server-side for that participant.
+- `failReason: "permission_violation"` written to challenge document.
+- UsageStats backup path also applies: usage > 1 min → `usageViolationDetectedAt` → capture after 1h.
+
+---
+
 ### Challenge Completes
 
 ```
@@ -380,11 +407,13 @@ Winners see "Du hast gewonnen! 🎉" screen
 Winners prompted to submit IBAN in Profile for payout
 ```
 
-⚠️ **Known Issue:** `completeGroupChallenge` is not triggering automatically when `endDate` passes. Must be called from `DailyEvaluationWorker` AND checked on app foreground resume.
+✅ **RESOLVED:** `completeGroupChallenge` is called automatically by DailyEvaluationWorker when endDate passes.
 
 ---
 
 ## Winner Payout Flow (Manual)
+
+→ Full payout flow: see docs/09_payout_and_fees.md
 
 ```
 Winner opens ProfileScreen → taps "Gewinn einfordern"
@@ -489,8 +518,7 @@ After 5 days the authorization expires and capture becomes impossible.
 - Challenge MUST be started within 5 days of the last participant joining
 - If `endDate - startDate` would push any capture beyond 5 days → creator must be warned
 
-**Current workaround:** No automatic expiry enforcement. Founder monitors admin dashboard.
-**Future:** CF should check `created + 5d > now` before attempting capture; if expired → mark participant failed without capture, notify founder.
+✅ **Automatic enforcement:** `expireGroupChallenge` CF runs via DailyEvaluationWorker. Authorization window = 5 days. After 5 days without start → PaymentIntents cancelled automatically.
 
 ---
 
@@ -499,11 +527,9 @@ After 5 days the authorization expires and capture becomes impossible.
 1. **Group Challenge blocking unreliable:**
    `AppDetectionAccessibilityService` uses local Room cache for blocked packages. Sync from Firestore → Room for Group Challenge apps is not always immediate. Workaround: force sync on challenge start and on every app foreground.
 
-2. **completeGroupChallenge not auto-triggering:**
-   Manual Cloud Function call required when `endDate` passes. `DailyEvaluationWorker` must check `endDate < now` for all active Group Challenges.
+2. ✅ **completeGroupChallenge — RESOLVED:** Called automatically by DailyEvaluationWorker when endDate passes.
 
-3. **Stripe Connect for automatic payouts not implemented.**
-   Prize money payout is fully manual. Founder must check admin dashboard and transfer manually.
+3. **Stripe Connect payouts:** IBAN collection + Connected Account creation is implemented. Prize transfers are currently initiated manually by the founder via Stripe Dashboard. Full automatic transfer via API is planned post-launch.
 
 ---
 
@@ -600,6 +626,8 @@ exhausted path jumped straight to `SessionLimitReachedOverlay`.
 ---
 
 ## Detail Screen Design (Group Challenge)
+
+→ For UI/design specs see docs/08_ui_design_system.md
 
 ### Card 1 — Header
 - `"● LIVE"` badge (green) or `"⏳ WARTET"` (gray) + days remaining

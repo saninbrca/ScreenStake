@@ -13,7 +13,215 @@
 
 ---
 
-## [Unreleased] — May 2026
+## [Unreleased] — May 2026 (Summary)
+
+### Added
+- **ChallengeSuccessDialog:** Replaced `SoftModeSuccessOverlay` and `HardModeSuccessOverlay`
+  (fullscreen black blocking composables) with a single dismissible `Dialog {}` composable
+  shown on top of the Dashboard. Supports both Soft Mode (time saved card) and Hard Mode
+  (money refund card). Confetti animation, staggered phase reveals, count-up stat animations.
+  SharedPreferences guard `"win_shown_{challengeId}"` prevents re-show after dismiss.
+  `DashboardViewModel` now exposes `successDialogState: StateFlow<SuccessDialogState?>`.
+  `DailyLogRepository.getLogsForChallengeOnce()` added for one-shot log reads.
+
+- **Server-side 24h Permission Violation Timer:** permissionLostAt
+  written to Firestore (users/{uid}/permissionStatus/current) when
+  Accessibility or Overlay permission is lost. Cloud Function
+  checkPermissionViolations (onRequest) captures Stripe payment
+  after 24h server-side — independent of app state/installation.
+  scheduledPermissionCheck runs every 1 hour via Cloud Scheduler.
+  capturedAt field only writable by Cloud Function (Admin SDK).
+- **UsageStats Backup Detection:** PermissionCheckWorker checks
+  UsageStatsManager for blocked app usage when Accessibility is
+  disabled. If blocked app used > 1 min → usageViolationDetectedAt
+  written to Firestore → Cloud Function captures after 1 hour.
+- **Rooted Device Detection:** RootBeer library integration.
+  Checks on Hard Mode challenge creation. Non-blocking warning
+  dialog shown. Root info logged to Firestore deviceInfo collection.
+- **Escalation Notifications:** New stage-aware notifications at
+  6h, 12h, 23h after permission loss with escalating urgency.
+  Hour 23: explicit warning that payment will be captured in 1h.
+- **Debug Panel — Permission Violation Tests:** 5 new debug buttons:
+  Simulate Permission Loss (Firestore), Simulate Usage Violation,
+  Check Root Status, Force CF Permission Check, Reset Permission
+  Status. Debug builds only.
+- **Completion Screens:** Added missing completion/failure screens:
+  SoftModeSuccessOverlay (Soft Mode COMPLETED — was silent),
+  HardModeFailOverlay (Hard Mode FAILED — was silent),
+  SoftFailResultScreen now correctly triggered via
+  DailyEvaluationWorker (was dead code).
+- **DetoxHorizontalPicker — correct bounds:**
+  Session limit: 1-20 (was 1-50)
+  Session duration: 1-30 min (was 1-120)
+  Time limit: 5-120 min (was 1-480)
+  Daily budget: 5-120 min (was 1-480)
+  Soft Mode duration: 3-90 days (was 1-365)
+  Hard Mode duration: 7-90 days production, 1-90 debug (was 14-365)
+  Group duration: 3-30 days (was 3-365)
+  Group buy-in: 10-50€ (was 10-500)
+  Hard Mode stake: 5-100€ (was 5-50)
+- **Shared Rank in Group Challenge Leaderboard:** Equal opensToday
+  = shared rank (standard competition ranking 1,1,3 not 1,2,3).
+  Applies to leaderboard display and overlay context header.
+- **Remove "Spezifische Features sperren":** Entire partial block
+  section removed from Websites tab (Instagram Reels, YouTube
+  Shorts etc.). Adult Content and domain blocking unchanged.
+- **Warning Banner redesign:** Permission warning banner redesigned
+  to solid #FF3B30 red with white text, subtle pulse animation,
+  "Jetzt beheben →" white button. Clear and urgent iOS style.
+- **App Selection — "busy" state fix:** Apps already in active
+  challenge show grey background + grey text + lock icon.
+  No red "busy" label, no duplicate app name in red.
+- **Next button fix:** Next button in App/Website selection step
+  now enabled if ANY selection exists across both tabs (Apps OR
+  Websites), not just the active tab.
+- **Wizard Review — app names:** Shows actual app names instead
+  of "X ausgewählt". Limit format uses lowercase "x" consistently.
+- **Onboarding rotating stats:** 3 stats rotate every 2s with
+  fade transition on Screen 1 (4,2 Stunden / 96 Mal / 63 Tage).
+- **Group Challenge — 5-day auth window:** Payment authorized
+  (not captured) on join. Captured on Start. Auto-cancel after
+  5 days if not started.
+
+### Fixed
+- **Wizard text:** All wizard steps translated to German.
+  No emojis in titles or descriptions.
+- **Weekdays:** Mo Di Mi Do Fr Sa So (was English abbreviations)
+- **Hard Mode debug:** BuildConfig.DEBUG check for min duration.
+
+---
+
+## [Unreleased] — May 2026 (Detailed)
+
+### Feature — ChallengeSuccessDialog (replaces both success overlays)
+
+**Problem:** `SoftModeSuccessOverlay` and `HardModeSuccessOverlay` were fullscreen Compose
+composables that blocked the entire Dashboard. They could not be dismissed without starting a
+new challenge, and tapping through could accidentally navigate to the Detail Screen.
+
+**Solution:** Both replaced by a single `ChallengeSuccessDialog` — a Compose `Dialog {}`
+shown on top of the Dashboard. Other challenge cards remain visible behind the dialog scrim.
+
+**Android changes:**
+- New `ChallengeSuccessDialog.kt` — handles both Soft Mode (time saved card) and Hard Mode
+  (money refund card). Canvas-based confetti animation (40 particles, 4 colors).
+  Staggered phase reveals at 0ms / 300ms / 600ms / 900ms. Count-up stat animations.
+  X close button + "Zurück zum Dashboard" secondary link both dismiss dialog.
+  "Neue Challenge starten" primary CTA navigates to wizard.
+- `DashboardViewModel`: replaced `completedChallenge` + `completedSoftChallenge` StateFlows
+  with unified `successDialogState: StateFlow<SuccessDialogState?>`.
+  Added `dismissSuccessDialog()`. Added `@ApplicationContext` injection.
+  Added SP guard check: `"win_shown_{challengeId}"` in `"detox_win_popup"` prefs.
+- `DashboardScreen`: removed `HardModeSuccessOverlay` + `SoftModeSuccessOverlay` composables.
+  Now renders `ChallengeSuccessDialog` when `successDialogState != null`.
+- `DailyLogDao`: added `getLogsForChallengeOnce(challengeId)` suspend query.
+- `DailyLogRepository` + `DailyLogRepositoryImpl`: added matching interface + implementation.
+- 14 new German strings in `strings.xml` (`success_dialog_*`).
+
+**DECISION:** SharedPreferences guard `"win_shown_{challengeId}"` in `"detox_win_popup"` file
+is the primary show guard (checked before setting state). DB `completionShown` flag is
+also marked on dismiss as belt-and-suspenders for the existing DB mechanism.
+
+**Stats calculation:**
+- TIME: `totalUsedMinutes = sum(dailyLog.totalMinutes)`
+- TIME_BUDGET: `totalUsedMinutes = sum(dailyLog.budgetUsedMs) / 60_000`
+- SESSIONS: `totalUsedMinutes = totalConsciousOpens * sessionDurationMinutes`
+- Hard Mode money: `refund = floor(amountCents × 0.80) / 100`, `fee = amountCents/100 - refund`
+- Reduction %: `(1 - totalUsed/budget) * 100`, clamped 0–99
+
+**Files changed:** `ChallengeSuccessDialog.kt` (new), `DashboardViewModel.kt`, `DashboardScreen.kt`,
+`DailyLogDao.kt`, `DailyLogRepository.kt`, `DailyLogRepositoryImpl.kt`, `strings.xml`, `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe changes.**
+
+---
+
+### Feature — UsageStats Backup Detection + Rooted Device Detection
+
+**UsageStats Backup Detection (`PermissionCheckWorker.kt`):**
+- When Accessibility Service is disabled, `checkAndReportUsageViolation()` runs each worker cycle.
+- `detectUsageViolation()` queries `UsageStatsManager.INTERVAL_BEST` for the last 1 hour.
+  If any blocked package has > 1 min foreground time → violation detected.
+- First detection: writes `usageViolationDetectedAt`, `violatingPackage`, `usageMinutes` to
+  `users/{uid}/permissionStatus/current` (SetOptions.merge()). Local flag in
+  `"detox_usage_violation"` SharedPrefs prevents repeat writes.
+- Clears local flag when accessibility is re-enabled (service working again).
+- Sends "⚠️ App-Nutzung erkannt" notification via new `NotificationHelper.sendUsageViolationDetected()`.
+- NEVER counts as conscious open — purely for violation detection.
+
+**Cloud Function (`checkPermissionViolations` / `scheduledPermissionCheck`):**
+- `runPermissionViolationCheck()` now also queries `usageViolationDetectedAt != null`.
+- If > 1 hour elapsed since violation AND no `usageCapturedAt` set → capture Hard Mode Stripe payments.
+- Writes `usageCapturedAt` (CF-only field, blocked by Firestore rules on client).
+
+**Rooted Device Detection:**
+- New `RootDetectionManager.kt` object (uses `com.scottyab:rootbeer-lib:0.1.0`).
+- `ChallengeCreationViewModel.createChallenge()`: before initiating Hard Mode payment,
+  calls `RootDetectionManager.checkAndWarn()`. If rooted → sets `RootedDeviceWarning` UiState
+  and logs `isRooted: true` to `users/{uid}/deviceInfo/security` (fire-and-forget).
+- `ChallengeCreationScreen`: shows non-blocking AlertDialog with "Verstanden — trotzdem fortfahren"
+  / "Abbrechen" buttons. User must explicitly acknowledge before payment proceeds.
+- Root never blocks challenge creation — warn + log only.
+
+**Firestore rules:**
+- `permissionStatus`: adds `usageCapturedAt` to CF-only blocked keys list.
+- New `deviceInfo` sub-collection: user read/write, `adminVerified` field blocked on client.
+
+**Files changed:** `PermissionCheckWorker.kt`, `NotificationHelper.kt`, `RootDetectionManager.kt` (new),
+`ChallengeCreationViewModel.kt`, `ChallengeCreationScreen.kt`, `functions/src/index.ts`,
+`firestore.rules`, `strings.xml`, `app/build.gradle.kts`
+**Requires deploy:** `firebase deploy --only functions` and `firebase deploy --only firestore:rules`
+
+---
+
+### Feature — Server-side 24h permission loss timer for Hard Mode
+
+Mirrors the `permissionLostAt` timer to Firestore so Stripe capture happens server-side
+even if the user uninstalls the app or clears data before the 24h deadline.
+
+**Android (`PermissionCheckWorker.kt`):**
+- On first permission loss: writes `permissionLostAt`, `permissionType`, `deviceId` to
+  `users/{uid}/permissionStatus/current` (fire-and-forget, SetOptions.merge()).
+- On permission restore: clears `permissionLostAt`, sets `permissionRestoredAt`.
+- Hour-aware escalation notifications at 6h, 12h, 23h via new `NotificationHelper.sendPermissionEscalation()`.
+
+**Android (`DailyEvaluationWorker.kt`):**
+- Calls `checkPermissionViolations` CF as non-fatal fallback at end of daily evaluation.
+
+**Cloud Functions (`functions/src/index.ts`):**
+- `checkPermissionViolations` (onRequest): captures Stripe for Hard Mode solo + group participants
+  whose permission has been missing > 24h. Accepts Bearer token or x-internal-secret header.
+- `scheduledPermissionCheck` (pubsub, every 1 hour): same logic, runs automatically.
+- Shared `runPermissionViolationCheck()` helper.
+
+**`firestore.rules`:** New `permissionStatus` sub-collection rule. Client cannot write
+`capturedAt`/`captureReason` (CF-only fields via Admin SDK).
+
+**`functions/.env`:** Added `INTERNAL_SECRET` for scheduler auth.
+
+**Files changed:** `PermissionCheckWorker.kt`, `NotificationHelper.kt`, `CloudFunctionsService.kt`,
+`DailyEvaluationWorker.kt`, `functions/src/index.ts`, `functions/.env`, `firestore.rules`, `strings.xml`
+**Requires deploy:** `firebase deploy --only functions:checkPermissionViolations,functions:scheduledPermissionCheck`
+and `firebase deploy --only firestore:rules`
+
+---
+
+### Fixed — DetoxHorizontalPicker min/max values corrected across all wizards
+
+Updated picker ranges to realistic UX bounds in UI layer only. No logic, schema, or Stripe changes.
+- SESSION_LIMIT: 1–50 → 1–20
+- TIME_LIMIT: 1–480 → 5–120
+- DAILY_BUDGET: 1–480 → 5–120
+- Session duration: 1–60 → 1–30
+- Duration Soft Mode: 1–365 → 3–90 (min raised to 3)
+- Duration Hard Mode: 14–365 → 7–90 production (debug stays 1); max lowered to 90
+- Duration Group: 3–365 → 3–30
+- Buy-in Group: 10–500 → 10–50
+- Hard Mode Einsatz: 5–500 → 5–100
+- All pickers clamp selectedValue to new range via `coerceIn`/`coerceAtMost`
+
+**Files changed:** `ChallengeCreationScreen.kt`, `GroupChallengeCreateScreen.kt`, `docs/08_ui_design_system.md`
+
+---
 
 ### Fixed — Group Challenge leaderboard shared rank (standard competition ranking)
 
@@ -1682,7 +1890,7 @@ Never use UsageStatsManager for open counting.
 
 ### Overlays — never quit from overlay
 No "Challenge verlieren" or quit option in any overlay.
-Single action only: "Stark bleiben 💪" or "Zurück".
+Overlay buttons: Primary = 'Nicht öffnen' (#00C853 bg, #000 text). Ghost = 'trotzdem öffnen' (#FFFFFF text, transparent bg). No emojis in any button text.
 
 ### Universal Challenge Pattern
 Soft Mode = base blocking logic + DailyLog sync

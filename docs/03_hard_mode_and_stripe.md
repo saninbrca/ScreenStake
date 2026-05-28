@@ -8,9 +8,12 @@
 
 | Rule | Value |
 |------|-------|
-| Minimum duration | **14 days** — enforced in `CreateChallengeUseCase`, cannot be bypassed |
+| Minimum duration | **7 days** production (1 day DEBUG) — enforced in `CreateChallengeUseCase` |
+| Maximum duration | **90 days** |
+| Minimum stake | **€5** |
+| Maximum stake | **€100** |
 | Money | Real money via Stripe |
-| End date | Mandatory (minimum 14 days from start) |
+| End date | Mandatory (minimum 7 days from start) |
 | Fail condition | Daily limit exceeded → Stripe capture → marked FAILED |
 | Success condition | All days completed without exceeding limit → Stripe refund → marked COMPLETED |
 | Logout | **BLOCKED** while Hard Mode challenge is active (device binding) |
@@ -36,7 +39,7 @@ Hard Mode is NOT a separate system. It is Soft Mode with Stripe added on top.
 | Stripe capture | ❌ | ✅ on fail (FIRST before Room write) |
 | Stripe refund | ❌ | ✅ on success (FIRST before Room write) |
 | Logout blocking | ❌ | ✅ device binding |
-| Minimum duration | none | 14 days |
+| Minimum duration | none | 7 days (1 day in debug) |
 
 RULE: Any fix applied to Soft Mode blocking/overlay/DailyLog logic
 MUST be applied to Hard Mode as well. They share the same code paths.
@@ -310,6 +313,8 @@ users/{userId}/
 
 ## Payout System
 
+→ Full payout rates and fee tables: see docs/09_payout_and_fees.md
+
 ### Payout Rates (App Fee)
 | Challenge type | User gets back | App keeps |
 |---------------|---------------|-----------|
@@ -392,10 +397,37 @@ Data source: Room (solo) + Firestore group doc (prizePerWinner, appFee) + pendin
 
 ---
 
+## Permission Violation Capture (Server-side)
+
+Hard Mode stakes are captured server-side if permissions are lost — independent of app state.
+
+**Trigger paths:**
+- Permission lost (Accessibility or Overlay) → `permissionLostAt` written to Firestore by
+  `PermissionCheckWorker` → `checkPermissionViolations` CF captures after 24h.
+- Accessibility disabled + blocked app used > 1 min → `usageViolationDetectedAt` written by
+  `PermissionCheckWorker` → CF captures after 1 hour.
+
+**Capture order:** Stripe FIRST → Firestore `failReason: "permission_violation"` SECOND.
+
+`failReason` written to the challenge document on server-side capture. Firestore rules block
+client writes to `capturedAt` and `usageCapturedAt` — only Cloud Function Admin SDK can set them.
+
+---
+
+## Rooted Device (Hard Mode)
+
+- RootBeer check runs before Hard Mode payment initiation (in `ChallengeCreationViewModel`).
+- Non-blocking warning dialog: "Verstanden — trotzdem fortfahren" / "Abbrechen".
+- Root status logged to `users/{uid}/deviceInfo/security` for admin visibility.
+- Hard Mode creation is **NOT blocked** for rooted devices — warn + log only.
+
+---
+
 ## Known Issues (Hard Mode / Stripe)
 
-1. ~~**Stripe Connect for automatic payouts not implemented.**~~ RESOLVED — Custom Connected Account
-   with IBAN direct setup implemented. `claimPendingPayouts` CF retained as fallback for manual retry.
+1. ~~**Stripe Connect for automatic payouts not implemented.**~~ PARTIALLY RESOLVED — Custom Connected Account with IBAN direct setup is implemented. Prize transfers are currently initiated **manually by the founder via Stripe Dashboard**. Full automatic transfer via API is planned post-launch. `claimPendingPayouts` CF retained as fallback for manual retry.
+
+   **Stripe Connect (Custom Account):** IBAN collection + Connected Account creation is implemented. Prize transfers are currently initiated manually by the founder via Stripe Dashboard. Full automatic transfer via API is planned post-launch.
 
 2. ~~**`completeGroupChallenge` Cloud Function not triggering automatically.**~~ RESOLVED — called by
    `DailyEvaluationWorker.evaluateGroupChallenge()` when `now >= endDate`.
@@ -423,12 +455,23 @@ Always read fresh from Room on Detail screen init using DateUtils.todayKey().
 
 ---
 
+## Limit Reduction
+
+Hard Mode supports mid-challenge limit reduction (same as Soft Mode).
+Reduction is pending until midnight, never reversible, stored in Firestore as `pendingLimitValue`.
+See docs/02_core_mechanics_and_soft_mode.md for full mechanics.
+
+---
+
 ## Detail Screen Design (Hard Mode)
+
+→ For UI/design specs see docs/08_ui_design_system.md
 
 Same layout as Soft Mode with the following differences:
 
 **Badge:** "HARD MODE" (orange — `#FFF0E8` bg, `#C05A00` text)
-**Stats row:** Streak 🔥 | Einsatz €X | Tage noch (green)
+**Stats row:** Streak 🔥 | Tage noch (green)
+*(Einsatz shown in info list below, not in stat row)*
 
 **Info list additions:**
 - "Einsatz" → "€X,XX"

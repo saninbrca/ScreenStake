@@ -100,6 +100,7 @@ com.detox.app/
 │       └── SyncUserDataUseCase.kt
 ├── presentation/
 │   ├── components/
+│   │   ├── AppWebsiteSelectionStep.kt
 │   │   ├── BlockingScreenOverlay.kt
 │   │   ├── BudgetSelectionOverlay.kt
 │   │   ├── DetoxHorizontalPicker.kt  ← reusable horizontal scroll number picker
@@ -108,10 +109,12 @@ com.detox.app/
 │   │   │                                        onValueChange: (Int) -> Unit, isDark: Boolean
 │   │   │                                isDark=true:  selected=#FFF, unselected=#444 (overlays)
 │   │   │                                isDark=false: selected=#000, unselected=#AAA (wizard, white bg)
+│   │   ├── HardModeFailOverlay.kt
 │   │   ├── HardModeLockoutOverlay.kt
 │   │   ├── LimitExceededOverlay.kt
 │   │   ├── SessionIntentionOverlay.kt
 │   │   ├── SessionLimitReachedOverlay.kt
+│   │   ├── SoftModeSuccessOverlay.kt
 │   │   ├── TauntOverlay.kt
 │   │   └── WebsiteBlockedOverlay.kt
 │   ├── navigation/
@@ -127,7 +130,8 @@ com.detox.app/
 │       ├── groupchallenge/
 │       │   ├── create/        GroupChallengeCreateScreen + ViewModel
 │       │   ├── detail/        GroupChallengeDetailScreen + ViewModel
-│       │   └── join/          GroupChallengeJoinScreen + ViewModel
+│       │   ├── join/          GroupChallengeJoinScreen + ViewModel
+│       │   └── results/       GroupChallengeResultsScreen
 │       ├── history/           HistoryScreen + ViewModel
 │       ├── onboarding/        OnboardingScreen + ViewModel
 │       ├── profile/           ProfileScreen + ViewModel
@@ -135,6 +139,7 @@ com.detox.app/
 │       └── statistics/        StatisticsScreen + ViewModel
 ├── service/
 │   ├── AppDetectionAccessibilityService.kt  ← CORE
+│   ├── AdultDomainsUpdateWorker.kt
 │   ├── BootReceiver.kt
 │   ├── DailyEvaluationWorker.kt
 │   ├── DailyReminderWorker.kt
@@ -142,6 +147,8 @@ com.detox.app/
 │   ├── NotificationHelper.kt
 │   ├── OverlayManager.kt                    ← CORE
 │   ├── PermissionCheckWorker.kt
+│   ├── RedemptionNotificationWorker.kt
+│   ├── RootDetectionManager.kt
 │   ├── TrackedAppEventBus.kt
 │   └── UsageTrackingService.kt
 ├── ui/theme/
@@ -154,7 +161,7 @@ com.detox.app/
 
 functions/src/index.ts   ← ALL Cloud Functions
 assets/
-├── adult_domains.txt    ← 100+ adult domains
+├── adult_domains.txt    ← 133,713+ adult domains (OISD + StevenBlack + ut1, auto-updated monthly)
 └── fonts/               ← Poppins (regular/medium/semibold/bold/extrabold)
 admin/index.html         ← Admin payout dashboard (contains Firebase credentials → .gitignore)
 ```
@@ -197,6 +204,8 @@ val today = DateUtils.todayKey()   // NEVER use 86400000 inline
 ---
 
 ## Partial App Blocking — Architecture Notes
+
+> ⚠️ **REMOVED FROM UI:** Partial block UI was removed from the Websites tab wizard. Code is retained but unreachable from the creation flow. Do NOT build on this — may be removed in a future cleanup.
 
 ### PartialBlockSection Enum
 Location: `domain/model/PartialBlockSection.kt`
@@ -381,6 +390,12 @@ val request = Request.Builder()
 - `completeGroupChallenge`
 - `createConnectedAccount`
 - `confirmGroupJoin`
+- `leaveGroupChallenge`
+- `deleteGroupChallenge`
+- `expireGroupChallenge`
+- `checkPermissionViolations`
+- `scheduledPermissionCheck`
+- `claimPendingPayouts`
 
 ### Deploy Commands
 ```bash
@@ -478,32 +493,6 @@ admin/index.html
 ```
 
 ---
-
-## Claude Code Settings Reference
-
-```json
-// ~/.claude/settings.json
-{
-  "model": "sonnet",
-  "env": {
-    "MAX_THINKING_TOKENS": "10000",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
-  }
-}
-```
-
-## Development Workflow
-
-```
-1. Write prompt here → copy to Claude Code /plan mode
-2. Test on real Huawei device after EVERY change
-3. Logcat filter: package:com.detox.app level:error
-4. git add . && git commit -m "feat/fix: description" after each working feature
-5. /compact in Claude Code after long sessions
-6. /clear in Claude Code when switching topics
-7. firebase deploy --only functions after any Cloud Function change
-```
 
 ## Debug Testing Panel
 

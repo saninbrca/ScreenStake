@@ -71,20 +71,21 @@ WorkManager.getInstance(context).enqueueUniquePeriodicWork(
 
 Triggered when: overlay permission OR AccessibilityService permission is lost while a Hard Mode challenge is active.
 
-### Escalation Timeline
+### Escalation Timeline (current)
+
+**Acceleration rule (implemented):** If user opens the app and ignores the warning in the first 12 hours, the timer accelerates (hours count down faster). After hour 12, timer runs at fixed pace regardless of user action.
+
+**Visual indicator:** Red pulsing banner shown on ALL screens while any required permission is missing.
 
 | Time since loss | Action |
 |----------------|--------|
-| Hour 0 | Notification: "⚠️ Deine Challenge ist in Gefahr!" |
-| Hour 2 | Escalated notification (higher priority) |
-| Hour 6 | Urgent notification |
-| Hour 12 | Notification: "🔴 Letzte Warnung!" |
-| Hour 18 | Fullscreen block shown on every app open (cannot be dismissed) |
-| Hour 24 | **Hard Mode: Stripe capture → Challenge marked FAILED** |
-
-**Acceleration rule:** If user opens the app and ignores the warning in the first 12 hours, the timer accelerates (hours count down faster). After hour 12, timer runs at fixed pace regardless of user action.
-
-**Visual indicator:** Red pulsing banner shown on ALL screens while any required permission is missing.
+| Hour 0  | "Challenge in Gefahr" notification |
+| Hour 2  | Escalated notification |
+| Hour 6  | "Noch 18 Stunden" notification |
+| Hour 12 | "Letzte Warnung — noch 12 Stunden" |
+| Hour 18 | Fullscreen block on every app open |
+| Hour 23 | "In 1 Stunde wird Einsatz eingezogen" |
+| Hour 24 | **Server-side Stripe capture via Cloud Function** |
 
 ### Soft Mode: No money capture — only notification escalation, challenge marked FAILED at hour 24.
 
@@ -319,7 +320,7 @@ class BootReceiver : BroadcastReceiver() {
 Sentry Android SDK does **not** require Google Play Services.
 It uses its own HTTP transport layer directly. Safe to add on Huawei.
 
-Integration planned (not yet implemented). When adding:
+**Sentry SDK:** planned for post-beta. SDK is Huawei compatible (no Google Play Services required). Integration deferred to avoid adding complexity before launch. When adding:
 - Use `SentryAndroid.init` in `DetoxApplication.onCreate()`
 - No FCM dependency — Sentry works on Huawei out of the box
 - Do NOT use Sentry's Firebase Performance monitoring integration (requires Play Services)
@@ -371,6 +372,64 @@ object HapticManager {
 □ Test → always verify on real Huawei hardware, not just emulator
 ```
 
+## Server-side Permission Enforcement
+
+When a Hard Mode challenge is active, the app mirrors the permission state to Firestore
+so Stripe capture can happen server-side even if the app is uninstalled or data is cleared.
+
+**Firestore path:** `users/{uid}/permissionStatus/current`
+
+| Field | Written by | Purpose |
+|-------|-----------|---------|
+| `permissionLostAt` | Android (PermissionCheckWorker) | Timestamp of first permission loss |
+| `permissionType` | Android | "accessibility" \| "overlay" \| "both" |
+| `deviceId` | Android | For multi-device detection |
+| `permissionRestoredAt` | Android | Set when permissions restored; clears permissionLostAt |
+| `capturedAt` | Cloud Function only | Set after Stripe capture — client CANNOT write |
+| `captureReason` | Cloud Function only | "permission_violation" — client CANNOT write |
+
+**Cloud Functions:**
+- `checkPermissionViolations` (onRequest): queries Firestore for users with `permissionLostAt` > 24h
+  and no `capturedAt`. Captures Stripe payment for all active Hard Mode solo + group participants.
+  Accepts Bearer token or x-internal-secret header.
+- `scheduledPermissionCheck` (pubsub, every 1 hour): same logic, runs automatically via Cloud Scheduler.
+- Shared `runPermissionViolationCheck()` helper used by both.
+
+**Capture order:** Stripe FIRST → Firestore update SECOND (same rule as all other capture paths).
+
+---
+
+## UsageStats Backup Detection
+
+When Accessibility Service is disabled, `PermissionCheckWorker` runs `checkAndReportUsageViolation()`
+each worker cycle as a backup detection path.
+
+- `detectUsageViolation()` queries `UsageStatsManager.INTERVAL_BEST` for the last 1 hour.
+- If any blocked package has > 1 min foreground time → violation detected.
+- First detection: writes `usageViolationDetectedAt`, `violatingPackage`, `usageMinutes` to
+  `users/{uid}/permissionStatus/current` (SetOptions.merge()).
+- Local flag in `"detox_usage_violation"` SharedPrefs prevents repeat writes.
+- Clears local flag when accessibility is re-enabled.
+- Cloud Function `runPermissionViolationCheck()` also queries `usageViolationDetectedAt != null`.
+  If > 1 hour elapsed and no `usageCapturedAt` set → captures Hard Mode Stripe payments.
+- `usageCapturedAt` is CF-only (blocked by Firestore rules on client).
+- NEVER counts as a conscious open — purely for violation detection.
+
+---
+
+## Rooted Device Detection
+
+- Library: `com.scottyab:rootbeer-lib:0.1.0`
+- Checked in `ChallengeCreationViewModel.createChallenge()` before initiating Hard Mode payment.
+- If rooted: sets `RootedDeviceWarning` UiState + logs `isRooted: true` to
+  `users/{uid}/deviceInfo/security` (fire-and-forget, does NOT block challenge creation).
+- UI shows non-blocking `AlertDialog` with "Verstanden — trotzdem fortfahren" / "Abbrechen".
+  User must explicitly acknowledge before payment proceeds.
+- Root **never blocks** challenge creation — warn + log only.
+- Firestore rule: `deviceInfo` sub-collection has `adminVerified` field blocked on client.
+
+---
+
 ## Debug: Permission Testing
 
 Use Debug Panel in ProfileScreen to test permission scenarios:
@@ -395,3 +454,17 @@ On Huawei specifically:
    - AccessibilityService status also checked
    - ServiceWatchdogWorker detects missing service
    - Battery optimization warning shown if service killed
+
+### Debug Panel — PERMISSION VIOLATION TESTS section (DEBUG builds only)
+
+5 buttons available in ProfileScreen Debug Panel:
+
+1. **Simulate Permission Loss (Firestore)** — writes `permissionLostAt = now - 25h` directly to
+   Firestore `permissionStatus/current`. Use to test server-side capture without waiting 24h.
+2. **Simulate Usage Violation** — writes `usageViolationDetectedAt = now - 2h` to Firestore.
+   Use to test the UsageStats backup capture path.
+3. **Check Root Status** — runs RootDetectionManager and shows result in a dialog.
+4. **Force CF Permission Check** — calls `checkPermissionViolations` CF immediately.
+   Shows result (captured / nothing to capture / error).
+5. **Reset Permission Status** — clears entire `permissionStatus/current` document in Firestore.
+   Use to clean up after tests.

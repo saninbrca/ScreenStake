@@ -28,7 +28,7 @@ This means:
 
 | Rule | Value |
 |------|-------|
-| Minimum duration | No minimum — end date is optional |
+| Minimum duration | 3 days |
 | Money involved | ❌ Never |
 | Motivation | Streak-based |
 | Fail condition | Limit exceeded (opens or time) |
@@ -61,14 +61,14 @@ User opens blocked app
 OverlayManager reads consciousOpens from Room DailyLog (DateUtils.todayKey())
 ↓
 consciousOpens < limit → SessionIntentionOverlay (Stage 1)
-  "Stark bleiben 💪" → dismiss + home (no count)
+  "Nicht öffnen" → dismiss + home (no count)
   "öffnen" → 5s countdown → consciousOpens++
     → write Room immediately (atomic)
     → write Firestore immediately (fire-and-forget, SetOptions.merge())
     → allow app 5s whitelist
 ↓
 consciousOpens >= limit → SessionLimitReachedOverlay (Stage 2)
-  "Stark bleiben 💪" only → dismiss + home
+  "Nicht öffnen" only → dismiss + home
   No bypass, no quit option
 ↓
 Quit only via: Dashboard → Detail → "Aufgeben"
@@ -92,7 +92,7 @@ timeUsedMs < limitMs → SessionIntentionOverlay (Stage 1)
     → stores session_end_time_{packageName} in SharedPreferences
 ↓
 timeUsedMs >= limitMs → LimitExceededOverlay (Stage 2)
-  "Stark bleiben 💪" only → dismiss + home
+  "Nicht öffnen" only → dismiss + home
 ```
 
 **TIME_LIMIT has NO per-session countdown** (by design — LimitType difference):
@@ -144,7 +144,7 @@ App blocked outside configured time window + days
 No opens counted, no overlay interaction needed
 AccessibilityService checks current time against schedule
   Inside window  → allow
-  Outside window → SessionLimitReachedOverlay ("Stark bleiben 💪" only)
+  Outside window → SessionLimitReachedOverlay ("Nicht öffnen" only)
 ```
 
 ---
@@ -183,7 +183,7 @@ override fun onCreate() {
 - Shown when user tries to open a blocked app
 - Displays: current streak, motivation text, opens count today
 - Buttons:
-  - **"Stark bleiben 💪"** — large, green, prominent → dismiss overlay → go home
+  - **"Nicht öffnen"** — large, green, prominent → dismiss overlay → go home
   - **"öffnen"** — tiny, grey, barely visible → starts 5-second countdown
 - 5-second countdown after tapping "öffnen" (user can cancel)
 - After countdown: `consciousOpens++` → write to Room + Firestore → allow app temporarily (5s whitelist)
@@ -253,7 +253,7 @@ Add labels below: left = context text (11sp, #333), right = percentage.
 
 ### "trotzdem öffnen" button
 SessionIntentionOverlay ONLY.
-10sp, color #222, transparent bg, no border, height 32dp.
+10sp, color #FFFFFF, transparent bg, no border, height 32dp.
 Intentionally barely visible — psychological design.
 All other overlays: NO ghost button.
 
@@ -313,7 +313,7 @@ On app start:
 
 **Room DailyLog key format:**
 ```kotlin
-val date = System.currentTimeMillis() / 86400000 * 86400000  // start of day in ms
+val date = DateUtils.todayKey() // ALWAYS use this — never inline calc
 val key = "${challengeId}_${date}"
 ```
 
@@ -378,6 +378,8 @@ DEBUG only:
 
 ## Account & Auth Rules
 
+→ Full auth flow: see docs/07_onboarding_and_auth.md
+
 - **Primary auth:** Email/Password
 - **Secondary:** Google Sign-In (only on devices with Google Play Services — NOT Huawei)
 - **On logout:**
@@ -402,18 +404,44 @@ DEBUG only:
 - Implementation: `AppDetectionAccessibilityService` monitors URL bar content in all major browsers
 
 ### Website Challenge — Icon + Name Display
-- Favicons loaded via Google Favicon Service: `https://www.google.com/s2/favicons?domain=X&sz=48`
+- Favicons loaded via Google Favicon Service: `https://www.google.com/s2/favicons?domain=X&sz=64`
 - Name shows domain (e.g. "instagram.com") per row
 - Detail Screen shows "BLOCKIERTE WEBSITES" section: favicon + domain per row
 
 ---
 
+## Completion Screens
+
+Challenge outcomes now trigger dedicated result screens (previously silent):
+
+| Outcome | Screen | Trigger |
+|---------|--------|---------|
+| Soft Mode COMPLETED | `SoftModeSuccessOverlay` on Dashboard | `DailyEvaluationWorker` detects all days done |
+| Soft Mode FAILED | `SoftFailResultScreen` | `DailyEvaluationWorker` detects limit exceeded |
+| Hard Mode FAILED | `HardModeFailOverlay` on Dashboard | `DailyEvaluationWorker` after Stripe capture |
+| Hard Mode COMPLETED | `HardModeSuccessOverlay` | Existing — unchanged ✅ |
+
+`SoftFailResultScreen` was previously dead code (worker called it but no navigation path existed).
+Now correctly triggered via `DailyEvaluationWorker` result state.
+
+---
+
+## Partial Block Feature — Removed
+
+The "Spezifische Features sperren" section (Instagram Reels, YouTube Shorts, TikTok For You,
+Facebook Reels, Twitter For You, Snapchat Spotlight) has been **removed** from the Websites tab
+in all wizard flows.
+
+- `partialBlockPaths` and `partialBlockSections` fields removed from wizard state.
+- Adult Content blocking and manual domain blocking are **unchanged**.
+- The partial block detection code in `AppDetectionAccessibilityService` may still exist but
+  is no longer reachable from the creation flow.
+
+---
+
 ## Known Issues (Soft Mode / Core)
 
-1. **`opensToday` in overlay (Group Challenges): FIXED** — OverlayManager now reads from
-   `TrackedAppEventBus.groupSessionInfos`. Room upsert runs unconditionally on every ACTIVE Firestore snapshot.
-
-2. **Group Challenge blocking unreliable:**
+1. **Group Challenge blocking unreliable:**
    `AppDetectionAccessibilityService` doesn't always block for Group Challenge participants because sync from Firestore to local Room can be delayed or missed.
 
 ---
@@ -474,15 +502,18 @@ Never use ViewModel state or passed-in arguments for progress display.
 Used in ALL limit value inputs throughout the app.
 Single reusable composable in `presentation/components/DetoxHorizontalPicker.kt`
 
-### Applied to
-| Context | Range | Default | Unit |
-|---------|-------|---------|------|
-| SESSION_LIMIT wizard step | 1–50 | 5 | Öffnungen |
-| TIME_LIMIT wizard step | 1–480 | 60 | Minuten |
-| DAILY_BUDGET wizard step | 1–480 | 10 | Minuten |
-| Duration step | 1–365 | varies by mode | Tage |
-| Group buy-in step | 10–500 | 10 | Euro |
-| BudgetSelectionOverlay | 1–remainingMinutes | min(5, remaining) | — |
+### Updated bounds (current — see docs/08_ui_design_system.md for full table)
+| Context | Old Range | New Range |
+|---------|-----------|-----------|
+| SESSION_LIMIT | 1–50 | 1–20 |
+| TIME_LIMIT | 1–480 | 5–120 |
+| DAILY_BUDGET | 1–480 | 5–120 |
+| Session duration | 1–120 | 1–30 |
+| Duration (Soft) | 1–365 | 3–90 |
+| Duration (Hard) | 14–365 | 7–90 (1–90 debug) |
+| Duration (Group) | 3–365 | 3–30 |
+| Buy-in (Group) | 10–500 | 10–50 |
+| Hard Mode stake | 5–500 | 5–100 |
 
 ### Behavior
 - `LazyRow` with `snapFlingBehavior`
@@ -501,16 +532,28 @@ Single reusable composable in `presentation/components/DetoxHorizontalPicker.kt`
 
 Fade gradient left/right edges (40dp). Green underline/dot on selected item.
 
-### Minimum values (enforced)
+### Minimum values (enforced — updated)
 ```
-SESSION_LIMIT:  min 1
-TIME_LIMIT:     min 1
-DAILY_BUDGET:   min 1, default 10
-Duration Soft:  min 1
-Duration Hard:  min 14 (1 in DEBUG)
-Duration Group: min 3
-Buy-in:         min 10 (€)
+SESSION_LIMIT:  min 1,  max 20
+TIME_LIMIT:     min 5,  max 120
+DAILY_BUDGET:   min 5,  max 120, default 10
+Session duration: min 1, max 30
+Duration Soft:  min 3,  max 90
+Duration Hard:  min 7 (1 in DEBUG), max 90
+Duration Group: min 3,  max 30
+Buy-in:         min 10 (€), max 50 (€)
+Hard Mode stake: min 5 (€), max 100 (€)
 ```
+
+### Next Button — App/Website Selection Step
+
+The "Weiter" / "Next" button in the App/Website selection step is enabled if ANY selection
+exists across BOTH tabs (Apps OR Websites), not just the currently active tab.
+
+Previously: only checked the active tab → button stayed disabled if user selected only in
+the other tab.
+Fix: `canGoNext()` checks `selectedApps.isNotEmpty() || selectedDomains.isNotEmpty()` (union
+of both tabs regardless of which tab is currently shown).
 
 ---
 
@@ -535,12 +578,15 @@ Room: same fields added to `ChallengeEntity`.
 
 ## Detail Screen Design (Soft Mode)
 
+→ For UI/design specs see docs/08_ui_design_system.md
+
 iOS-style, white background #F2F2F7, white cards.
 
 ### Card 1 — Header
 - "SOFT MODE" badge (green pill) + end date right
 - App name: 22sp bold
-- 3 stats row: **Aktuelle Streak 🔥** | **Beste Streak** | **Tage noch** (green)
+- 2 stats row: **Streak 🔥** | **Tage noch** (green)
+- *(Beste Streak removed)*
 
 ### Card 2 — Progress
 - "Heute" + "X / Y Öffnungen" header

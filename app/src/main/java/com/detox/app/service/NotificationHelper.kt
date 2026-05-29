@@ -41,6 +41,7 @@ object NotificationHelper {
     private const val NOTIF_ID_PERMISSION_WARNING_BASE = 9010  // 9010..9013 for levels 0-3
     private const val NOTIF_ID_ACCESSIBILITY_LOST     = 9020
     private const val NOTIF_ID_ACCESSIBILITY_RESTORED = 9021
+    private const val NOTIF_ID_USAGE_VIOLATION        = 9040
 
     /** Must be called before posting any notification — safe to call repeatedly. */
     fun createChannels(context: Context) {
@@ -394,6 +395,40 @@ object NotificationHelper {
     }
 
     // ── Accessibility service notifications ───────────────────────────────────
+
+    fun sendPermissionEscalation(context: Context, stage: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val (title, body) = when (stage) {
+            "6h"  -> context.getString(R.string.notif_perm_warn_6h_title)  to context.getString(R.string.notif_perm_warn_6h_body)
+            "12h" -> context.getString(R.string.notif_perm_warn_12h_title) to context.getString(R.string.notif_perm_warn_12h_body)
+            "23h" -> context.getString(R.string.notif_perm_warn_23h_title) to context.getString(R.string.notif_perm_warn_23h_body)
+            else  -> return
+        }
+        val notifId = NOTIF_ID_PERMISSION_WARNING_BASE + when (stage) { "6h" -> 10; "12h" -> 11; else -> 12 }
+        val intent = android.content.Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context, notifId, intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .addAction(0, context.getString(R.string.notif_accessibility_fix_action), pendingIntent)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Permission escalation notification posted: stage=$stage")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping permission escalation notification")
+        }
+    }
 
     fun sendAccessibilityLost(context: Context) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
@@ -765,6 +800,25 @@ object NotificationHelper {
             Timber.d("Payout received notification posted: €$euros")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping payout notification")
+        }
+    }
+
+    fun sendUsageViolationDetected(context: Context, appName: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val body = context.getString(R.string.notif_usage_violation_body, appName)
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_usage_violation_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_USAGE_VIOLATION, notification)
+            Timber.d("Usage violation notification posted for $appName")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping usage violation notification")
         }
     }
 

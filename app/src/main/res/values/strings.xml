@@ -534,12 +534,38 @@
     <string name="notif_hard_mode_completed_body">%1$s abgeschlossen! €%2$d werden zurückgebucht.</string>
     <string name="notif_hard_mode_completed_body_fee">Challenge gewonnen! 💚 €%1$d werden zurückgebucht. (20%% App-Gebühr: €%2$d)</string>
 
-    <!-- Hard Mode Success Overlay (shown once on Dashboard after completion) -->
+    <!-- Success Dialog (replaces both Hard and Soft Mode success overlays) -->
+    <string name="success_dialog_title_main">Challenge geschafft</string>
+    <string name="success_dialog_title_dot">.</string>
+    <string name="success_dialog_subtitle">Du hast %1$d Tage durchgehalten. Bewusst, nicht reflexartig.</string>
+    <string name="success_dialog_streak_badge">🔥 Streak %1$d Tage</string>
+    <string name="success_dialog_time_label">ZEIT ZURÜCKGEWONNEN</string>
+    <string name="success_dialog_time_subtext">≈ ein ganzer Arbeitstag zurück in dein Leben</string>
+    <string name="success_dialog_money_label">EINSATZ ZURÜCKGEBUCHT</string>
+    <string name="success_dialog_money_fee">App-Gebühr (20%%): -%1$s</string>
+    <string name="success_dialog_stat_days">Tage\ndurchgehalten</string>
+    <string name="success_dialog_stat_opens">Bewusst\ngeöffnet</string>
+    <string name="success_dialog_stat_reduction">weniger\nBildschirmzeit</string>
+    <string name="success_dialog_cta_new">Neue Challenge starten</string>
+    <string name="success_dialog_cta_back">Zurück zum Dashboard</string>
+
+    <!-- Legacy overlay strings (kept for any remaining references) -->
     <string name="success_overlay_title">Herzlichen Glückwunsch!</string>
     <string name="success_overlay_subtitle">Du hast deine Challenge geschafft!</string>
     <string name="success_overlay_refund">Your €%1$d has been refunded to your card</string>
     <string name="success_overlay_duration">Challenge duration: %1$d days</string>
     <string name="success_overlay_new_challenge">Start New Challenge</string>
+    <string name="soft_success_title">Challenge geschafft!</string>
+    <string name="soft_success_subtitle">Du hast %1$d Tage durchgehalten.</string>
+    <string name="soft_success_streak">🔥 Streak: %1$d Tage</string>
+    <string name="soft_success_cta">Neue Challenge starten</string>
+
+    <!-- Hard Mode Fail Overlay (shown once on Dashboard after Hard Mode failure) -->
+    <string name="hard_fail_title">Challenge verloren</string>
+    <string name="hard_fail_subtitle">Dein Einsatz wurde eingezogen.</string>
+    <string name="hard_fail_amount">€%1$.2f wurden abgebucht</string>
+    <string name="hard_fail_motivation">Beim nächsten Mal schaffst du es! 💪</string>
+    <string name="hard_fail_cta">Erneut versuchen</string>
 
     <!-- VPN rationale dialog (shown before the system VPN permission dialog) -->
     <string name="vpn_rationale_title">Enable Website Blocking</string>
@@ -701,6 +727,14 @@
     <string name="group_detail_total_prize">Gesamttopf: €%1$d</string>
 
     <!-- Accessibility service lost/restored notifications -->
+    <!-- Permission escalation notifications (24h timer) -->
+    <string name="notif_perm_warn_6h_title">🔴 Berechtigung immer noch fehlt</string>
+    <string name="notif_perm_warn_6h_body">Noch 18 Stunden — aktiviere die Berechtigung um deinen Einsatz zu schützen.</string>
+    <string name="notif_perm_warn_12h_title">🚨 Letzte Warnung</string>
+    <string name="notif_perm_warn_12h_body">Noch 12 Stunden bis dein Einsatz automatisch eingezogen wird.</string>
+    <string name="notif_perm_warn_23h_title">💸 In 1 Stunde wird dein Einsatz eingezogen</string>
+    <string name="notif_perm_warn_23h_body">Aktiviere die Berechtigung jetzt — sonst verlierst du deinen Einsatz.</string>
+
     <string name="notif_accessibility_lost_title">⚠️ Accessibility Service deaktiviert!</string>
     <string name="notif_accessibility_lost_body">Deine Challenge kann Apps nicht mehr sperren. Tippe um es zu beheben.</string>
     <string name="notif_accessibility_fix_action">Jetzt beheben →</string>
@@ -1207,5 +1241,48 @@
     <string name="permission_banner_overlay_body">Display-Berechtigung fehlt — Overlays können nicht angezeigt werden.</string>
     <string name="permission_banner_both_body">Berechtigungen fehlen — deine Challenge ist nicht geschützt.</string>
     <string name="permission_banner_cta">Jetzt beheben →</string>
+
+    <!-- Usage violation notification (accessibility disabled but blocked app used) -->
+    <string name="notif_usage_violation_title">⚠️ App-Nutzung erkannt</string>
+    <string name="notif_usage_violation_body">Du hast %1$s genutzt obwohl die Berechtigung fehlt. Dein Einsatz ist in Gefahr.</string>
+
+    <!-- Root detection warning dialog (Hard Mode challenge creation) -->
+    <string name="root_warning_title">⚠️ Sicherheitshinweis</string>
+    <string name="root_warning_body">Dein Gerät scheint modifiziert zu sein. Dies kann die Zuverlässigkeit des Blockings beeinträchtigen. Dein Einsatz kann trotzdem eingezogen werden bei Verstößen.</string>
+    <string name="root_warning_proceed">Verstanden — trotzdem fortfahren</string>
+    <string name="root_warning_cancel">Abbrechen</string>
+
+    <!-- Verlauf redesign — new card design strings -->
+    <string name="verlauf_mode_soft">SOFT MODE</string>
+    <string name="verlauf_mode_hard">HARD MODE</string>
+    <string name="verlauf_status_completed">✓ Geschafft</string>
+    <string name="verlauf_status_failed">✗ Aufgegeben</string>
+    <string name="verlauf_date_range">%1$s–%2$s · %3$d Tage</string>
+    <string name="verlauf_stats_time_label">ZEIT ZURÜCKGEWONNEN</string>
+    <string name="verlauf_stats_subtext_full_day">≈ ein ganzer Arbeitstag</string>
+    <string name="verlauf_stats_subtext_half_day">≈ ein halber Arbeitstag</string>
+    <string name="verlauf_stats_subtext_hours">≈ %d Stunden gewonnen</string>
+    <string name="verlauf_stats_subtext_minutes">≈ %d Minuten gewonnen</string>
+    <string name="verlauf_stats_streak_label">Beste Streak</string>
+    <string name="verlauf_stats_opens_label">Bewusst geöffnet</string>
+    <string name="verlauf_stats_reduction_label">weniger Zeit</string>
+    <string name="verlauf_failed_ended">Challenge am %1$s beendet</string>
+    <string name="verlauf_hard_refund">💰 €%1$.2f zurückgebucht</string>
+    <string name="verlauf_hard_refund_fee">App-Gebühr (20%%) wurde einbehalten</string>
+    <string name="verlauf_hard_captured">💸 €%1$.2f eingezogen</string>
+    <string name="verlauf_hard_captured_reason">Challenge nicht bestanden</string>
+    <string name="verlauf_start_again">Nochmal starten</string>
+    <string name="verlauf_empty">Noch keine abgeschlossenen Challenges</string>
+
+    <!-- History Detail Screen -->
+    <string name="history_detail_mode_group">GROUP</string>
+    <string name="history_detail_info_limit">Limit</string>
+    <string name="history_detail_info_started">Gestartet</string>
+    <string name="history_detail_info_ended">Beendet</string>
+    <string name="history_detail_info_duration">Dauer</string>
+    <string name="history_detail_limit_sessions">%1$d Öffnungen / Tag</string>
+    <string name="history_detail_limit_time">%1$d Min / Tag</string>
+    <string name="history_detail_limit_budget">%1$d Min Budget / Tag</string>
+    <string name="history_detail_not_found">Challenge nicht gefunden</string>
 
 </resources>

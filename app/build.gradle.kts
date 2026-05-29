@@ -141,6 +141,9 @@ dependencies {
     // Konfetti (confetti particle effect)
     implementation("nl.dionsegijn:konfetti-compose:2.0.4")
 
+    // Root detection
+    implementation("com.scottyab:rootbeer-lib:0.1.0")
+
     // Logging
     implementation(libs.timber)
 

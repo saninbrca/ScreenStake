@@ -1111,6 +1111,156 @@ export const getConnectedAccountStatus = functions.region(REGION).https.onReques
   } catch (e) { handleError("getConnectedAccountStatus", e, res); }
 });
 
+// ── checkPermissionViolations ─────────────────────────────────────────────────
+// Finds users whose overlay/accessibility permission has been missing for > 24h
+// and captures their Hard Mode Stripe payments server-side.
+// Called hourly by scheduledPermissionCheck, and as fallback from DailyEvaluationWorker.
+
+async function runPermissionViolationCheck(): Promise<number> {
+  const now = Date.now();
+  const twentyFourHours = 24 * 60 * 60 * 1000;
+  const db = admin.firestore();
+  let processed = 0;
+
+  const snapshot = await db
+    .collectionGroup("permissionStatus")
+    .where("permissionLostAt", "!=", null)
+    .get();
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    const lostAt: number = data["permissionLostAt"];
+
+    if (!lostAt || (now - lostAt) < twentyFourHours) continue;
+    if (data["capturedAt"]) continue;
+    if (data["permissionRestoredAt"]) continue;
+
+    const userId = doc.ref.parent.parent!.id;
+
+    // Solo Hard Mode challenges
+    const challenges = await db.collection("users").doc(userId)
+      .collection("challenges")
+      .where("status", "==", "active")
+      .get();
+
+    for (const challenge of challenges.docs) {
+      const cd = challenge.data();
+      if (cd["mode"] !== "hard") continue;
+      const paymentIntentId: string | undefined = cd["stripePaymentIntentId"] ?? cd["paymentIntentId"];
+      if (!paymentIntentId) continue;
+
+      try {
+        await getStripe().paymentIntents.capture(paymentIntentId);
+        await challenge.ref.update({
+          status: "failed",
+          failReason: "permission_violation",
+          failedAt: now,
+          payoutStatus: "captured",
+        });
+        functions.logger.info(`checkPermissionViolations: captured solo challenge ${challenge.id} user ${userId}`);
+      } catch (e) {
+        functions.logger.error(`checkPermissionViolations: capture failed for ${challenge.id}`, e);
+      }
+    }
+
+    // Group Challenge participants
+    const groups = await db.collectionGroup("participants")
+      .where("userId", "==", userId)
+      .where("status", "==", "active")
+      .get();
+
+    for (const participant of groups.docs) {
+      const pd = participant.data();
+      if (!pd["paymentIntentId"]) continue;
+      try {
+        await getStripe().paymentIntents.capture(pd["paymentIntentId"]);
+        await participant.ref.update({
+          status: "failed",
+          failReason: "permission_violation",
+          failedAt: now,
+        });
+        functions.logger.info(`checkPermissionViolations: captured group participant user ${userId}`);
+      } catch (e) {
+        functions.logger.error(`checkPermissionViolations: group capture failed`, e);
+      }
+    }
+
+    // Mark as captured — Admin SDK only field, enforced by Firestore rules on client
+    await doc.ref.update({ capturedAt: now, captureReason: "permission_loss_24h" });
+    processed++;
+  }
+
+  // ── Usage violation check (accessibility disabled + blocked app used > 1h ago) ─
+  const oneHour = 60 * 60 * 1000;
+  const usageSnapshot = await db
+    .collectionGroup("permissionStatus")
+    .where("usageViolationDetectedAt", "!=", null)
+    .get();
+
+  for (const doc of usageSnapshot.docs) {
+    const data = doc.data();
+    const violatedAt: number = data["usageViolationDetectedAt"];
+
+    if (!violatedAt || (now - violatedAt) < oneHour) continue;
+    if (data["usageCapturedAt"]) continue;
+
+    const userId = doc.ref.parent.parent!.id;
+
+    const challenges = await db.collection("users").doc(userId)
+      .collection("challenges")
+      .where("status", "==", "active")
+      .get();
+
+    for (const challenge of challenges.docs) {
+      const cd = challenge.data();
+      if (cd["mode"] !== "hard") continue;
+      const paymentIntentId: string | undefined = cd["stripePaymentIntentId"] ?? cd["paymentIntentId"];
+      if (!paymentIntentId) continue;
+
+      try {
+        await getStripe().paymentIntents.capture(paymentIntentId);
+        await challenge.ref.update({
+          status: "failed",
+          failReason: "usage_violation",
+          failedAt: now,
+          payoutStatus: "captured",
+        });
+        functions.logger.info(`checkPermissionViolations: usage violation captured solo challenge ${challenge.id} user ${userId}`);
+      } catch (e) {
+        functions.logger.error(`checkPermissionViolations: usage violation capture failed for ${challenge.id}`, e);
+      }
+    }
+
+    await doc.ref.update({ usageCapturedAt: now, captureReason: "usage_violation_1h" });
+    processed++;
+  }
+
+  return processed;
+}
+
+export const checkPermissionViolations = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    // Accept authenticated user calls (DailyEvaluationWorker fallback via Bearer token)
+    // OR internal scheduler calls via x-internal-secret header
+    const internalSecret = req.headers["x-internal-secret"];
+    const isInternalCall = !!process.env.INTERNAL_SECRET && internalSecret === process.env.INTERNAL_SECRET;
+    if (!isInternalCall) {
+      await requireAuth(req);
+    }
+
+    const processed = await runPermissionViolationCheck();
+    functions.logger.info(`checkPermissionViolations: processed=${processed}`);
+    res.json({ processed });
+  } catch (e) { handleError("checkPermissionViolations", e, res); }
+});
+
+export const scheduledPermissionCheck = functions.region(REGION)
+  .pubsub.schedule("every 1 hours")
+  .onRun(async () => {
+    const processed = await runPermissionViolationCheck();
+    functions.logger.info(`scheduledPermissionCheck: processed=${processed}`);
+  });
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 // Firestore can return the participants field as an Array OR a Map/Object when

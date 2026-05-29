@@ -1,5 +1,6 @@
 package com.detox.app.presentation.screens.history
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.local.db.DetoxDatabase
@@ -15,48 +16,49 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
-data class HistoryStats(
-    val bestStreak: Int,
-    val totalConsciousOpens: Int,
-    val savedTimeMinutes: Int,   // -1 = not calculable (SESSION_LIMIT)
-    val percentageReduction: Int // 0–99, clamped
-)
-
-data class SoloChallengeHistory(
-    val entity: ChallengeEntity,
-    val stats: HistoryStats?,    // null for FAILED entries
-    val durationDays: Int
-)
-
 @HiltViewModel
-class HistoryViewModel @Inject constructor(
+class HistoryDetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val database: DetoxDatabase,
 ) : ViewModel() {
 
-    private val _entries = MutableStateFlow<List<SoloChallengeHistory>>(emptyList())
-    val entries: StateFlow<List<SoloChallengeHistory>> = _entries.asStateFlow()
+    private val challengeId: String = checkNotNull(savedStateHandle["challengeId"])
+
+    sealed interface UiState {
+        data object Loading : UiState
+        data class Success(
+            val entity: ChallengeEntity,
+            val stats: HistoryStats?,
+            val durationDays: Int,
+        ) : UiState
+        data object NotFound : UiState
+    }
+
+    private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
+    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch(Dispatchers.IO) { load() }
     }
 
     private suspend fun load() {
-        val solos = database.challengeDao().getFinishedSoloChallenges()
-        val result = solos.map { entity ->
-            val logs = database.dailyLogDao().getLogsForChallengeOnce(entity.id)
-            val durationDays = ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY)
-                .toInt().coerceAtLeast(1)
-            val stats = if (entity.status == "completed") computeStats(entity, logs, durationDays) else null
-            SoloChallengeHistory(entity, stats, durationDays)
+        val entity = database.challengeDao().getChallengeById(challengeId) ?: run {
+            Timber.w("HistoryDetailViewModel: challenge $challengeId not found")
+            _uiState.value = UiState.NotFound
+            return
         }
-        _entries.value = result
-        Timber.d("HistoryViewModel: loaded ${result.size} entries")
+        val logs = database.dailyLogDao().getLogsForChallengeOnce(challengeId)
+        val durationDays = ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY)
+            .toInt().coerceAtLeast(1)
+        val stats = if (entity.status == "completed") computeStats(entity, logs, durationDays) else null
+        _uiState.value = UiState.Success(entity, stats, durationDays)
+        Timber.d("HistoryDetailViewModel: loaded ${entity.appDisplayName}, stats=$stats")
     }
 
     private fun computeStats(
         entity: ChallengeEntity,
         logs: List<DailyLogEntity>,
-        durationDays: Int
+        durationDays: Int,
     ): HistoryStats {
         val totalConsciousOpens = logs.sumOf { it.consciousOpens }
 

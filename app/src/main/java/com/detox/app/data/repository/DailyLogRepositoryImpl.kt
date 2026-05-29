@@ -56,6 +56,10 @@ class DailyLogRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getLogsForChallengeOnce(challengeId: String): List<DailyLog> {
+        return dailyLogDao.getLogsForChallengeOnce(challengeId).map { it.toDomain() }
+    }
+
     override fun observeLogsForDate(date: Long): Flow<List<DailyLog>> =
         dailyLogDao.observeLogsForDate(date).map { entities -> entities.map { it.toDomain() } }
 

@@ -1,5 +1,6 @@
 package com.detox.app.service
 
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.provider.Settings
 import androidx.hilt.work.HiltWorker
@@ -12,6 +13,9 @@ import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -33,11 +37,14 @@ class PermissionCheckWorker @AssistedInject constructor(
         private const val KEY_IGNORED = "userOpenedAndIgnored"
         private const val DEADLINE_MS = 24 * 60 * 60 * 1_000L
         private const val ACCELERATE_THRESHOLD_MS = 12 * 60 * 60 * 1_000L
+        private const val USAGE_VIOLATION_PREFS = "detox_usage_violation"
+        private const val KEY_USAGE_VIOLATION_AT = "usageViolationDetectedAt"
     }
 
     override suspend fun doWork(): Result {
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         checkAccessibilityPermission()
+        checkAndReportUsageViolation()
         checkExpiredGroupChallenges()
 
         if (Settings.canDrawOverlays(applicationContext)) {
@@ -46,6 +53,16 @@ class PermissionCheckWorker @AssistedInject constructor(
                 cancelPermissionWarnings()
                 NotificationHelper.sendPermissionRestored(applicationContext)
                 Timber.d("PermissionCheckWorker: permission restored — clearing failure state")
+                // Mirror restore to Firestore so server knows the deadline is cancelled
+                FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
+                    FirebaseFirestore.getInstance()
+                        .collection("users").document(uid)
+                        .collection("permissionStatus").document("current")
+                        .update(mapOf(
+                            "permissionLostAt" to null,
+                            "permissionRestoredAt" to System.currentTimeMillis()
+                        ))
+                }
             }
             return Result.success()
         }
@@ -59,6 +76,26 @@ class PermissionCheckWorker @AssistedInject constructor(
                 .putLong(KEY_LOST_AT, now)
                 .putInt(KEY_IGNORED, 0)
                 .apply()
+            // Mirror to Firestore so server can capture if app is later uninstalled
+            val accessibilityEnabled = isAccessibilityServiceEnabled()
+            val missingPermission = when {
+                !Settings.canDrawOverlays(applicationContext) && !accessibilityEnabled -> "both"
+                !Settings.canDrawOverlays(applicationContext) -> "overlay"
+                else -> "accessibility"
+            }
+            val deviceId = Settings.Secure.getString(
+                applicationContext.contentResolver, Settings.Secure.ANDROID_ID
+            )
+            FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
+                FirebaseFirestore.getInstance()
+                    .collection("users").document(uid)
+                    .collection("permissionStatus").document("current")
+                    .set(mapOf(
+                        "permissionLostAt" to now,
+                        "permissionType" to missingPermission,
+                        "deviceId" to deviceId
+                    ), SetOptions.merge())
+            }
             now
         }
 
@@ -72,6 +109,13 @@ class PermissionCheckWorker @AssistedInject constructor(
 
         Timber.d("Effective deadline: ${effectiveDeadlineMs / 3_600_000}h")
 
+        // Send staged escalation notifications based on elapsed time
+        when {
+            elapsed >= 23 * 3_600_000L -> NotificationHelper.sendPermissionEscalation(applicationContext, "23h")
+            elapsed >= 12 * 3_600_000L -> NotificationHelper.sendPermissionEscalation(applicationContext, "12h")
+            elapsed >= 6  * 3_600_000L -> NotificationHelper.sendPermissionEscalation(applicationContext, "6h")
+        }
+
         if (elapsed >= effectiveDeadlineMs) {
             Timber.d("Challenge failed: permission missing too long")
             failAllHardChallenges()
@@ -81,6 +125,92 @@ class PermissionCheckWorker @AssistedInject constructor(
         }
 
         return Result.success()
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean =
+        Settings.Secure.getString(
+            applicationContext.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )?.contains(applicationContext.packageName) == true
+
+    private suspend fun checkAndReportUsageViolation() {
+        // Only relevant when accessibility is disabled — it's the backup detection path.
+        // If accessibility is working, blocked apps can't be opened, so nothing to check.
+        if (isAccessibilityServiceEnabled()) {
+            applicationContext
+                .getSharedPreferences(USAGE_VIOLATION_PREFS, Context.MODE_PRIVATE)
+                .edit().clear().apply()
+            return
+        }
+
+        val challenges = challengeRepository.getActiveChallengesList().getOrElse {
+            Timber.w(it, "checkAndReportUsageViolation: could not load challenges")
+            return
+        }
+        val blockedPackages = challenges.flatMap { it.appPackageNames }.filter { it.isNotBlank() }
+        if (blockedPackages.isEmpty()) return
+
+        val violatingPackage = detectUsageViolation(blockedPackages) ?: return
+
+        val violationPrefs = applicationContext
+            .getSharedPreferences(USAGE_VIOLATION_PREFS, Context.MODE_PRIVATE)
+        if (violationPrefs.contains(KEY_USAGE_VIOLATION_AT)) return // already reported
+
+        val now = System.currentTimeMillis()
+        violationPrefs.edit().putLong(KEY_USAGE_VIOLATION_AT, now).apply()
+
+        val usageStatsManager = applicationContext
+            .getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_BEST, now - 3_600_000L, now
+        )
+        val usageMinutes = stats
+            .firstOrNull { it.packageName == violatingPackage }
+            ?.totalTimeInForeground
+            ?.div(60_000L) ?: 0L
+
+        FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
+            FirebaseFirestore.getInstance()
+                .collection("users").document(uid)
+                .collection("permissionStatus").document("current")
+                .set(
+                    mapOf(
+                        "usageViolationDetectedAt" to now,
+                        "violatingPackage" to violatingPackage,
+                        "usageMinutes" to usageMinutes
+                    ),
+                    SetOptions.merge()
+                )
+            Timber.d("checkAndReportUsageViolation: violation written — pkg=$violatingPackage usage=${usageMinutes}min")
+        }
+
+        NotificationHelper.createChannels(applicationContext)
+        NotificationHelper.sendUsageViolationDetected(applicationContext, getAppDisplayName(violatingPackage))
+    }
+
+    private fun detectUsageViolation(blockedPackages: List<String>): String? = try {
+        val usageStatsManager = applicationContext
+            .getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val now = System.currentTimeMillis()
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_BEST, now - 3_600_000L, now
+        )
+        stats.firstOrNull { stat ->
+            stat.packageName in blockedPackages && stat.totalTimeInForeground > 60_000L
+        }?.packageName
+    } catch (e: Exception) {
+        Timber.e(e, "detectUsageViolation: failed")
+        null
+    }
+
+    private fun getAppDisplayName(packageName: String): String = try {
+        applicationContext.packageManager
+            .getApplicationLabel(
+                applicationContext.packageManager.getApplicationInfo(packageName, 0)
+            )
+            .toString()
+    } catch (e: Exception) {
+        packageName
     }
 
     private fun calculateEffectiveDeadlineMs(elapsed: Long, ignored: Int): Long {
@@ -118,11 +248,7 @@ class PermissionCheckWorker @AssistedInject constructor(
     }
 
     private suspend fun checkAccessibilityPermission() {
-        val accessibilityEnabled = Settings.Secure.getString(
-            applicationContext.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        )?.contains(applicationContext.packageName) == true
-
+        val accessibilityEnabled = isAccessibilityServiceEnabled()
         Timber.d("Accessibility check: enabled=$accessibilityEnabled")
 
         val accessibilityPrefs = applicationContext.getSharedPreferences("detox_accessibility", Context.MODE_PRIVATE)

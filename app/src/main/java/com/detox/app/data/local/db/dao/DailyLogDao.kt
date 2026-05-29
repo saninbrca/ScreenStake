@@ -17,6 +17,9 @@ interface DailyLogDao {
     @Query("SELECT * FROM daily_logs WHERE challengeId = :challengeId ORDER BY date DESC")
     fun getLogsForChallenge(challengeId: String): Flow<List<DailyLogEntity>>
 
+    @Query("SELECT * FROM daily_logs WHERE challengeId = :challengeId ORDER BY date DESC")
+    suspend fun getLogsForChallengeOnce(challengeId: String): List<DailyLogEntity>
+
     @Query("SELECT * FROM daily_logs WHERE date = :date")
     fun observeLogsForDate(date: Long): Flow<List<DailyLogEntity>>
 

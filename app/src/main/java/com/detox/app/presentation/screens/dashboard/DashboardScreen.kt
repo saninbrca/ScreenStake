@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
 import com.detox.app.data.local.db.entity.ChallengeEntity
@@ -73,9 +72,7 @@ import com.detox.app.presentation.components.ChallengeCard
 import com.detox.app.presentation.util.pressScaleFeedback
 import androidx.compose.ui.platform.LocalContext
 import com.detox.app.util.DateUtils
-import com.detox.app.util.HapticManager
 import kotlinx.coroutines.delay
-import timber.log.Timber
 
 @Composable
 fun DashboardScreen(
@@ -86,7 +83,8 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val completedChallenge by viewModel.completedChallenge.collectAsStateWithLifecycle()
+    val successDialogState by viewModel.successDialogState.collectAsStateWithLifecycle()
+    val failedHardChallenge by viewModel.failedHardChallenge.collectAsStateWithLifecycle()
     val redemptionChallenges by viewModel.redemptionChallenges.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
@@ -101,12 +99,6 @@ fun DashboardScreen(
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             )?.contains(context.packageName) == true
         )
-    }
-
-    LaunchedEffect(completedChallenge) {
-        if (completedChallenge != null) {
-            HapticManager.success(context)
-        }
     }
 
     LaunchedEffect(lifecycleOwner) {
@@ -253,11 +245,24 @@ fun DashboardScreen(
             }
         }
 
-        completedChallenge?.let { challenge ->
-            HardModeSuccessOverlay(
-                challenge = challenge,
+        successDialogState?.let { state ->
+            ChallengeSuccessDialog(
+                challenge = state.challenge,
+                allLogs = state.allLogs,
+                streak = state.streak,
+                onDismiss = { viewModel.dismissSuccessDialog() },
                 onStartNewChallenge = {
-                    viewModel.dismissCompletionOverlay()
+                    viewModel.dismissSuccessDialog()
+                    onAddChallenge()
+                }
+            )
+        }
+
+        failedHardChallenge?.let { challenge ->
+            HardModeFailOverlay(
+                challenge = challenge,
+                onTryAgain = {
+                    viewModel.dismissHardFailOverlay()
                     onAddChallenge()
                 }
             )
@@ -341,76 +346,70 @@ private fun EmptyState(
 }
 
 @Composable
-private fun HardModeSuccessOverlay(
+private fun HardModeFailOverlay(
     challenge: Challenge,
-    onStartNewChallenge: () -> Unit
+    onTryAgain: () -> Unit
 ) {
-    Timber.d("endDate type: ${if (challenge.endDate > 1700000000000L) "timestamp" else "days"} value=${challenge.endDate}")
-    val endDateMs = if (challenge.endDate > 1700000000000L) {
-        challenge.endDate // already a timestamp
-    } else {
-        challenge.startDate + (challenge.endDate * DateUtils.MILLIS_PER_DAY)
-    }
-    val durationDays = ((endDateMs - challenge.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
-    val amountEuros = (challenge.amountCents ?: 0) / 100
+    val amountCents = challenge.amountCents ?: 0
+    val amountEuros = amountCents / 100f
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.95f)),
+            .background(Color(0xFF0A0A0A)),
         contentAlignment = Alignment.Center
     ) {
-        Card(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(32.dp),
-            shape = MaterialTheme.shapes.large,
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Text(text = "💸", fontSize = 64.sp)
+            Text(
+                text = stringResource(R.string.hard_fail_title),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = stringResource(R.string.hard_fail_subtitle),
+                fontSize = 15.sp,
+                color = Color(0xFF8E8E93),
+                textAlign = TextAlign.Center
+            )
+            if (amountCents > 0) {
                 Text(
-                    text = "🎉",
-                    style = MaterialTheme.typography.displayMedium
-                )
-                Text(
-                    text = stringResource(R.string.success_overlay_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    text = stringResource(R.string.hard_fail_amount, amountEuros),
+                    fontSize = 15.sp,
+                    color = Color(0xFFFF3B30),
+                    fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
                 )
-                Text(
-                    text = stringResource(R.string.success_overlay_subtitle),
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Text(
+                text = stringResource(R.string.hard_fail_motivation),
+                fontSize = 13.sp,
+                color = Color(0xFF8E8E93),
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onTryAgain,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF00C853),
+                    contentColor = Color.Black
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+            ) {
                 Text(
-                    text = stringResource(R.string.success_overlay_duration, durationDays),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = stringResource(R.string.hard_fail_cta),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
                 )
-                if (amountEuros > 0) {
-                    Text(
-                        text = stringResource(R.string.success_overlay_refund, amountEuros),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        textAlign = TextAlign.Center
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(
-                    onClick = onStartNewChallenge,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Text(text = stringResource(R.string.success_overlay_new_challenge))
-                }
             }
         }
     }

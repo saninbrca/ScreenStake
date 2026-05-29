@@ -498,15 +498,15 @@ private fun GStep3LimitAndDuration(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (formState.limitType) {
                     LimitType.TIME -> DetoxHorizontalPicker(
-                        values = (1..480).toList(),
-                        selectedValue = formState.limitValueMinutes,
+                        values = (5..120).toList(),
+                        selectedValue = formState.limitValueMinutes.coerceIn(5, 120),
                         onValueChange = onUpdateLimitMinutes,
                         unit = stringResource(R.string.wizard_set_limit_minutes_unit),
                     )
                     LimitType.SESSIONS -> {
                         DetoxHorizontalPicker(
-                            values = (1..50).toList(),
-                            selectedValue = formState.limitValueSessions,
+                            values = (1..20).toList(),
+                            selectedValue = formState.limitValueSessions.coerceAtMost(20),
                             onValueChange = onUpdateLimitSessions,
                             unit = stringResource(R.string.wizard_set_limit_opens_unit),
                         )
@@ -518,15 +518,15 @@ private fun GStep3LimitAndDuration(
                             color = GTextSecondary,
                         )
                         DetoxHorizontalPicker(
-                            values = (1..120).toList(),
-                            selectedValue = formState.sessionMinutes,
+                            values = (1..30).toList(),
+                            selectedValue = formState.sessionMinutes.coerceAtMost(30),
                             onValueChange = onUpdateSessionDuration,
                             unit = stringResource(R.string.wizard_set_limit_session_unit),
                         )
                     }
                     LimitType.TIME_BUDGET -> DetoxHorizontalPicker(
-                        values = (1..480).toList(),
-                        selectedValue = formState.dailyBudgetMinutes,
+                        values = (5..120).toList(),
+                        selectedValue = formState.dailyBudgetMinutes.coerceIn(5, 120),
                         onValueChange = onUpdateDailyBudget,
                         unit = stringResource(R.string.wizard_set_limit_budget_unit),
                     )
@@ -553,8 +553,8 @@ private fun GStep3LimitAndDuration(
                 .padding(16.dp),
         ) {
             DetoxHorizontalPicker(
-                values = (3..365).toList(),
-                selectedValue = formState.durationDays,
+                values = (3..30).toList(),
+                selectedValue = formState.durationDays.coerceIn(3, 30),
                 onValueChange = onUpdateDuration,
                 unit = "Tage",
             )
@@ -601,8 +601,8 @@ private fun GStep4BuyIn(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 DetoxHorizontalPicker(
-                    values = (10..500).toList(),
-                    selectedValue = buyIn,
+                    values = (10..50).toList(),
+                    selectedValue = buyIn.coerceAtMost(50),
                     onValueChange = onBuyInChange,
                     unit = stringResource(R.string.group_wizard_buyin_unit),
                 )

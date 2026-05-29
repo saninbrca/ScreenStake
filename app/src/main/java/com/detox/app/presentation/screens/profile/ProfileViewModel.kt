@@ -867,6 +867,115 @@ class ProfileViewModel @Inject constructor(
     fun debugTestAdultDomain(domain: String): Boolean =
         com.detox.app.domain.model.AdultDomains.isDomainBlocked(domain)
 
+    // ── Permission Violation Debug (Section 10b) ──────────────────────────────
+
+    fun debugSimulatePermissionLossFirestore(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val userId = firebaseAuth.currentUser?.uid ?: run { onResult("Not logged in"); return@launch }
+            context.getSharedPreferences("detox_settings", Context.MODE_PRIVATE)
+                .edit()
+                .putLong("permission_lost_at", System.currentTimeMillis() - 2 * 3_600_000L)
+                .apply()
+            val deviceId = android.provider.Settings.Secure.getString(
+                context.contentResolver, android.provider.Settings.Secure.ANDROID_ID
+            )
+            runCatching {
+                firestore.collection("users").document(userId)
+                    .collection("permissionStatus")
+                    .document("current")
+                    .set(
+                        mapOf(
+                            "permissionLostAt" to System.currentTimeMillis() - (2 * 3_600_000L),
+                            "permissionType" to "accessibility",
+                            "deviceId" to deviceId
+                        ),
+                        SetOptions.merge()
+                    ).await()
+            }.onSuccess {
+                Timber.d("DEBUG: simulatePermissionLoss written to Firestore")
+                onResult("Permission loss simulated in Firestore (2h ago)")
+            }.onFailure { e ->
+                Timber.e(e, "DEBUG: simulatePermissionLoss Firestore write failed")
+                onResult("Firestore error: ${e.message}")
+            }
+        }
+    }
+
+    fun debugSimulateUsageViolation(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val userId = firebaseAuth.currentUser?.uid ?: run { onResult("Not logged in"); return@launch }
+            val firestoreResult = runCatching {
+                firestore.collection("users").document(userId)
+                    .collection("permissionStatus")
+                    .document("current")
+                    .set(
+                        mapOf(
+                            "usageViolationDetectedAt" to System.currentTimeMillis() - (2 * 3_600_000L),
+                            "violatingPackage" to "com.instagram.android"
+                        ),
+                        SetOptions.merge()
+                    ).await()
+                Timber.d("DEBUG: usageViolation written to Firestore")
+            }
+            if (firestoreResult.isFailure) {
+                Timber.e(firestoreResult.exceptionOrNull(), "DEBUG: simulateUsageViolation Firestore write failed")
+                onResult("Firestore error: ${firestoreResult.exceptionOrNull()?.message}")
+                return@launch
+            }
+            cloudFunctionsService.checkPermissionViolations()
+                .onSuccess { onResult("Usage violation simulated: CF success") }
+                .onFailure { e -> onResult("CF error: ${e.message}") }
+        }
+    }
+
+    fun debugCheckRootStatus(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val isRooted = withContext(Dispatchers.Default) {
+                com.detox.app.service.RootDetectionManager.isDeviceRooted(context)
+            }
+            Timber.d("DEBUG: RootDetection isRooted=$isRooted")
+            onResult("Root status: ${if (isRooted) "ROOTED ⚠️" else "Clean ✅"}")
+        }
+    }
+
+    fun debugForceCheckPermissionViolations(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            cloudFunctionsService.checkPermissionViolations()
+                .onSuccess { onResult("CF Result: success") }
+                .onFailure { e -> onResult("CF Error: ${e.message}") }
+        }
+    }
+
+    fun debugResetPermissionStatusFirestore(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val userId = firebaseAuth.currentUser?.uid ?: run { onResult("Not logged in"); return@launch }
+            runCatching {
+                firestore.collection("users").document(userId)
+                    .collection("permissionStatus")
+                    .document("current")
+                    .set(
+                        mapOf(
+                            "permissionLostAt" to null,
+                            "usageViolationDetectedAt" to null,
+                            "capturedAt" to null
+                        ),
+                        SetOptions.merge()
+                    ).await()
+            }.onSuccess {
+                Timber.d("DEBUG: permissionStatus reset in Firestore")
+                onResult("Permission status reset ✅")
+            }.onFailure { e ->
+                Timber.e(e, "DEBUG: resetPermissionStatus failed")
+                onResult("Error: ${e.message}")
+            }
+        }
+    }
+
     companion object {
         const val TAG_MANUAL_EVALUATION = "manual_evaluation"
     }

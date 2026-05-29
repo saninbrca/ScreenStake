@@ -312,4 +312,15 @@ class CloudFunctionsService @Inject constructor(
         Timber.e(e, "getConnectedAccountStatus failed")
         Result.failure(e)
     }
+
+    // ── Permission Violation Check ─────────────────────────────────────────────
+
+    suspend fun checkPermissionViolations(): Result<Unit> = try {
+        callFunction("checkPermissionViolations", mapOf("source" to "DailyEvaluationWorker"))
+        Timber.d("checkPermissionViolations: triggered")
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "checkPermissionViolations failed")
+        Result.failure(e)
+    }
 }

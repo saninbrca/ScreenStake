@@ -1,16 +1,21 @@
 package com.detox.app.presentation.screens.dashboard
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.domain.model.Challenge
+import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
 import com.detox.app.domain.usecase.SyncUserDataUseCase
+import com.detox.app.service.TrackedAppEventBus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +25,12 @@ import kotlinx.coroutines.launch
 import com.detox.app.util.DateUtils
 import timber.log.Timber
 import javax.inject.Inject
+
+data class SuccessDialogState(
+    val challenge: Challenge,
+    val allLogs: List<DailyLog>,
+    val streak: Int
+)
 
 sealed interface DashboardUiState {
     data object Loading : DashboardUiState
@@ -32,19 +43,28 @@ sealed interface DashboardUiState {
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val getDailyStatsUseCase: GetDailyStatsUseCase,
     private val syncUserDataUseCase: SyncUserDataUseCase,
     private val challengeRepository: ChallengeRepository,
     private val dailyLogRepository: DailyLogRepository,
     private val database: DetoxDatabase,
+    private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    /** Non-null while the Hard Mode success overlay should be shown. Null = overlay hidden. */
-    private val _completedChallenge = MutableStateFlow<Challenge?>(null)
-    val completedChallenge: StateFlow<Challenge?> = _completedChallenge.asStateFlow()
+    /** Non-null while the success dialog should be shown (Soft or Hard Mode). Null = hidden. */
+    private val _successDialogChallengeId = MutableStateFlow<String?>(null)
+    val successDialogChallengeId: StateFlow<String?> = _successDialogChallengeId.asStateFlow()
+
+    private val _successDialogState = MutableStateFlow<SuccessDialogState?>(null)
+    val successDialogState: StateFlow<SuccessDialogState?> = _successDialogState.asStateFlow()
+
+    /** Non-null while the Hard Mode failure overlay should be shown. Null = overlay hidden. */
+    private val _failedHardChallenge = MutableStateFlow<Challenge?>(null)
+    val failedHardChallenge: StateFlow<Challenge?> = _failedHardChallenge.asStateFlow()
 
     /** Failed Hard Mode challenges with an active redemption window. Empty = banner hidden. */
     private val _redemptionChallenges = MutableStateFlow<List<ChallengeEntity>>(emptyList())
@@ -74,15 +94,45 @@ class DashboardViewModel @Inject constructor(
             // If it already completed this is a no-op.
             syncJob.join()
             refreshStats()
-            // Check if there is a Hard Mode challenge completed since last app open
-            challengeRepository.getUnshownCompletedHardChallenge()
+            // Check if there is a completed challenge (Hard or Soft) to show the success dialog
+            if (_successDialogState.value == null) {
+                val sp = appContext.getSharedPreferences("detox_win_popup", Context.MODE_PRIVATE)
+                val completedHard = challengeRepository.getUnshownCompletedHardChallenge()
+                    .getOrNull()
+                val completedSoft = if (completedHard == null) {
+                    challengeRepository.getUnshownCompletedSoftChallenge().getOrNull()
+                } else null
+                val completedChallenge = completedHard ?: completedSoft
+                if (completedChallenge != null && !sp.getBoolean("win_shown_${completedChallenge.id}", false)) {
+                    Timber.d("Dashboard: unseen completed challenge — ${completedChallenge.id} mode=${completedChallenge.mode}")
+                    val logs = dailyLogRepository.getLogsForChallengeOnce(completedChallenge.id)
+                    val streak = getChallengeStreakUseCase(completedChallenge)
+                    _successDialogState.value = SuccessDialogState(completedChallenge, logs, streak)
+                    _successDialogChallengeId.value = completedChallenge.id
+                }
+            }
+
+            // Check if there is a Soft Mode challenge that failed while the app was closed
+            challengeRepository.getUnshownFailedSoftChallenge()
                 .onSuccess { challenge ->
                     if (challenge != null) {
-                        Timber.d("Dashboard: unseen completed Hard Mode challenge found — ${challenge.id}")
-                        _completedChallenge.value = challenge
+                        Timber.d("Dashboard: unseen failed Soft Mode challenge found — ${challenge.id}")
+                        challengeRepository.markCompletionShown(challenge.id)
+                        val streak = getChallengeStreakUseCase(challenge)
+                        TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
                     }
                 }
-                .onFailure { e -> Timber.w(e, "Dashboard: failed to check completed Hard Mode challenge") }
+                .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Soft Mode challenge") }
+
+            // Check if there is a Hard Mode challenge that failed since last app open
+            challengeRepository.getUnshownFailedHardChallenge()
+                .onSuccess { challenge ->
+                    if (challenge != null) {
+                        Timber.d("Dashboard: unseen failed Hard Mode challenge found — ${challenge.id}")
+                        _failedHardChallenge.value = challenge
+                    }
+                }
+                .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Hard Mode challenge") }
 
             if (!redemptionBannerDismissed) {
                 val now = System.currentTimeMillis()
@@ -139,10 +189,23 @@ class DashboardViewModel @Inject constructor(
         _redemptionChallenges.value = emptyList()
     }
 
-    /** Called when the user taps "Start New Challenge" on the success overlay. */
-    fun dismissCompletionOverlay() {
-        val challenge = _completedChallenge.value ?: return
-        _completedChallenge.value = null
+    /** Called when the user dismisses the success dialog (X button or "Zurück zum Dashboard"). */
+    fun dismissSuccessDialog() {
+        val challengeId = _successDialogChallengeId.value ?: return
+        _successDialogState.value = null
+        _successDialogChallengeId.value = null
+        viewModelScope.launch {
+            appContext.getSharedPreferences("detox_win_popup", Context.MODE_PRIVATE)
+                .edit().putBoolean("win_shown_$challengeId", true).apply()
+            challengeRepository.markCompletionShown(challengeId)
+                .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for $challengeId") }
+        }
+    }
+
+    /** Called when the user taps CTA on the Hard Mode fail overlay. */
+    fun dismissHardFailOverlay() {
+        val challenge = _failedHardChallenge.value ?: return
+        _failedHardChallenge.value = null
         viewModelScope.launch {
             challengeRepository.markCompletionShown(challenge.id)
                 .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for ${challenge.id}") }

@@ -1,5 +1,6 @@
 package com.detox.app.presentation.screens.challengecreation
 
+import com.detox.app.BuildConfig
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -173,6 +174,24 @@ fun ChallengeCreationScreen(
             dismissButton = {
                 TextButton(onClick = { showDiscardDialog = false }) {
                     Text("Weiter bearbeiten")
+                }
+            },
+        )
+    }
+
+    if (uiState is ChallengeCreationUiState.RootedDeviceWarning) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissRootWarning,
+            title = { Text(stringResource(R.string.root_warning_title)) },
+            text = { Text(stringResource(R.string.root_warning_body)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::acknowledgeRootWarningAndProceed) {
+                    Text(stringResource(R.string.root_warning_proceed))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissRootWarning) {
+                    Text(stringResource(R.string.root_warning_cancel), color = Color(0xFFFF3B30))
                 }
             },
         )
@@ -682,8 +701,8 @@ private fun Step4LimitValues(
             LimitType.TIME -> {
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
-                    values = (1..480).toList(),
-                    selectedValue = state.limitValueMinutes,
+                    values = (5..120).toList(),
+                    selectedValue = state.limitValueMinutes.coerceIn(5, 120),
                     onValueChange = onUpdateLimitMinutes,
                     unit = stringResource(R.string.wizard_set_limit_minutes_unit),
                 )
@@ -692,8 +711,8 @@ private fun Step4LimitValues(
             LimitType.SESSIONS -> {
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
-                    values = (1..50).toList(),
-                    selectedValue = state.limitValueSessions,
+                    values = (1..20).toList(),
+                    selectedValue = state.limitValueSessions.coerceAtMost(20),
                     onValueChange = onUpdateLimitSessions,
                     unit = stringResource(R.string.wizard_set_limit_opens_unit),
                 )
@@ -706,8 +725,8 @@ private fun Step4LimitValues(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
-                    values = (1..120).toList(),
-                    selectedValue = state.sessionDurationMinutes,
+                    values = (1..30).toList(),
+                    selectedValue = state.sessionDurationMinutes.coerceAtMost(30),
                     onValueChange = onUpdateSessionDuration,
                     unit = stringResource(R.string.wizard_set_limit_session_unit),
                 )
@@ -716,8 +735,8 @@ private fun Step4LimitValues(
             LimitType.TIME_BUDGET -> {
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
-                    values = (1..480).toList(),
-                    selectedValue = state.dailyBudgetMinutes,
+                    values = (5..120).toList(),
+                    selectedValue = state.dailyBudgetMinutes.coerceIn(5, 120),
                     onValueChange = onUpdateDailyBudget,
                     unit = stringResource(R.string.wizard_set_limit_budget_unit),
                 )
@@ -1010,8 +1029,8 @@ private fun Step6Duration(
             )
             Spacer(modifier = Modifier.height(8.dp))
             DetoxHorizontalPicker(
-                values = (5..50).toList(),
-                selectedValue = state.amountEuros,
+                values = (5..100).toList(),
+                selectedValue = state.amountEuros.coerceAtMost(100),
                 onValueChange = onUpdateAmount,
                 unit = "Euro Einsatz",
             )
@@ -1057,10 +1076,14 @@ private fun Step6Duration(
         }
 
         if (!state.noEndDate) {
-            val minDays = if (isHardMode) 14 else 1
+            val minDays = when {
+                isHardMode && BuildConfig.DEBUG -> 1
+                isHardMode -> 7
+                else -> 3
+            }
             DetoxHorizontalPicker(
-                values = (minDays..365).toList(),
-                selectedValue = state.durationDays,
+                values = (minDays..90).toList(),
+                selectedValue = state.durationDays.coerceIn(minDays, 90),
                 onValueChange = onUpdateDuration,
                 unit = "Tage",
             )

@@ -1226,6 +1226,39 @@ Usage Stats: ${if (usageStats) "✅" else "❌"}""".trimIndent()
                     color = DebugOrangeBorder.copy(alpha = 0.2f)
                 )
 
+                // ── SECTION 10b: Permission Violation Tests ───────────────────
+                DebugSectionHeader("PERMISSION VIOLATION TESTS")
+                DebugButton("Simulate Permission Loss (Firestore)") {
+                    viewModel.debugSimulatePermissionLossFirestore { msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+                DebugButton("Simulate Usage Violation") {
+                    viewModel.debugSimulateUsageViolation { msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+                DebugButton("Check Root Status") {
+                    viewModel.debugCheckRootStatus { msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+                DebugButton("Force CF Permission Check") {
+                    viewModel.debugForceCheckPermissionViolations { msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+                DebugButton("Reset Permission Status (Firestore)") {
+                    viewModel.debugResetPermissionStatusFirestore { msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = DebugOrangeBorder.copy(alpha = 0.2f)
+                )
+
                 // ── SECTION 10: Adult Domain Stats ────────────────────────────
                 DebugSectionHeader("ADULT DOMAIN STATS")
 

@@ -55,6 +55,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import android.net.Uri
 import androidx.navigation.navArgument
 import com.detox.app.R
 import com.detox.app.presentation.screens.activechallenge.ActiveChallengeScreen
@@ -66,6 +67,7 @@ import com.detox.app.presentation.screens.groupchallenge.create.GroupChallengeCr
 import com.detox.app.presentation.screens.groupchallenge.detail.GroupChallengeDetailScreen
 import com.detox.app.presentation.screens.groupchallenge.results.GroupChallengeResultsScreen
 import com.detox.app.presentation.screens.groupchallenge.join.GroupChallengeJoinScreen
+import com.detox.app.presentation.screens.history.HistoryDetailScreen
 import com.detox.app.presentation.screens.history.HistoryScreen
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
@@ -269,12 +271,21 @@ fun MainScreen(
                 )
             }
 
-            // ── Challenge Creation wizard ───────────────────────────────────────
-            composable("challenge_creation") {
+            // ── Challenge Creation wizard (optional prePackage pre-selection) ──
+            composable(
+                route = "challenge_creation?prePackage={prePackage}",
+                arguments = listOf(navArgument("prePackage") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                })
+            ) {
                 ChallengeCreationScreen(
                     onFinished = {
                         navController.navigate(BottomNavTab.Dashboard.route) {
-                            popUpTo("challenge_creation") { inclusive = true }
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = false
+                                inclusive = false
+                            }
                             launchSingleTop = true
                         }
                     },
@@ -406,20 +417,23 @@ fun MainScreen(
             composable("history") {
                 HistoryScreen(
                     onBack = { navController.popBackStack() },
-                    onGroupChallengeClick = { groupId ->
-                        navController.navigate("group_detail/$groupId")
-                    },
-                    onSoloChallengeClick = { challengeId ->
-                        navController.navigate("active_challenge/$challengeId")
-                    },
-                    onRedemptionStarted = {
-                        navController.navigate(BottomNavTab.Dashboard.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                    onChallengeClick = { challengeId ->
+                        navController.navigate("history_detail/$challengeId")
+                    }
+                )
+            }
+
+            // ── History Detail ────────────────────────────────────────────────────
+            composable(
+                route = "history_detail/{challengeId}",
+                arguments = listOf(navArgument("challengeId") { type = NavType.StringType })
+            ) {
+                HistoryDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onStartAgain = { pkgs ->
+                        navController.navigate(
+                            "challenge_creation?prePackage=${Uri.encode(pkgs)}"
+                        )
                     }
                 )
             }

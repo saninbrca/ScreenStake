@@ -112,6 +112,30 @@ class ChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getUnshownCompletedSoftChallenge(): Result<Challenge?> {
+        return try {
+            Result.success(challengeDao.getUnshownCompletedSoftChallenge()?.toDomain())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getUnshownFailedSoftChallenge(): Result<Challenge?> {
+        return try {
+            Result.success(challengeDao.getUnshownFailedSoftChallenge()?.toDomain())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getUnshownFailedHardChallenge(): Result<Challenge?> {
+        return try {
+            Result.success(challengeDao.getUnshownFailedHardChallenge()?.toDomain())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun updateChallengeStatus(id: String, status: ChallengeStatus): Result<Unit> {
         return try {
             val statusStr = status.name.lowercase()

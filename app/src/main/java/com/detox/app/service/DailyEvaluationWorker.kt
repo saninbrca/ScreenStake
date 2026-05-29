@@ -19,9 +19,11 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.util.DateUtils
@@ -51,6 +53,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val groupChallengeDao: GroupChallengeDao,
     private val firestoreService: FirestoreService,
     private val firestore: FirebaseFirestore,
+    private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -191,6 +194,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             NotificationHelper.sendChallengeFailed(
                                 applicationContext, challenge.appDisplayName
                             )
+                            if (challenge.mode == ChallengeMode.SOFT) {
+                                val streak = getChallengeStreakUseCase(challenge)
+                                TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
+                            }
                         }
                         Timber.d(
                             "DailyEvaluationWorker: '${challenge.appDisplayName}' end-of-challenge " +
@@ -323,6 +330,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 NotificationHelper.sendChallengeFailed(
                                     applicationContext, challenge.appDisplayName
                                 )
+                            }
+                            if (challenge.mode == ChallengeMode.SOFT) {
+                                val streak = getChallengeStreakUseCase(challenge)
+                                TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
                             }
                         }
                         Timber.d(
@@ -503,6 +514,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 applicationContext, challenge.appDisplayName
                             )
                         }
+                        if (challenge.mode == ChallengeMode.SOFT) {
+                            val streak = getChallengeStreakUseCase(challenge)
+                            TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
+                        }
                     }
                 }
 
@@ -560,6 +575,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 "DailyEvaluationWorker: ■ completed successfully — " +
                         "processed ${challenges.size} challenge(s)"
             )
+            // Fallback: server-side check for users who lost permissions and then uninstalled
+            cloudFunctionsService.checkPermissionViolations().onFailure { e ->
+                Timber.w(e, "DailyEvaluationWorker: checkPermissionViolations failed (non-fatal)")
+            }
             Result.success()
         } catch (e: Exception) {
             Timber.e(e, "DailyEvaluationWorker failed")
@@ -691,13 +710,25 @@ class DailyEvaluationWorker @AssistedInject constructor(
             cloudFunctionsService.completeGroupChallenge(groupId)
                 .onSuccess {
                     Timber.d("DailyEvaluationWorker: completeGroupChallenge succeeded for %s", groupId)
-                    val localStatus = challengeRepository.getChallengeById(challenge.id)
-                        .getOrNull()?.status
-                    val succeeded = localStatus != ChallengeStatus.FAILED
+
+                    // Fetch updated group doc to get participant outcome + prize breakdown
+                    val updatedGroup = groupChallengeRepository.fetchAndCacheById(groupId).getOrNull()
+
+                    // Update local Room status based on participant's Firestore outcome
+                    val myParticipant = updatedGroup?.participants?.find { it.userId == userId }
+                    val finalStatus = when (myParticipant?.status) {
+                        ParticipantStatus.FAILED -> ChallengeStatus.FAILED
+                        else -> ChallengeStatus.COMPLETED
+                    }
+                    challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                    Timber.d(
+                        "DailyEvaluationWorker: group %s Room status → %s (participant=%s)",
+                        groupId, finalStatus, myParticipant?.status
+                    )
+
+                    val succeeded = finalStatus == ChallengeStatus.COMPLETED
                     NotificationHelper.createChannels(applicationContext)
                     if (succeeded) {
-                        // Fetch updated group doc to get prize breakdown for notification
-                        val updatedGroup = groupChallengeRepository.fetchAndCacheById(groupId).getOrNull()
                         val prizePerWinner = updatedGroup?.perWinnerBonus ?: 0
                         val payoutIban = runCatching {
                             firestore.collection("users").document(userId).get().await()

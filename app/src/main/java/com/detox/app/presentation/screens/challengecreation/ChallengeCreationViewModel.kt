@@ -16,7 +16,12 @@ import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CreateChallengeUseCase
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.domain.usecase.ProcessPaymentUseCase
+import com.detox.app.service.RootDetectionManager
 import com.detox.app.service.UsageTrackingService
+import androidx.lifecycle.SavedStateHandle
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -107,12 +112,14 @@ sealed interface ChallengeCreationUiState {
         ChallengeCreationUiState
     data class Success(val challengeId: String) : ChallengeCreationUiState
     data class Error(val message: String) : ChallengeCreationUiState
+    data object RootedDeviceWarning : ChallengeCreationUiState
 }
 
 // ── ViewModel ─────────────────────────────────────────────────────────────────
 
 @HiltViewModel
 class ChallengeCreationViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
     private val getAddictiveAppsUseCase: GetAddictiveAppsUseCase,
     private val createChallengeUseCase: CreateChallengeUseCase,
     private val processPaymentUseCase: ProcessPaymentUseCase,
@@ -135,6 +142,14 @@ class ChallengeCreationViewModel @Inject constructor(
     private var confirmedPaymentIntentId: String? = null
 
     init {
+        val prePackage = savedStateHandle.get<String>("prePackage") ?: ""
+        if (prePackage.isNotBlank()) {
+            val packages = prePackage.split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toSet()
+            _state.update { it.copy(selectedApps = packages) }
+        }
         loadApps()
     }
 
@@ -386,8 +401,37 @@ class ChallengeCreationViewModel @Inject constructor(
 
     fun createChallenge() {
         firebaseAuthService.logAuthState("ChallengeCreationViewModel.createChallenge")
-        if (_state.value.selectedMode == ChallengeMode.HARD) initiateHardModePayment()
-        else saveSoftModeChallenge()
+        if (_state.value.selectedMode == ChallengeMode.HARD) {
+            var rootWarningShown = false
+            RootDetectionManager.checkAndWarn(context) {
+                logRootedDeviceToFirestore()
+                _uiState.value = ChallengeCreationUiState.RootedDeviceWarning
+                rootWarningShown = true
+            }
+            if (!rootWarningShown) initiateHardModePayment()
+        } else {
+            saveSoftModeChallenge()
+        }
+    }
+
+    fun acknowledgeRootWarningAndProceed() {
+        _uiState.value = ChallengeCreationUiState.Idle
+        initiateHardModePayment()
+    }
+
+    fun dismissRootWarning() {
+        _uiState.value = ChallengeCreationUiState.Idle
+    }
+
+    private fun logRootedDeviceToFirestore() {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("deviceInfo").document("security")
+            .set(
+                mapOf("isRooted" to true, "detectedAt" to System.currentTimeMillis()),
+                SetOptions.merge()
+            )
     }
 
     private fun displayName(): String {

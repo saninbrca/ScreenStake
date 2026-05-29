@@ -10,6 +10,7 @@ interface DailyLogRepository {
     /** Live Flow for a specific challenge + date — emits whenever that row changes in Room. */
     fun observeLogForDate(challengeId: String, date: Long): Flow<DailyLog?>
     fun getLogsForChallenge(challengeId: String): Flow<List<DailyLog>>
+    suspend fun getLogsForChallengeOnce(challengeId: String): List<DailyLog>
     fun observeLogsForDate(date: Long): Flow<List<DailyLog>>
     suspend fun getConsciousOpens(challengeId: String, date: Long): Result<Int>
     suspend fun upsertConsciousOpens(challengeId: String, date: Long, count: Int): Result<Unit>

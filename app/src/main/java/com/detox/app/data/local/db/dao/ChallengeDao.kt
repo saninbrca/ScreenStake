@@ -52,6 +52,18 @@ interface ChallengeDao {
     @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'hard' AND completionShown = 0 LIMIT 1")
     suspend fun getUnshownCompletedHardChallenge(): ChallengeEntity?
 
+    /** Returns the first Soft Mode challenge that completed successfully but whose overlay has not yet been shown. */
+    @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'soft' AND completionShown = 0 LIMIT 1")
+    suspend fun getUnshownCompletedSoftChallenge(): ChallengeEntity?
+
+    /** Returns the first Soft Mode challenge that failed but whose result screen has not yet been shown. */
+    @Query("SELECT * FROM challenges WHERE status = 'failed' AND mode = 'soft' AND completionShown = 0 LIMIT 1")
+    suspend fun getUnshownFailedSoftChallenge(): ChallengeEntity?
+
+    /** Returns the first Hard Mode challenge that failed but whose overlay has not yet been shown. */
+    @Query("SELECT * FROM challenges WHERE status = 'failed' AND mode = 'hard' AND completionShown = 0 LIMIT 1")
+    suspend fun getUnshownFailedHardChallenge(): ChallengeEntity?
+
     @Query("SELECT COUNT(*) FROM challenges WHERE status = 'completed'")
     suspend fun getCompletedCount(): Int
 
@@ -64,7 +76,7 @@ interface ChallengeDao {
     @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') ORDER BY endDate DESC LIMIT 3")
     suspend fun getRecentFinishedChallenges(): List<ChallengeEntity>
 
-    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') AND (groupChallengeId IS NULL OR groupChallengeId = '') ORDER BY endDate DESC")
+    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') ORDER BY endDate DESC")
     suspend fun getFinishedSoloChallenges(): List<ChallengeEntity>
 
     @Query("UPDATE challenges SET endDate = :endDate WHERE id = :id")

@@ -13,6 +13,97 @@
 
 ---
 
+## [Unreleased] — May 2026
+
+### Feature — Auth overhaul: consent, email verification, validation, re-auth
+
+**Registration (RegisterForm in `AuthScreen.kt`):**
+- Inline email validation (empty / invalid format), no Toasts.
+- Password strength indicator (3-segment bar + label): Schwach (#FF3B30) < 8 chars,
+  Mittel (#FF9500), Stark (#00C853). Show/hide password eye toggle.
+- Three required consent checkboxes — AGB, Datenschutz, Age 18. "Konto erstellen"
+  button enabled only when email valid, password ≥ 8, passwords match, and all three checked.
+- On register: writes `consentAGB`/`consentDatenschutz`/`consentAge18`/`consentTimestamp`
+  to the Firestore user doc (`createUserDocument`, SetOptions.merge — legal proof of consent),
+  sends a verification email, and routes to the new EmailVerificationScreen (NOT the dashboard).
+
+**Email verification (`EmailVerificationScreen.kt` + `EmailVerificationViewModel.kt`, new):**
+- Route `email_verification?fromRegister={bool}` in `DetoxNavGraph.kt`.
+- "Ich habe bestätigt" → `reload()` + `isEmailVerified` check; inline error if still unverified.
+- "E-Mail erneut senden" with 60s cooldown countdown + Toast. Auto-polls reload() every 5s and
+  auto-navigates when verified. "Falsche E-Mail?" link signs out + returns to registration.
+- After register → verified routes to permissions Onboarding; after login → verified routes to Main.
+
+**Login (LoginForm):** inline field errors (empty/invalid email, empty password), show/hide
+password, German Firebase error mapping, "Passwort vergessen?" link with inline confirmation.
+Unverified accounts are blocked from the dashboard and redirected to EmailVerificationScreen.
+
+**Settings — Passwort ändern:** inline confirmation text + 60s resend cooldown (was Toast).
+
+**Settings — Konto löschen:** re-authentication password field added to the delete dialog;
+`deleteAccount(password)` calls `reauthenticateWithPassword` before the existing deletion flow
+(Hard Mode guard → Firestore delete → Auth delete → Room clear). Wrong password → inline error.
+
+**`FirebaseAuthService`:** added `sendEmailVerification()`, `reloadAndCheckEmailVerified()`,
+`isEmailVerified()`, `reauthenticateWithPassword()`.
+
+**Files changed:** `AuthScreen.kt`, `AuthViewModel.kt`, `EmailVerificationScreen.kt` (new),
+`EmailVerificationViewModel.kt` (new), `FirebaseAuthService.kt`, `FirestoreService.kt`,
+`DetoxNavGraph.kt`, `SettingsViewModel.kt`, `SettingsScreen.kt`, `strings.xml`
+**No Cloud Function changes. No Room schema changes. No Stripe changes.**
+
+---
+
+### FIXED — Group Challenge Room status never updated after endDate (critical)
+
+**Root cause (`DailyEvaluationWorker.evaluateGroupChallenge`):**
+After `completeGroupChallenge` CF call succeeded, the code read `localStatus` from Room to
+determine whether the user won or lost. But Room was never updated — the challenge row stayed
+`status="active"` forever, so it never appeared in the History screen.
+
+**Fix:**
+- After CF success, call `groupChallengeRepository.fetchAndCacheById(groupId)` (always, not
+  only on the "succeeded" path).
+- Find the participant with matching `userId` in the returned group doc.
+- Map `ParticipantStatus.FAILED → ChallengeStatus.FAILED`, else `ChallengeStatus.COMPLETED`.
+- Call `challengeRepository.updateChallengeStatus(challenge.id, finalStatus)` to update Room.
+- Derive `succeeded` from `finalStatus` (not from the stale local Room read).
+
+**DECISION:** Group Challenge local Room row MUST reflect final outcome after CF completes.
+Never leave groupChallenge rows as `status="active"` after `endDate` is reached.
+
+**Files changed:** `DailyEvaluationWorker.kt`
+**No Cloud Function changes. No Room schema changes. No Firestore changes.**
+
+---
+
+### Changed — History screen (HistoryScreen + HistoryDetailScreen) UI updates
+
+**HistoryScreen (list view):**
+- App name: 16sp SemiBold → 17sp Bold, color explicitly #000
+- Date: 13sp → 12sp, color #8E8E93
+- Right side now shows TWO badges stacked (Column):
+  - Top: TYPE badge (pill) — GROUP (#EEF0FF/#5856D6), HARD MODE (#FFF0E8/#C05A00),
+    SOFT MODE (#E8F8EF/#1E7A3C). Determined by `groupChallengeId != null` first, then `mode`.
+  - Bottom: STATUS text (no background) — "✓ Geschafft" #00C853, "✗ Aufgegeben" #FF3B30.
+- Old single `StatusChip` (pill with bg) replaced by `TypeBadge` + `StatusText` composables.
+- Card background hardcoded to #FFFFFF (was `MaterialTheme.colorScheme.surface`).
+
+**HistoryDetailScreen (detail view):**
+- Removed "ZEIT ZURÜCKGEWONNEN" section header + large saved-time number + subtext.
+- Removed "weniger Zeit" (percentageReduction) third column from stats card.
+- Stats card now shows 2 centered columns only: "Beste Streak" | "Bewusst geöffnet".
+  Both values: 17sp bold #000. Labels: 12sp #8E8E93.
+- Removed "Nochmal starten" button entirely (and its trailing Spacer).
+- `onStartAgain` kept in public composable signature (navigation still passes it); removed
+  from private `DetailContent`. No navigation changes needed.
+- Removed unused `Button` + `ButtonDefaults` imports.
+
+**Files changed:** `HistoryScreen.kt`, `HistoryDetailScreen.kt`
+**No Cloud Function changes. No Room schema changes. No strings.xml changes.**
+
+---
+
 ## [Unreleased] — May 2026 (Summary)
 
 ### Added

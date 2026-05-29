@@ -8,12 +8,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.detox.app.presentation.screens.auth.AuthScreen
 import com.detox.app.presentation.screens.auth.AuthTab
+import com.detox.app.presentation.screens.auth.EmailVerificationScreen
 import com.detox.app.presentation.screens.onboarding.OnboardingScreen
 import com.detox.app.presentation.screens.welcome.WelcomeOnboardingScreen
 
 sealed class Screen(val route: String) {
     data object Welcome : Screen("welcome")
     data object Auth : Screen("auth")
+    data object EmailVerification : Screen("email_verification")
     data object Onboarding : Screen("onboarding")
     data object Main : Screen("main")
 }
@@ -70,6 +72,38 @@ fun DetoxNavGraph(
                 onLoggedIn = {
                     navController.navigate(Screen.Main.route) {
                         popUpTo("auth?tab={tab}") { inclusive = true }
+                    }
+                },
+                onNeedsEmailVerification = { fromRegister ->
+                    navController.navigate("email_verification?fromRegister=$fromRegister")
+                }
+            )
+        }
+
+        // ── Email verification ──────────────────────────────────────────────────
+        composable(
+            route = "email_verification?fromRegister={fromRegister}",
+            arguments = listOf(
+                navArgument("fromRegister") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
+        ) { backStackEntry ->
+            val fromRegister = backStackEntry.arguments?.getBoolean("fromRegister") ?: false
+            EmailVerificationScreen(
+                onVerified = {
+                    // After registration → permissions onboarding; after login → dashboard.
+                    val destination = if (fromRegister) Screen.Onboarding.route else Screen.Main.route
+                    navController.navigate(destination) {
+                        popUpTo("auth?tab={tab}") { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onBackToRegister = {
+                    navController.navigate("auth?tab=register") {
+                        popUpTo("auth?tab={tab}") { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )

@@ -66,7 +66,11 @@ data class SettingsState(
     val darkModeEnabled: Boolean = false,
     val isLoading: Boolean = false,
     val showDeleteConfirmDialog: Boolean = false,
-    val showLogoutConfirmDialog: Boolean = false
+    val showLogoutConfirmDialog: Boolean = false,
+    val passwordResetMessage: String? = null,
+    val passwordResetCooldownSeconds: Int = 0,
+    val deleteReauthError: String? = null,
+    val deleteReauthLoading: Boolean = false
 )
 
 sealed interface SettingsEvent {
@@ -99,6 +103,8 @@ class SettingsViewModel @Inject constructor(
 
     private val _ibanSaveState = MutableStateFlow<IbanSaveState>(IbanSaveState.Idle)
     val ibanSaveState: StateFlow<IbanSaveState> = _ibanSaveState.asStateFlow()
+
+    private var passwordResetCooldownJob: kotlinx.coroutines.Job? = null
 
     init {
         val currentUser = firebaseAuthService.currentUser()
@@ -192,15 +198,31 @@ class SettingsViewModel @Inject constructor(
 
     fun sendPasswordReset() {
         val email = _state.value.email.ifBlank { return }
+        if (_state.value.passwordResetCooldownSeconds > 0) return
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true) }
-            val result = firebaseAuthService.sendPasswordReset(email)
-            _state.update { it.copy(isLoading = false) }
-            if (result.isSuccess) {
-                _events.send(SettingsEvent.ShowSnackbar(context.getString(R.string.settings_password_reset_sent)))
-            } else {
-                _events.send(SettingsEvent.ShowSnackbar("Fehler beim Senden. Bitte versuche es erneut."))
+            firebaseAuthService.sendPasswordReset(email)
+            // Always confirm inline (success regardless, to avoid user enumeration).
+            _state.update {
+                it.copy(
+                    passwordResetMessage = context.getString(
+                        R.string.settings_password_reset_confirm, email
+                    )
+                )
             }
+            startPasswordResetCooldown()
+        }
+    }
+
+    private fun startPasswordResetCooldown() {
+        passwordResetCooldownJob?.cancel()
+        passwordResetCooldownJob = viewModelScope.launch {
+            var remaining = 60
+            while (remaining > 0) {
+                _state.update { it.copy(passwordResetCooldownSeconds = remaining) }
+                kotlinx.coroutines.delay(1000)
+                remaining--
+            }
+            _state.update { it.copy(passwordResetCooldownSeconds = 0) }
         }
     }
 
@@ -214,11 +236,13 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun showDeleteConfirmDialog() {
-        _state.update { it.copy(showDeleteConfirmDialog = true) }
+        _state.update { it.copy(showDeleteConfirmDialog = true, deleteReauthError = null) }
     }
 
     fun dismissDeleteConfirmDialog() {
-        _state.update { it.copy(showDeleteConfirmDialog = false) }
+        _state.update {
+            it.copy(showDeleteConfirmDialog = false, deleteReauthError = null, deleteReauthLoading = false)
+        }
     }
 
     fun showLogoutConfirmDialog() {
@@ -229,9 +253,33 @@ class SettingsViewModel @Inject constructor(
         _state.update { it.copy(showLogoutConfirmDialog = false) }
     }
 
-    fun deleteAccount() {
+    /**
+     * Re-authenticates with the supplied password (Firebase requirement for account
+     * deletion), then runs the deletion flow. Wrong password → inline dialog error.
+     */
+    fun deleteAccount(password: String) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, showDeleteConfirmDialog = false) }
+            _state.update { it.copy(deleteReauthLoading = true, deleteReauthError = null) }
+
+            val reauthResult = firebaseAuthService.reauthenticateWithPassword(password)
+            if (reauthResult.isFailure) {
+                _state.update {
+                    it.copy(
+                        deleteReauthLoading = false,
+                        deleteReauthError = context.getString(R.string.settings_delete_reauth_wrong_password)
+                    )
+                }
+                return@launch
+            }
+
+            _state.update {
+                it.copy(
+                    deleteReauthLoading = false,
+                    isLoading = true,
+                    showDeleteConfirmDialog = false,
+                    deleteReauthError = null
+                )
+            }
 
             // Stripe safety: block deletion if any active Hard Mode challenge exists
             val activeChallengesResult = challengeRepository.getActiveChallengesList()

@@ -30,13 +30,27 @@ class FirestoreService @Inject constructor(
      * Called immediately after registration or first Google Sign-In.
      * Uses merge so it is safe to call again for returning users.
      */
-    suspend fun createUserDocument(userId: String, email: String, displayName: String? = null) {
+    suspend fun createUserDocument(
+        userId: String,
+        email: String,
+        displayName: String? = null,
+        consentAGB: Boolean = false,
+        consentDatenschutz: Boolean = false,
+        consentAge18: Boolean = false
+    ) {
         try {
             val data = mutableMapOf<String, Any>(
                 "email" to email,
                 "createdAt" to com.google.firebase.Timestamp.now()
             )
             displayName?.let { data["displayName"] = it }
+            // Legal proof of consent — only written when explicitly granted at registration.
+            if (consentAGB || consentDatenschutz || consentAge18) {
+                data["consentAGB"] = consentAGB
+                data["consentDatenschutz"] = consentDatenschutz
+                data["consentAge18"] = consentAge18
+                data["consentTimestamp"] = com.google.firebase.Timestamp.now()
+            }
             firestore
                 .collection("users").document(userId)
                 .set(data, com.google.firebase.firestore.SetOptions.merge())

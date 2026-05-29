@@ -1,5 +1,6 @@
 package com.detox.app.data.remote.firebase
 
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -93,6 +94,63 @@ class FirebaseAuthService @Inject constructor(
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "Failed to delete Firebase Auth account")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Sends a verification email to the currently signed-in user.
+     */
+    suspend fun sendEmailVerification(): Result<Unit> {
+        return try {
+            val user = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("No signed-in user"))
+            user.sendEmailVerification().await()
+            Timber.d("Verification email sent to ${user.email}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to send verification email")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Reloads the current user from the Firebase backend and returns the
+     * latest email-verification state. Returns false if no user is signed in.
+     */
+    suspend fun reloadAndCheckEmailVerified(): Result<Boolean> {
+        return try {
+            val user = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("No signed-in user"))
+            user.reload().await()
+            val verified = firebaseAuth.currentUser?.isEmailVerified == true
+            Timber.d("Reloaded user — emailVerified=$verified")
+            Result.success(verified)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to reload user")
+            Result.failure(e)
+        }
+    }
+
+    /** Returns the cached email-verification state without a network reload. */
+    fun isEmailVerified(): Boolean = firebaseAuth.currentUser?.isEmailVerified == true
+
+    /**
+     * Re-authenticates the current user with their email + password.
+     * Required by Firebase before sensitive operations such as account deletion.
+     */
+    suspend fun reauthenticateWithPassword(password: String): Result<Unit> {
+        return try {
+            val user = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("No signed-in user"))
+            val email = user.email
+                ?: return Result.failure(Exception("Current user has no email"))
+            val credential = EmailAuthProvider.getCredential(email, password)
+            user.reauthenticate(credential).await()
+            Timber.d("Re-authenticated user ${user.email}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "Re-authentication failed")
             Result.failure(e)
         }
     }

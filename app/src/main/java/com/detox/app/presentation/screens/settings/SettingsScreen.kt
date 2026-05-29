@@ -91,6 +91,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -288,17 +289,44 @@ fun SettingsScreen(
         )
     }
 
-    // ── Delete Account Confirmation Dialog ─────────────────────────────────────
+    // ── Delete Account Confirmation Dialog (with re-auth) ──────────────────────
     if (state.showDeleteConfirmDialog) {
+        var deletePassword by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { viewModel.dismissDeleteConfirmDialog() },
             title = { Text(stringResource(R.string.settings_delete_account_confirm_title)) },
-            text = { Text(stringResource(R.string.settings_delete_account_confirm_message)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.settings_delete_account_confirm_message))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(R.string.settings_delete_reauth_message),
+                        fontSize = 13.sp,
+                        color = SubtextColor
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = deletePassword,
+                        onValueChange = { deletePassword = it },
+                        label = { Text(stringResource(R.string.settings_delete_reauth_password_label)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        isError = state.deleteReauthError != null,
+                        enabled = !state.deleteReauthLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    state.deleteReauthError?.let {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(text = it, fontSize = 12.sp, color = DestructiveColor)
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(
-                    onClick = { viewModel.deleteAccount() },
+                    onClick = { viewModel.deleteAccount(deletePassword) },
+                    enabled = deletePassword.isNotBlank() && !state.deleteReauthLoading,
                     colors = ButtonDefaults.textButtonColors(contentColor = DestructiveColor)
-                ) { Text(stringResource(R.string.settings_delete_account_confirm_yes)) }
+                ) { Text(stringResource(R.string.settings_delete_reauth_continue)) }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissDeleteConfirmDialog() }) {
@@ -363,13 +391,20 @@ fun SettingsScreen(
                     labelSize = 14
                 )
                 IosRowDivider()
-                // Passwort ändern
+                // Passwort ändern (inline confirmation + 60s cooldown)
+                val pwCooldown = state.passwordResetCooldownSeconds
+                val pwSubtitle = when {
+                    pwCooldown > 0 ->
+                        stringResource(R.string.settings_password_reset_cooldown, pwCooldown)
+                    state.passwordResetMessage != null -> state.passwordResetMessage!!
+                    else -> stringResource(R.string.settings_change_password_subtitle)
+                }
                 IosRow(
                     iconContent = { IosIconBox(Icons.Filled.Lock, GreyIconBg) },
                     label = stringResource(R.string.settings_change_password),
-                    subtitle = stringResource(R.string.settings_change_password_subtitle),
-                    showChevron = true,
-                    onClick = { viewModel.sendPasswordReset() }
+                    subtitle = pwSubtitle,
+                    showChevron = pwCooldown == 0,
+                    onClick = { if (pwCooldown == 0) viewModel.sendPasswordReset() }
                 )
                 IosRowDivider()
                 // Abmelden

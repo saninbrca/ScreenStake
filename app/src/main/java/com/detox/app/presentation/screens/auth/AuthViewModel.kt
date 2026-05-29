@@ -1,11 +1,14 @@
 package com.detox.app.presentation.screens.auth
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.R
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,17 +21,24 @@ enum class AuthTab { LOGIN, REGISTER }
 sealed interface AuthUiState {
     data object Idle : AuthUiState
     data object Loading : AuthUiState
-    /** Registration succeeded — navigate to the permissions / onboarding flow. */
+    /** Google Sign-In succeeded — email is already verified, go to the permissions flow. */
     data object RegisterSuccess : AuthUiState
-    /** Login succeeded — navigate directly to the dashboard. */
+    /** Login succeeded and the email is verified — navigate directly to the dashboard. */
     data object LoginSuccess : AuthUiState
+    /**
+     * The account exists but the email is not yet verified.
+     * [fromRegister] true → arrived here after a fresh registration (next = permissions onboarding);
+     * false → arrived here from a login attempt with an unverified account (next = dashboard).
+     */
+    data class NeedsEmailVerification(val fromRegister: Boolean) : AuthUiState
     data class Error(val message: String) : AuthUiState
 }
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val firebaseAuthService: FirebaseAuthService,
-    private val firestoreService: FirestoreService
+    private val firestoreService: FirestoreService,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _tab = MutableStateFlow(AuthTab.LOGIN)
@@ -37,46 +47,78 @@ class AuthViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
+    /** Transient inline confirmation message (e.g. password-reset email sent). */
+    private val _infoMessage = MutableStateFlow<String?>(null)
+    val infoMessage: StateFlow<String?> = _infoMessage.asStateFlow()
+
     fun switchTab(tab: AuthTab) {
         _tab.value = tab
         _uiState.value = AuthUiState.Idle
+        _infoMessage.value = null
     }
+
+    fun sendPasswordReset(email: String) {
+        val trimmed = email.trim()
+        if (trimmed.isBlank()) {
+            _uiState.value = AuthUiState.Error(context.getString(R.string.auth_error_email_empty))
+            return
+        }
+        viewModelScope.launch {
+            firebaseAuthService.sendPasswordReset(trimmed)
+            // Always confirm (success regardless to avoid user enumeration).
+            _infoMessage.value = context.getString(R.string.auth_forgot_password_sent)
+        }
+    }
+
+    fun clearInfo() { _infoMessage.value = null }
 
     // ── Register ───────────────────────────────────────────────────────────────
 
-    fun register(email: String, password: String, confirmPassword: String) {
+    fun register(
+        email: String,
+        password: String,
+        confirmPassword: String,
+        consentAGB: Boolean,
+        consentDatenschutz: Boolean,
+        consentAge18: Boolean
+    ) {
         if (password != confirmPassword) {
-            _uiState.value = AuthUiState.Error("Passwords do not match.")
+            _uiState.value = AuthUiState.Error(context.getString(R.string.auth_passwords_mismatch))
             return
         }
-        if (password.length < 6) {
-            _uiState.value = AuthUiState.Error("Password must be at least 6 characters.")
+        if (password.length < 8) {
+            _uiState.value = AuthUiState.Error(context.getString(R.string.auth_password_hint))
             return
         }
         viewModelScope.launch {
             _uiState.value = AuthUiState.Loading
             firebaseAuthService.registerWithEmail(email.trim(), password)
                 .onSuccess { user ->
-                    // ── Critical diagnostic log ───────────────────────────────
                     val rawUser = FirebaseAuth.getInstance().currentUser
                     Timber.d(
                         "Registration complete. FirebaseAuth.getInstance().currentUser: " +
                         "isNull=%s uid=%s email=%s",
                         rawUser == null, rawUser?.uid, rawUser?.email
                     )
-                    // ─────────────────────────────────────────────────────────
 
-                    // Create the Firestore user document immediately after registration
+                    // Create the Firestore user document with the legal consent proof.
                     firestoreService.createUserDocument(
                         userId = user.uid,
                         email = user.email ?: email.trim(),
-                        displayName = user.displayName
+                        displayName = user.displayName,
+                        consentAGB = consentAGB,
+                        consentDatenschutz = consentDatenschutz,
+                        consentAge18 = consentAge18
                     )
-                    _uiState.value = AuthUiState.RegisterSuccess
+
+                    // Send the verification email and route to the verification screen
+                    // instead of straight into the app.
+                    firebaseAuthService.sendEmailVerification()
+                    _uiState.value = AuthUiState.NeedsEmailVerification(fromRegister = true)
                 }
                 .onFailure { e ->
                     Timber.e(e, "Registration failed")
-                    _uiState.value = AuthUiState.Error(friendlyError(e))
+                    _uiState.value = AuthUiState.Error(friendlyError(e, isLogin = false))
                 }
         }
     }
@@ -94,11 +136,17 @@ class AuthViewModel @Inject constructor(
                         "isNull=%s uid=%s email=%s",
                         rawUser == null, rawUser?.uid, rawUser?.email
                     )
-                    _uiState.value = AuthUiState.LoginSuccess
+                    // Block unverified accounts from reaching the dashboard.
+                    if (firebaseAuthService.isEmailVerified()) {
+                        _uiState.value = AuthUiState.LoginSuccess
+                    } else {
+                        firebaseAuthService.sendEmailVerification()
+                        _uiState.value = AuthUiState.NeedsEmailVerification(fromRegister = false)
+                    }
                 }
                 .onFailure { e ->
                     Timber.e(e, "Login failed")
-                    _uiState.value = AuthUiState.Error(friendlyError(e))
+                    _uiState.value = AuthUiState.Error(friendlyError(e, isLogin = true))
                 }
         }
     }
@@ -128,7 +176,7 @@ class AuthViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "Google sign-in failed")
-                    _uiState.value = AuthUiState.Error(friendlyError(e))
+                    _uiState.value = AuthUiState.Error(friendlyError(e, isLogin = true))
                 }
         }
     }
@@ -158,24 +206,27 @@ class AuthViewModel @Inject constructor(
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
-    private fun friendlyError(e: Throwable): String {
-        val msg = e.message ?: return "An unknown error occurred."
+    private fun friendlyError(e: Throwable, isLogin: Boolean): String {
+        val generic = context.getString(
+            if (isLogin) R.string.auth_error_login_generic else R.string.auth_error_register_generic
+        )
+        val msg = e.message ?: return generic
         return when {
             "EMAIL_ALREADY_IN_USE" in msg || "email address is already in use" in msg ->
-                "This email is already registered. Try logging in instead."
+                context.getString(R.string.auth_error_email_in_use)
             "INVALID_EMAIL" in msg || "badly formatted" in msg ->
-                "Please enter a valid email address."
+                context.getString(R.string.auth_error_email_invalid)
             "WRONG_PASSWORD" in msg || "password is invalid" in msg || "INVALID_LOGIN_CREDENTIALS" in msg ->
-                "Incorrect email or password."
+                context.getString(R.string.auth_error_wrong_password)
             "USER_NOT_FOUND" in msg || "no user record" in msg ->
-                "No account found with this email. Register first."
+                context.getString(R.string.auth_error_user_not_found)
             "WEAK_PASSWORD" in msg || "password should be at least" in msg ->
-                "Password must be at least 6 characters."
+                context.getString(R.string.auth_password_hint)
             "TOO_MANY_REQUESTS" in msg ->
-                "Too many attempts. Please wait and try again."
+                context.getString(R.string.auth_error_too_many_requests)
             "NETWORK_REQUEST_FAILED" in msg || "network error" in msg ->
-                "Network error. Check your internet connection."
-            else -> msg
+                context.getString(R.string.auth_error_network)
+            else -> generic
         }
     }
 }

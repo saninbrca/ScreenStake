@@ -26,6 +26,11 @@ sealed interface AuthUiState {
     /** Login succeeded and the email is verified — navigate directly to the dashboard. */
     data object LoginSuccess : AuthUiState
     /**
+     * Login succeeded and the email is verified, but the account has no username yet
+     * (existing accounts created before the username system) — route through selection.
+     */
+    data object NeedsUsername : AuthUiState
+    /**
      * The account exists but the email is not yet verified.
      * [fromRegister] true → arrived here after a fresh registration (next = permissions onboarding);
      * false → arrived here from a login attempt with an unverified account (next = dashboard).
@@ -138,7 +143,12 @@ class AuthViewModel @Inject constructor(
                     )
                     // Block unverified accounts from reaching the dashboard.
                     if (firebaseAuthService.isEmailVerified()) {
-                        _uiState.value = AuthUiState.LoginSuccess
+                        // Existing verified accounts without a username must pick one first.
+                        _uiState.value = if (firestoreService.getUsername(user.uid) == null) {
+                            AuthUiState.NeedsUsername
+                        } else {
+                            AuthUiState.LoginSuccess
+                        }
                     } else {
                         firebaseAuthService.sendEmailVerification()
                         _uiState.value = AuthUiState.NeedsEmailVerification(fromRegister = false)

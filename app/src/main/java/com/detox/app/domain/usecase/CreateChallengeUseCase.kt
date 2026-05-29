@@ -96,7 +96,11 @@ class CreateChallengeUseCase @Inject constructor(
         } else {
             DateUtils.MILLIS_PER_DAY
         }
-        val endDate = now + durationDays * durationMultiplier
+        val endDate = if (BuildConfig.DEBUG && durationMultiplier != DateUtils.MILLIS_PER_DAY) {
+            now + durationDays * durationMultiplier
+        } else {
+            DateUtils.endOfDayMillis(now, durationDays)
+        }
         val diffMs = endDate - now
         Timber.d("Challenge created: durationDays=$durationDays startDate=$now endDate=$endDate diff=${diffMs}ms = ${diffMs / DateUtils.MILLIS_PER_DAY}days (${diffMs / 60_000}min)")
 

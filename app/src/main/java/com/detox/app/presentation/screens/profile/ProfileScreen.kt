@@ -259,14 +259,15 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Display name
-            val nameToShow = viewModel.displayName
+            // Unique @username (falls back to email prefix for legacy accounts).
+            val handle = viewModel.usernameHandle
+            val nameToShow = handle?.let { "@$it" }
                 ?: viewModel.userEmail?.substringBefore("@")
                 ?: stringResource(R.string.profile_unknown_email)
             Text(
                 text = nameToShow,
-                fontSize = 17.sp,
-                fontWeight = FontWeight(600),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
                 color = Color.Black
             )
 

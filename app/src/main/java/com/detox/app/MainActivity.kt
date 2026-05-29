@@ -31,6 +31,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import androidx.work.WorkManager
 import com.detox.app.data.remote.firebase.CloudFunctionsService
+import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -62,6 +63,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var firebaseAuth: FirebaseAuth
+
+    @Inject
+    lateinit var firestoreService: FirestoreService
 
     private var startDestination by mutableStateOf<String?>(null)
     private var isDarkMode by mutableStateOf(false)
@@ -240,6 +244,22 @@ class MainActivity : ComponentActivity() {
         if (currentUser == null) {
             Timber.d("No authenticated user → Auth screen")
             return Screen.Auth.route
+        }
+
+        // Username gate: every verified account must have a unique @username. Existing
+        // accounts created before the username system are routed through selection on
+        // next launch. A SharedPreferences cache avoids a Firestore read on every start.
+        if (currentUser.isEmailVerified) {
+            val cachedUsername = prefs.getString("username", null)?.takeIf { it.isNotBlank() }
+            if (cachedUsername == null) {
+                val remoteUsername = firestoreService.getUsername(currentUser.uid)
+                if (remoteUsername == null) {
+                    Timber.d("Verified user without username → UsernameSelection")
+                    return "username_selection?fromRegister=false"
+                }
+                // Found remotely — cache it so subsequent launches skip the read.
+                prefs.edit().putString("username", remoteUsername).apply()
+            }
         }
 
         if (!hasUsageStatsPermission()) {

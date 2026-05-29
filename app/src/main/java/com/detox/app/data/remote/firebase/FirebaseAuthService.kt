@@ -4,6 +4,7 @@ import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.userProfileChangeRequest
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
@@ -151,6 +152,24 @@ class FirebaseAuthService @Inject constructor(
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "Re-authentication failed")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Updates the current user's Auth profile displayName. Mirrors the chosen username onto
+     * the FirebaseUser so every flow that reads currentUser()?.displayName (group create/join,
+     * taunts) automatically carries the username.
+     */
+    suspend fun updateDisplayName(name: String): Result<Unit> {
+        return try {
+            val user = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("No signed-in user"))
+            user.updateProfile(userProfileChangeRequest { displayName = name }).await()
+            Timber.d("Updated displayName to '$name' for uid=${user.uid}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to update displayName")
             Result.failure(e)
         }
     }

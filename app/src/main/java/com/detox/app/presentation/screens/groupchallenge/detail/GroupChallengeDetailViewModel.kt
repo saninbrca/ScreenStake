@@ -365,7 +365,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 return@launch
             }
 
-            val message = tauntMessages.random().format(fromDisplayName)
+            val message = tauntMessages.random().format("@$fromDisplayName")
             groupChallengeRepository.sendTaunt(groupId, fromUserId, fromDisplayName, targetUserId, message)
                 .onSuccess {
                     tauntCountsToday[targetUserId] = cachedCount + 1

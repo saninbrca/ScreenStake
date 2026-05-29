@@ -117,7 +117,7 @@ class CreateGroupChallengeUseCase @Inject constructor(
         paymentIntentId: String,
     ): Result<GroupChallengeCreatedData> {
         val baseMs = if (startDateMs > 0L) startDateMs else System.currentTimeMillis()
-        val endDateMs = baseMs + durationDays.toLong() * DateUtils.MILLIS_PER_DAY
+        val endDateMs = DateUtils.endOfDayMillis(baseMs, durationDays)
         Timber.d("endDate stored as: $endDateMs = ${java.util.Date(endDateMs)}")
 
         val groupDataMap = mapOf(

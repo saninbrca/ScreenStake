@@ -15,6 +15,65 @@
 
 ## [Unreleased] — May 2026
 
+### FIXED — "Last Day Loophole": challenge endDate now ends at midnight of the last day
+
+**Problem:** `endDate` was computed as `startTime + durationDays × 86_400_000ms`. A 7-day
+challenge started 19. Mai 16:00 ended 26. Mai 16:00 — after 16:00 on the final day the app
+stopped blocking, so the user could scroll freely until midnight.
+
+**Fix (client):** `endDate` is now always 23:59:59.999 of the last day, never mid-day. Always
+use `DateUtils.endOfDayMillis(startMs, durationDays)` — a `Calendar`-based helper (DST-safe),
+never raw millisecond arithmetic. The solo path preserves the debug `minutes-as-days` test
+mode (branch on `durationMultiplier`); the group path uses the helper directly.
+
+**Fix (server):** `startGroupChallenge` recomputed `endDate = now + durationDays * 86400000`
+when the creator starts a group challenge, overwriting the client value. Added a matching
+`endOfDayMillis(startMs, durationDays)` helper to `functions/src/index.ts` and `startGroupChallenge`
+now uses it. Note: the Cloud Function runs in UTC, so server end-of-day is UTC-based vs. the
+client's device-local timezone — both land at end-of-day (loophole closed), but are not bit-identical.
+
+**DECISION:** Challenge `endDate` is always 23:59:59.999 of the last day. Never calculated as
+`startTime + N × 86_400_000`. Always use `DateUtils.endOfDayMillis(startMs, durationDays)`
+(client) / `endOfDayMillis(startMs, durationDays)` (Cloud Function).
+
+**Files changed:** `DateUtils.kt`, `CreateChallengeUseCase.kt`, `CreateGroupChallengeUseCase.kt`,
+`functions/src/index.ts`
+**Deployed:** `firebase deploy --only functions` run successfully for project `detox-33208`
+(all 18 functions updated, including `startGroupChallenge`).
+**No Room schema changes. No Stripe changes.**
+
+### Feature — Unique @username system (Instagram-style)
+
+Every user picks a permanent, unique, lowercase `@username` right after email verification.
+
+**Storage & service (`FirestoreService.kt`, `FirebaseAuthService.kt`):**
+- New `usernames/{username}` collection (doc id = lowercase name, `{uid, createdAt}`).
+- `getUsername(uid)`, `isUsernameAvailable(username)` (fail-closed on error), and
+  `saveUsername(uid, username)` which claims the name **atomically** via `runTransaction`
+  (rejects if taken → `IllegalStateException("username_taken")`) and writes
+  `username` + `displayName` onto `users/{uid}` (SetOptions.merge).
+- `updateDisplayName(name)` mirrors the username onto the FirebaseUser Auth profile.
+  **DECISION:** No Cloud Function changes — group create/join/taunt already read
+  `user.displayName`, so new participants carry the username automatically.
+
+**Selection screen (`username/UsernameSelectionScreen.kt` + `…ViewModel.kt`, new):**
+- @-prefixed lowercase input (a–z/0–9/_), min 3 / max 20, "X / 20" counter, 500ms
+  debounced availability check (green Verfügbar / red Bereits vergeben). `BackHandler`
+  blocks back — a username is mandatory. Self-skips if the account already has one.
+- Route `username_selection?fromRegister={bool}` in `DetoxNavGraph.kt`. EmailVerification
+  and Google sign-up now route through it; `AuthViewModel.NeedsUsername` routes verified
+  logins without a username.
+
+**Migration gate (`MainActivity.determineStartDestination`):** verified users without a
+username (cached in `detox_settings`/`username` or looked up in Firestore) are routed to
+the selection screen on next launch.
+
+**Display:** `@username` shown on Profile (20sp bold), Group Challenge leaderboard, results
+podium + failed list, and taunt messages. Falls back to email prefix for legacy accounts.
+
+**Rules (`firestore.rules`):** `usernames/{username}` — authed read, owner-only create of a
+free name (`uid` match + `!exists`), no update/delete.
+
 ### Feature — Auth overhaul: consent, email verification, validation, re-auth
 
 **Registration (RegisterForm in `AuthScreen.kt`):**

@@ -61,6 +61,69 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    // ── Username (unique handle) ─────────────────────────────────────────────
+
+    /** Reads the permanent username stored at users/{uid}.username, or null if unset. */
+    suspend fun getUsername(uid: String): String? {
+        return try {
+            firestore.collection("users").document(uid).get().await()
+                .getString("username")?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to read username for uid=$uid")
+            null
+        }
+    }
+
+    /** Returns true if the (lowercased) username is not yet claimed in usernames/{username}. */
+    suspend fun isUsernameAvailable(username: String): Boolean {
+        return try {
+            val key = username.lowercase()
+            !firestore.collection("usernames").document(key).get().await().exists()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to check username availability for $username")
+            // On network failure, report unavailable so the user can't proceed blindly.
+            false
+        }
+    }
+
+    /**
+     * Atomically claims a unique username. Inside a single transaction it verifies the
+     * usernames/{username} doc does not exist, then writes both the claim doc and mirrors
+     * the value onto users/{uid}.username + .displayName.
+     * Fails with message "username_taken" if the handle is already claimed.
+     */
+    suspend fun saveUsername(uid: String, username: String): Result<Unit> {
+        val key = username.lowercase()
+        return try {
+            firestore.runTransaction { txn ->
+                val usernameRef = firestore.collection("usernames").document(key)
+                val snapshot = txn.get(usernameRef)
+                if (snapshot.exists()) {
+                    throw IllegalStateException("username_taken")
+                }
+                txn.set(
+                    usernameRef,
+                    mapOf(
+                        "uid" to uid,
+                        "createdAt" to com.google.firebase.Timestamp.now()
+                    )
+                )
+                val userRef = firestore.collection("users").document(uid)
+                txn.set(
+                    userRef,
+                    mapOf("username" to key, "displayName" to key),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                null
+            }.await()
+            Timber.d("Username '$key' claimed for uid=$uid")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to claim username '$key' for uid=$uid")
+            Result.failure(e)
+        }
+    }
+
     /**
      * Saves (or updates) the FCM registration token for the given user.
      * Called by [DetoxFirebaseMessagingService.onNewToken] whenever the token changes.

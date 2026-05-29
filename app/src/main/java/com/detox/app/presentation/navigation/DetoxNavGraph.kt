@@ -10,12 +10,14 @@ import com.detox.app.presentation.screens.auth.AuthScreen
 import com.detox.app.presentation.screens.auth.AuthTab
 import com.detox.app.presentation.screens.auth.EmailVerificationScreen
 import com.detox.app.presentation.screens.onboarding.OnboardingScreen
+import com.detox.app.presentation.screens.username.UsernameSelectionScreen
 import com.detox.app.presentation.screens.welcome.WelcomeOnboardingScreen
 
 sealed class Screen(val route: String) {
     data object Welcome : Screen("welcome")
     data object Auth : Screen("auth")
     data object EmailVerification : Screen("email_verification")
+    data object UsernameSelection : Screen("username_selection")
     data object Onboarding : Screen("onboarding")
     data object Main : Screen("main")
 }
@@ -65,12 +67,19 @@ fun DetoxNavGraph(
             AuthScreen(
                 initialTab = initialTab,
                 onRegistered = {
-                    navController.navigate(Screen.Onboarding.route) {
+                    // Google sign-up (no email-verification step) → username selection first.
+                    navController.navigate("username_selection?fromRegister=true") {
                         popUpTo("auth?tab={tab}") { inclusive = true }
                     }
                 },
                 onLoggedIn = {
                     navController.navigate(Screen.Main.route) {
+                        popUpTo("auth?tab={tab}") { inclusive = true }
+                    }
+                },
+                onNeedsUsername = {
+                    // Existing verified user logging in without a username.
+                    navController.navigate("username_selection?fromRegister=false") {
                         popUpTo("auth?tab={tab}") { inclusive = true }
                     }
                 },
@@ -93,9 +102,10 @@ fun DetoxNavGraph(
             val fromRegister = backStackEntry.arguments?.getBoolean("fromRegister") ?: false
             EmailVerificationScreen(
                 onVerified = {
-                    // After registration → permissions onboarding; after login → dashboard.
-                    val destination = if (fromRegister) Screen.Onboarding.route else Screen.Main.route
-                    navController.navigate(destination) {
+                    // Every verified user must pass through username selection; the screen
+                    // self-skips if a username already exists. fromRegister decides where it
+                    // lands afterwards (onboarding vs. dashboard).
+                    navController.navigate("username_selection?fromRegister=$fromRegister") {
                         popUpTo("auth?tab={tab}") { inclusive = true }
                         launchSingleTop = true
                     }
@@ -103,6 +113,29 @@ fun DetoxNavGraph(
                 onBackToRegister = {
                     navController.navigate("auth?tab=register") {
                         popUpTo("auth?tab={tab}") { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        // ── Username selection ──────────────────────────────────────────────────
+        composable(
+            route = "username_selection?fromRegister={fromRegister}",
+            arguments = listOf(
+                navArgument("fromRegister") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
+        ) { backStackEntry ->
+            val fromRegister = backStackEntry.arguments?.getBoolean("fromRegister") ?: false
+            UsernameSelectionScreen(
+                onComplete = {
+                    // After registration → permissions onboarding; otherwise → dashboard.
+                    val destination = if (fromRegister) Screen.Onboarding.route else Screen.Main.route
+                    navController.navigate(destination) {
+                        popUpTo("username_selection?fromRegister={fromRegister}") { inclusive = true }
                         launchSingleTop = true
                     }
                 }

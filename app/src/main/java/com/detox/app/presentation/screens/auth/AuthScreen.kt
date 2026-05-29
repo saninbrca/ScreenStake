@@ -84,6 +84,7 @@ fun AuthScreen(
     initialTab: AuthTab = AuthTab.LOGIN,
     onRegistered: () -> Unit,
     onLoggedIn: () -> Unit,
+    onNeedsUsername: () -> Unit,
     onNeedsEmailVerification: (fromRegister: Boolean) -> Unit,
     viewModel: AuthViewModel = hiltViewModel()
 ) {
@@ -99,6 +100,7 @@ fun AuthScreen(
         when (val state = uiState) {
             is AuthUiState.RegisterSuccess -> onRegistered()
             is AuthUiState.LoginSuccess -> onLoggedIn()
+            is AuthUiState.NeedsUsername -> onNeedsUsername()
             is AuthUiState.NeedsEmailVerification ->
                 onNeedsEmailVerification(state.fromRegister)
             else -> Unit

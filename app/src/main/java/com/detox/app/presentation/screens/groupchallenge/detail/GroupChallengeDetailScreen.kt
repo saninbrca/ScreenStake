@@ -961,7 +961,7 @@ private fun LeaderboardRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = displayName,
+                    text = "@$displayName",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.W500,
                     color = if (isFailed) Color(0xFFC7C7CC) else Color.Black,
@@ -1176,8 +1176,8 @@ private fun FailedUserBanner(gc: GroupChallenge) {
                     .filter { it.status == ParticipantStatus.SUCCESS }
                     .minByOrNull { it.timeUsedMinutes }
                 if (winner != null) {
-                    val name = winner.displayName.takeIf { it.isNotBlank() }
-                        ?: winner.userId.substringBefore('@')
+                    val name = "@" + (winner.displayName.takeIf { it.isNotBlank() }
+                        ?: winner.userId.substringBefore('@'))
                     val pot = gc.participants.count { it.status == ParticipantStatus.FAILED } *
                             gc.buyInCents / 100
                     Text(

@@ -22,6 +22,22 @@ object DateUtils {
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
 
+    /**
+     * Returns 23:59:59.999 of the day that is [durationDays] days after [startMs].
+     * Note: durationDays - 1 because startMs already counts as day 1.
+     */
+    fun endOfDayMillis(startMs: Long, durationDays: Int): Long {
+        val calendar = Calendar.getInstance().apply {
+            timeInMillis = startMs
+            add(Calendar.DAY_OF_YEAR, durationDays - 1)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+        return calendar.timeInMillis
+    }
+
     fun addBusinessDays(timestampMs: Long, days: Int): Long {
         val cal = Calendar.getInstance()
         cal.timeInMillis = timestampMs

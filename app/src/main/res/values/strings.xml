@@ -217,6 +217,17 @@
     <string name="email_verify_resent_toast">E-Mail wurde erneut gesendet</string>
     <string name="email_verify_back_to_register">Falsche E-Mail? Zurück zur Registrierung</string>
 
+    <!-- Username selection -->
+    <string name="username_title">Wähle deinen Benutzernamen</string>
+    <string name="username_subtitle">Dieser Name ist einzigartig und kann später nicht mehr geändert werden.</string>
+    <string name="username_counter">%1$d / 20</string>
+    <string name="username_checking">Wird geprüft…</string>
+    <string name="username_available">✓ Verfügbar</string>
+    <string name="username_taken">Bereits vergeben</string>
+    <string name="username_too_short">Mindestens 3 Zeichen</string>
+    <string name="username_continue">Weiter</string>
+    <string name="username_hint">nur a–z, 0–9, _</string>
+
     <!-- Challenge Setup — Hard Mode -->
     <string name="challenge_setup_mode_label">Challenge Mode</string>
     <string name="challenge_setup_mode_soft_label">Soft Mode</string>

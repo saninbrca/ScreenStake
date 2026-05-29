@@ -330,7 +330,7 @@ private fun PodiumSlotItem(
         Spacer(Modifier.height(4.dp))
 
         Text(
-            text = slot.participant?.displayName ?: "",
+            text = slot.participant?.displayName?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "",
             fontSize = 13.sp,
             color = Color.White,
             maxLines = 1,
@@ -394,7 +394,7 @@ private fun FailedSection(failed: List<Participant>) {
             ) {
                 AvatarCircle(displayName = p.displayName, size = 32.dp)
                 Text(
-                    text = p.displayName,
+                    text = p.displayName.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "",
                     fontSize = 13.sp,
                     color = Color.White,
                     modifier = Modifier.weight(1f),

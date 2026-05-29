@@ -134,6 +134,14 @@ class ProfileViewModel @Inject constructor(
     val displayName: String? = firebaseAuth.currentUser?.displayName?.takeIf { it.isNotBlank() }
     val memberSinceMs: Long? = firebaseAuth.currentUser?.metadata?.creationTimestamp
 
+    /** Cached unique username (offline fallback when the Auth displayName is blank). */
+    val cachedUsername: String? = context
+        .getSharedPreferences("detox_settings", Context.MODE_PRIVATE)
+        .getString("username", null)?.takeIf { it.isNotBlank() }
+
+    /** Best-known unique handle: Auth displayName (= username after save) → cache → email prefix. */
+    val usernameHandle: String? = (displayName ?: cachedUsername)?.takeIf { it.isNotBlank() }
+
     private val _stats = MutableStateFlow(ProfileStats())
     val stats: StateFlow<ProfileStats> = _stats.asStateFlow()
 

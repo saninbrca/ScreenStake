@@ -7,6 +7,18 @@ admin.initializeApp();
 const REGION = "us-central1";
 const MILLIS_PER_DAY = 86_400_000;
 
+/**
+ * Returns 23:59:59.999 of the day that is durationDays days after startMs.
+ * durationDays - 1 because startMs already counts as day 1. Mirrors the client
+ * DateUtils.endOfDayMillis — closes the "Last Day Loophole".
+ */
+function endOfDayMillis(startMs: number, durationDays: number): number {
+  const d = new Date(startMs);
+  d.setDate(d.getDate() + (durationDays - 1));
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
 // ── Stripe ─────────────────────────────────────────────────────────────────────
 
 let _stripe: Stripe | null = null;
@@ -422,7 +434,7 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
 
     const startDate = Date.now();
     const durationDays: number = (gc["durationDays"] as number) ?? 7;
-    const endDate = startDate + durationDays * MILLIS_PER_DAY;
+    const endDate = endOfDayMillis(startDate, durationDays);
 
     functions.logger.info("startGroupChallenge: setting startDate + endDate", {
       groupId,

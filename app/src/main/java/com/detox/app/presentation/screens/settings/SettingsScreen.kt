@@ -200,7 +200,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     isError = sheetIban.isNotBlank() && !ibanValid,
-                    placeholder = { Text("AT61 1904 3002 3457 3201") }
+                    placeholder = { Text(stringResource(R.string.iban_placeholder)) }
                 )
                 Button(
                     onClick = {

@@ -1166,7 +1166,7 @@ export const getConnectedAccountStatus = functions.region(REGION).https.onReques
 
 async function runPermissionViolationCheck(): Promise<number> {
   const now = Date.now();
-  const twentyFourHours = 24 * 60 * 60 * 1000;
+  const twentyFourHours = MILLIS_PER_DAY;
   const db = admin.firestore();
   let processed = 0;
 

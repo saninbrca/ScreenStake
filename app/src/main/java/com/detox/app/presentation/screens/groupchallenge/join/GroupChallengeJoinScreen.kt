@@ -144,7 +144,7 @@ fun GroupChallengeJoinScreen(
                 value = codeInput,
                 onValueChange = viewModel::onCodeChanged,
                 label = { Text(stringResource(R.string.join_group_code_label)) },
-                placeholder = { Text("ABCD12") },
+                placeholder = { Text(stringResource(R.string.join_code_placeholder)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(

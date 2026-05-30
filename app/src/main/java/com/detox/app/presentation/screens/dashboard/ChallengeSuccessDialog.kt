@@ -56,6 +56,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
 import com.detox.app.ui.theme.PoppinsFamily
+import com.detox.app.util.DateUtils
 import kotlinx.coroutines.delay
 import kotlin.math.floor
 import kotlin.random.Random
@@ -484,6 +485,6 @@ private fun StatColumn(
 private val Challenge.durationDays: Int
     get() {
         val endDateMs = if (endDate > 1_700_000_000_000L) endDate
-        else startDate + (endDate * 86_400_000L)
-        return ((endDateMs - startDate) / 86_400_000L).toInt().coerceAtLeast(1)
+        else startDate + (endDate * DateUtils.MILLIS_PER_DAY)
+        return ((endDateMs - startDate) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(1)
     }

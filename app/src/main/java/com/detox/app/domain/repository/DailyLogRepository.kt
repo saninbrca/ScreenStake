@@ -1,7 +1,6 @@
 package com.detox.app.domain.repository
 
 import com.detox.app.domain.model.DailyLog
-import com.detox.app.domain.model.ThresholdFlags
 import kotlinx.coroutines.flow.Flow
 
 interface DailyLogRepository {
@@ -29,21 +28,6 @@ interface DailyLogRepository {
     suspend fun getBudgetRemainingMs(challengeId: String, date: Long): Result<Long>
     /** Upserts budgetUsedMs / budgetRemainingMs. Creates a placeholder row if none exists. */
     suspend fun updateBudgetStateMs(challengeId: String, date: Long, usedMs: Long, remainingMs: Long): Result<Unit>
-
-    // ── Threshold notification flags ───────────────────────────────────────────
-
-    /**
-     * Returns which of the 50 / 75 / 90 % threshold notifications have already been
-     * fired for this challenge today.  Returns all-false if no row exists yet.
-     */
-    suspend fun getThresholdFlags(challengeId: String, date: Long): Result<ThresholdFlags>
-
-    /**
-     * Marks the given [threshold] (50, 75 or 90) as notified for today.
-     * If no log row exists yet it creates a minimal placeholder row first so the
-     * subsequent SQL UPDATE has a target.
-     */
-    suspend fun markThresholdNotified(challengeId: String, date: Long, threshold: Int): Result<Unit>
 
     /**
      * Counts consecutive completed days (before [beforeDate]) where [limitExceeded] is false.

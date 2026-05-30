@@ -229,14 +229,14 @@ fun GroupChallengeDetailScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.dismissWinDialog() }) { Text("OK") }
+                TextButton(onClick = { viewModel.dismissWinDialog() }) { Text(stringResource(R.string.ok)) }
             },
             dismissButton = if (!info.hasIban) {
                 {
                     TextButton(onClick = {
                         viewModel.dismissWinDialog()
                         onNavigateToProfile()
-                    }) { Text("Jetzt IBAN eingeben") }
+                    }) { Text(stringResource(R.string.enter_iban_now)) }
                 }
             } else null
         )
@@ -1240,19 +1240,19 @@ private fun ResultSummaryCard(
             )
             when {
                 gc.status == GroupChallengeStatus.CANCELLED ->
-                    Text("Zu wenige Spieler. Alle Einsätze werden zurückgebucht.")
+                    Text(stringResource(R.string.group_result_too_few))
                 iLost -> {
                     val lostCents = myParticipant?.amountCents ?: gc.buyInCents
                     Text("€${lostCents / 100} wurden eingezogen.")
                 }
                 failedCount == 0 ->
-                    Text("Alle $succeededCount Teilnehmer im Limit. Einsätze werden zurückgebucht!")
+                    Text(stringResource(R.string.group_result_all_succeeded, succeededCount))
                 succeededCount == 0 ->
-                    Text("Alle $failedCount Teilnehmer haben das Limit überschritten.")
+                    Text(stringResource(R.string.group_result_all_failed, failedCount))
                 else -> {
                     Text("$succeededCount gewonnen · $failedCount ausgeschieden")
                     if (gc.perWinnerBonus > 0) {
-                        Text("Bonus pro Gewinner: €${gc.perWinnerBonus / 100}", fontSize = 13.sp)
+                        Text(stringResource(R.string.group_bonus_per_winner, gc.perWinnerBonus / 100), fontSize = 13.sp)
                     }
                 }
             }
@@ -1283,7 +1283,7 @@ private fun PayoutResultCard(
                     fontWeight = FontWeight.Bold
                 )
             }
-            Text("Dein Einsatz (€${buyIn / 100}) wird zurückgebucht")
+            Text(stringResource(R.string.group_stake_refunded, buyIn / 100))
             if (bonus > 0) {
                 if (isPending) {
                     Text(
@@ -1292,10 +1292,10 @@ private fun PayoutResultCard(
                         color = MaterialTheme.colorScheme.error
                     )
                     Button(onClick = onConnectBank, modifier = Modifier.fillMaxWidth()) {
-                        Text("Bankkonto verbinden")
+                        Text(stringResource(R.string.connect_bank_account))
                     }
                 } else {
-                    Text("Bonus (€${bonus / 100}) wird auf dein Bankkonto überwiesen")
+                    Text(stringResource(R.string.group_bonus_transfer, bonus / 100))
                 }
             }
         }

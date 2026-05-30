@@ -31,6 +31,7 @@ class GroupChallengeFirestoreService @Inject constructor(
     suspend fun saveGroupChallenge(groupChallenge: GroupChallenge) {
         try {
             collection.document(groupChallenge.groupId)
+                // Full create/overwrite — merge not needed (no update call-site; writes the whole doc).
                 .set(groupChallenge.toMap())
                 .await()
             Timber.d("Firestore write result: ${groupChallenge.groupId}")

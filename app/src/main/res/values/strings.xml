@@ -1338,4 +1338,30 @@
     <string name="history_detail_limit_budget">%1$d Min Budget / Tag</string>
     <string name="history_detail_not_found">Challenge nicht gefunden</string>
 
+    <!-- Cleanup audit: extracted hardcoded strings -->
+    <string name="done">Fertig</string>
+    <string name="ok">OK</string>
+    <string name="retry">Erneut versuchen</string>
+    <string name="add">Hinzufügen</string>
+    <string name="fix_now">Jetzt beheben</string>
+    <string name="loading_apps">Apps werden geladen…</string>
+    <string name="grant_permission">Berechtigung erteilen</string>
+    <string name="cancel_challenge_title">Abbrechen?</string>
+    <string name="cancel_challenge_body">Dein Fortschritt geht verloren.</string>
+    <string name="discard">Verwerfen</string>
+    <string name="keep_editing">Weiter bearbeiten</string>
+    <string name="delete_schedule">Zeitplan löschen</string>
+    <string name="also_block_domains">Auch %1$s blockieren?</string>
+    <string name="join_code_placeholder">ABCD12</string>
+    <string name="iban_placeholder">AT61 1904 3002 3457 3201</string>
+    <string name="enter_iban_now">Jetzt IBAN eingeben</string>
+    <string name="group_result_too_few">Zu wenige Spieler. Alle Einsätze werden zurückgebucht.</string>
+    <string name="group_result_all_succeeded">Alle %1$d Teilnehmer im Limit. Einsätze werden zurückgebucht!</string>
+    <string name="group_result_all_failed">Alle %1$d Teilnehmer haben das Limit überschritten.</string>
+    <string name="group_bonus_per_winner">Bonus pro Gewinner: €%1$d</string>
+    <string name="group_stake_refunded">Dein Einsatz (€%1$d) wird zurückgebucht</string>
+    <string name="connect_bank_account">Bankkonto verbinden</string>
+    <string name="group_bonus_transfer">Bonus (€%1$d) wird auf dein Bankkonto überwiesen</string>
+    <string name="notif_overlay_captured_body">Die Overlay-Berechtigung war zu lange deaktiviert. Dein Einsatz wurde eingezogen.</string>
+
 </resources>

@@ -15,6 +15,93 @@
 
 ## [Unreleased] — May 2026
 
+### AUDIT — Three audit findings reviewed: join-window validation, debug-log cleanup, Room emission race
+
+Three findings from a security/hygiene audit. Verified via `:app:compileDebugKotlin` (exit 0).
+Net code change: one client comment + removal of debug-only log locals. No CF deploy, no schema
+change.
+
+**Fix 1 — Server-clock join-window validation — VERIFIED (already enforced).** The concern was
+that `JoinGroupChallengeUseCase` gates the join window with `System.currentTimeMillis()` (device
+clock), which a user could move forward to bypass. Investigation confirmed the **server is already
+the security boundary**: `joinGroupChallenge` (`functions/src/index.ts`) re-validates with the
+server clock — `status !== "waiting"` and `startDate <= Date.now()` (there is no `joinWindowEnd`
+field in this codebase; the join window *is* `startDate`). No Cloud Function change or deploy was
+needed. Added a clarifying comment above the client-side check in `JoinGroupChallengeUseCase.kt`:
+`// UX guard only — server re-validates with Date.now() in joinGroupChallenge CF`.
+
+**Fix 2 — Removed debug-only log locals in `AppDetectionAccessibilityService` — FIXED.** Deleted
+the four `_`-prefixed locals (`_sessionPrefsForLog`, `_nowForLog`, `_activeSessionPackage`,
+`_sessionEndTimeForLog`) and their two `Timber.d` calls — leftover instrumentation used only for
+logging, not in any detection/blocking logic. No behavior change; confirmed callerless before
+removal.
+
+**Fix 3 — Room first-emission race — VERIFIED (existing guards sufficient, no change).** The
+concern was that a service's first Room Flow emission can be empty (DAO returns before sync
+populates), causing the overlay to show wrong limit values. Investigation found this is already
+covered:
+- Overlay limit decisions read DailyLog via **one-shot** `getLogForDate(...)` suspend reads (e.g.
+  `OverlayManager`), not a Flow — so there is no empty-then-real first emission on the overlay
+  path. The DAILY_BUDGET path additionally falls back to the full budget when `budgetUsedMs == 0`.
+- The package-tracking Flow in `UsageTrackingService` already has an empty-emission guard: it skips
+  an all-empty update when Room still reports active challenges (race-condition guard).
+- Applying the suggested `.drop(1)` to that Flow would prevent blocking from starting until the
+  challenge list *changes* — a regression — so it was deliberately not applied.
+- The group-session-info Flow (`startGroupSessionLimitTracking`) was reviewed and left unchanged: an
+  empty emission there is benign (the synchronous fast-path in `AppDetectionAccessibilityService`
+  guards with `if (sessionInfo != null)` and falls back to the Room-based overlay path). Adding a
+  retain-last-value guard would risk surfacing a stale `opensToday >= limit` after a challenge ends.
+
+**Files changed:** `JoinGroupChallengeUseCase.kt`, `AppDetectionAccessibilityService.kt`,
+`docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe changes.**
+
+### CLEANUP — Codebase hygiene pass: day-math constant, hardcoded strings, Firestore merge audit, dead ThresholdFlags removal + DB migration 24→25
+
+Four low-risk hygiene fixes from an audit. All verified via `:app:compileDebugKotlin`,
+`:app:assembleDebug` (Room schema validation passes), and `functions` `tsc` build. Functions
+re-deployed (`firebase deploy --only functions`).
+
+**Fix 1 — Inline day-in-millis replaced with the shared constant.**
+- `ChallengeSuccessDialog.kt` `Challenge.durationDays`: both inline `86_400_000L` →
+  `DateUtils.MILLIS_PER_DAY` (added `import com.detox.app.util.DateUtils`).
+- `functions/src/index.ts:1169`: `const twentyFourHours = 24 * 60 * 60 * 1000` → reuse existing
+  `MILLIS_PER_DAY` constant (`index.ts:8`). **Deployed** to production.
+
+**Fix 2 — Hardcoded production UI strings moved to `res/values/strings.xml`** (German, snake_case
+keys; interpolated values use `%1$s`/`%1$d` format args; non-composable `NotificationHelper` uses
+`context.getString`). English strings were translated to German in the process.
+- New keys: `done`, `ok`, `retry`, `add`, `fix_now`, `loading_apps`, `grant_permission`,
+  `cancel_challenge_title`, `cancel_challenge_body`, `discard`, `keep_editing`, `delete_schedule`,
+  `also_block_domains`, `join_code_placeholder`, `iban_placeholder`, `enter_iban_now`,
+  `group_result_too_few`, `group_result_all_succeeded`, `group_result_all_failed`,
+  `group_bonus_per_winner`, `group_stake_refunded`, `connect_bank_account`, `group_bonus_transfer`,
+  `notif_overlay_captured_body`.
+- Files: `AppWebsiteSelectionStep.kt`, `ChallengeCreationScreen.kt`, `GroupChallengeDetailScreen.kt`,
+  `ChallengeSetupScreen.kt`, `GroupChallengeJoinScreen.kt`, `GroupChallengeCreateScreen.kt`,
+  `SettingsScreen.kt`, `MainActivity.kt` (added `stringResource` import), `NotificationHelper.kt`.
+- **Not touched** (out of scope): ProfileScreen debug panel, FriendsHubScreen debug labels, and two
+  English error strings in `AppWebsiteSelectionStep.kt` ("Usage access permission…", "Failed to load apps.").
+
+**Fix 3 — DECISION: Firestore `.set()` merge audit.** Rule reaffirmed: any **DailyLog** write MUST use
+`SetOptions.merge()`; create-only writes stay full-document with an explanatory comment.
+- `FirestoreService.saveDailyLog` → now `.set(log.toMap(), SetOptions.merge())`.
+- `FirestoreService.saveChallenge` → kept full create (only caller is `createChallenge`), commented.
+- `GroupChallengeFirestoreService.saveGroupChallenge` → kept full create/overwrite (no update
+  call-site), commented.
+- `FirestoreService` `usernames/{name}` `txn.set` → kept (new doc, created once), commented.
+
+**Fix 4 — Removed dead `ThresholdFlags` usage-threshold subsystem + Room migration 24→25.** The
+`sendUsageThreshold` (50/75/90%) notifications were removed in the earlier notification cleanup; the
+Room columns were left behind "to avoid a migration" — now removed cleanly. Confirmed callerless
+before deleting.
+- Deleted: `domain/model/ThresholdFlags.kt`; `DailyLog`/`DailyLogEntity` fields `notified50/75/90`;
+  DAO `getThresholdFlags` + `markNotified50/75/90`; repo `getThresholdFlags` + `markThresholdNotified`
+  (interface + impl) and the mapper lines in `toDomain`/`toEntity`.
+- **`DetoxDatabase`**: `version = 24` → `25`. `MIGRATION_24_25` recreates `daily_logs` without the
+  three columns (CREATE-new + INSERT-select 14 cols + DROP + RENAME — non-destructive, no DROP COLUMN;
+  matches Room's expected schema incl. FK + both indices). Registered in `di/DatabaseModule.kt`.
+
 ### FEATURE — Notification deep-links: tapping any notification opens the relevant screen
 
 **Problem:** Of the 11 remaining notifications, only `sendGroupChallengePayoutReceived` had a tap

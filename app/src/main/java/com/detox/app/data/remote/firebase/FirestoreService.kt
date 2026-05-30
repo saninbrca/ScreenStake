@@ -101,6 +101,7 @@ class FirestoreService @Inject constructor(
                 if (snapshot.exists()) {
                     throw IllegalStateException("username_taken")
                 }
+                // New username doc — merge not needed (created exactly once, only if it does not exist).
                 txn.set(
                     usernameRef,
                     mapOf(
@@ -154,6 +155,7 @@ class FirestoreService @Inject constructor(
             firestore
                 .collection("users").document(userId)
                 .collection("challenges").document(challenge.id)
+                // Full create — merge not needed (saveChallenge is only called on challenge creation).
                 .set(challenge.toMap())
                 .await()
             Timber.d("Synced challenge ${challenge.id} to Firestore")
@@ -224,7 +226,7 @@ class FirestoreService @Inject constructor(
                 .collection("users").document(userId)
                 .collection("challenges").document(log.challengeId)
                 .collection("dailyLogs").document(dateKey)
-                .set(log.toMap())
+                .set(log.toMap(), com.google.firebase.firestore.SetOptions.merge())
                 .await()
             Timber.d("Synced daily log ${log.id} to Firestore")
         } catch (e: Exception) {

@@ -18,7 +18,7 @@ import com.detox.app.data.local.db.entity.GroupChallengeEntity
         DailyLogEntity::class,
         GroupChallengeEntity::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -321,6 +321,61 @@ abstract class DetoxDatabase : RoomDatabase() {
                     "ALTER TABLE challenges ADD COLUMN pending_limit_applies_at INTEGER DEFAULT NULL"
                 )
                 Timber.d("DB migration 23→24: added pending_limit_value and pending_limit_applies_at columns")
+            }
+        }
+
+        /**
+         * Removes the now-unused usage-threshold notification columns
+         * (notified50 / notified75 / notified90) from daily_logs. The
+         * `sendUsageThreshold` notifications were removed, so these flags are dead.
+         * SQLite (on older Android) has no DROP COLUMN, so recreate the table
+         * via CREATE + INSERT + DROP + RENAME, preserving all remaining data.
+         */
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE daily_logs_new (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        challengeId TEXT NOT NULL,
+                        date INTEGER NOT NULL,
+                        totalMinutes INTEGER NOT NULL,
+                        openCount INTEGER NOT NULL,
+                        consciousOpens INTEGER NOT NULL DEFAULT 0,
+                        overlayPausedMs INTEGER NOT NULL DEFAULT 0,
+                        budgetUsedMinutes INTEGER NOT NULL DEFAULT 0,
+                        budgetRemainingMinutes INTEGER NOT NULL DEFAULT 0,
+                        budgetUsedMs INTEGER NOT NULL DEFAULT 0,
+                        budgetRemainingMs INTEGER NOT NULL DEFAULT 0,
+                        pointsEarned INTEGER NOT NULL,
+                        limitExceeded INTEGER NOT NULL,
+                        moneyLostCents INTEGER NOT NULL,
+                        FOREIGN KEY(challengeId) REFERENCES challenges(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    """
+                    INSERT INTO daily_logs_new
+                        (id, challengeId, date, totalMinutes, openCount, consciousOpens,
+                         overlayPausedMs, budgetUsedMinutes, budgetRemainingMinutes,
+                         budgetUsedMs, budgetRemainingMs, pointsEarned, limitExceeded, moneyLostCents)
+                    SELECT
+                        id, challengeId, date, totalMinutes, openCount, consciousOpens,
+                        overlayPausedMs, budgetUsedMinutes, budgetRemainingMinutes,
+                        budgetUsedMs, budgetRemainingMs, pointsEarned, limitExceeded, moneyLostCents
+                    FROM daily_logs
+                    """.trimIndent()
+                )
+                database.execSQL("DROP TABLE daily_logs")
+                database.execSQL("ALTER TABLE daily_logs_new RENAME TO daily_logs")
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_daily_logs_challengeId_date ON daily_logs(challengeId, date)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_daily_logs_challengeId ON daily_logs(challengeId)"
+                )
+                Timber.d("DB migration 24→25: dropped notified50/75/90 columns from daily_logs")
             }
         }
 

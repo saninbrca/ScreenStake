@@ -249,15 +249,6 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             Timber.d("Package matched: $packageName")
             Timber.d("isOverlayVisible=${TrackedAppEventBus.overlayVisible.value}")
             Timber.d("failedPackagesToday=${TrackedAppEventBus.failedPackagesToday.value}")
-            val _sessionPrefsForLog = applicationContext.getSharedPreferences(OverlayManager.SESSION_PREFS_NAME, Context.MODE_PRIVATE)
-            val _nowForLog = System.currentTimeMillis()
-            val _activeSessionPackage = _sessionPrefsForLog.all
-                .filter { (k, v) -> k.startsWith(OverlayManager.SESSION_END_KEY_PREFIX) && (v as? Long ?: 0L) > _nowForLog }
-                .keys
-                .map { it.removePrefix(OverlayManager.SESSION_END_KEY_PREFIX) }
-            Timber.d("activeSessionPackage=$_activeSessionPackage")
-            val _sessionEndTimeForLog = _sessionPrefsForLog.getLong("${OverlayManager.SESSION_END_KEY_PREFIX}$packageName", 0L)
-            Timber.d("sessionEndTime=$_sessionEndTimeForLog now=$_nowForLog")
             Timber.d("Checking package=$packageName against challenge packages=${trackedPackages.toList()}")
 
             // Overlay already visible — do not emit a second app-open event

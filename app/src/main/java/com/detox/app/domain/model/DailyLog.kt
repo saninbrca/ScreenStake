@@ -21,7 +21,4 @@ data class DailyLog(
     val pointsEarned: Int,
     val limitExceeded: Boolean,
     val moneyLostCents: Int,
-    val notified50: Boolean = false,
-    val notified75: Boolean = false,
-    val notified90: Boolean = false,
 )

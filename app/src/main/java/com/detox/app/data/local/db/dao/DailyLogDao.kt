@@ -5,7 +5,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.detox.app.data.local.db.entity.DailyLogEntity
-import com.detox.app.domain.model.ThresholdFlags
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -51,26 +50,7 @@ interface DailyLogDao {
     @Query("UPDATE daily_logs SET budgetUsedMs = :usedMs, budgetRemainingMs = :remainingMs WHERE challengeId = :challengeId AND date = :date")
     suspend fun updateBudgetStateMs(challengeId: String, date: Long, usedMs: Long, remainingMs: Long)
 
-    // ── Threshold notification flags ───────────────────────────────────────────
-
-    /**
-     * Returns which threshold notifications (50 / 75 / 90 %) have already fired today,
-     * or null if no log row exists yet for this challenge+date.
-     * Room maps the three selected columns directly to [ThresholdFlags].
-     */
-    @Query("SELECT notified50, notified75, notified90 FROM daily_logs WHERE challengeId = :challengeId AND date = :date LIMIT 1")
-    suspend fun getThresholdFlags(challengeId: String, date: Long): ThresholdFlags?
-
-    @Query("UPDATE daily_logs SET notified50 = 1 WHERE challengeId = :challengeId AND date = :date")
-    suspend fun markNotified50(challengeId: String, date: Long)
-
-    @Query("UPDATE daily_logs SET notified75 = 1 WHERE challengeId = :challengeId AND date = :date")
-    suspend fun markNotified75(challengeId: String, date: Long)
-
-    @Query("UPDATE daily_logs SET notified90 = 1 WHERE challengeId = :challengeId AND date = :date")
-    suspend fun markNotified90(challengeId: String, date: Long)
-
-    /** INSERT OR IGNORE: creates a skeleton row so UPDATE-based flag setters have a target. */
+    /** INSERT OR IGNORE: creates a skeleton row so placeholder-dependent writes have a target. */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertOrIgnore(log: DailyLogEntity)
 

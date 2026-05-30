@@ -245,9 +245,9 @@ object NotificationHelper {
         val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("❌ Challenge fehlgeschlagen")
-            .setContentText("Die Overlay-Berechtigung war zu lange deaktiviert. Dein Einsatz wurde eingezogen.")
+            .setContentText(context.getString(R.string.notif_overlay_captured_body))
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                "Die Overlay-Berechtigung war zu lange deaktiviert. Dein Einsatz wurde eingezogen."
+                context.getString(R.string.notif_overlay_captured_body)
             ))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)

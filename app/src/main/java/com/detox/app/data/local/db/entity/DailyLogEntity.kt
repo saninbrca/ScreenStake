@@ -43,10 +43,4 @@ data class DailyLogEntity(
     val pointsEarned: Int,
     val limitExceeded: Boolean,
     val moneyLostCents: Int,
-    /** True once the 50 % threshold notification has been shown for this day. */
-    @ColumnInfo(defaultValue = "0") val notified50: Boolean = false,
-    /** True once the 75 % threshold notification has been shown for this day. */
-    @ColumnInfo(defaultValue = "0") val notified75: Boolean = false,
-    /** True once the 90 % threshold notification has been shown for this day. */
-    @ColumnInfo(defaultValue = "0") val notified90: Boolean = false,
 )

@@ -214,7 +214,7 @@ internal fun AppsTabContent(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("Loading apps…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.loading_apps), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -234,7 +234,7 @@ internal fun AppsTabContent(
                         Button(onClick = {
                             context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                         }) {
-                            Text("Grant permission")
+                            Text(stringResource(R.string.grant_permission))
                         }
                     }
                 }
@@ -253,7 +253,7 @@ internal fun AppsTabContent(
                             textAlign = TextAlign.Center,
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedButton(onClick = onReloadApps) { Text("Retry") }
+                        OutlinedButton(onClick = onReloadApps) { Text(stringResource(R.string.retry)) }
                     }
                 }
             }
@@ -481,7 +481,7 @@ internal fun WebsitesTabContent(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
                 contentPadding = PaddingValues(horizontal = 16.dp),
             ) {
-                Text("Add", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.add), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }
         }
 

@@ -138,7 +138,7 @@ fun ChallengeSetupScreen(
                         FilterChip(
                             selected = enabled,
                             onClick = { viewModel.toggleDomain(pkg) },
-                            label = { Text("Also block ${domains.joinToString(", ")}?") }
+                            label = { Text(stringResource(R.string.also_block_domains, domains.joinToString(", "))) }
                         )
                     }
                 }
@@ -728,7 +728,7 @@ private fun UsageScheduleSection(
                     onClick = { showTimePicker = false },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Done")
+                    Text(stringResource(R.string.done))
                 }
                 Spacer(Modifier.height(32.dp))
             }

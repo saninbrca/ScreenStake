@@ -653,7 +653,7 @@ private fun GStep5StartDateAndBonus(
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let { onStartDateChange(it) }
                     showDatePicker = false
-                }) { Text("OK", color = GGreenPrimary) }
+                }) { Text(stringResource(R.string.ok), color = GGreenPrimary) }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) {

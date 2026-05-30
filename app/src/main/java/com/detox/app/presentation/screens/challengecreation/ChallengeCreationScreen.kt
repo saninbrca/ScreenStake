@@ -164,16 +164,16 @@ fun ChallengeCreationScreen(
     if (showDiscardDialog) {
         AlertDialog(
             onDismissRequest = { showDiscardDialog = false },
-            title = { Text("Abbrechen?") },
-            text = { Text("Dein Fortschritt geht verloren.") },
+            title = { Text(stringResource(R.string.cancel_challenge_title)) },
+            text = { Text(stringResource(R.string.cancel_challenge_body)) },
             confirmButton = {
                 TextButton(onClick = { showDiscardDialog = false; onDiscarded() }) {
-                    Text("Verwerfen", color = Color(0xFFFF3B30))
+                    Text(stringResource(R.string.discard), color = Color(0xFFFF3B30))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDiscardDialog = false }) {
-                    Text("Weiter bearbeiten")
+                    Text(stringResource(R.string.keep_editing))
                 }
             },
         )
@@ -912,7 +912,7 @@ private fun Step5Schedule(
 
         if (hasSchedule) {
             TextButton(onClick = onClearSchedule) {
-                Text("Zeitplan löschen", color = Color(0xFFFF3B30), fontSize = 14.sp)
+                Text(stringResource(R.string.delete_schedule), color = Color(0xFFFF3B30), fontSize = 14.sp)
             }
         }
 
@@ -987,7 +987,7 @@ private fun Step5Schedule(
                         contentColor = Color.White,
                     ),
                 ) {
-                    Text("Fertig", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.done), fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(32.dp))
             }

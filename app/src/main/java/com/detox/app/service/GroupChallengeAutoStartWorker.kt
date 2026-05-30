@@ -79,10 +79,6 @@ class GroupChallengeAutoStartWorker @AssistedInject constructor(
                     cloudFunctionsService.cancelGroupChallenge(gc.groupId)
                         .onSuccess {
                             Timber.d("GroupChallengeAutoStartWorker: ✓ cancelled %s", gc.groupId)
-                            NotificationHelper.createChannels(applicationContext)
-                            NotificationHelper.sendGroupChallengeCancelled(
-                                applicationContext, gc.appDisplayName
-                            )
                         }
                         .onFailure { e ->
                             Timber.e(

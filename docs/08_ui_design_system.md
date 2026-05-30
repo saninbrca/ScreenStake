@@ -310,6 +310,31 @@ Group card:
 
 ---
 
+## History Screen (Verlauf)
+
+### List view (`HistoryScreen`)
+Card background hardcoded #FFFFFF (not `MaterialTheme.colorScheme.surface`).
+- App name: 17sp Bold, color #000.
+- Date: 12sp, color #8E8E93.
+- Right side: **two stacked badges** (Column):
+  - Top — **TYPE badge** (pill): GROUP (#EEF0FF / #5856D6), HARD MODE (#FFF0E8 / #C05A00),
+    SOFT MODE (#E8F8EF / #1E7A3C). Determined by `groupChallengeId != null` first, then `mode`.
+  - Bottom — **STATUS text** (no background): "✓ Geschafft" #00C853, "✗ Aufgegeben" #FF3B30.
+- The old single `StatusChip` (pill with background) is replaced by the `TypeBadge` + `StatusText`
+  composables.
+
+### Detail view (`HistoryDetailScreen`)
+Simplified stats-focused layout:
+- Removed the "ZEIT ZURÜCKGEWONNEN" header + large saved-time number + subtext.
+- Removed the "weniger Zeit" (percentageReduction) third stats column.
+- Stats card shows **2 centered columns only:** "Beste Streak" | "Bewusst geöffnet".
+  Both values 17sp bold #000; labels 12sp #8E8E93.
+- Removed the "Nochmal starten" button entirely (and its trailing Spacer). `onStartAgain` is kept
+  in the public composable signature (navigation still passes it) but dropped from the private
+  `DetailContent` — no navigation changes.
+
+---
+
 ## Status Bar Rules
 Light screens (wizard, detail, dashboard): isAppearanceLightStatusBars = true
 Dark screens (overlays): isAppearanceLightStatusBars = false
@@ -345,7 +370,9 @@ Shown below podium, greyed out (#8E8E93), no animation.
 Background: #F2F2F7. No stats row.
 
 Layout (top to bottom):
-- Avatar 80dp circle + username 20sp bold + "Mitglied seit …" 13sp #8E8E93
+- Avatar 80dp circle + **@username** 20sp bold + "Mitglied seit …" 13sp #8E8E93
+  - The unique `@username` is shown (not the email prefix). Legacy accounts without a username
+    fall back to the email prefix (before `@`). See `docs/07_onboarding_and_auth.md` → username system.
 - **Guthaben Card** — shown only when user has pending balance/winnings
   Contains: pending amount + "Auszahlen" button + payout status indicator
 - Settings card row: "Einstellungen →" (taps navigate to SettingsScreen)

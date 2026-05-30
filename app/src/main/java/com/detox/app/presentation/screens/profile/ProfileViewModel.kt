@@ -3,6 +3,8 @@ package com.detox.app.presentation.screens.profile
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.BuildConfig
@@ -566,6 +568,11 @@ class ProfileViewModel @Inject constructor(
     fun runEvaluationNow() {
         Timber.d("Profile: manually triggering DailyEvaluationWorker")
         val request = OneTimeWorkRequestBuilder<DailyEvaluationWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
             .addTag(TAG_MANUAL_EVALUATION)
             .build()
         WorkManager.getInstance(context).enqueue(request)

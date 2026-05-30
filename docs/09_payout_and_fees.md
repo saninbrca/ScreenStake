@@ -26,27 +26,42 @@ Always use Math.floor / floor() — never round up (avoid overpayment).
 
 ## Hard Mode Payout
 
-Trigger: DailyEvaluationWorker detects COMPLETED
+Trigger: DailyEvaluationWorker detects COMPLETED (now ≥ endDate, no limitExceeded)
 
 ```kotlin
 val refundAmount = floor(amountCents * 0.80).toInt()
 // Call cancelOrRefundPayment with refundAmount (partial refund)
+// The Room row is marked COMPLETED ONLY after this call returns success.
+// On failure (incl. server-side 400 rejection) the challenge stays ACTIVE
+// (hardModeWinRefundFailed = true → worker continues, retries next cycle).
 ```
 
-Cloud Function (cancelOrRefundPayment):
+**Client never marks COMPLETED before the refund succeeds (May 2026):** all three
+DailyEvaluationWorker completion paths (TIME_BUDGET, TIME/SESSIONS, "already evaluated today")
+gate the status update on `cancelOrRefundPayment` returning success. A failed refund leaves the
+challenge ACTIVE for the next worker cycle.
+
+Cloud Function (cancelOrRefundPayment) — **server-side validated** (non-redemption path):
 
 ```typescript
-if (amountCents) {
-    // Partial refund:
-    await stripe.refunds.create({
-        payment_intent: paymentIntentId,
-        amount: amountCents  // e.g. 800 = €8 from €10
-    })
-} else {
-    // Full refund (legacy):
-    await stripe.paymentIntents.cancel(paymentIntentId)
+// 1. server clock must have passed endDate (Date.now() >= challenge.endDate) — never client time
+// 2. challenge.payoutStatus !== "refunded"           — idempotency guard
+// 3. challenge.stripePaymentIntentId === paymentIntentId — PI binding check
+// 4. refund recomputed from STORED stake — client amountCents is ignored:
+const serverAmountCents = Math.floor(challenge.amountCents * 0.80)
+
+if (pi.status === "requires_capture") {
+    await stripe.paymentIntents.capture(paymentIntentId)        // capture full pre-auth first
 }
+await stripe.refunds.create({
+    payment_intent: paymentIntentId,
+    amount: serverAmountCents     // e.g. 800 = €8 from €10 — recomputed server-side
+})
 ```
+
+The refund amount is **always recomputed server-side** from the stored `amountCents`; the
+client-supplied value is discarded. This closes the device-clock-forward exploit. See
+`docs/00_changelog.md` → "Hard Mode refund clock-forward exploit" and `docs/03_hard_mode_and_stripe.md`.
 
 Firestore update:
   payoutStatus: "refunded"
@@ -283,7 +298,7 @@ server-side capture (alongside existing `payoutStatus` + `appFeeAmount` fields).
 
 **Capture order:** Stripe FIRST → Firestore update SECOND (same rule as all other capture paths).
 
-**User notification:** Escalating notifications at hours 0, 2, 6, 12, 23 warn the user before
+**User notification:** Escalating notifications at hours 6, 12, 23 warn the user before
 capture occurs (see `05_huawei_and_permissions.md` for full escalation timeline).
 
 **Firestore rules:** `capturedAt` and `usageCapturedAt` are CF-only fields — client cannot write them.

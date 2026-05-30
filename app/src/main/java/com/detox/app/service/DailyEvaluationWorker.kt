@@ -170,6 +170,50 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         } else {
                             ChallengeStatus.COMPLETED
                         }
+                        // Hard Mode win in this short-circuit branch: issue the refund BEFORE
+                        // marking COMPLETED. If the refund fails, leave the challenge ACTIVE so the
+                        // next worker cycle retries — never mark COMPLETED before the money is refunded.
+                        var hardModeWinRefundFailed = false
+                        if (finalStatus == ChallengeStatus.COMPLETED &&
+                            challenge.mode == ChallengeMode.HARD &&
+                            challenge.stripePaymentIntentId != null
+                        ) {
+                            if (challenge.isRedemption && challenge.originalPaymentIntentId != null && challenge.refundAmountCents != null) {
+                                Timber.d("Redemption challenge ${challenge.id} completed (already logged) → 60%% partial refund")
+                                val refundUserId = firebaseAuthService.currentUserId()
+                                paymentRepository.cancelOrRefundPayment(
+                                    paymentIntentId = challenge.originalPaymentIntentId,
+                                    challengeId = challenge.id,
+                                    userId = refundUserId,
+                                    amountCents = challenge.refundAmountCents,
+                                    partialRefundCents = challenge.refundAmountCents
+                                ).onFailure { e ->
+                                    hardModeWinRefundFailed = true
+                                    Timber.e(e, "Failed to partial-refund redemption payment for ${challenge.id}")
+                                }
+                            } else {
+                                val originalAmount = challenge.amountCents ?: 0
+                                val refundAmount = floor(originalAmount * 0.80).toInt()
+                                Timber.d("Challenge ${challenge.id} completed (already logged) → 80%% refund €${refundAmount / 100f}")
+                                val refundUserId = firebaseAuthService.currentUserId()
+                                paymentRepository.cancelOrRefundPayment(
+                                    paymentIntentId = challenge.stripePaymentIntentId,
+                                    challengeId = challenge.id,
+                                    userId = refundUserId,
+                                    amountCents = refundAmount
+                                ).onFailure { e ->
+                                    hardModeWinRefundFailed = true
+                                    Timber.e(e, "Failed to cancel/refund payment for ${challenge.id}")
+                                }
+                            }
+                        }
+                        if (hardModeWinRefundFailed) {
+                            Timber.w(
+                                "DailyEvaluationWorker: '${challenge.appDisplayName}' refund failed " +
+                                        "(already logged) — leaving ACTIVE for retry next cycle"
+                            )
+                            continue
+                        }
                         challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
                         val mode = challenge.mode.name.lowercase()
                         NotificationHelper.createChannels(applicationContext)
@@ -182,18 +226,17 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 val refundAmount = floor(challenge.amountCents * 0.80).toInt()
                                 val feeCents = challenge.amountCents - refundAmount
                                 NotificationHelper.sendHardModeCompleted(
-                                    applicationContext, challenge.appDisplayName, refundAmount, feeCents
+                                    applicationContext, challenge.appDisplayName, refundAmount, feeCents,
+                                    challengeId = challenge.id
                                 )
                             } else {
                                 NotificationHelper.sendChallengeCompleted(
-                                    applicationContext, challenge.appDisplayName
+                                    applicationContext, challenge.appDisplayName,
+                                    challengeId = challenge.id
                                 )
                             }
                         } else {
                             analyticsService.logChallengeFailed(mode)
-                            NotificationHelper.sendChallengeFailed(
-                                applicationContext, challenge.appDisplayName
-                            )
                             if (challenge.mode == ChallengeMode.SOFT) {
                                 val streak = getChallengeStreakUseCase(challenge)
                                 TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
@@ -221,6 +264,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     val limitExceeded = budgetUsed >= totalBudget
 
                     var moneyLostCents = 0
+                    var hardModeWinRefundFailed = false
                     if (challenge.mode == ChallengeMode.HARD &&
                         challenge.stripePaymentIntentId != null
                     ) {
@@ -246,6 +290,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                     amountCents = challenge.refundAmountCents,
                                     partialRefundCents = challenge.refundAmountCents
                                 ).onFailure { e ->
+                                    hardModeWinRefundFailed = true
                                     Timber.e(e, "Failed to partial-refund redemption payment for ${challenge.id}")
                                 }
                             } else {
@@ -260,6 +305,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                     userId = userId,
                                     amountCents = refundAmount
                                 ).onFailure { e ->
+                                    hardModeWinRefundFailed = true
                                     Timber.e(e, "Failed to cancel/refund payment for ${challenge.id}")
                                 }
                             }
@@ -285,11 +331,14 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 "budgetUsed=${budgetUsed}min, limitExceeded=$limitExceeded"
                     )
 
-                    if (!limitExceeded) {
-                        NotificationHelper.createChannels(applicationContext)
-                        NotificationHelper.sendDayCongratulations(
-                            applicationContext, challenge.appDisplayName
+                    // If the Hard Mode win refund failed, leave the challenge ACTIVE and exit so the
+                    // next worker cycle retries — never mark COMPLETED before the money is refunded.
+                    if (hardModeWinRefundFailed) {
+                        Timber.w(
+                            "DailyEvaluationWorker: TIME_BUDGET '${challenge.appDisplayName}' refund failed — " +
+                                    "leaving ACTIVE for retry next cycle"
                         )
+                        continue
                     }
 
                     val durationDays = ((challenge.endDate - challenge.startDate) /
@@ -315,21 +364,19 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 val refundAmount = floor(challenge.amountCents * 0.80).toInt()
                                 val feeCents = challenge.amountCents - refundAmount
                                 NotificationHelper.sendHardModeCompleted(
-                                    applicationContext, challenge.appDisplayName, refundAmount, feeCents
+                                    applicationContext, challenge.appDisplayName, refundAmount, feeCents,
+                                    challengeId = challenge.id
                                 )
                             } else {
                                 NotificationHelper.sendChallengeCompleted(
-                                    applicationContext, challenge.appDisplayName
+                                    applicationContext, challenge.appDisplayName,
+                                    challengeId = challenge.id
                                 )
                             }
                         } else {
                             analyticsService.logChallengeFailed(mode)
                             if (challenge.isRedemption) {
-                                NotificationHelper.sendRedemptionFailed(applicationContext, challenge.appDisplayName)
-                            } else {
-                                NotificationHelper.sendChallengeFailed(
-                                    applicationContext, challenge.appDisplayName
-                                )
+                                NotificationHelper.sendRedemptionFailed(applicationContext, challenge.appDisplayName, challengeId = challenge.id)
                             }
                             if (challenge.mode == ChallengeMode.SOFT) {
                                 val streak = getChallengeStreakUseCase(challenge)
@@ -385,6 +432,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
 
                 // ── Hard Mode: handle Stripe payment ──────────────────────────
                 var moneyLostCents = 0
+                var hardModeWinRefundFailed = false
                 if (challenge.mode == ChallengeMode.HARD &&
                     challenge.stripePaymentIntentId != null
                 ) {
@@ -415,6 +463,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 amountCents = challenge.refundAmountCents,
                                 partialRefundCents = challenge.refundAmountCents
                             ).onFailure { e ->
+                                hardModeWinRefundFailed = true
                                 Timber.e(e, "Failed to partial-refund redemption payment for ${challenge.id}")
                             }
                         } else {
@@ -429,6 +478,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 userId = userId,
                                 amountCents = refundAmount
                             ).onFailure { e ->
+                                hardModeWinRefundFailed = true
                                 Timber.e(e, "Failed to cancel/refund payment for ${challenge.id}")
                             }
                         }
@@ -453,17 +503,20 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             "limitExceeded=${dailyLog.limitExceeded}"
                 )
 
-                // ── Congratulations notification for a successful day ──────────
-                if (!limitExceeded) {
-                    NotificationHelper.createChannels(applicationContext)
-                    NotificationHelper.sendDayCongratulations(
-                        applicationContext,
-                        challenge.appDisplayName
-                    )
-                } else {
+                if (limitExceeded) {
                     Timber.d(
                         "DailyEvaluationWorker: limit exceeded for '${challenge.appDisplayName}'"
                     )
+                }
+
+                // If the Hard Mode win refund failed, leave the challenge ACTIVE and exit so the
+                // next worker cycle retries — never mark COMPLETED before the money is refunded.
+                if (hardModeWinRefundFailed) {
+                    Timber.w(
+                        "DailyEvaluationWorker: '${challenge.appDisplayName}' refund failed — " +
+                                "leaving ACTIVE for retry next cycle"
+                    )
+                    continue
                 }
 
                 // ── Update challenge status if end date reached ─────────────────
@@ -499,20 +552,18 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             val refundAmount = floor(challenge.amountCents * 0.80).toInt()
                             val feeCents = challenge.amountCents - refundAmount
                             NotificationHelper.sendHardModeCompleted(
-                                applicationContext, challenge.appDisplayName, refundAmount, feeCents
+                                applicationContext, challenge.appDisplayName, refundAmount, feeCents,
+                                challengeId = challenge.id
                             )
                         } else {
                             NotificationHelper.sendChallengeCompleted(
-                                applicationContext, challenge.appDisplayName
+                                applicationContext, challenge.appDisplayName,
+                                challengeId = challenge.id
                             )
                         }
                     } else {
                         if (challenge.isRedemption) {
-                            NotificationHelper.sendRedemptionFailed(applicationContext, challenge.appDisplayName)
-                        } else {
-                            NotificationHelper.sendChallengeFailed(
-                                applicationContext, challenge.appDisplayName
-                            )
+                            NotificationHelper.sendRedemptionFailed(applicationContext, challenge.appDisplayName, challengeId = challenge.id)
                         }
                         if (challenge.mode == ChallengeMode.SOFT) {
                             val streak = getChallengeStreakUseCase(challenge)
@@ -529,7 +580,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
 
             // ── Auto-cancel expired WAITING group challenges ───────────────────
             val waitingGroups = groupChallengeDao.getByStatus(listOf("waiting"))
-            val userId = firebaseAuthService.currentUserId()
             for (wg in waitingGroups) {
                 val expiresAt = wg.authorizationExpiresAt
                 if (expiresAt <= 0L) continue
@@ -538,38 +588,13 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     cloudFunctionsService.expireGroupChallenge(wg.groupId)
                         .onSuccess {
                             groupChallengeDao.updateStatus(wg.groupId, "cancelled")
-                            NotificationHelper.createChannels(applicationContext)
-                            NotificationHelper.sendGroupChallengeExpired(
-                                context = applicationContext,
-                                appName = wg.appDisplayName
-                            )
                             Timber.d("DailyEvaluationWorker: group %s expired and cancelled", wg.groupId)
                         }
                         .onFailure { e ->
                             Timber.e(e, "DailyEvaluationWorker: expireGroupChallenge failed for %s", wg.groupId)
                         }
-                } else if ((expiresAt - now) <= DateUtils.MILLIS_PER_DAY && userId == wg.creatorUserId) {
-                    // Day 4 warning — notify creator only
-                    Timber.d("DailyEvaluationWorker: group %s expires in ≤1 day — sending warning to creator", wg.groupId)
-                    NotificationHelper.createChannels(applicationContext)
-                    NotificationHelper.sendGroupChallengeStartWarning(
-                        context = applicationContext,
-                        appName = wg.appDisplayName
-                    )
                 }
             }
-
-            // ── Post daily summary notification ────────────────────────────────
-            val onTrackCount = challenges.count { challenge ->
-                dailyLogRepository.getLogForDate(challenge.id, today)
-                    .getOrNull()?.limitExceeded == false
-            }
-            NotificationHelper.createChannels(applicationContext)
-            NotificationHelper.sendDailyReport(
-                context = applicationContext,
-                onTrackCount = onTrackCount,
-                totalCount = challenges.size
-            )
 
             Timber.d(
                 "DailyEvaluationWorker: ■ completed successfully — " +
@@ -746,7 +771,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             context     = applicationContext,
                             appName     = challenge.appDisplayName,
                             succeeded   = false,
-                            refundCents = 0
+                            refundCents = 0,
+                            groupId     = groupId
                         )
                     }
                 }

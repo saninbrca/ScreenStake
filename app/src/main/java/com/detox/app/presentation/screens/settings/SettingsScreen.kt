@@ -27,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -35,10 +34,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
@@ -65,10 +64,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -114,6 +111,7 @@ private val DestructiveColor = Color(0xFFFF3B30)
 private val GreenColor = Color(0xFF00C853)
 private val OrangeColor = Color(0xFFFF9500)
 private val PurpleColor = Color(0xFF5856D6)
+private val GroupPurple = Color(0xFF7B61FF)
 private val GreyIconBg = Color(0xFF8E8E93)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -238,36 +236,6 @@ fun SettingsScreen(
                 }
             }
         }
-    }
-
-    // ── Time Picker Dialog ─────────────────────────────────────────────────────
-    var showTimePicker by remember { mutableStateOf(false) }
-    val timePickerState = rememberTimePickerState(
-        initialHour = state.dailyReminderHour,
-        initialMinute = state.dailyReminderMinute,
-        is24Hour = true
-    )
-    if (showTimePicker) {
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            title = { Text(stringResource(R.string.settings_reminder_time_picker_title)) },
-            text = {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
-                    TimePicker(state = timePickerState)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.setReminderTime(timePickerState.hour, timePickerState.minute)
-                    showTimePicker = false
-                }) { Text(stringResource(R.string.dialog_ok)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text(stringResource(R.string.dialog_cancel))
-                }
-            }
-        )
     }
 
     // ── Logout Confirmation Dialog ─────────────────────────────────────────────
@@ -481,37 +449,19 @@ fun SettingsScreen(
             // ── 5. BENACHRICHTIGUNGEN ──────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_notifications), entranceDelayMs = 240) {
                 IosSwitchRow(
-                    iconContent = { IosIconBox(Icons.Filled.Notifications, OrangeColor) },
-                    label = stringResource(R.string.settings_daily_reminder),
-                    checked = state.dailyReminderEnabled,
-                    onCheckedChange = { viewModel.setDailyReminderEnabled(it) }
-                )
-                if (state.dailyReminderEnabled) {
-                    IosRowDivider()
-                    IosRow(
-                        iconContent = { IosIconBox(Icons.Filled.AccessTime, OrangeColor) },
-                        label = stringResource(R.string.settings_reminder_time),
-                        trailingContent = {
-                            Text(
-                                text = "%02d:%02d".format(
-                                    state.dailyReminderHour,
-                                    state.dailyReminderMinute
-                                ),
-                                fontSize = 14.sp,
-                                color = SubtextColor
-                            )
-                        },
-                        showChevron = true,
-                        onClick = { showTimePicker = true }
-                    )
-                }
-                IosRowDivider()
-                IosSwitchRow(
                     iconContent = { IosIconBox(Icons.Filled.Check, GreenColor) },
                     label = stringResource(R.string.settings_challenge_updates),
                     subtitle = stringResource(R.string.settings_challenge_updates_subtitle),
                     checked = state.challengeUpdatesEnabled,
                     onCheckedChange = { viewModel.setChallengeUpdatesEnabled(it) }
+                )
+                IosRowDivider()
+                IosSwitchRow(
+                    iconContent = { IosIconBox(Icons.Filled.Group, GroupPurple) },
+                    label = stringResource(R.string.settings_group_participant_failed),
+                    subtitle = stringResource(R.string.settings_group_participant_failed_subtitle),
+                    checked = state.groupParticipantFailedEnabled,
+                    onCheckedChange = { viewModel.setGroupParticipantFailedEnabled(it) }
                 )
             }
 

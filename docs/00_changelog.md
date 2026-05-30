@@ -15,6 +15,180 @@
 
 ## [Unreleased] — May 2026
 
+### FEATURE — Notification deep-links: tapping any notification opens the relevant screen
+
+**Problem:** Of the 11 remaining notifications, only `sendGroupChallengePayoutReceived` had a tap
+action (and it used a stale `navigate_to` extra that nothing consumed — a dead link). Every other
+notification just re-opened the app to wherever it had last been.
+
+**Change:** All 11 notifications now deep-link to the correct screen when tapped.
+- `MainActivity` is `launchMode="singleTop"` with an `onNewIntent` + `handleDeepLink(intent)` helper
+  (also called from `onCreate` after `startDestination` resolves). It reads `nav_target`/`nav_arg`
+  extras and emits the matching `TrackedAppEventBus` event.
+- `TrackedAppEventBus` gained 4 replay=1 SharedFlows: `navigateToDashboard`, `navigateToProfile`,
+  `navigateToChallengeDetail`, `navigateToHistoryDetail` (reusing existing `navigateToGroupDetail`).
+- `MainScreen` collects all of them and navigates via its own NavController to the real routes
+  (`dashboard`, `profile`, `active_challenge/{id}`, `history_detail/{id}`, `group_detail/{id}`).
+- `NotificationHelper.buildDeepLinkIntent()` builds each `PendingIntent` with `FLAG_IMMUTABLE` and a
+  unique request code (the notification's own notifId). Mapping: hard-mode/challenge-completed →
+  history detail; redemption available/failed + 80% usage → challenge detail; permission-failed +
+  redemption-completed + group payout → profile; group-completed + participant-failed → group detail;
+  usage-violation → dashboard. Functions needing an id gained an optional `challengeId`/`groupId`
+  param (passed from `DailyEvaluationWorker`, `RedemptionNotificationWorker`, FCM handler).
+
+**Auth guard:** if the user is not yet on `Screen.Main` (logged out / onboarding), the target is
+stashed in `detox_settings` prefs (`pending_deep_link_target`/`_arg`) and replayed by `MainScreen`
+once it is first shown post-login, then cleared.
+
+**Not changed:** `sendPermissionWarning` / `sendPermissionEscalation` still deep-link to system
+settings (overlay/accessibility), as before.
+
+**Files changed:** `AndroidManifest.xml`, `MainActivity.kt`, `TrackedAppEventBus.kt`, `MainScreen.kt`,
+`NotificationHelper.kt`, `DailyEvaluationWorker.kt`, `RedemptionNotificationWorker.kt`,
+`DetoxFirebaseMessagingService.kt`.
+
+### DECISION — Notification cleanup: 26 → 11 functions, low-value notifications removed, one made toggleable
+
+**Problem:** `NotificationHelper` had grown to 26 notification functions. Many fired low-value or
+redundant notifications (daily reports, per-day congratulations, sub-80% usage thresholds, group
+lifecycle chatter, accessibility lost/restored confirmations, daily/start reminders, taunts) that
+added noise without informing a money- or security-relevant event.
+
+**Change — removed 15 notification functions** and every call site (no dead code left behind):
+`sendChallengeFailed`, `sendDailyReport`, `sendDayCongratulations`, `sendUsageThreshold` (50/75/90),
+`sendPermissionRestored`, `sendAccessibilityLost`, `sendAccessibilityRestored`,
+`sendGroupChallengeStartWarning`, `sendGroupChallengeLeft`, `sendGroupChallengeDeleted`,
+`sendGroupChallengeCancelled`, `sendGroupChallengeExpired`, `sendDailyReminder`,
+`sendGroupStartReminder`, `showTauntNotification`. Also removed the now-orphaned
+`CHANNEL_DAILY_REPORT` channel and the unused notif-ID constants.
+
+**Kept (all money/security + completion + 80% usage):** `sendHardModeCompleted`,
+`sendPermissionWarning`, `sendPermissionFailed`, `sendPermissionEscalation`,
+`sendGroupChallengeCompleted`, `sendGroupChallengePayoutReceived`, `sendRedemptionAvailable`/
+`Completed`/`Failed`, `sendUsageViolationDetected`, `sendUsage80Percent`, `sendChallengeCompleted`,
+and `sendGroupParticipantFailed`.
+
+**Made toggleable:** `sendGroupParticipantFailed` (the one surviving "social" notification) now
+checks `detox_notifications` SharedPreferences key `notif_group_participant_failed` (default `true`)
+and returns early if disabled. New Settings → Benachrichtigungen toggle "Wenn Teilnehmer scheitert"
+routes through `SettingsViewModel.setGroupParticipantFailedEnabled`.
+
+**Cascading removals (sole purpose was a removed notification):** deleted `DailyReminderWorker`,
+`GroupStartReminderWorker`, and `ServiceWatchdogWorker` files; removed their scheduling in
+`DetoxApplication` (+ `scheduleDailyReminder`/`scheduleServiceWatchdog`/`observeAppForeground`/
+`isAccessibilityServiceRunning`) and `BootReceiver`; removed `scheduleStartReminder` in
+`GroupChallengeCreateViewModel`; removed `startUsagePolling`/`checkUsageThresholds` and the
+`USAGE_THRESHOLDS`/`ThresholdSpec` subsystem in `UsageTrackingService`. **Full removal** of the
+orphaned daily-reminder Settings feature (toggle + time-picker UI, VM functions, prefs keys, strings).
+
+**DECISION:** Only money-related, security/permission-related, challenge-completion, and 80%-usage
+notifications survive. `sendGroupParticipantFailed` is the sole user-toggleable notification. Do not
+re-add daily-report/day-congrats/sub-80%-threshold/lifecycle/taunt notifications. Room `ThresholdFlags`
+columns (`notified50/75/90`) + DAO/repo methods left intact (now unused) to avoid a migration — a
+possible follow-up cleanup.
+
+**Files changed:** `NotificationHelper.kt`, `DailyEvaluationWorker.kt`,
+`DetoxFirebaseMessagingService.kt`, `PermissionCheckWorker.kt`, `UsageTrackingService.kt`,
+`GroupChallengeAutoStartWorker.kt`, `MainActivity.kt`, `GroupChallengeDetailViewModel.kt`,
+`OverlayManager.kt`, `DetoxApplication.kt`, `BootReceiver.kt`, `GroupChallengeCreateViewModel.kt`,
+`SettingsViewModel.kt`, `SettingsScreen.kt`, `strings.xml`, `docs/00_changelog.md`. Deleted:
+`DailyReminderWorker.kt`, `GroupStartReminderWorker.kt`, `ServiceWatchdogWorker.kt`.
+**No Room schema changes. No Firestore/Cloud Function changes.**
+
+### FIXED — Hard Mode refund clock-forward exploit (server-side validation + client COMPLETED gating)
+
+**Problem (two compounding holes):** The solo Hard Mode completion path trusted the client.
+`DailyEvaluationWorker` decided a win locally with `now >= challenge.endDate` (device clock), then
+called `cancelOrRefundPayment` — and the Cloud Function issued the Stripe refund **without any
+server-side checks**, trusting the client-supplied `amountCents` and `paymentIntentId`. A user
+could set the device clock forward, trigger the worker, and collect the 80% refund before the
+challenge actually ended. Worse, the worker marked the Room row `COMPLETED` **before** confirming
+the refund succeeded, so a failed/rejected refund still closed the challenge with no retry.
+
+**Fix (server — `functions/src/index.ts`, `cancelOrRefundPayment`):** for the non-redemption
+(solo Hard Mode win) path, before issuing any Stripe refund the CF now:
+1. Fetches `users/{verifiedUserId}/challenges/{challengeId}` (requires `challengeId`; 404 if missing).
+2. Asserts `Date.now() >= challenge.endDate` using the **server clock** — never the client's time
+   (400 "Challenge has not reached its end date.").
+3. Asserts `challenge.payoutStatus !== "refunded"` — idempotency guard (409 if already paid out).
+4. Asserts `challenge.stripePaymentIntentId === paymentIntentId` — PI binding check (400 on mismatch).
+5. Recomputes the refund as `Math.floor(challenge.amountCents * 0.80)` from the **stored** stake and
+   uses that (`serverAmountCents`) for all three non-redemption Stripe branches — the client-supplied
+   `amountCents` is ignored entirely.
+The redemption/partial-refund branch (`partialRefundCents > 0`, uses the original PaymentIntent and
+its own stored `refundAmountCents`) is left fully intact.
+
+**Fix (client — `DailyEvaluationWorker.kt`):** the Room row is only marked `COMPLETED` **after**
+`cancelOrRefundPayment` succeeds. A new `hardModeWinRefundFailed` flag is set in every win-refund
+`.onFailure` handler across all three completion paths (TIME_BUDGET, TIME/SESSIONS, and the
+"already evaluated today" short-circuit). If the flag is set, the worker logs a warning and
+`continue`s — the challenge stays `ACTIVE` in Room and the next worker cycle retries automatically.
+Only the order of operations changed; capture/notification/analytics logic is untouched.
+
+**DECISION:** Hard Mode refunds are validated server-side. The Cloud Function NEVER trusts the
+client's clock, refund amount, or PaymentIntent id — it re-derives `endDate`, the 80% amount, and
+the PI match from the stored challenge doc, and guards idempotency via `payoutStatus`. The client
+NEVER marks a Hard Mode challenge `COMPLETED` before the refund Cloud Function returns success;
+a failed refund leaves the challenge `ACTIVE` for retry. **Never reverse either guard.**
+
+**Files changed:** `functions/src/index.ts`, `DailyEvaluationWorker.kt`, `docs/00_changelog.md`,
+`docs/03_hard_mode_and_stripe.md`, `docs/09_payout_and_fees.md`
+**Deployed:** `firebase deploy --only functions` run successfully for project `detox-33208`.
+**No Room schema changes. No Firestore rule changes.**
+
+### FIXED — Accessibility-only permission loss now mirrors to Firestore (server-side capture gap)
+
+**Problem:** When ONLY accessibility permission was lost (overlay still granted),
+`PermissionCheckWorker.checkAccessibilityPermission()` wrote only to SharedPreferences
+(`accessibilityLostAt`) and never to Firestore `permissionStatus/current`. The server-side
+`checkPermissionViolations` CF queries `permissionLostAt != null`, so it never saw this case.
+Result: a user could disable accessibility, wait 24h, and the Hard Mode stake was never
+captured server-side (no protection against app uninstall / data clear for this path).
+
+**Fix (`PermissionCheckWorker.checkAccessibilityPermission`):**
+- On accessibility loss (after the existing SharedPreferences write): mirror to Firestore
+  `users/{uid}/permissionStatus/current` with `permissionLostAt`, `permissionType="accessibility"`,
+  `deviceId` (ANDROID_ID), via `SetOptions.merge()` — fire-and-forget, same pattern as the
+  overlay branch in `doWork()`.
+- On accessibility restore (after the existing SharedPreferences clear): write
+  `permissionLostAt = FieldValue.delete()` + `permissionRestoredAt = now` so the CF does not
+  capture after the user re-enables the service.
+- Existing SharedPreferences logic, the overlay branch in `doWork()`, and the
+  `sendAccessibilityLost` / `sendAccessibilityRestored` notifications are unchanged.
+
+**DECISION:** Accessibility-only permission loss now mirrors to Firestore
+`permissionStatus/current`. Server-side 24h capture now covers all three cases:
+overlay lost only ✅, accessibility lost only ✅ (was missing — now fixed), both lost ✅.
+
+**Files changed:** `PermissionCheckWorker.kt`, `docs/00_changelog.md`
+**No Cloud Function changes (CF query already covers `permissionLostAt`). No Room schema changes. No Stripe changes.**
+
+### FIXED — DailyEvaluationWorker now requires CONNECTED network constraint
+
+**Problem:** `scheduleDailyEvaluation()` built the `PeriodicWorkRequest` with no constraints.
+If the device was offline at the 23:59 run time, the worker still executed but its Cloud
+Function calls failed — Hard Mode refunds and challenge completions were silently not processed.
+
+**Fix (`DetoxApplication.scheduleDailyEvaluation`):** added a `Constraints` with
+`setRequiredNetworkType(NetworkType.CONNECTED)` and `.setConstraints(constraints)` on the
+builder. If online at 23:59 → runs immediately as before. If offline → WorkManager defers the
+run until internet returns, then runs automatically. Scheduling time (23:59), the 24h period,
+`ExistingPeriodicWorkPolicy.KEEP`, the `TAG_DAILY_EVALUATION` tag, and the worker's internal
+logic are all unchanged. No other workers touched.
+
+**DECISION:** `DailyEvaluationWorker` requires the `CONNECTED` network constraint. WorkManager
+retries automatically when internet returns. **Never remove this constraint** — Hard Mode
+Stripe refunds depend on it.
+
+**Note (KEEP policy):** because the work is enqueued with `ExistingPeriodicWorkPolicy.KEEP`,
+installs that already have `"daily_evaluation"` scheduled keep the old (constraint-free) request
+until it is cancelled/re-enqueued (e.g. via `BootReceiver` re-enqueue or a fresh install). New
+installs get the constraint immediately.
+
+**Files changed:** `DetoxApplication.kt`, `ProfileViewModel.kt` (same constraint on the debug
+manual-trigger `OneTimeWorkRequest`), `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Stripe changes. No other workers changed.**
+
 ### FIXED — "Last Day Loophole": challenge endDate now ends at midnight of the last day
 
 **Problem:** `endDate` was computed as `startTime + durationDays × 86_400_000ms`. A 7-day

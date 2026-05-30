@@ -151,24 +151,60 @@ export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(as
     const fullAmount = pi.amount;
     let refundedAmount: number;
 
+    // Server-side validation for solo Hard Mode completion refunds (non-redemption path).
+    // The redemption/partial-refund branch is validated by its own stored refundAmountCents
+    // and uses the original PaymentIntent, so it is left intact below.
+    let serverAmountCents = amountCents;
+    if (!(partialRefundCents && partialRefundCents > 0)) {
+      if (!challengeId) throw new HttpError(400, "challengeId is required.");
+
+      const challengeSnap = await admin.firestore()
+        .collection("users").doc(verifiedUserId)
+        .collection("challenges").doc(challengeId).get();
+      if (!challengeSnap.exists) throw new HttpError(404, "Challenge not found.");
+      const challenge = challengeSnap.data()!;
+
+      // 1. endDate must have passed — server clock only, never trust client time
+      const endDate: number = typeof challenge["endDate"] === "number"
+        ? challenge["endDate"]
+        : (challenge["endDate"] as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
+      if (endDate <= 0 || Date.now() < endDate) {
+        throw new HttpError(400, "Challenge has not reached its end date.");
+      }
+
+      // 2. Idempotency — refuse to refund a challenge that was already paid out
+      if (challenge["payoutStatus"] === "refunded") {
+        throw new HttpError(409, "Challenge already refunded.");
+      }
+
+      // 3. The PaymentIntent must match the one stored on the challenge
+      if (challenge["stripePaymentIntentId"] !== paymentIntentId) {
+        throw new HttpError(400, "paymentIntentId does not match challenge.");
+      }
+
+      // 4. Recompute the 80% refund from the stored stake — ignore client-supplied amountCents
+      const storedStake: number = typeof challenge["amountCents"] === "number" ? challenge["amountCents"] : 0;
+      serverAmountCents = Math.floor(storedStake * 0.80);
+    }
+
     if (partialRefundCents && partialRefundCents > 0) {
       // Redemption Challenge win: PI already captured, partial refund (60% of original)
       await getStripe().refunds.create({ payment_intent: paymentIntentId, amount: partialRefundCents });
       refundedAmount = partialRefundCents;
-    } else if (pi.status === "requires_capture" && amountCents && amountCents < fullAmount) {
+    } else if (pi.status === "requires_capture" && serverAmountCents && serverAmountCents < fullAmount) {
       // Hard Mode win with 20% app fee: capture full pre-auth, then refund 80%
       await getStripe().paymentIntents.capture(paymentIntentId);
-      await getStripe().refunds.create({ payment_intent: paymentIntentId, amount: amountCents });
-      refundedAmount = amountCents;
+      await getStripe().refunds.create({ payment_intent: paymentIntentId, amount: serverAmountCents });
+      refundedAmount = serverAmountCents;
     } else if (pi.status === "requires_capture") {
       // Full cancel — no fee (e.g. nobody-failed group challenge fallback)
       await getStripe().paymentIntents.cancel(paymentIntentId);
       refundedAmount = fullAmount;
     } else {
       // Already captured: partial or full refund
-      if (amountCents && amountCents < fullAmount) {
-        await getStripe().refunds.create({ payment_intent: paymentIntentId, amount: amountCents });
-        refundedAmount = amountCents;
+      if (serverAmountCents && serverAmountCents < fullAmount) {
+        await getStripe().refunds.create({ payment_intent: paymentIntentId, amount: serverAmountCents });
+        refundedAmount = serverAmountCents;
       } else {
         await getStripe().refunds.create({ payment_intent: paymentIntentId });
         refundedAmount = fullAmount;

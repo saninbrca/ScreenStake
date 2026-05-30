@@ -6,14 +6,11 @@ import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.R
 import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.BuildConfig
-import com.detox.app.DetoxApplication
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
@@ -22,7 +19,6 @@ import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.presentation.screens.profile.IbanData
 import com.detox.app.presentation.screens.profile.IbanSaveState
-import com.detox.app.service.DailyReminderWorker
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,26 +34,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.util.Calendar
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 // ── SharedPreferences keys ─────────────────────────────────────────────────────
 private const val PREFS_NAME = "detox_settings"
-private const val KEY_DAILY_REMINDER_ENABLED = "daily_reminder_enabled"
-private const val KEY_DAILY_REMINDER_HOUR = "daily_reminder_hour"
-private const val KEY_DAILY_REMINDER_MINUTE = "daily_reminder_minute"
 private const val KEY_CHALLENGE_UPDATES = "challenge_updates_enabled"
 private const val KEY_FRIEND_ALERTS = "friend_alerts_enabled"
 const val KEY_DARK_MODE = "dark_mode_enabled"
+
+// ── Notification toggle prefs (separate file, read by NotificationHelper) ───────
+private const val NOTIF_PREFS_NAME = "detox_notifications"
+private const val KEY_GROUP_PARTICIPANT_FAILED = "notif_group_participant_failed"
 
 data class SettingsState(
     val displayName: String = "",
     val email: String = "",
     val appVersion: String = BuildConfig.VERSION_NAME,
-    val dailyReminderEnabled: Boolean = true,
-    val dailyReminderHour: Int = 20,
-    val dailyReminderMinute: Int = 0,
+    val groupParticipantFailedEnabled: Boolean = true,
     val challengeUpdatesEnabled: Boolean = true,
     val friendAlertsEnabled: Boolean = true,
     val accessibilityGranted: Boolean = false,
@@ -92,6 +85,9 @@ class SettingsViewModel @Inject constructor(
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private val notifPrefs: SharedPreferences =
+        context.getSharedPreferences(NOTIF_PREFS_NAME, Context.MODE_PRIVATE)
+
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
@@ -112,9 +108,7 @@ class SettingsViewModel @Inject constructor(
             s.copy(
                 displayName = currentUser?.displayName ?: "",
                 email = currentUser?.email ?: "",
-                dailyReminderEnabled = prefs.getBoolean(KEY_DAILY_REMINDER_ENABLED, true),
-                dailyReminderHour = prefs.getInt(KEY_DAILY_REMINDER_HOUR, 20),
-                dailyReminderMinute = prefs.getInt(KEY_DAILY_REMINDER_MINUTE, 0),
+                groupParticipantFailedEnabled = notifPrefs.getBoolean(KEY_GROUP_PARTICIPANT_FAILED, true),
                 challengeUpdatesEnabled = prefs.getBoolean(KEY_CHALLENGE_UPDATES, true),
                 friendAlertsEnabled = prefs.getBoolean(KEY_FRIEND_ALERTS, true),
                 darkModeEnabled = prefs.getBoolean(KEY_DARK_MODE, false)
@@ -332,54 +326,9 @@ class SettingsViewModel @Inject constructor(
 
     // ── Notifications ──────────────────────────────────────────────────────────
 
-    fun setDailyReminderEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_DAILY_REMINDER_ENABLED, enabled).apply()
-        _state.update { it.copy(dailyReminderEnabled = enabled) }
-        if (enabled) {
-            rescheduleReminder(
-                hour = _state.value.dailyReminderHour,
-                minute = _state.value.dailyReminderMinute
-            )
-        } else {
-            WorkManager.getInstance(context)
-                .cancelUniqueWork(DetoxApplication.WORK_NAME_DAILY_REMINDER)
-            Timber.d("Daily reminder cancelled")
-        }
-    }
-
-    fun setReminderTime(hour: Int, minute: Int) {
-        prefs.edit()
-            .putInt(KEY_DAILY_REMINDER_HOUR, hour)
-            .putInt(KEY_DAILY_REMINDER_MINUTE, minute)
-            .apply()
-        _state.update { it.copy(dailyReminderHour = hour, dailyReminderMinute = minute) }
-        if (_state.value.dailyReminderEnabled) {
-            rescheduleReminder(hour, minute)
-        }
-    }
-
-    private fun rescheduleReminder(hour: Int, minute: Int) {
-        val now = Calendar.getInstance()
-        val target = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-            if (before(now)) add(Calendar.DAY_OF_YEAR, 1)
-        }
-        val initialDelayMs = target.timeInMillis - now.timeInMillis
-
-        val request = PeriodicWorkRequestBuilder<DailyReminderWorker>(24, TimeUnit.HOURS)
-            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
-            .addTag(DetoxApplication.TAG_DAILY_REMINDER)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            DetoxApplication.WORK_NAME_DAILY_REMINDER,
-            ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
-            request
-        )
-        Timber.d("Daily reminder rescheduled for %02d:%02d (delay: %d min)", hour, minute, initialDelayMs / 60_000)
+    fun setGroupParticipantFailedEnabled(enabled: Boolean) {
+        notifPrefs.edit().putBoolean(KEY_GROUP_PARTICIPANT_FAILED, enabled).apply()
+        _state.update { it.copy(groupParticipantFailedEnabled = enabled) }
     }
 
     fun setChallengeUpdatesEnabled(enabled: Boolean) {

@@ -14,6 +14,7 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import dagger.assisted.Assisted
@@ -51,7 +52,6 @@ class PermissionCheckWorker @AssistedInject constructor(
             if (prefs.contains(KEY_LOST_AT)) {
                 prefs.edit().clear().apply()
                 cancelPermissionWarnings()
-                NotificationHelper.sendPermissionRestored(applicationContext)
                 Timber.d("PermissionCheckWorker: permission restored — clearing failure state")
                 // Mirror restore to Firestore so server knows the deadline is cancelled
                 FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
@@ -258,16 +258,44 @@ class PermissionCheckWorker @AssistedInject constructor(
                 .getOrElse { emptyList() }.isNotEmpty()
             if (hasActive && !accessibilityPrefs.contains("accessibilityLostAt")) {
                 accessibilityPrefs.edit().putLong("accessibilityLostAt", System.currentTimeMillis()).apply()
-                NotificationHelper.createChannels(applicationContext)
-                NotificationHelper.sendAccessibilityLost(applicationContext)
-                Timber.d("Accessibility lost — notification sent, timer started")
+                Timber.d("Accessibility lost — timer started")
+
+                // Mirror to Firestore so server-side CF can capture after 24h
+                FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
+                    FirebaseFirestore.getInstance()
+                        .collection("users").document(uid)
+                        .collection("permissionStatus").document("current")
+                        .set(
+                            mapOf(
+                                "permissionLostAt" to System.currentTimeMillis(),
+                                "permissionType" to "accessibility",
+                                "deviceId" to Settings.Secure.getString(
+                                    applicationContext.contentResolver,
+                                    Settings.Secure.ANDROID_ID
+                                )
+                            ),
+                            SetOptions.merge()
+                        )
+                }
             }
         } else {
             if (accessibilityPrefs.contains("accessibilityLostAt")) {
                 accessibilityPrefs.edit().clear().apply()
-                NotificationHelper.createChannels(applicationContext)
-                NotificationHelper.sendAccessibilityRestored(applicationContext)
                 Timber.d("Accessibility restored — cleared timer")
+
+                // Clear Firestore timer so server does not capture after restore
+                FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
+                    FirebaseFirestore.getInstance()
+                        .collection("users").document(uid)
+                        .collection("permissionStatus").document("current")
+                        .set(
+                            mapOf(
+                                "permissionLostAt" to FieldValue.delete(),
+                                "permissionRestoredAt" to System.currentTimeMillis()
+                            ),
+                            SetOptions.merge()
+                        )
+                }
             }
         }
     }

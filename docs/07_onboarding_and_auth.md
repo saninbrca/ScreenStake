@@ -111,25 +111,70 @@ if (isGoogleAvailable) {
 // On Huawei: Google Sign-In button never shown
 ```
 
-### Login Flow
-1. Email + Password fields
-2. "Anmelden" button → Firebase signInWithEmailAndPassword
-3. On success → sync data from Firestore → navigate to Dashboard
-4. On error → show inline error message (not Toast)
-5. "Passwort vergessen?" → Firebase sendPasswordResetEmail
+### Login Flow (LoginForm in `AuthScreen.kt`)
+1. Email + Password fields with show/hide password eye toggle
+2. **Inline field validation** (not Toasts): empty/invalid email, empty password
+3. "Anmelden" button → Firebase signInWithEmailAndPassword
+4. **Unverified accounts are blocked** from the dashboard and redirected to `EmailVerificationScreen`
+5. On success (verified) → sync data from Firestore → navigate to Main
+6. On error → German Firebase error mapping, shown inline
+7. "Passwort vergessen?" → Firebase sendPasswordResetEmail with **inline confirmation** text
 
-### Register Flow
-1. Email + Password + Confirm Password fields
-2. Password requirements: min 8 chars
-3. "Registrieren" button → Firebase createUserWithEmailAndPassword
-4. On success → create user document in Firestore → navigate to Dashboard
-5. Set displayName from email prefix (before @)
+### Register Flow (RegisterForm in `AuthScreen.kt`)
+1. Email + Password + Confirm Password fields, show/hide password eye toggle
+2. **Inline email validation** (empty / invalid format), no Toasts
+3. **Password strength indicator** — 3-segment bar + label: Schwach (#FF3B30) < 8 chars,
+   Mittel (#FF9500), Stark (#00C853)
+4. **Three required consent checkboxes** — AGB, Datenschutz, Age 18. "Konto erstellen" is enabled
+   only when email valid, password ≥ 8, passwords match, AND all three boxes checked
+5. On register → Firebase createUserWithEmailAndPassword, then:
+   - writes `consentAGB` / `consentDatenschutz` / `consentAge18` / `consentTimestamp` to the
+     Firestore user doc (`createUserDocument`, SetOptions.merge — legal proof of consent)
+   - sends a verification email
+   - routes to `EmailVerificationScreen` (**NOT** the dashboard)
+
+### Email Verification (`EmailVerificationScreen.kt` + `EmailVerificationViewModel.kt`)
+Route `email_verification?fromRegister={bool}` in `DetoxNavGraph.kt`.
+- "Ich habe bestätigt" → `reload()` + `isEmailVerified` check; inline error if still unverified.
+- "E-Mail erneut senden" with 60s cooldown countdown + Toast.
+- Auto-polls `reload()` every 5s and auto-navigates when verified.
+- "Falsche E-Mail?" link signs out + returns to registration.
+- After register → verified routes to the **`username_selection`** screen (see below);
+  after login → verified routes to Main.
+
+`FirebaseAuthService` gained: `sendEmailVerification()`, `reloadAndCheckEmailVerified()`,
+`isEmailVerified()`, `reauthenticateWithPassword()`.
+
+### Unique @username system (Instagram-style)
+Every user picks a permanent, unique, lowercase `@username` **right after email verification**.
+- New `usernames/{username}` collection (doc id = lowercase name, `{uid, createdAt}`).
+- `FirestoreService`: `getUsername(uid)`, `isUsernameAvailable(username)` (fail-closed on error),
+  `saveUsername(uid, username)` claims the name **atomically** via `runTransaction` (rejects if
+  taken → `IllegalStateException("username_taken")`) and writes `username` + `displayName` onto
+  `users/{uid}` (SetOptions.merge). `updateDisplayName()` mirrors it onto the FirebaseUser profile.
+- `UsernameSelectionScreen.kt` (+ ViewModel): @-prefixed lowercase input (a–z/0–9/_), min 3 / max 20,
+  "X / 20" counter, 500ms debounced availability check (green Verfügbar / red Bereits vergeben).
+  `BackHandler` blocks back — a username is mandatory. Self-skips if the account already has one.
+- Route `username_selection?fromRegister={bool}`. Verified logins without a username route here
+  (`AuthViewModel.NeedsUsername`); `MainActivity.determineStartDestination` also routes verified
+  users without a username on next launch (cached in `detox_settings`/`username` or Firestore lookup).
+- Display: `@username` on Profile, Group leaderboard, results podium/failed list, and taunts.
+  Falls back to the email prefix for legacy accounts.
+- `firestore.rules`: `usernames/{username}` — authed read, owner-only create of a free name
+  (`uid` match + `!exists`), no update/delete.
+- **DECISION:** No Cloud Function changes — group create/join/taunt already read `user.displayName`,
+  so new participants carry the username automatically.
 
 ### Firestore User Document (created on register)
 users/{userId}/
     email: String
-    displayName: String
+    displayName: String              ← set to the chosen @username
+    username: String                 ← permanent, unique, lowercase
     createdAt: Long
+    consentAGB: Boolean              ← legal proof of consent (written on register)
+    consentDatenschutz: Boolean
+    consentAge18: Boolean
+    consentTimestamp: Long
     payoutIban: String? (set later for Group Challenge winnings)
     payoutName: String?
 
@@ -168,17 +213,20 @@ Flow:
 1. Settings → "Konto löschen"
 2. Confirmation dialog: "Alle Daten werden gelöscht. Aktive
    Hard Mode Challenges schlagen fehl."
-3. On confirm:
-   a. Capture any active Hard Mode Stripe payments (FIRST)
+3. **Re-authentication required:** the delete dialog has a password field.
+   `deleteAccount(password)` calls `reauthenticateWithPassword` before the deletion flow.
+   Wrong password → inline error (deletion does not proceed).
+4. On successful re-auth:
+   a. Capture any active Hard Mode Stripe payments (FIRST — Hard Mode guard)
    b. Delete all Firestore user data
-   c. Clear Room database
-   d. Delete Firebase Auth account
+   c. Delete Firebase Auth account
+   d. Clear Room database
    e. Navigate to AuthScreen
 
 ### Passwort ändern
 Settings → "Passwort ändern"
 → Firebase sendPasswordResetEmail(currentUser.email)
-→ Toast: "Eine E-Mail wurde an ${email} gesendet"
+→ **inline confirmation** text (was a Toast) + 60s resend cooldown
 
 ---
 

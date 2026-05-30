@@ -73,19 +73,18 @@ Triggered when: overlay permission OR AccessibilityService permission is lost wh
 
 ### Escalation Timeline (current)
 
-**Acceleration rule (implemented):** If user opens the app and ignores the warning in the first 12 hours, the timer accelerates (hours count down faster). After hour 12, timer runs at fixed pace regardless of user action.
+**Acceleration rule (implemented):** If the user opens the app and ignores the warning within the first 12 hours, the effective deadline accelerates (`ACCELERATE_THRESHOLD_MS = 12h`). After hour 12 the timer runs at a fixed pace regardless of user action.
 
 **Visual indicator:** Red pulsing banner shown on ALL screens while any required permission is missing.
 
+**Notification stages (actual — `PermissionCheckWorker.handleEscalation` / `NotificationHelper.sendPermissionEscalation`):** exactly three staged notifications fire at **6h, 12h, 23h** elapsed (highest passed threshold wins). There is no hour-0 or hour-2 notification.
+
 | Time since loss | Action |
 |----------------|--------|
-| Hour 0  | "Challenge in Gefahr" notification |
-| Hour 2  | Escalated notification |
-| Hour 6  | "Noch 18 Stunden" notification |
-| Hour 12 | "Letzte Warnung — noch 12 Stunden" |
-| Hour 18 | Fullscreen block on every app open |
-| Hour 23 | "In 1 Stunde wird Einsatz eingezogen" |
-| Hour 24 | **Server-side Stripe capture via Cloud Function** |
+| Hour 6  | `sendPermissionEscalation("6h")` — escalating-urgency notification |
+| Hour 12 | `sendPermissionEscalation("12h")` — "Letzte Warnung" (also acceleration cutoff) |
+| Hour 23 | `sendPermissionEscalation("23h")` — explicit "In 1 Stunde wird der Einsatz eingezogen" |
+| Hour 24 | **Server-side Stripe capture via Cloud Function** (`DEADLINE_MS = 24h`) |
 
 ### Soft Mode: No money capture — only notification escalation, challenge marked FAILED at hour 24.
 
@@ -376,6 +375,17 @@ object HapticManager {
 
 When a Hard Mode challenge is active, the app mirrors the permission state to Firestore
 so Stripe capture can happen server-side even if the app is uninstalled or data is cleared.
+
+**All three loss cases now mirror to Firestore (May 2026):** overlay lost only ✅,
+accessibility lost only ✅, both lost ✅. Previously `checkAccessibilityPermission()` wrote the
+accessibility-only loss to SharedPreferences (`accessibilityLostAt`) only and never to Firestore,
+so `checkPermissionViolations` (which queries `permissionLostAt != null`) could not see it — a
+user could disable accessibility, keep overlay granted, wait 24h, and avoid server-side capture.
+`checkAccessibilityPermission()` now also writes `permissionLostAt` / `permissionType="accessibility"`
+/ `deviceId` on loss (via `SetOptions.merge()`, same pattern as the overlay branch), and on restore
+writes `permissionLostAt = FieldValue.delete()` + `permissionRestoredAt = now`. The existing
+SharedPreferences logic and the `sendAccessibilityLost` / `sendAccessibilityRestored` notifications
+are unchanged.
 
 **Firestore path:** `users/{uid}/permissionStatus/current`
 

@@ -690,12 +690,10 @@
 
     <!-- Settings — Notifications section -->
     <string name="settings_section_notifications">BENACHRICHTIGUNGEN</string>
-    <string name="settings_daily_reminder">Tägliche Erinnerung</string>
-    <string name="settings_daily_reminder_subtitle">Tägliche Erinnerung an deinen Fortschritt</string>
-    <string name="settings_reminder_time">Erinnerungszeit</string>
-    <string name="settings_reminder_time_picker_title">Uhrzeit wählen</string>
     <string name="settings_challenge_updates">Challenge Updates</string>
     <string name="settings_challenge_updates_subtitle">Bei Abschluss oder Fehler</string>
+    <string name="settings_group_participant_failed">Wenn Teilnehmer scheitert</string>
+    <string name="settings_group_participant_failed_subtitle">Benachrichtigung wenn ein Gruppenmitglied das Limit überschreitet</string>
     <string name="settings_friend_alerts">Friend Alerts</string>
     <string name="settings_friend_alerts_subtitle">Notifications when friends reach milestones</string>
 

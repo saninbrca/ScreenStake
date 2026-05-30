@@ -16,8 +16,7 @@ import javax.inject.Inject
  *
  * Token is saved to Firestore so the server can target this device for push notifications.
  * Message payload must include a `type` key:
- *   - "daily_report"     → posts a daily summary notification
- *   - "challenge_done"   → posts a challenge-completed notification
+ *   - "challenge_completed" → posts a challenge-completed notification
  */
 @AndroidEntryPoint
 class DetoxFirebaseMessagingService : FirebaseMessagingService() {
@@ -50,20 +49,10 @@ class DetoxFirebaseMessagingService : FirebaseMessagingService() {
         NotificationHelper.createChannels(applicationContext)
 
         when (message.data["type"]) {
-            "daily_report" -> {
-                val onTrack = message.data["onTrackCount"]?.toIntOrNull() ?: 0
-                val total = message.data["totalCount"]?.toIntOrNull() ?: 0
-                NotificationHelper.sendDailyReport(applicationContext, onTrack, total)
-            }
-
             "challenge_completed" -> {
                 val appName = message.data["appName"] ?: return
-                NotificationHelper.sendChallengeCompleted(applicationContext, appName)
-            }
-
-            "challenge_failed" -> {
-                val appName = message.data["appName"] ?: return
-                NotificationHelper.sendChallengeFailed(applicationContext, appName)
+                val challengeId = message.data["challengeId"]
+                NotificationHelper.sendChallengeCompleted(applicationContext, appName, challengeId)
             }
 
             else -> Timber.w("Unknown FCM message type: ${message.data["type"]}")

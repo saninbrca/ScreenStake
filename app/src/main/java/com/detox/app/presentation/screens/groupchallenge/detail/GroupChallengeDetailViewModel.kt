@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import com.detox.app.service.NotificationHelper
 import com.detox.app.util.DateUtils
 import timber.log.Timber
 import javax.inject.Inject
@@ -315,9 +314,6 @@ class GroupChallengeDetailViewModel @Inject constructor(
             cloudFunctionsService.leaveGroupChallenge(groupId)
                 .onSuccess { result ->
                     Timber.d("GroupDetailVM: leaveGroupChallenge succeeded for group %s", groupId)
-                    NotificationHelper.sendGroupChallengeLeft(
-                        context, groupId, result.amountCents
-                    )
                     _leaveState.value = LeaveState.Success(result.amountCents)
                 }
                 .onFailure { e ->
@@ -336,7 +332,6 @@ class GroupChallengeDetailViewModel @Inject constructor(
             cloudFunctionsService.deleteGroupChallenge(groupId)
                 .onSuccess {
                     Timber.d("GroupDetailVM: deleteGroupChallenge succeeded for group %s", groupId)
-                    NotificationHelper.sendGroupChallengeDeleted(context, groupId)
                     _deleteState.value = DeleteState.Success
                 }
                 .onFailure { e ->

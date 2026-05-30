@@ -412,17 +412,34 @@ DEBUG only:
 
 ## Completion Screens
 
-Challenge outcomes now trigger dedicated result screens (previously silent):
+Challenge outcomes trigger dedicated result surfaces:
 
-| Outcome | Screen | Trigger |
-|---------|--------|---------|
-| Soft Mode COMPLETED | `SoftModeSuccessOverlay` on Dashboard | `DailyEvaluationWorker` detects all days done |
+| Outcome | Surface | Trigger |
+|---------|---------|---------|
+| Soft Mode COMPLETED | `ChallengeSuccessDialog` (dismissible Dialog on Dashboard) | `DailyEvaluationWorker` detects all days done |
+| Hard Mode COMPLETED | `ChallengeSuccessDialog` (money-refund variant) | `DailyEvaluationWorker` after Stripe refund succeeds |
 | Soft Mode FAILED | `SoftFailResultScreen` | `DailyEvaluationWorker` detects limit exceeded |
 | Hard Mode FAILED | `HardModeFailOverlay` on Dashboard | `DailyEvaluationWorker` after Stripe capture |
-| Hard Mode COMPLETED | `HardModeSuccessOverlay` | Existing — unchanged ✅ |
+
+**`ChallengeSuccessDialog` (May 2026 — replaces both success overlays):** the old fullscreen
+`SoftModeSuccessOverlay` and `HardModeSuccessOverlay` blocked the entire Dashboard, could not be
+dismissed without starting a new challenge, and could accidentally navigate to the Detail screen.
+They are replaced by a single **dismissible** `Dialog {}` shown on top of the Dashboard (other
+challenge cards stay visible behind the scrim). It handles both Soft Mode (time-saved card) and
+Hard Mode (money-refund card), with Canvas confetti, staggered phase reveals (0/300/600/900ms),
+and count-up stat animations. An X button and a "Zurück zum Dashboard" link both dismiss it;
+"Neue Challenge starten" navigates to the wizard.
+
+- `DashboardViewModel` exposes `successDialogState: StateFlow<SuccessDialogState?>` (replaced the
+  separate `completedChallenge` + `completedSoftChallenge` flows) plus `dismissSuccessDialog()`.
+- **Show guard:** SharedPreferences `"win_shown_{challengeId}"` in the `"detox_win_popup"` file is
+  the primary guard (checked before setting state); the DB `completionShown` flag is also marked on
+  dismiss as belt-and-suspenders. Prevents re-showing the dialog after dismissal.
+- `DailyLogRepository.getLogsForChallengeOnce()` added for one-shot stat reads.
 
 `SoftFailResultScreen` was previously dead code (worker called it but no navigation path existed).
-Now correctly triggered via `DailyEvaluationWorker` result state.
+Now correctly triggered via `DailyEvaluationWorker` result state. See `docs/00_changelog.md` →
+"ChallengeSuccessDialog".
 
 ---
 

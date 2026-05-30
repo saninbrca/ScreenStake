@@ -1345,8 +1345,6 @@ class OverlayManager @Inject constructor(
                                         TrackedAppEventBus.trackedPackages.value
                                     if (inTrackedApp) {
                                         showTauntOverlay(taunt.message)
-                                    } else {
-                                        NotificationHelper.showTauntNotification(context, taunt.message)
                                     }
                                     scope.launch {
                                         groupChallengeRepository.markTauntShown(groupId, taunt.id)

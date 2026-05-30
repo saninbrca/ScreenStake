@@ -221,4 +221,64 @@ object TrackedAppEventBus {
     fun clearSoftFailResultNavigation() {
         _navigateToSoftFailResult.resetReplayCache()
     }
+
+    // ── Notification deep-link navigation ──────────────────────────────────────
+    // Fired when the user taps a notification. Replay=1 so the event survives until
+    // MainScreen collects it (e.g. when the app was killed and is still starting up).
+
+    private val _navigateToDashboard = MutableSharedFlow<Unit>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val navigateToDashboard: SharedFlow<Unit> = _navigateToDashboard.asSharedFlow()
+
+    fun emitNavigateToDashboard() {
+        _navigateToDashboard.tryEmit(Unit)
+    }
+
+    fun clearDashboardNavigation() {
+        _navigateToDashboard.resetReplayCache()
+    }
+
+    private val _navigateToProfile = MutableSharedFlow<Unit>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val navigateToProfile: SharedFlow<Unit> = _navigateToProfile.asSharedFlow()
+
+    fun emitNavigateToProfile() {
+        _navigateToProfile.tryEmit(Unit)
+    }
+
+    fun clearProfileNavigation() {
+        _navigateToProfile.resetReplayCache()
+    }
+
+    private val _navigateToChallengeDetail = MutableSharedFlow<String>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val navigateToChallengeDetail: SharedFlow<String> = _navigateToChallengeDetail.asSharedFlow()
+
+    fun emitNavigateToChallengeDetail(challengeId: String) {
+        _navigateToChallengeDetail.tryEmit(challengeId)
+    }
+
+    fun clearChallengeDetailNavigation() {
+        _navigateToChallengeDetail.resetReplayCache()
+    }
+
+    private val _navigateToHistoryDetail = MutableSharedFlow<String>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val navigateToHistoryDetail: SharedFlow<String> = _navigateToHistoryDetail.asSharedFlow()
+
+    fun emitNavigateToHistoryDetail(challengeId: String) {
+        _navigateToHistoryDetail.tryEmit(challengeId)
+    }
+
+    fun clearHistoryDetailNavigation() {
+        _navigateToHistoryDetail.resetReplayCache()
+    }
 }

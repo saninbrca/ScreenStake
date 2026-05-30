@@ -34,7 +34,8 @@ class RedemptionNotificationWorker @AssistedInject constructor(
             context = applicationContext,
             appName = appName,
             refundCents = refundCents,
-            originalCents = originalCents
+            originalCents = originalCents,
+            challengeId = challengeId
         )
 
         return Result.success()

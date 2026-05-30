@@ -169,10 +169,19 @@ Calls startGroupChallenge Cloud Function
 Cloud Function:
     status = "active"
     startDate = now
-    endDate = now + durationDays * 86400000
+    endDate = endOfDayMillis(now, durationDays)   ← 23:59:59.999 of the last day (NOT now + N×86400000)
     ↓
 All participants' AccessibilityService starts blocking selected apps
 ```
+
+**endDate calculation (May 2026 — "Last Day Loophole" fix):** `startGroupChallenge` previously
+computed `endDate = now + durationDays * 86_400_000`, which ended mid-day on the final day — after
+that time the app stopped blocking but the day wasn't over. Both client (`DateUtils.endOfDayMillis`)
+and the Cloud Function (`endOfDayMillis(startMs, durationDays)` helper added to `functions/src/index.ts`)
+now land `endDate` on **23:59:59.999 of the last day**. Note: the Cloud Function runs in UTC, so its
+end-of-day is UTC-based vs. the client's device-local timezone — both close the loophole, but are
+not bit-identical. **Never compute `endDate` as `startTime + N × 86_400_000`.** See
+`docs/00_changelog.md` → "Last Day Loophole".
 
 ---
 

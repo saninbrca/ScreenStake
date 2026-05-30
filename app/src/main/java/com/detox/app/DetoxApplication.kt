@@ -1,13 +1,8 @@
 package com.detox.app
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Application
 import android.content.Context
-import android.view.accessibility.AccessibilityManager
 import androidx.hilt.work.HiltWorkerFactory
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -17,11 +12,9 @@ import androidx.work.WorkManager
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.service.AdultDomainsUpdateWorker
 import com.detox.app.service.DailyEvaluationWorker
-import com.detox.app.service.DailyReminderWorker
 import com.detox.app.service.GroupChallengeAutoStartWorker
 import com.detox.app.service.PermissionCheckWorker
 import com.detox.app.service.NotificationHelper
-import com.detox.app.service.ServiceWatchdogWorker
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import com.stripe.android.PaymentConfiguration
@@ -83,12 +76,9 @@ class DetoxApplication : Application(), Configuration.Provider {
         }
 
         scheduleDailyEvaluation()
-        scheduleDailyReminder()
         scheduleGroupChallengeAutoStart()
         schedulePermissionCheck()
-        scheduleServiceWatchdog()
         scheduleAdultDomainsUpdate()
-        observeAppForeground()
         startGroupChallengeSyncing()
     }
 
@@ -119,10 +109,18 @@ class DetoxApplication : Application(), Configuration.Provider {
 
         val initialDelayMs = target.timeInMillis - now.timeInMillis
 
+        // Hard Mode refunds/completions are processed via Cloud Function calls inside the worker.
+        // Without a network constraint, an offline 23:59 run would fail those calls silently.
+        // CONNECTED defers the run until internet returns. Never remove — Stripe refunds depend on it.
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
         val workRequest = PeriodicWorkRequestBuilder<DailyEvaluationWorker>(
             24, TimeUnit.HOURS
         )
             .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
+            .setConstraints(constraints)
             .addTag(TAG_DAILY_EVALUATION)   // required so getWorkInfosByTag() can find it
             .build()
 
@@ -157,42 +155,6 @@ class DetoxApplication : Application(), Configuration.Provider {
                 }
             },
             { runnable -> runnable.run() }   // inline executor — runs on whichever thread calls get()
-        )
-    }
-
-    /**
-     * Schedules (or re-confirms) the 20:00 daily reminder.
-     *
-     * Uses [ExistingPeriodicWorkPolicy.KEEP] so an existing enqueue survives
-     * process restarts without resetting the timer.  [BootReceiver] calls
-     * [WorkManager.cancelUniqueWork] + re-enqueues after a reboot so the
-     * initial delay is recalculated from the new boot time.
-     */
-    fun scheduleDailyReminder() {
-        val now = Calendar.getInstance()
-        val target = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 20)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-            // If 20:00 has already passed today, aim for tomorrow
-            if (before(now)) add(Calendar.DAY_OF_YEAR, 1)
-        }
-        val initialDelayMs = target.timeInMillis - now.timeInMillis
-
-        val request = PeriodicWorkRequestBuilder<DailyReminderWorker>(24, TimeUnit.HOURS)
-            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
-            .addTag(TAG_DAILY_REMINDER)
-            .build()
-
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            WORK_NAME_DAILY_REMINDER,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
-        )
-        Timber.d(
-            "Daily reminder scheduled — initial delay: ${initialDelayMs / 60_000} min " +
-                    "(fires at ~20:00)"
         )
     }
 
@@ -234,38 +196,6 @@ class DetoxApplication : Application(), Configuration.Provider {
         Timber.d("Permission check worker scheduled (every 15 min)")
     }
 
-    /**
-     * Watches app process foreground transitions. Whenever the user brings Detox
-     * to the foreground we re-check whether our AccessibilityService is still
-     * enabled — Huawei's battery optimization may have disabled it while we were
-     * backgrounded. If a challenge is active and the service is gone, post a
-     * notification so the user can re-enable it from the system settings.
-     */
-    private fun observeAppForeground() {
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) {
-                val running = isAccessibilityServiceRunning()
-                if (running) return
-                Timber.w("DetoxApplication: accessibility service not running on foreground")
-                NotificationHelper.createChannels(this@DetoxApplication)
-                NotificationHelper.sendAccessibilityLost(this@DetoxApplication)
-            }
-        })
-    }
-
-    private fun isAccessibilityServiceRunning(): Boolean {
-        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-            ?: return false
-        val targetClass =
-            "com.detox.app.service.AppDetectionAccessibilityService"
-        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_GENERIC)
-            .any { info ->
-                info.resolveInfo?.serviceInfo?.let { si ->
-                    si.packageName == packageName && si.name == targetClass
-                } == true
-            }
-    }
-
     private fun scheduleAdultDomainsUpdate() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -282,21 +212,8 @@ class DetoxApplication : Application(), Configuration.Provider {
         Timber.d("Adult domains update worker scheduled (every 30 days, requires network)")
     }
 
-    private fun scheduleServiceWatchdog() {
-        val request = PeriodicWorkRequestBuilder<ServiceWatchdogWorker>(15, TimeUnit.MINUTES)
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            ServiceWatchdogWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
-        )
-        Timber.d("Service watchdog worker scheduled (every 15 min)")
-    }
-
     companion object {
         const val TAG_DAILY_EVALUATION       = "daily_evaluation"
-        const val TAG_DAILY_REMINDER         = "daily_reminder"
-        const val WORK_NAME_DAILY_REMINDER   = "daily_reminder"
         const val TAG_GROUP_AUTO_START       = "group_auto_start"
         const val WORK_NAME_GROUP_AUTO_START = "group_auto_start"
         const val TAG_ADULT_DOMAINS_UPDATE   = "adult_domains_update"

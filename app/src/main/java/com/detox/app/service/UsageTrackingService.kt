@@ -19,7 +19,6 @@ import androidx.work.WorkManager
 import com.detox.app.R
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
-import com.detox.app.domain.model.ThresholdFlags
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.repository.ChallengeRepository
@@ -37,14 +36,6 @@ import kotlinx.coroutines.launch
 import com.detox.app.util.DateUtils
 import timber.log.Timber
 import javax.inject.Inject
-
-private data class ThresholdSpec(val percent: Int, val fraction: Float)
-
-private val USAGE_THRESHOLDS = listOf(
-    ThresholdSpec(50, 0.50f),
-    ThresholdSpec(75, 0.75f),
-    ThresholdSpec(90, 0.90f),
-)
 
 @AndroidEntryPoint
 class UsageTrackingService : Service() {
@@ -158,7 +149,6 @@ class UsageTrackingService : Service() {
 
         overlayManager.startListening(serviceScope)
         overlayManager.startTauntListening(serviceScope)
-        startUsagePolling()
         startGroupChallengeStatsPolling()
         startGroupSessionLimitTracking()
         startGroupTimeLimitPolling()
@@ -333,15 +323,11 @@ class UsageTrackingService : Service() {
             }.getOrElse { false }
             if (hasActive && !prefs.contains("accessibilityLostAt")) {
                 prefs.edit().putLong("accessibilityLostAt", System.currentTimeMillis()).apply()
-                NotificationHelper.createChannels(applicationContext)
-                NotificationHelper.sendAccessibilityLost(applicationContext)
-                Timber.d("Accessibility lost — notification sent, timer started")
+                Timber.d("Accessibility lost — timer started")
             }
         } else {
             if (prefs.contains("accessibilityLostAt")) {
                 prefs.edit().clear().apply()
-                NotificationHelper.createChannels(applicationContext)
-                NotificationHelper.sendAccessibilityRestored(applicationContext)
                 Timber.d("Accessibility restored — cleared timer")
             }
         }
@@ -362,7 +348,6 @@ class UsageTrackingService : Service() {
             if (prefs.contains("permissionLostAt")) {
                 prefs.edit().clear().apply()
                 cancelPermissionWarnings()
-                NotificationHelper.sendPermissionRestored(applicationContext)
             }
         }
     }
@@ -538,106 +523,6 @@ class UsageTrackingService : Service() {
                     "GroupTimer: WRITE timeUsedMinutes=$totalMinutes limit=$limitMinutes " +
                         "to Firestore (groupId=$groupId challengeId=${challenge.id})"
                 )
-            }
-        }
-    }
-
-    // ── Threshold usage polling ────────────────────────────────────────────────
-
-    /**
-     * Polls every 15 minutes to check whether any active TIME / TIME_BUDGET /
-     * SESSIONS challenge has crossed the 50 %, 75 %, or 90 % usage mark.
-     *
-     * "Fire once per day per threshold" is guaranteed by persisting the seen
-     * flags in [daily_logs] (notified50 / notified75 / notified90).  Because
-     * the flags are keyed by challengeId + calendar-day midnight timestamp they
-     * reset automatically the next day — no midnight coroutine needed.
-     *
-     * 15-minute granularity: fine enough that the user gets the 90 % warning
-     * before they hit 100 %, coarse enough to avoid excessive wakeups.
-     */
-    private fun startUsagePolling() {
-        serviceScope.launch(Dispatchers.IO) {
-            Timber.d("UsageTrackingService: threshold polling started (15-min interval, thresholds: 50/75/90%%)")
-            while (isActive) {
-                delay(15 * 60 * 1_000L) // 15 minutes
-                checkUsageThresholds()
-            }
-        }
-    }
-
-    private suspend fun checkUsageThresholds() {
-        val today = todayKey()
-
-        val challenges = runCatching {
-            challengeRepository.getActiveChallengesList().getOrThrow()
-        }.getOrElse { e ->
-            Timber.w(e, "UsageTrackingService: could not load challenges for threshold check")
-            return
-        }
-
-        for (challenge in challenges) {
-            val appPkg = challenge.appPackageName ?: continue  // WEBSITE-only challenges have no package
-
-            val usage = runCatching {
-                usageStatsRepository.getTodayUsageForApp(appPkg)
-            }.onFailure { e ->
-                Timber.w(e, "UsageTrackingService: could not get usage for $appPkg")
-            }.getOrNull() ?: continue
-
-            val usedFraction = when (challenge.limitType) {
-                LimitType.TIME -> {
-                    if (challenge.limitValueMinutes > 0)
-                        usage.minutes.toFloat() / challenge.limitValueMinutes
-                    else 0f
-                }
-                LimitType.SESSIONS -> {
-                    val maxSessions = challenge.limitValueSessions ?: 0
-                    if (maxSessions > 0) usage.opens.toFloat() / maxSessions else 0f
-                }
-                LimitType.TIME_BUDGET -> {
-                    val budget = challenge.dailyBudgetMinutes ?: 0
-                    if (budget > 0) usage.minutes.toFloat() / budget else 0f
-                }
-                // TIME_WINDOW has no usage cap — thresholds never apply
-                LimitType.TIME_WINDOW -> 0f
-            }
-
-            if (usedFraction <= 0f) continue
-
-            Timber.d(
-                "UsageTrackingService: ${challenge.appDisplayName} " +
-                        "usage = ${"%.0f".format(usedFraction * 100)}%%"
-            )
-
-            // Read today's notification flags from DailyLog (persisted across restarts)
-            val flags = runCatching {
-                dailyLogRepository.getThresholdFlags(challenge.id, today).getOrThrow()
-            }.getOrElse { ThresholdFlags() }
-
-            // Check each threshold in ascending order so we post at most one new
-            // notification per poll cycle per challenge (the lowest unnotified one).
-            for ((percent, triggerFraction) in USAGE_THRESHOLDS) {
-                val alreadyNotified = when (percent) {
-                    50 -> flags.notified50
-                    75 -> flags.notified75
-                    else -> flags.notified90
-                }
-                if (!alreadyNotified && usedFraction >= triggerFraction) {
-                    Timber.d(
-                        "UsageTrackingService: $percent%% threshold reached for " +
-                                "${challenge.appDisplayName} — posting notification"
-                    )
-                    NotificationHelper.createChannels(applicationContext)
-                    NotificationHelper.sendUsageThreshold(
-                        applicationContext, challenge.appDisplayName, percent
-                    )
-                    dailyLogRepository.markThresholdNotified(challenge.id, today, percent)
-                    // Update local copy of flags so subsequent thresholds in THIS loop
-                    // iteration use the freshly updated state (avoids double-posting
-                    // 75 % immediately after 50 % in the same poll cycle).
-                    break
-                }
             }
         }
     }

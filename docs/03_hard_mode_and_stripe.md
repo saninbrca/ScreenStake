@@ -123,15 +123,28 @@ DailyEvaluationWorker detects all days completed
 Android calls Cloud Function: cancelOrRefundPayment
     {paymentIntentId, challengeId}
     ↓
-Cloud Function:
+Cloud Function (server-side validated — see signatures below):
+    rejects unless server clock ≥ endDate, not already refunded, PI matches challenge
+    recomputes 80% from stored amountCents
     stripe.paymentIntents.cancel(paymentIntentId)  ← if not yet captured
     OR stripe.refunds.create({payment_intent: id})  ← if already captured
     ↓
-On success:
+On success (Result.success):
     Mark challenge as COMPLETED in Room
     Mark challenge as COMPLETED in Firestore
     Show success notification + confetti
+    ↓
+On failure (Result.failure — incl. the 400 endDate rejection):
+    DailyEvaluationWorker sets hardModeWinRefundFailed = true,
+    logs a warning, and continues WITHOUT updating status.
+    Challenge stays ACTIVE in Room → next worker cycle retries automatically.
 ```
+
+**Client gating (May 2026):** `DailyEvaluationWorker` only marks a Hard Mode win `COMPLETED`
+**after** `cancelOrRefundPayment` returns success. All three completion paths (TIME_BUDGET,
+TIME/SESSIONS, and the "already evaluated today" short-circuit) set `hardModeWinRefundFailed`
+in their refund `.onFailure` handler and `continue` — never marking COMPLETED before the money
+is actually refunded.
 
 ### Cloud Function signatures (index.ts)
 
@@ -158,17 +171,62 @@ export const capturePayment = functions.https.onRequest(async (req, res) => {
 
 // cancelOrRefundPayment
 export const cancelOrRefundPayment = functions.https.onRequest(async (req, res) => {
-    // auth check ...
-    const { paymentIntentId } = req.body
-    const intent = await stripe.paymentIntents.retrieve(paymentIntentId)
-    if (intent.status === 'requires_capture') {
-        await stripe.paymentIntents.cancel(paymentIntentId)
+    // auth check (Bearer token → verifiedUserId) ...
+    const { paymentIntentId, challengeId, amountCents, partialRefundCents } = req.body
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId)
+
+    // ── Server-side validation (solo Hard Mode win / non-redemption path) ──────
+    // Redemption branch (partialRefundCents > 0) is validated by its own stored
+    // refundAmountCents against the original PI and is left intact.
+    let serverAmountCents = amountCents
+    if (!(partialRefundCents && partialRefundCents > 0)) {
+        if (!challengeId) throw new HttpError(400, "challengeId is required.")
+        const snap = await admin.firestore()
+            .collection("users").doc(verifiedUserId)
+            .collection("challenges").doc(challengeId).get()
+        if (!snap.exists) throw new HttpError(404, "Challenge not found.")
+        const c = snap.data()!
+
+        // 1. endDate must have passed — SERVER clock only, never trust client time
+        const endDate = typeof c.endDate === "number" ? c.endDate : c.endDate?.toMillis?.() ?? 0
+        if (endDate <= 0 || Date.now() < endDate)
+            throw new HttpError(400, "Challenge has not reached its end date.")
+
+        // 2. Idempotency guard — never refund twice
+        if (c.payoutStatus === "refunded") throw new HttpError(409, "Challenge already refunded.")
+
+        // 3. PI binding — supplied PI must match the one stored on the challenge
+        if (c.stripePaymentIntentId !== paymentIntentId)
+            throw new HttpError(400, "paymentIntentId does not match challenge.")
+
+        // 4. Recompute 80% from STORED stake — client-supplied amountCents is ignored
+        const storedStake = typeof c.amountCents === "number" ? c.amountCents : 0
+        serverAmountCents = Math.floor(storedStake * 0.80)
+    }
+
+    // ... branches now use serverAmountCents (not the client amountCents):
+    if (partialRefundCents && partialRefundCents > 0) {
+        await stripe.refunds.create({ payment_intent: paymentIntentId, amount: partialRefundCents })
+    } else if (pi.status === 'requires_capture' && serverAmountCents && serverAmountCents < pi.amount) {
+        await stripe.paymentIntents.capture(paymentIntentId)
+        await stripe.refunds.create({ payment_intent: paymentIntentId, amount: serverAmountCents })
+    } else if (pi.status === 'requires_capture') {
+        await stripe.paymentIntents.cancel(paymentIntentId)   // full cancel — group nobody-failed fallback
     } else {
-        await stripe.refunds.create({ payment_intent: paymentIntentId })
+        // already captured: partial (serverAmountCents) or full refund
+        await stripe.refunds.create({ payment_intent: paymentIntentId, amount: serverAmountCents })
     }
     res.json({ success: true })
 })
 ```
+
+**Server-side validation (May 2026 hardening):** the non-redemption path NEVER trusts the
+client. It re-fetches the challenge doc and rejects the call unless the **server clock** has
+passed `endDate`, `payoutStatus` is not already `"refunded"`, and the supplied `paymentIntentId`
+matches `challenge.stripePaymentIntentId`. The 80% refund is recomputed from the **stored**
+`amountCents` — the client-supplied `amountCents` is discarded. This closes the device-clock-
+forward exploit (client could otherwise trigger an early refund). See
+`docs/00_changelog.md` → "Hard Mode refund clock-forward exploit".
 
 ---
 
@@ -377,8 +435,13 @@ Data source: Room (solo) + Firestore group doc (prizePerWinner, appFee) + pendin
 
 ### Critical Rules
 - `cancelOrRefundPayment` CF: NEVER use `wasImmediate` flag — always auto-detect from PI status
+- `cancelOrRefundPayment` CF (non-redemption path): ALWAYS validate server-side before refunding —
+  server clock `Date.now() >= challenge.endDate`, `payoutStatus != "refunded"` (idempotency),
+  `stripePaymentIntentId === paymentIntentId` (PI binding). NEVER trust the client's clock or
+  client-supplied `amountCents` — recompute `floor(storedStake × 0.80)`. **Never reverse these checks.**
 - Hard Mode win: PI is `requires_capture` → capture first, then partial refund (80%). NEVER cancel (would give 100%)
-- Stripe refund ALWAYS before marking COMPLETED in Room/Firestore
+- Stripe refund ALWAYS before marking COMPLETED in Room/Firestore — and the client only marks
+  COMPLETED after the refund CF returns success; a failed refund leaves the challenge ACTIVE for retry
 - `prizePerWinner` uses `Math.floor` (never round up — avoid overpayment)
 - App fee on losers' pot = exactly `Math.floor(total * 0.10)`
 - IBAN validation client-side: must match `AT[0-9]{18}` regex

@@ -1,12 +1,7 @@
 package com.detox.app.presentation.screens.groupchallenge.create
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
@@ -16,16 +11,13 @@ import com.detox.app.domain.usecase.CreateGroupChallengeUseCase
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
-import com.detox.app.service.GroupStartReminderWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 const val GROUP_WIZARD_TOTAL_STEPS = 6
@@ -82,7 +74,6 @@ class GroupChallengeCreateViewModel @Inject constructor(
     private val getAddictiveAppsUseCase: GetAddictiveAppsUseCase,
     private val usageStatsRepository: UsageStatsRepository,
     private val challengeRepository: ChallengeRepository,
-    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _formState = MutableStateFlow(GroupCreateFormState())
@@ -384,7 +375,6 @@ class GroupChallengeCreateViewModel @Inject constructor(
                     Timber.d("GroupChallengeCreateVM: challenge created groupId=%s code=%s", pd.groupId, data.code)
                     pendingPaymentData = null
                     _formState.update { it.copy(generatedCode = data.code) }
-                    if (!s.startDateEnabled) scheduleStartReminder(pd.groupId)
                     _uiState.value = GroupCreateUiState.Created(groupId = pd.groupId, code = data.code)
                 },
                 onFailure = { e ->
@@ -395,18 +385,6 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 },
             )
         }
-    }
-
-    private fun scheduleStartReminder(groupId: String) {
-        val request = OneTimeWorkRequestBuilder<GroupStartReminderWorker>()
-            .setInitialDelay(24, TimeUnit.HOURS)
-            .setInputData(workDataOf(GroupStartReminderWorker.KEY_GROUP_ID to groupId))
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "group_start_reminder_$groupId",
-            ExistingWorkPolicy.REPLACE,
-            request,
-        )
     }
 
     /** Called from [PaymentSheetResult.Canceled] — no Firestore write, user stays on screen. */

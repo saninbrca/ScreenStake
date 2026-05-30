@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -122,6 +123,7 @@ fun MainScreen(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         Timber.d("Challenges tab removed from bottom nav")
@@ -139,6 +141,65 @@ fun MainScreen(
                 launchSingleTop = true
             }
             TrackedAppEventBus.clearSoftFailResultNavigation()
+        }
+    }
+
+    // ── Notification deep-link collectors ──────────────────────────────────────
+    LaunchedEffect(Unit) {
+        TrackedAppEventBus.navigateToDashboard.collect {
+            navController.navigate(BottomNavTab.Dashboard.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            TrackedAppEventBus.clearDashboardNavigation()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        TrackedAppEventBus.navigateToProfile.collect {
+            navController.navigate(BottomNavTab.Profile.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            TrackedAppEventBus.clearProfileNavigation()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        TrackedAppEventBus.navigateToChallengeDetail.collect { challengeId ->
+            navController.navigate("active_challenge/$challengeId") {
+                launchSingleTop = true
+            }
+            TrackedAppEventBus.clearChallengeDetailNavigation()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        TrackedAppEventBus.navigateToHistoryDetail.collect { challengeId ->
+            navController.navigate("history_detail/$challengeId") {
+                launchSingleTop = true
+            }
+            TrackedAppEventBus.clearHistoryDetailNavigation()
+        }
+    }
+
+    // Replay any deep link that arrived while the user was logged out / onboarding.
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("detox_settings", android.content.Context.MODE_PRIVATE)
+        val target = prefs.getString("pending_deep_link_target", null) ?: return@LaunchedEffect
+        val arg = prefs.getString("pending_deep_link_arg", null)
+        prefs.edit()
+            .remove("pending_deep_link_target")
+            .remove("pending_deep_link_arg")
+            .apply()
+        when (target) {
+            "dashboard" -> TrackedAppEventBus.emitNavigateToDashboard()
+            "profile" -> TrackedAppEventBus.emitNavigateToProfile()
+            "group_detail" -> arg?.let { TrackedAppEventBus.emitNavigateToGroupDetail(it) }
+            "challenge_detail" -> arg?.let { TrackedAppEventBus.emitNavigateToChallengeDetail(it) }
+            "history_detail" -> arg?.let { TrackedAppEventBus.emitNavigateToHistoryDetail(it) }
         }
     }
 

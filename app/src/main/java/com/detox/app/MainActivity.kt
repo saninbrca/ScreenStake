@@ -38,6 +38,7 @@ import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.presentation.navigation.DetoxNavGraph
 import com.detox.app.presentation.navigation.Screen
 import com.detox.app.presentation.screens.settings.KEY_DARK_MODE
+import com.detox.app.service.TrackedAppEventBus
 import com.detox.app.service.UsageTrackingService
 import com.detox.app.ui.theme.DetoxTheme
 import com.google.firebase.auth.FirebaseAuth
@@ -92,6 +93,7 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             startDestination = determineStartDestination()
+            handleDeepLink(intent)
 
             val activeChallenges = challengeRepository.getActiveChallenges().first()
             hasActiveChallenge = activeChallenges.isNotEmpty()
@@ -160,6 +162,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    /**
+     * Routes a tapped-notification intent to the correct screen via [TrackedAppEventBus].
+     * If the user is not yet on the main app (logged out / onboarding), the target is stashed
+     * in SharedPreferences and replayed by MainScreen once it is shown post-login.
+     */
+    private fun handleDeepLink(intent: Intent) {
+        val target = intent.getStringExtra("nav_target") ?: return
+        val arg = intent.getStringExtra("nav_arg")
+
+        if (startDestination != Screen.Main.route) {
+            prefs.edit()
+                .putString("pending_deep_link_target", target)
+                .putString("pending_deep_link_arg", arg)
+                .apply()
+            Timber.d("Deep link stashed (not on Main): target=$target arg=$arg")
+            return
+        }
+
+        when (target) {
+            "dashboard" -> TrackedAppEventBus.emitNavigateToDashboard()
+            "profile" -> TrackedAppEventBus.emitNavigateToProfile()
+            "group_detail" -> arg?.let { TrackedAppEventBus.emitNavigateToGroupDetail(it) }
+            "challenge_detail" -> arg?.let { TrackedAppEventBus.emitNavigateToChallengeDetail(it) }
+            "history_detail" -> arg?.let { TrackedAppEventBus.emitNavigateToHistoryDetail(it) }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         trackPermissionIgnore()
@@ -217,10 +252,6 @@ class MainActivity : ComponentActivity() {
                         cloudFunctionsService.cancelGroupChallenge(gc.groupId)
                             .onSuccess {
                                 Timber.d("Auto-cancelled group challenge: %s", gc.groupId)
-                                com.detox.app.service.NotificationHelper.createChannels(this)
-                                com.detox.app.service.NotificationHelper.sendGroupChallengeCancelled(
-                                    this, gc.appDisplayName
-                                )
                             }
                             .onFailure { e -> Timber.e(e, "Auto-cancel failed for group: %s", gc.groupId) }
                     }

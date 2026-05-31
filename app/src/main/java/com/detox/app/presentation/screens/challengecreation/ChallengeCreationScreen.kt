@@ -1104,6 +1104,11 @@ private fun Step7Confirm(
     val isLoading = uiState is ChallengeCreationUiState.Loading ||
             uiState is ChallengeCreationUiState.AwaitingPayment
 
+    // Hard Mode requires a Stripe payment, so the fee breakdown + the legally
+    // mandated withdrawal-rights waiver (FAGG § 18) are only shown for HARD.
+    val isHardMode = state.selectedMode == ChallengeMode.HARD
+    var waiverChecked by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1191,6 +1196,29 @@ private fun Step7Confirm(
             )
         }
 
+        // ── Fee breakdown + withdrawal-rights waiver (Hard Mode only) ──────────
+        if (isHardMode) {
+            val stakeCents = state.amountEuros * 100
+            val refundCents = (stakeCents * 80) / 100      // Math.floor of 80%
+            val feeCents = stakeCents - refundCents          // remainder = 20%
+
+            FeeBreakdownCard(
+                stakeLabel = stringResource(R.string.fee_your_stake),
+                stakeValue = formatEuroCents(stakeCents),
+                refundValue = stringResource(
+                    R.string.fee_value_format, formatEuroCents(refundCents), 80,
+                ),
+                feeValue = stringResource(
+                    R.string.fee_value_format, formatEuroCents(feeCents), 20,
+                ),
+            )
+
+            WaiverCheckboxRow(
+                checked = waiverChecked,
+                onToggle = { waiverChecked = !waiverChecked },
+            )
+        }
+
         if (uiState is ChallengeCreationUiState.Error) {
             Text(
                 text = uiState.message,
@@ -1210,7 +1238,9 @@ private fun Step7Confirm(
                 onCreateChallenge()
             },
             modifier = Modifier.fillMaxWidth().height(54.dp),
-            enabled = !isLoading,
+            // Legal gate: the waiver checkbox must be ticked before a Hard Mode
+            // payment can start. Soft Mode has no payment, so no waiver needed.
+            enabled = !isLoading && (!isHardMode || waiverChecked),
             shape = BtnShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = GreenPrimary,
@@ -1262,6 +1292,124 @@ private fun SummaryDividerRow(
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = TextPrimary,
+        )
+    }
+}
+
+// ── Fee breakdown card + withdrawal-rights waiver (FAGG § 18) ──────────────────
+
+/** Formats integer cents as a German money string, e.g. 800 → "€8,00". */
+private fun formatEuroCents(cents: Int): String =
+    "€%d,%02d".format(cents / 100, cents % 100)
+
+private val FeeRowLabel  = Color(0xFF333333)
+private val FeeReturnGreen = Color(0xFF00C853)
+
+@Composable
+private fun FeeBreakdownCard(
+    stakeLabel: String,
+    stakeValue: String,
+    refundValue: String,
+    feeValue: String,
+    note: String? = null,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(CardBg)
+            .border(0.5.dp, CardBorder, CardShape),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.fee_overview_title).uppercase(),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextSecondary,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            FeeRow(stakeLabel, stakeValue, TextPrimary)
+            HorizontalDivider(
+                color = DividerColor,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 10.dp),
+            )
+            FeeRow(stringResource(R.string.fee_return_on_success), refundValue, FeeReturnGreen)
+            HorizontalDivider(
+                color = DividerColor,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 10.dp),
+            )
+            FeeRow(stringResource(R.string.fee_service_fee), feeValue, TextSecondary)
+            if (note != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = note,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeeRow(label: String, value: String, valueColor: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = label, fontSize = 14.sp, color = FeeRowLabel)
+        Text(
+            text = value,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+        )
+    }
+}
+
+@Composable
+private fun WaiverCheckboxRow(
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 1.dp)
+                .size(22.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (checked) GreenPrimary else Color.White)
+                .border(
+                    width = 1.5.dp,
+                    color = if (checked) GreenPrimary else Color(0xFFE0E0E5),
+                    shape = RoundedCornerShape(6.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = stringResource(R.string.withdrawal_waiver_text),
+            fontSize = 14.sp,
+            color = FeeRowLabel,
         )
     }
 }

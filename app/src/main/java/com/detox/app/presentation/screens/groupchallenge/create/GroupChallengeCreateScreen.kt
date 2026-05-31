@@ -851,6 +851,7 @@ private fun GStep6Review(
 ) {
     val sdf = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
     val estimatedPot = formState.buyInEuros * 20
+    var waiverChecked by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -939,6 +940,28 @@ private fun GStep6Review(
             }
         }
 
+        // ── Fee breakdown card (buy-in 80 / 20 split) ───────────────────────
+        run {
+            val buyInCents = formState.buyInEuros * 100
+            val refundCents = (buyInCents * 80) / 100      // Math.floor of 80%
+            val feeCents = buyInCents - refundCents          // remainder = 20%
+            GFeeBreakdownCard(
+                buyInValue = gFormatEuroCents(buyInCents),
+                refundValue = stringResource(
+                    R.string.fee_value_format, gFormatEuroCents(refundCents), 80,
+                ) + " " + stringResource(R.string.fee_return_on_success_group_note),
+                feeValue = stringResource(
+                    R.string.fee_value_format, gFormatEuroCents(feeCents), 20,
+                ),
+            )
+        }
+
+        // ── Withdrawal-rights waiver (FAGG § 18) ────────────────────────────
+        GWaiverCheckboxRow(
+            checked = waiverChecked,
+            onToggle = { waiverChecked = !waiverChecked },
+        )
+
         // ── Create button ───────────────────────────────────────────────────
         val context = LocalContext.current
         Button(
@@ -949,7 +972,8 @@ private fun GStep6Review(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp),
-            enabled = !isLoading,
+            // Legal gate: the waiver must be ticked before the buy-in payment starts.
+            enabled = !isLoading && waiverChecked,
             shape = GBtnShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = GGreenPrimary,
@@ -972,6 +996,121 @@ private fun GStep6Review(
                 )
             }
         }
+    }
+}
+
+// ── Fee breakdown card + withdrawal-rights waiver (FAGG § 18) ─────────────────
+
+/** Formats integer cents as a German money string, e.g. 800 → "€8,00". */
+private fun gFormatEuroCents(cents: Int): String =
+    "€%d,%02d".format(cents / 100, cents % 100)
+
+private val GFeeRowLabel = Color(0xFF333333)
+
+@Composable
+private fun GFeeBreakdownCard(
+    buyInValue: String,
+    refundValue: String,
+    feeValue: String,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GCardShape)
+            .background(GCardBg)
+            .border(0.5.dp, GCardBorder, GCardShape),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.fee_overview_title).uppercase(),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = GTextSecondary,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            GFeeRow(stringResource(R.string.fee_your_buyin), buyInValue, GTextPrimary)
+            HorizontalDivider(
+                color = GDividerColor,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 10.dp),
+            )
+            GFeeRow(stringResource(R.string.fee_return_on_success), refundValue, GGreenPrimary)
+            HorizontalDivider(
+                color = GDividerColor,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 10.dp),
+            )
+            GFeeRow(stringResource(R.string.fee_service_fee), feeValue, GTextSecondary)
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.fee_group_no_loser_note),
+                fontSize = 12.sp,
+                color = GTextSecondary,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GFeeRow(label: String, value: String, valueColor: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = label, fontSize = 14.sp, color = GFeeRowLabel, modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = value,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            textAlign = TextAlign.End,
+        )
+    }
+}
+
+@Composable
+private fun GWaiverCheckboxRow(
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 1.dp)
+                .size(22.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (checked) GGreenPrimary else Color.White)
+                .border(
+                    width = 1.5.dp,
+                    color = if (checked) GGreenPrimary else Color(0xFFE0E0E5),
+                    shape = RoundedCornerShape(6.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = stringResource(R.string.withdrawal_waiver_text),
+            fontSize = 14.sp,
+            color = GFeeRowLabel,
+        )
     }
 }
 

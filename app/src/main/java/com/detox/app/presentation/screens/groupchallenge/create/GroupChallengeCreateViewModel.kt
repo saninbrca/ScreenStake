@@ -11,6 +11,8 @@ import com.detox.app.domain.usecase.CreateGroupChallengeUseCase
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -373,6 +375,9 @@ class GroupChallengeCreateViewModel @Inject constructor(
             result.fold(
                 onSuccess = { data ->
                     Timber.d("GroupChallengeCreateVM: challenge created groupId=%s code=%s", pd.groupId, data.code)
+                    // Legal: persist the FAGG § 18 withdrawal-rights waiver consent on
+                    // the group challenge doc (the checkbox gated this payment).
+                    logWithdrawalWaiver(pd.groupId)
                     pendingPaymentData = null
                     _formState.update { it.copy(generatedCode = data.code) }
                     _uiState.value = GroupCreateUiState.Created(groupId = pd.groupId, code = data.code)
@@ -385,6 +390,22 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 },
             )
         }
+    }
+
+    /**
+     * Stores the user's explicit FAGG § 18 withdrawal-rights waiver consent on the
+     * group challenge document. Fire-and-forget merge write to groupChallenges/{groupId}.
+     */
+    private fun logWithdrawalWaiver(groupId: String) {
+        FirebaseFirestore.getInstance()
+            .collection("groupChallenges").document(groupId)
+            .set(
+                mapOf(
+                    "withdrawalWaiverAccepted" to true,
+                    "withdrawalWaiverTimestamp" to System.currentTimeMillis(),
+                ),
+                SetOptions.merge()
+            )
     }
 
     /** Called from [PaymentSheetResult.Canceled] — no Firestore write, user stays on screen. */

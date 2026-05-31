@@ -9,6 +9,9 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import com.detox.app.domain.model.AdultDomains
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import io.sentry.SentryLevel
 import timber.log.Timber
 import java.util.Calendar
 
@@ -122,6 +125,11 @@ class AppDetectionAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Timber.d("AppDetectionAccessibilityService connected")
+        Sentry.addBreadcrumb(Breadcrumb().apply {
+            category = "AccessibilityService"
+            message = "Service connected"
+            level = SentryLevel.INFO
+        })
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -514,5 +522,10 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Timber.d("AppDetectionAccessibilityService interrupted")
+        Sentry.addBreadcrumb(Breadcrumb().apply {
+            category = "AccessibilityService"
+            message = "Service disconnected"
+            level = SentryLevel.WARNING
+        })
     }
 }

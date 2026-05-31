@@ -1,7 +1,9 @@
 package com.detox.app.presentation.screens.auth
 
+import android.net.Uri
 import android.util.Patterns
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,7 +59,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -497,13 +505,17 @@ private fun RegisterForm(
             checked = consentAGB,
             onCheckedChange = { consentAGB = it },
             label = stringResource(R.string.auth_consent_agb),
-            enabled = !isLoading
+            enabled = !isLoading,
+            linkText = stringResource(R.string.auth_consent_agb_link),
+            linkUrl = stringResource(R.string.url_agb)
         )
         ConsentRow(
             checked = consentDatenschutz,
             onCheckedChange = { consentDatenschutz = it },
             label = stringResource(R.string.auth_consent_datenschutz),
-            enabled = !isLoading
+            enabled = !isLoading,
+            linkText = stringResource(R.string.auth_consent_datenschutz_link),
+            linkUrl = stringResource(R.string.url_datenschutz)
         )
         ConsentRow(
             checked = consentAge18,
@@ -555,8 +567,39 @@ private fun ConsentRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     label: String,
-    enabled: Boolean
+    enabled: Boolean,
+    linkText: String? = null,
+    linkUrl: String? = null
 ) {
+    val context = LocalContext.current
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val linkStart = if (linkText != null) label.indexOf(linkText) else -1
+
+    val annotatedLabel = if (linkUrl != null && linkStart >= 0) {
+        buildAnnotatedString {
+            append(label.substring(0, linkStart))
+            withLink(
+                LinkAnnotation.Url(
+                    url = linkUrl,
+                    styles = TextLinkStyles(
+                        style = SpanStyle(
+                            color = AccentGreen,
+                            textDecoration = TextDecoration.Underline
+                        )
+                    )
+                ) {
+                    CustomTabsIntent.Builder().build()
+                        .launchUrl(context, Uri.parse((it as LinkAnnotation.Url).url))
+                }
+            ) {
+                append(linkText)
+            }
+            append(label.substring(linkStart + linkText!!.length))
+        }
+    } else {
+        buildAnnotatedString { append(label) }
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -570,9 +613,9 @@ private fun ConsentRow(
             colors = CheckboxDefaults.colors(checkedColor = AccentGreen)
         )
         Text(
-            text = label,
+            text = annotatedLabel,
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface
+            color = onSurface
         )
     }
 }

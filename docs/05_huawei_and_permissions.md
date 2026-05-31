@@ -314,15 +314,37 @@ class BootReceiver : BroadcastReceiver() {
 
 ---
 
-## Sentry SDK — Huawei Compatible
+## Sentry SDK — Huawei Compatible (integrated)
 
-Sentry Android SDK does **not** require Google Play Services.
-It uses its own HTTP transport layer directly. Safe to add on Huawei.
+Sentry Android SDK does **not** require Google Play Services. It uses its own HTTP transport
+layer directly, so it is safe on Huawei. **Sentry is now the sole crash + error reporter —
+Firebase Crashlytics has been removed.**
 
-**Sentry SDK:** planned for post-beta. SDK is Huawei compatible (no Google Play Services required). Integration deferred to avoid adding complexity before launch. When adding:
-- Use `SentryAndroid.init` in `DetoxApplication.onCreate()`
-- No FCM dependency — Sentry works on Huawei out of the box
-- Do NOT use Sentry's Firebase Performance monitoring integration (requires Play Services)
+**Dependency:** `io.sentry:sentry-android`, pinned `7.14.0` via the version catalog
+(`libs.sentry.android`). NEVER add `sentry-android-firebase` or any Firebase Performance
+monitoring integration — those require Google Play Services and break Huawei.
+
+**Init (`DetoxApplication.onCreate`):** `SentryAndroid.init` runs first (before
+`PaymentConfiguration.init`). DSN from `BuildConfig.SENTRY_DSN`; environment from
+`BuildConfig.DEBUG`; release `${APPLICATION_ID}@${VERSION_NAME}`; auto session tracking + ANR +
+activity/app-component breadcrumbs; `sampleRate = 1.0`, `tracesSampleRate` 1.0 debug / 0.1
+production. `beforeSend` returns `null` in DEBUG, so **debug builds never send events**.
+
+**Manifest:** `io.sentry.dsn` meta-data (`${SENTRY_DSN}`) + `io.sentry.auto-init = false`
+(we init manually for full control). DSN is a `buildConfigField` + `manifestPlaceholders`
+placeholder in `defaultConfig` — replace with the real DSN after sentry.io project creation.
+
+**User context (GDPR/DSGVO):** only the Firebase UID is sent as the Sentry user id — never
+email or name. `Sentry.setUser` is set/cleared in the existing `FirebaseAuth.addAuthStateListener`
+in `DetoxApplication.startGroupChallengeSyncing()` (single chokepoint for login/register/Google/logout).
+
+**Breadcrumbs:** `PaymentRepositoryImpl.cancelOrRefundPayment` (central Stripe refund/cancel
+chokepoint), `PermissionCheckWorker` (permission loss — type + elapsed),
+`AppDetectionAccessibilityService` (`onServiceConnected` / `onInterrupt`).
+
+**ProGuard:** keep `io.sentry.**` + annotation/source/line attributes.
+
+See the changelog DECISION entry for the full file list.
 
 ---
 

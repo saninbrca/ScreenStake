@@ -37,6 +37,15 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ScreenSTake">
+
+        <!-- Sentry: auto-init disabled — initialized manually in DetoxApplication for full control -->
+        <meta-data
+            android:name="io.sentry.dsn"
+            android:value="${SENTRY_DSN}" />
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

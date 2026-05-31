@@ -203,8 +203,10 @@
     <string name="auth_password_hint">Mindestens 8 Zeichen</string>
 
     <!-- Auth — consent checkboxes -->
-    <string name="auth_consent_agb">Ich akzeptiere die AGB</string>
+    <string name="auth_consent_agb">Ich akzeptiere die Allgemeinen Geschäftsbedingungen</string>
+    <string name="auth_consent_agb_link">Allgemeinen Geschäftsbedingungen</string>
     <string name="auth_consent_datenschutz">Ich akzeptiere die Datenschutzerklärung</string>
+    <string name="auth_consent_datenschutz_link">Datenschutzerklärung</string>
     <string name="auth_consent_age18">Ich bin mindestens 18 Jahre alt</string>
 
     <!-- Email verification screen -->
@@ -616,6 +618,14 @@
     <string name="hard_fail_motivation">Beim nächsten Mal schaffst du es! 💪</string>
     <string name="hard_fail_cta">Erneut versuchen</string>
 
+    <!-- Hard Mode Fail Screen (shown after the user quits a Hard Mode challenge via "Aufgeben") -->
+    <string name="hard_fail_screen_subtitle">Du hast die Challenge aufgegeben.</string>
+    <string name="hard_fail_captured_label">EINGEZOGEN</string>
+    <string name="hard_fail_captured_subtext">Challenge nicht bestanden</string>
+    <string name="hard_fail_encouragement">Du kannst es erneut versuchen — stärker als zuvor.</string>
+    <string name="hard_fail_back_to_dashboard">Zurück zum Dashboard</string>
+    <string name="hard_fail_new_challenge">Neue Challenge starten</string>
+
     <!-- VPN rationale dialog (shown before the system VPN permission dialog) -->
     <string name="vpn_rationale_title">Enable Website Blocking</string>
     <string name="vpn_rationale_message">Detox needs VPN permission to block websites. Your data never leaves your device — the VPN only filters DNS requests locally.</string>
@@ -713,6 +723,10 @@
     <string name="settings_section_privacy">DATENSCHUTZ</string>
     <string name="settings_privacy_policy">Datenschutzerklärung</string>
     <string name="settings_terms_of_service">Nutzungsbedingungen</string>
+    <string name="settings_impressum">Impressum</string>
+    <string name="url_datenschutz">https://saninbrca.github.io/screenstake-legal/datenschutz.html</string>
+    <string name="url_agb">https://saninbrca.github.io/screenstake-legal/agb.html</string>
+    <string name="url_impressum">https://saninbrca.github.io/screenstake-legal/impressum.html</string>
     <string name="settings_export_data">Daten exportieren</string>
     <string name="settings_export_data_subtitle">Als JSON herunterladen</string>
     <string name="settings_delete_all_data">Alle Daten löschen</string>
@@ -802,7 +816,7 @@
     <string name="settings_rate_app">App bewerten</string>
     <string name="settings_send_feedback">Feedback senden</string>
     <string name="settings_contact_support">Support kontaktieren</string>
-    <string name="settings_contact_support_subtitle">support@detox-app.com</string>
+    <string name="settings_contact_support_subtitle">sanin.brica@gmail.com</string>
 
     <!-- Welcome Onboarding — Page 0: Willkommen -->
     <string name="welcome_p0_stat_value">4.2h</string>
@@ -1257,6 +1271,17 @@
     <string name="wizard_review_limit_time_format">%1$d Min / Tag</string>
     <string name="wizard_review_limit_budget_format">%1$d Min Budget / Tag</string>
     <string name="wizard_review_apps_overflow_format">%1$s, %2$s +%3$d</string>
+
+    <!-- Fee breakdown &amp; withdrawal-rights waiver (FAGG § 18) -->
+    <string name="fee_overview_title">Einsatz-Übersicht</string>
+    <string name="fee_your_stake">Dein Einsatz</string>
+    <string name="fee_your_buyin">Dein Buy-In</string>
+    <string name="fee_return_on_success">Bei Erfolg zurück</string>
+    <string name="fee_service_fee">Service-Gebühr</string>
+    <string name="fee_value_format">%1$s (%2$d%%)</string>
+    <string name="fee_return_on_success_group_note">*möglicher Gewinnanteil</string>
+    <string name="fee_group_no_loser_note">Bei Gruppen ohne Verlierer: 100%% zurück</string>
+    <string name="withdrawal_waiver_text">Ich stimme zu, dass die Challenge sofort beginnt und mein Widerrufsrecht damit gemäß § 18 FAGG erlischt.</string>
 
     <!-- Group Wizard specific -->
     <string name="group_wizard_review_title">Überprüfen &amp; erstellen</string>

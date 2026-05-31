@@ -7,12 +7,12 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
 }
 
-// Read signing credentials from local.properties (not committed to source control)
-val localProperties = Properties().also { props ->
-    val f = rootProject.file("local.properties")
+// Read signing credentials from keystore.properties (not committed to source control).
+// See keystore.properties.template for the expected keys.
+val keystoreProperties = Properties().also { props ->
+    val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use(props::load)
 }
 
@@ -24,12 +24,12 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePath = localProperties.getProperty("KEYSTORE_PATH")
+            val keystorePath = keystoreProperties.getProperty("KEYSTORE_PATH")
             if (keystorePath != null) {
-                storeFile = file(keystorePath)
-                storePassword = localProperties.getProperty("KEYSTORE_PASSWORD", "")
-                keyAlias = localProperties.getProperty("KEY_ALIAS", "")
-                keyPassword = localProperties.getProperty("KEY_PASSWORD", "")
+                storeFile = rootProject.file(keystorePath)
+                storePassword = keystoreProperties.getProperty("KEYSTORE_PASSWORD", "")
+                keyAlias = keystoreProperties.getProperty("KEY_ALIAS", "")
+                keyPassword = keystoreProperties.getProperty("KEY_PASSWORD", "")
             }
         }
     }
@@ -42,6 +42,14 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // TODO: Replace with real DSN from sentry.io after project creation
+        buildConfigField(
+            "String",
+            "SENTRY_DSN",
+            "\"https://2fb0ac4ecd6bc9af8021ad9e42448eb9@o4511430516277248.ingest.de.sentry.io/4511483693498448\""
+        )
+        manifestPlaceholders["SENTRY_DSN"] = "https://2fb0ac4ecd6bc9af8021ad9e42448eb9@o4511430516277248.ingest.de.sentry.io/4511483693498448"
     }
 
     buildTypes {
@@ -82,6 +90,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.browser)
     implementation("androidx.compose.material:material-icons-extended")
     // Compose
     implementation(platform(libs.androidx.compose.bom))
@@ -111,7 +120,6 @@ dependencies {
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.messaging.ktx)
-    implementation(libs.firebase.crashlytics.ktx)
     implementation(libs.firebase.analytics.ktx)
 
     // Google Sign-In
@@ -143,6 +151,9 @@ dependencies {
 
     // Root detection
     implementation("com.scottyab:rootbeer-lib:0.1.0")
+
+    // Sentry — crash + error tracking (Huawei-safe, no Google Play Services)
+    implementation(libs.sentry.android)
 
     // Logging
     implementation(libs.timber)

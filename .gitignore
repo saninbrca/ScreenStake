@@ -18,6 +18,7 @@ google-services.json
 /app/google-services.json
 *.keystore
 *.jks
+keystore.properties
 /functions/node_modules
 firebase-debug.log
 firebase-debug.*.log

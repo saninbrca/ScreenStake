@@ -1,5 +1,6 @@
 package com.detox.app.presentation.screens.history
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.foundation.BorderStroke
@@ -158,6 +159,7 @@ private fun DetailContent(
     durationDays: Int,
     modifier: Modifier = Modifier,
 ) {
+    val context     = LocalContext.current
     val isCompleted = entity.status == "completed"
     val isHard      = entity.mode == "hard"
     val isGroup     = !entity.groupChallengeId.isNullOrBlank()
@@ -183,34 +185,69 @@ private fun DetailContent(
                 StatusLabel(isCompleted = isCompleted)
             }
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DetailAppIcon(
-                    packageName = entity.appPackageNames
-                        ?.split(",")?.firstOrNull { it.isNotBlank() }
-                        ?: entity.appPackageName.takeIf { it.isNotBlank() },
-                    appName = entity.appDisplayName,
-                    modifier = Modifier.size(40.dp),
-                )
-                Spacer(Modifier.width(12.dp))
-                Column {
+
+            // Show ALL apps of the challenge — not just the first.
+            val packageNames = entity.appPackageNames
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                ?: listOfNotNull(entity.appPackageName.takeIf { it.isNotBlank() })
+            val displayNames = entity.appDisplayName
+                .split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+            if (packageNames.isEmpty()) {
+                // Website challenge — single display name, no package.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DetailAppIcon(
+                        packageName = null,
+                        appName = entity.appDisplayName,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
                     Text(
                         text = entity.appDisplayName,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
                     )
-                    Text(
-                        text = stringResource(
-                            R.string.verlauf_date_range,
-                            startStr,
-                            endStr,
-                            durationDays,
-                        ),
-                        fontSize = 12.sp,
-                        color = TextSecondary,
-                    )
+                }
+            } else {
+                packageNames.forEachIndexed { index, packageName ->
+                    val appName = resolveAppName(context, packageName, displayNames.getOrNull(index))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        DetailAppIcon(
+                            packageName = packageName,
+                            appName = appName,
+                            modifier = Modifier.size(40.dp),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = appName,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextPrimary,
+                        )
+                    }
+                    if (index < packageNames.lastIndex) {
+                        Spacer(Modifier.height(8.dp))
+                        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF2F2F7))
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
             }
+
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(
+                    R.string.verlauf_date_range,
+                    startStr,
+                    endStr,
+                    durationDays,
+                ),
+                fontSize = 12.sp,
+                color = TextSecondary,
+            )
         }
 
         // Card 2 — Stats (COMPLETED only)
@@ -423,6 +460,17 @@ private fun InfoRow(label: String, value: String) {
     ) {
         Text(text = label, fontSize = 14.sp, color = TextSecondary)
         Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+    }
+}
+
+// ── App name resolution (PackageManager, fallback to stored name) ─────────────
+
+private fun resolveAppName(context: Context, packageName: String, fallback: String?): String {
+    return try {
+        val pm = context.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+    } catch (e: Exception) {
+        fallback?.takeIf { it.isNotBlank() } ?: packageName
     }
 }
 

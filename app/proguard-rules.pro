@@ -26,3 +26,8 @@
 
 # Timber
 -dontwarn timber.log.**
+
+# Sentry — preserve annotations + source/line info for readable stack traces
+-keepattributes Annotation
+-keepattributes SourceFile,LineNumberTable
+-keep class io.sentry.** { *; }

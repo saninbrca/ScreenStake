@@ -5,7 +5,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.userProfileChangeRequest
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
@@ -26,7 +25,6 @@ class FirebaseAuthService @Inject constructor(
             val result = firebaseAuth.signInWithCredential(credential).await()
             val user = result.user ?: return Result.failure(Exception("Sign-in succeeded but user is null"))
             Timber.d("Signed in with Google as ${user.displayName} (${user.uid})")
-            FirebaseCrashlytics.getInstance().setUserId(user.uid)
             Result.success(user)
         } catch (e: Exception) {
             Timber.e(e, "Google sign-in failed")
@@ -43,7 +41,6 @@ class FirebaseAuthService @Inject constructor(
             val result = firebaseAuth.signInWithEmailAndPassword(email, password).await()
             val user = result.user ?: return Result.failure(Exception("Sign-in succeeded but user is null"))
             Timber.d("Signed in with email as ${user.email} (${user.uid})")
-            FirebaseCrashlytics.getInstance().setUserId(user.uid)
             Result.success(user)
         } catch (e: Exception) {
             Timber.e(e, "Email sign-in failed")
@@ -60,7 +57,6 @@ class FirebaseAuthService @Inject constructor(
             val result = firebaseAuth.createUserWithEmailAndPassword(email, password).await()
             val user = result.user ?: return Result.failure(Exception("Registration succeeded but user is null"))
             Timber.d("Registered new user ${user.email} (${user.uid})")
-            FirebaseCrashlytics.getInstance().setUserId(user.uid)
             Result.success(user)
         } catch (e: Exception) {
             Timber.e(e, "Email registration failed")

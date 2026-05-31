@@ -514,7 +514,7 @@ fun SettingsScreen(
                     showChevron = true,
                     onClick = {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-app.com/privacy"))
+                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_datenschutz)))
                         )
                     }
                 )
@@ -525,7 +525,18 @@ fun SettingsScreen(
                     showChevron = true,
                     onClick = {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-app.com/terms"))
+                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_agb)))
+                        )
+                    }
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.Policy, PurpleColor) },
+                    label = stringResource(R.string.settings_impressum),
+                    showChevron = true,
+                    onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_impressum)))
                         )
                     }
                 )
@@ -603,7 +614,7 @@ fun SettingsScreen(
                     onClick = {
                         context.startActivity(
                             Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("mailto:support@detox-app.com")
+                                data = Uri.parse("mailto:sanin.brica@gmail.com")
                                 putExtra(Intent.EXTRA_SUBJECT, "Detox App Feedback")
                             }
                         )
@@ -618,7 +629,7 @@ fun SettingsScreen(
                     onClick = {
                         context.startActivity(
                             Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("mailto:support@detox-app.com")
+                                data = Uri.parse("mailto:sanin.brica@gmail.com")
                                 putExtra(Intent.EXTRA_SUBJECT, "Detox App Support Request")
                             }
                         )

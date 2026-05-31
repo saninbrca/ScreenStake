@@ -19,6 +19,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import io.sentry.SentryLevel
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
 
@@ -104,6 +107,19 @@ class PermissionCheckWorker @AssistedInject constructor(
 
         Timber.d("Permission lost at $lostAt")
         Timber.d("Elapsed: ${elapsed / 3_600_000}h, ignored: $ignored")
+
+        val permissionType = when {
+            !Settings.canDrawOverlays(applicationContext) && !isAccessibilityServiceEnabled() -> "both"
+            !Settings.canDrawOverlays(applicationContext) -> "overlay"
+            else -> "accessibility"
+        }
+        Sentry.addBreadcrumb(Breadcrumb().apply {
+            category = "Permissions"
+            message = "Permission loss detected"
+            level = SentryLevel.WARNING
+            setData("permissionType", permissionType)
+            setData("elapsed", elapsed)
+        })
 
         val effectiveDeadlineMs = calculateEffectiveDeadlineMs(elapsed, ignored)
 

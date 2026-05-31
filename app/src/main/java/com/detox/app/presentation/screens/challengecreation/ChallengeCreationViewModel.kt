@@ -423,6 +423,25 @@ class ChallengeCreationViewModel @Inject constructor(
         _uiState.value = ChallengeCreationUiState.Idle
     }
 
+    /**
+     * Stores the user's explicit FAGG § 18 withdrawal-rights waiver consent on the
+     * challenge document. Fire-and-forget merge write — mirrors the challenge doc
+     * at users/{uid}/challenges/{challengeId} written by FirestoreService.
+     */
+    private fun logWithdrawalWaiver(challengeId: String) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("challenges").document(challengeId)
+            .set(
+                mapOf(
+                    "withdrawalWaiverAccepted" to true,
+                    "withdrawalWaiverTimestamp" to System.currentTimeMillis(),
+                ),
+                SetOptions.merge()
+            )
+    }
+
     private fun logRootedDeviceToFirestore() {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
         FirebaseFirestore.getInstance()
@@ -437,9 +456,11 @@ class ChallengeCreationViewModel @Inject constructor(
     private fun displayName(): String {
         val s = _state.value
         if (s.activeTab == 1) return s.manualDomains.firstOrNull() ?: "Website"
-        val firstPkg = s.selectedApps.firstOrNull() ?: return "App"
-        return _appListState.value.trackableApps
-            .firstOrNull { it.packageName == firstPkg }?.appName ?: firstPkg
+        if (s.selectedApps.isEmpty()) return "App"
+        val apps = _appListState.value.trackableApps
+        return s.selectedApps.joinToString(", ") { pkg ->
+            apps.firstOrNull { it.packageName == pkg }?.appName ?: pkg
+        }
     }
 
     private fun resolveLimitPair(): Pair<Int, Int?> {
@@ -555,6 +576,9 @@ class ChallengeCreationViewModel @Inject constructor(
                 isPartialBlockOnly = false,
             ).fold(
                 onSuccess = { result ->
+                    // Legal: persist the FAGG § 18 withdrawal-rights waiver consent
+                    // alongside the challenge doc (the checkbox is the payment gate).
+                    logWithdrawalWaiver(result.challengeId)
                     analyticsService.logChallengeCreated(
                         mode = "hard",
                         limitType = (s.limitType ?: LimitType.TIME).name.lowercase(),

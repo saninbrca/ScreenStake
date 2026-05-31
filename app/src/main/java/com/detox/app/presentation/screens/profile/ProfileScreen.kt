@@ -82,6 +82,7 @@ import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.service.TrackedAppEventBus
 import com.detox.app.util.DateUtils
+import io.sentry.Sentry
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1328,6 +1329,19 @@ Usage Stats: ${if (usageStats) "✅" else "❌"}""".trimIndent()
                         color = if (result.startsWith("🔴")) Color(0xFFFF3B30) else Color(0xFF00C853),
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                     )
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = DebugOrangeBorder.copy(alpha = 0.2f)
+                )
+
+                // ── SECTION 11: Sentry Crash Reporting ────────────────────────
+                DebugSectionHeader("SENTRY")
+                DebugButton("Trigger Test Crash") {
+                    // Tag so beforeSend lets this through even in debug builds.
+                    Sentry.setTag("test_crash", "true")
+                    throw RuntimeException("Sentry test crash")
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

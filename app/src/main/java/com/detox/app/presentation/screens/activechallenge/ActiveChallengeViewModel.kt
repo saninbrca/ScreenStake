@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.Challenge
+import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
@@ -58,6 +59,10 @@ class ActiveChallengeViewModel @Inject constructor(
 
     private val _abandonState = MutableStateFlow(false)
     val abandonSuccess: StateFlow<Boolean> = _abandonState.asStateFlow()
+
+    /** Set to the challenge id when a HARD mode challenge is abandoned — triggers the fail screen. */
+    private val _hardModeFailChallengeId = MutableStateFlow<String?>(null)
+    val hardModeFailChallengeId: StateFlow<String?> = _hardModeFailChallengeId.asStateFlow()
 
     private val _reduceLimitState = MutableStateFlow<ReduceLimitState>(ReduceLimitState.Idle)
     val reduceLimitState: StateFlow<ReduceLimitState> = _reduceLimitState.asStateFlow()
@@ -210,13 +215,18 @@ class ActiveChallengeViewModel @Inject constructor(
 
     fun abandonChallenge() {
         viewModelScope.launch {
-            val mode = (uiState.value as? ActiveChallengeUiState.Success)
-                ?.challenge?.mode?.name?.lowercase() ?: "unknown"
+            val challenge = (uiState.value as? ActiveChallengeUiState.Success)?.challenge
+            val mode = challenge?.mode?.name?.lowercase() ?: "unknown"
             challengeRepository.updateChallengeStatus(challengeId, ChallengeStatus.FAILED)
                 .onSuccess {
                     Timber.d("Challenge $challengeId abandoned")
                     analyticsService.logChallengeAbandoned(mode)
-                    _abandonState.value = true
+                    if (challenge?.mode == ChallengeMode.HARD) {
+                        // Hard Mode quit → dedicated failure screen (avoids a black popBackStack).
+                        _hardModeFailChallengeId.value = challengeId
+                    } else {
+                        _abandonState.value = true
+                    }
                 }
                 .onFailure { e ->
                     Timber.e(e, "Failed to abandon challenge $challengeId")

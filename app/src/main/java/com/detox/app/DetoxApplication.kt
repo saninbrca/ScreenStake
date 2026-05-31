@@ -19,6 +19,10 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import com.stripe.android.PaymentConfiguration
 import dagger.hilt.android.HiltAndroidApp
+import io.sentry.SentryOptions
+import io.sentry.android.core.SentryAndroid
+import io.sentry.protocol.User
+import io.sentry.Sentry
 import timber.log.Timber
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
@@ -43,6 +47,27 @@ class DetoxApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Crash + error tracking. Initialized before anything else so early-startup
+        // failures are captured. Manual init (auto-init=false in the manifest) for full control.
+        SentryAndroid.init(this) { options ->
+            options.dsn = BuildConfig.SENTRY_DSN
+            options.environment = if (BuildConfig.DEBUG) "development" else "production"
+            options.release = "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}"
+            options.isEnableAutoSessionTracking = true
+            options.isAnrEnabled = true // detect App Not Responding
+            options.isEnableActivityLifecycleBreadcrumbs = true
+            options.isEnableAppComponentBreadcrumbs = true
+            options.sampleRate = 1.0 // 100% error capture
+            options.tracesSampleRate = if (BuildConfig.DEBUG) 1.0 else 0.1 // 10% traces in production
+            options.beforeSend = SentryOptions.BeforeSendCallback { event, _ ->
+                // Drop debug events to avoid polluting Sentry, EXCEPT the manual
+                // test crash from the Debug Panel (tagged test_crash) used to
+                // verify the reporting pipeline.
+                val isTestCrash = event.tags?.get("test_crash") == "true"
+                if (BuildConfig.DEBUG && !isTestCrash) null else event
+            }
+        }
 
         // Must run before any Stripe PaymentSheet is created anywhere in the app.
         PaymentConfiguration.init(applicationContext, BuildConfig.STRIPE_PUBLISHABLE_KEY)
@@ -87,9 +112,12 @@ class DetoxApplication : Application(), Configuration.Provider {
             val user = auth.currentUser
             if (user != null) {
                 Timber.d("Auth state: signed in as %s — starting group challenge sync", user.uid)
+                // Only the Firebase UID — never email/name (DSGVO).
+                Sentry.setUser(User().apply { id = user.uid })
                 groupChallengeRepository.startSyncingForUser(user.uid)
             } else {
                 Timber.d("Auth state: signed out — stopping group challenge sync")
+                Sentry.setUser(null)
                 groupChallengeRepository.stopSyncing()
             }
         }

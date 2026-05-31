@@ -15,6 +15,125 @@
 
 ## [Unreleased] — May 2026
 
+### FEATURE — Legal documents wired to GitHub Pages + clickable consent links
+
+Legal URLs are now real, hosted on GitHub Pages, and externalized to `strings.xml`
+(`url_agb`, `url_datenschutz`, `url_impressum`):
+- AGB → `https://saninbrca.github.io/screenstake-legal/agb.html`
+- Datenschutz → `https://saninbrca.github.io/screenstake-legal/datenschutz.html`
+- Impressum → `https://saninbrca.github.io/screenstake-legal/impressum.html`
+
+**Settings (`SettingsScreen.kt`, Datenschutz section):** the two placeholder URLs
+(`detox-app.com/privacy` + `/terms`) were replaced by `url_datenschutz` / `url_agb`, and a new
+**Impressum** row (`settings_impressum`) was added pointing to `url_impressum`.
+
+**Registration consent (`AuthScreen.kt`, `ConsentRow`):** the "Allgemeinen Geschäftsbedingungen"
+and "Datenschutzerklärung" text portions of the consent checkboxes are now clickable links that
+open the document in a Custom Tab (`CustomTabsIntent`) — the user can read the docs before
+accepting. Implemented with `buildAnnotatedString` + `LinkAnnotation.Url` (Compose 1.7); the link
+span consumes the tap so it does not toggle the checkbox. New dependency `androidx.browser:browser`
+(`1.8.0`, version catalog). Clickable substrings are separate string resources
+(`auth_consent_agb_link`, `auth_consent_datenschutz_link`) so they stay localizable — if a
+translation rewords the label, the matching `_link` string must be updated or it falls back to
+plain (non-clickable) text.
+
+**Support email:** `support@detox-app.com` → `sanin.brica@gmail.com` everywhere
+(`settings_contact_support_subtitle` + both `mailto:` intents in `SettingsScreen.kt`).
+
+### DECISION — Sentry Android SDK integrated for crash + error tracking (replaces Firebase Crashlytics)
+
+Sentry Android SDK integrated (`io.sentry:sentry-android`, pinned `7.14.0` via the version
+catalog). Huawei compatible — no Google Play Services dependency (uses its own HTTP transport).
+
+**Crashlytics removed (replaced, not duplicated):** the Firebase Crashlytics Gradle plugin
+(root + app `build.gradle.kts`), `firebase-crashlytics-ktx` dependency, and the catalog
+plugin/library entries were removed. Code refs swapped: `FirebaseAuthService` dropped its three
+`FirebaseCrashlytics.setUserId(uid)` calls (now centralized in Sentry — see below);
+`DailyEvaluationWorker`'s `recordException(e)` → `Sentry.captureException(e)`.
+
+**Init (`DetoxApplication.onCreate`):** `SentryAndroid.init` runs first (before
+`PaymentConfiguration.init`). DSN from `BuildConfig.SENTRY_DSN`; environment
+development/production from `BuildConfig.DEBUG`; release `${APPLICATION_ID}@${VERSION_NAME}`;
+auto session tracking + ANR + activity/app-component breadcrumbs enabled; `sampleRate = 1.0`;
+`tracesSampleRate` 1.0 debug / 0.1 production. `beforeSend` returns `null` in DEBUG so **debug
+builds never send events**.
+
+**DSN placeholder** in `defaultConfig` `buildConfigField("SENTRY_DSN", ...)` +
+`manifestPlaceholders["SENTRY_DSN"]` (`https://PLACEHOLDER@sentry.io/PLACEHOLDER`) — replace
+with the real DSN after sentry.io project creation (marked with a TODO).
+
+**GDPR/DSGVO:** only the Firebase UID is sent as the Sentry user id — never email or name.
+`Sentry.setUser` is set/cleared in the existing `FirebaseAuth.addAuthStateListener` in
+`DetoxApplication.startGroupChallengeSyncing()` (single chokepoint covering login, register,
+Google, and logout).
+
+**Breadcrumbs added:** `PaymentRepositoryImpl.cancelOrRefundPayment` (central Stripe
+refund/cancel chokepoint — every Hard Mode refund flows through it, logs operation/challengeId/
+amountCents); `PermissionCheckWorker` (permission loss, logs permissionType + elapsed);
+`AppDetectionAccessibilityService` (`onServiceConnected` / `onInterrupt`).
+
+**Manifest:** `io.sentry.dsn` meta-data (`${SENTRY_DSN}`) + `io.sentry.auto-init = false`
+(manual init). **ProGuard:** keep `io.sentry.**` + annotation/source/line attributes.
+
+**Setup TODO (after sentry.io project creation):** replace the placeholder DSN in
+`app/build.gradle.kts` (`buildConfigField` + `manifestPlaceholders`), build a release APK on
+Huawei, and trigger a test crash to confirm it reaches the dashboard.
+
+**Files changed:** `gradle/libs.versions.toml`, `build.gradle.kts`, `app/build.gradle.kts`,
+`AndroidManifest.xml`, `app/proguard-rules.pro`, `DetoxApplication.kt`, `FirebaseAuthService.kt`,
+`DailyEvaluationWorker.kt`, `PaymentRepositoryImpl.kt`, `PermissionCheckWorker.kt`,
+`AppDetectionAccessibilityService.kt`, `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe logic changes.**
+
+### FIXED — Two History/Hard-Mode bugs: multi-app history display + black screen on Hard Mode quit
+
+Two independent UI/navigation bugs. Data was stored correctly in both cases — fixes are
+display/navigation-layer only. Verified via `:app:compileDebugKotlin` (exit 0).
+
+**Bug 1 — History detail showed only the first app of a multi-app challenge — FIXED.**
+- Root cause (display): `HistoryDetailScreen` took only `appPackageNames.split(",").firstOrNull()`
+  and showed a single icon + the single `appDisplayName`. Multi-app challenges store all packages
+  in `ChallengeEntity.appPackageNames` (comma-separated) but were rendered as one.
+- Root cause (creation): `ChallengeCreationViewModel.displayName()` returned only the **first**
+  selected app's name, so `appDisplayName` held one name even for multi-app challenges.
+- Fix (`HistoryDetailScreen.kt`): the header now loops over **all** of `appPackageNames`, rendering
+  one icon + name row per app with a 0.5px `#F2F2F7` divider between them. Each app's label is
+  resolved via `PackageManager` (`resolveAppName`, falls back to the split `appDisplayName` then the
+  raw package) — so already-existing multi-app challenges also display correctly. Website challenges
+  (no package) still show the single display name. The date range moved below the app list (it
+  applies to the whole challenge, not per app).
+- Fix (`ChallengeCreationViewModel.kt`): `displayName()` now joins all selected app names
+  comma-separated, so newly created multi-app challenges store all names.
+
+**Bug 2 — Quitting a Hard Mode challenge ("Aufgeben") showed a black screen — FIXED.**
+- Root cause: `abandonChallenge()` set status FAILED then signaled `abandonSuccess`, and
+  `ActiveChallengeScreen` navigated via a bare `navController.popBackStack()`. When the challenge
+  was reached via a notification deep-link (`active_challenge/{id}`, used by Hard-Mode
+  failure/redemption/80%-usage notifications), there was no valid destination below → black screen.
+  There was no failure/redemption screen registered in the nav graph for the manual quit path.
+- Fix: new `HardModeFailScreen` (+ `HardModeFailViewModel`) at route `hard_mode_fail/{challengeId}`.
+  Dark fullscreen (`#0A0A0A`, `isAppearanceLightStatusBars = false`, same style as the Group Results
+  screen): 💸 icon, "Challenge verloren." title (red period), white money card showing the captured
+  stake (`€X,XX` formatted from integer cents — never rounds up), encouragement line, "Zurück zum
+  Dashboard" primary button (white bg, black text, 54dp) + "Neue Challenge starten" text link.
+  `HardModeFailViewModel` loads the stake one-shot via `ChallengeRepository.getChallengeById`.
+- Wiring: `ActiveChallengeViewModel.abandonChallenge()` routes **HARD** mode to a new
+  `hardModeFailChallengeId` flow; Soft/Group quit keep the existing `popBackStack()` behavior
+  unchanged. `ActiveChallengeScreen` gained an `onHardModeFail` callback. `MainScreen` registers the
+  new route and navigates to it with `popUpTo(Dashboard)` so the Dashboard always sits below — no
+  black screen even on the deep-link entry path. The pre-existing Dashboard `HardModeFailOverlay`
+  (auto-fail / limit-exceeded path) is untouched.
+
+**Strings (`strings.xml`):** reused existing `hard_fail_title`; added `hard_fail_screen_subtitle`,
+`hard_fail_captured_label`, `hard_fail_captured_subtext`, `hard_fail_encouragement`,
+`hard_fail_back_to_dashboard`, `hard_fail_new_challenge`. The Dashboard overlay's other
+`hard_fail_*` keys were left intact.
+
+**Files changed:** `HistoryDetailScreen.kt`, `ChallengeCreationViewModel.kt`,
+`ActiveChallengeViewModel.kt`, `ActiveChallengeScreen.kt`, `MainScreen.kt`,
+`HardModeFailScreen.kt` (new), `HardModeFailViewModel.kt` (new), `strings.xml`, `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe changes.**
+
 ### AUDIT — Three audit findings reviewed: join-window validation, debug-log cleanup, Room emission race
 
 Three findings from a security/hygiene audit. Verified via `:app:compileDebugKotlin` (exit 0).
@@ -809,8 +928,6 @@ When multiple participants have the same `opensToday`, they receive the same ran
 ---
 
 ### Added
-- **Sentry SDK integration planned** (not yet implemented).
-  Sentry Android SDK is Huawei-compatible — does not require Google Play Services.
 - **Group Challenge Results Screen:** Animated podium with top 3 players (Platz 1 center/tallest,
   Platz 2 left, Platz 3 right), each column rising sequentially. Konfetti rain + Lottie trophy
   animation for Platz 1. Shown once per challenge via SharedPreferences guard

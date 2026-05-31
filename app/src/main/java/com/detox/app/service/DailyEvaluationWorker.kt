@@ -27,7 +27,7 @@ import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.util.DateUtils
-import com.google.firebase.crashlytics.FirebaseCrashlytics
+import io.sentry.Sentry
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -607,7 +607,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
             Result.success()
         } catch (e: Exception) {
             Timber.e(e, "DailyEvaluationWorker failed")
-            FirebaseCrashlytics.getInstance().recordException(e)
+            Sentry.captureException(e)
             Result.retry()
         }
     }

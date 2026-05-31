@@ -13,6 +13,33 @@
 
 ---
 
+## [Unreleased] — June 2026
+
+### FEATURE — New launcher icon: brand-green Shield + Checkmark
+
+Replaced the default Android launcher icon with a Shield + Checkmark design while keeping the
+existing adaptive-icon structure (background/foreground/monochrome layers) and the
+`AndroidManifest.xml` `@mipmap/ic_launcher` + `@mipmap/ic_launcher_round` references unchanged.
+
+- **Background layer** (`drawable/ic_launcher_background.xml`): solid brand green `#00C853`
+  (replaces the old `#3DDC84` Android-default grid).
+- **Foreground layer** (`drawable/ic_launcher_foreground.xml`): white shield centered within the
+  72dp adaptive-icon safe zone (shield bounds x 34–74, y 30–82) with a `#00C853` green checkmark
+  stroked inside it.
+- **Monochrome layer** (`drawable/ic_launcher_monochrome.xml`, new): line-art silhouette (shield
+  outline + check, single `#FFFFFF` fill so the system can tint it) for Android 13+ themed icons.
+  Both `mipmap-anydpi/ic_launcher.xml` and `ic_launcher_round.xml` now point `<monochrome>` at it
+  (was reusing the foreground).
+- **Legacy `.webp` fallbacks** regenerated for mdpi→xxxhdpi (square + round) via a Pillow script
+  (`scripts/render_launcher_icons.py`) — these are only used on legacy render paths; all API 26+
+  devices (min SDK is 26) use the adaptive XML. Verified via `:app:processDebugResources` (exit 0).
+
+**Files changed:** `drawable/ic_launcher_background.xml`, `drawable/ic_launcher_foreground.xml`,
+`drawable/ic_launcher_monochrome.xml` (new), `mipmap-anydpi/ic_launcher.xml`,
+`mipmap-anydpi/ic_launcher_round.xml`, all `mipmap-*/ic_launcher{,_round}.webp`,
+`scripts/render_launcher_icons.py` (new), `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Firestore changes. No Stripe changes.**
+
 ## [Unreleased] — May 2026
 
 ### FEATURE — Legal documents wired to GitHub Pages + clickable consent links

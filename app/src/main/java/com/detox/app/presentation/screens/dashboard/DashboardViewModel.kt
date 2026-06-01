@@ -3,8 +3,10 @@ package com.detox.app.presentation.screens.dashboard
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.detox.app.BuildConfig
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.entity.ChallengeEntity
+import com.detox.app.data.repository.AppConfigRepository
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.DailyStats
@@ -14,6 +16,8 @@ import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
 import com.detox.app.domain.usecase.SyncUserDataUseCase
 import com.detox.app.service.TrackedAppEventBus
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -22,14 +26,28 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import com.detox.app.util.DateUtils
 import timber.log.Timber
 import javax.inject.Inject
+
+private const val KEY_UPDATE_DISMISSED_AT = "update_banner_dismissed_at"
+private const val UPDATE_BANNER_SNOOZE_MS = 3L * 24 * 60 * 60 * 1000 // 3 days
+
+private const val BROADCAST_PREFS = "detox_broadcast"
+private const val KEY_BROADCAST_LAST_SEEN = "last_seen_broadcast_id"
 
 data class SuccessDialogState(
     val challenge: Challenge,
     val allLogs: List<DailyLog>,
     val streak: Int
+)
+
+/** A remote admin broadcast shown once on the Dashboard. */
+data class BroadcastMessage(
+    val id: String,
+    val title: String,
+    val message: String
 )
 
 sealed interface DashboardUiState {
@@ -50,7 +68,32 @@ class DashboardViewModel @Inject constructor(
     private val dailyLogRepository: DailyLogRepository,
     private val database: DetoxDatabase,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
+    private val appConfigRepository: AppConfigRepository,
+    private val firestore: FirebaseFirestore,
 ) : ViewModel() {
+
+    // ── Soft update banner ──────────────────────────────────────────────────────
+    private val updatePrefs =
+        appContext.getSharedPreferences("detox_update_banner", Context.MODE_PRIVATE)
+
+    /** URL opened by the "Aktualisieren" button on the soft-update banner. */
+    val updateUrl: StateFlow<String> = MutableStateFlow("").also { flow ->
+        viewModelScope.launch {
+            appConfigRepository.config.collect { flow.value = it.updateUrl }
+        }
+    }.asStateFlow()
+
+    private val _showUpdateBanner = MutableStateFlow(false)
+    /** True when a newer version is available, not force-blocking, and not recently dismissed. */
+    val showUpdateBanner: StateFlow<Boolean> = _showUpdateBanner.asStateFlow()
+
+    // ── Admin broadcast ───────────────────────────────────────────────────────────
+    private val broadcastPrefs =
+        appContext.getSharedPreferences(BROADCAST_PREFS, Context.MODE_PRIVATE)
+
+    private val _broadcast = MutableStateFlow<BroadcastMessage?>(null)
+    /** Non-null while an unseen active broadcast should be shown (once). Null = hidden. */
+    val broadcast: StateFlow<BroadcastMessage?> = _broadcast.asStateFlow()
 
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -85,6 +128,71 @@ class DashboardViewModel @Inject constructor(
 
     init {
         observeDailyLogChanges()
+        observeUpdateBanner()
+        loadLatestBroadcast()
+    }
+
+    /**
+     * Reads the newest active broadcast from `broadcasts` and surfaces it once. The last-seen
+     * broadcast id is stored in SharedPreferences so a given message shows only a single time;
+     * a brand-new active broadcast (different id) re-triggers. Fail-open: any read error simply
+     * leaves the banner hidden — a broadcast is never critical.
+     */
+    private fun loadLatestBroadcast() {
+        viewModelScope.launch {
+            try {
+                val snap = firestore.collection("broadcasts")
+                    .whereEqualTo("active", true)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(1)
+                    .get()
+                    .await()
+                val doc = snap.documents.firstOrNull() ?: return@launch
+                val lastSeen = broadcastPrefs.getString(KEY_BROADCAST_LAST_SEEN, null)
+                if (doc.id == lastSeen) return@launch // already acknowledged
+                _broadcast.value = BroadcastMessage(
+                    id = doc.id,
+                    title = doc.getString("title") ?: "",
+                    message = doc.getString("message") ?: ""
+                )
+            } catch (e: Exception) {
+                Timber.w(e, "Broadcast load failed (ignored)")
+            }
+        }
+    }
+
+    /** Acknowledges the current broadcast; it will not show again (per-id, stored in prefs). */
+    fun dismissBroadcast() {
+        _broadcast.value?.let { b ->
+            broadcastPrefs.edit().putString(KEY_BROADCAST_LAST_SEEN, b.id).apply()
+        }
+        _broadcast.value = null
+    }
+
+    /**
+     * Shows a dismissible "update available" banner when the installed version is older than
+     * [AppConfig.latestVersionCode]. A force-update (below minVersionCode) is handled by the
+     * blocking ForceUpdateScreen before the user ever reaches the Dashboard, so here we only
+     * surface the *soft* prompt. Dismissal is remembered for [UPDATE_BANNER_SNOOZE_MS].
+     */
+    private fun observeUpdateBanner() {
+        viewModelScope.launch {
+            appConfigRepository.config.collect { config ->
+                val newerAvailable = BuildConfig.VERSION_CODE < config.latestVersionCode
+                val dismissedAt = updatePrefs.getLong(KEY_UPDATE_DISMISSED_AT, 0L)
+                val snoozed =
+                    System.currentTimeMillis() - dismissedAt < UPDATE_BANNER_SNOOZE_MS
+                _showUpdateBanner.value = newerAvailable && !snoozed
+            }
+        }
+    }
+
+    /** Dismisses the soft-update banner; it will not reappear for 3 days. */
+    fun dismissUpdateBanner() {
+        updatePrefs.edit()
+            .putLong(KEY_UPDATE_DISMISSED_AT, System.currentTimeMillis())
+            .apply()
+        _showUpdateBanner.value = false
     }
 
     fun loadStats() {

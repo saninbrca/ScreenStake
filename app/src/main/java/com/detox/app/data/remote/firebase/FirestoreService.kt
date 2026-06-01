@@ -61,6 +61,34 @@ class FirestoreService @Inject constructor(
         }
     }
 
+    // ── Account moderation (ban) ─────────────────────────────────────────────
+
+    /**
+     * Reads the `disabled` flag at users/{uid}. FAIL-OPEN: returns false on any error
+     * (offline / read failure) so a network problem never locks out a legitimate user.
+     * The Firebase Auth `disabled` flag (set by setUserBanStatus) is the hard backstop.
+     */
+    suspend fun isUserDisabled(uid: String): Boolean {
+        return try {
+            firestore.collection("users").document(uid).get().await()
+                .getBoolean("disabled") ?: false
+        } catch (e: Exception) {
+            Timber.w(e, "isUserDisabled read failed — failing open (not disabled) for uid=$uid")
+            false
+        }
+    }
+
+    /** Reads the human-readable ban reason at users/{uid}.disabledReason, or null. */
+    suspend fun getDisabledReason(uid: String): String? {
+        return try {
+            firestore.collection("users").document(uid).get().await()
+                .getString("disabledReason")?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            Timber.w(e, "getDisabledReason read failed for uid=$uid")
+            null
+        }
+    }
+
     // ── Username (unique handle) ─────────────────────────────────────────────
 
     /** Reads the permanent username stored at users/{uid}.username, or null if unset. */

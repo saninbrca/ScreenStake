@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.data.repository.AppConfigRepository
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.ParticipantStatus
@@ -34,9 +35,20 @@ class FriendsHubViewModel @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
     private val firebaseAuthService: FirebaseAuthService,
     private val cloudFunctionsService: CloudFunctionsService,
+    appConfigRepository: AppConfigRepository,
 ) : ViewModel() {
 
     private val userId get() = firebaseAuthService.currentUserId()
+
+    /** Remote kill-switch for NEW Group Challenge creation. Active challenges are unaffected. */
+    val groupChallengeEnabled: StateFlow<Boolean> =
+        appConfigRepository.config
+            .map { it.groupChallengeEnabled }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = appConfigRepository.config.value.groupChallengeEnabled
+            )
 
     // Per-groupId Firestore snapshot observers for WAITING challenges.
     // Cancelled when the challenge is no longer WAITING.

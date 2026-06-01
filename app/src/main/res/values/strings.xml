@@ -816,7 +816,77 @@
     <string name="settings_rate_app">App bewerten</string>
     <string name="settings_send_feedback">Feedback senden</string>
     <string name="settings_contact_support">Support kontaktieren</string>
-    <string name="settings_contact_support_subtitle">sanin.brica@gmail.com</string>
+    <string name="settings_contact_support_subtitle">Wir helfen dir gerne weiter</string>
+
+    <!-- Settings — Hilfe & Support section -->
+    <string name="settings_section_help">HILFE &amp; SUPPORT</string>
+    <string name="settings_faq">Häufige Fragen (FAQ)</string>
+
+    <!-- Common -->
+    <string name="back">Zurück</string>
+
+    <!-- Remote control — Force update -->
+    <string name="force_update_title">Update erforderlich</string>
+    <string name="force_update_message">Eine neue Version von ScreenStake ist verfügbar. Bitte aktualisiere die App um fortzufahren.</string>
+    <string name="force_update_button">Jetzt aktualisieren</string>
+
+    <!-- Remote control — Maintenance -->
+    <string name="maintenance_title">Wartungsarbeiten</string>
+    <string name="maintenance_message_default">ScreenStake wird gerade gewartet. Wir sind in Kürze wieder für dich da.</string>
+    <string name="maintenance_retry">Erneut versuchen</string>
+
+    <!-- Remote control — Feature flags -->
+    <string name="feature_temporarily_unavailable">Vorübergehend nicht verfügbar</string>
+
+    <!-- Remote control — Soft update banner -->
+    <string name="update_banner_title">Eine neue Version ist verfügbar</string>
+    <string name="update_banner_cta">Aktualisieren</string>
+
+    <!-- Account disabled (ban) -->
+    <string name="account_disabled_title">Konto gesperrt</string>
+    <string name="account_disabled_message_default">Dein Konto wurde gesperrt. Bei Fragen kontaktiere den Support.</string>
+    <string name="account_disabled_contact_support">Support kontaktieren</string>
+
+    <!-- Support form -->
+    <string name="support_title">Support kontaktieren</string>
+    <string name="support_label_category">Kategorie</string>
+    <string name="support_category_placeholder">Kategorie auswählen</string>
+    <string name="support_category_bug">Bug melden</string>
+    <string name="support_category_question">Frage</string>
+    <string name="support_category_complaint">Beschwerde</string>
+    <string name="support_category_payout">Auszahlung</string>
+    <string name="support_category_other">Sonstiges</string>
+    <string name="support_label_subject">Betreff</string>
+    <string name="support_subject_placeholder">Worum geht es?</string>
+    <string name="support_label_message">Nachricht</string>
+    <string name="support_message_placeholder">Beschreibe dein Anliegen…</string>
+    <string name="support_submit">Absenden</string>
+    <string name="support_response_time">Wir antworten innerhalb von 48 Stunden per E-Mail.</string>
+    <string name="support_error_category">Bitte wähle eine Kategorie.</string>
+    <string name="support_error_subject">Bitte gib einen Betreff ein.</string>
+    <string name="support_error_message">Bitte beschreibe dein Anliegen (mind. 10 Zeichen).</string>
+    <string name="support_error_submit">Senden fehlgeschlagen. Bitte versuche es erneut.</string>
+    <string name="support_success_title">Deine Anfrage wurde gesendet ✓</string>
+    <string name="support_back">Zurück</string>
+
+    <!-- FAQ -->
+    <string name="faq_title">Häufige Fragen</string>
+    <string name="faq_q1">Wie funktioniert der Hard Mode?</string>
+    <string name="faq_a1">Im Hard Mode hinterlegst du einen Geldbetrag als Einsatz. Hältst du deine Challenge durch, bekommst du dein Geld zurück. Brichst du sie ab oder deaktivierst die nötigen Berechtigungen, wird dein Einsatz eingezogen. So bleibt der Anreiz hoch, wirklich dranzubleiben.</string>
+    <string name="faq_q2">Was passiert wenn ich die Berechtigung deaktiviere?</string>
+    <string name="faq_a2">Wenn du während einer aktiven Hard-Mode-Challenge die Overlay- oder Bedienungshilfen-Berechtigung deaktivierst, wertet die App das als Abbruch. Dein Einsatz kann dann eingezogen werden. Lass die Berechtigungen bis zum Ende der Challenge aktiviert.</string>
+    <string name="faq_q3">Wie bekomme ich mein Geld zurück?</string>
+    <string name="faq_a3">Nach erfolgreichem Abschluss einer Hard-Mode-Challenge wird dein Einsatz zur Auszahlung freigegeben. Hinterlege dazu in den Einstellungen deine IBAN. Die Auszahlung erfolgt anschließend auf dein Bankkonto.</string>
+    <string name="faq_q4">Kann ich meinen Benutzernamen ändern?</string>
+    <string name="faq_a4">Nein. Dein Benutzername ist nach der Vergabe dauerhaft und kann nicht mehr geändert werden. Wähle ihn deshalb bei der Registrierung mit Bedacht.</string>
+    <string name="faq_q5">Was ist eine Gruppen-Challenge?</string>
+    <string name="faq_a5">Bei einer Gruppen-Challenge tretet ihr gemeinsam gegen die Bildschirmzeit an. Alle Teilnehmer zahlen einen Einsatz in einen Pool. Wer durchhält, teilt sich am Ende den Pool der Teilnehmer, die es nicht geschafft haben.</string>
+    <string name="faq_q6">Wie lösche ich mein Konto?</string>
+    <string name="faq_a6">Gehe in den Einstellungen ganz nach unten und tippe auf „Konto löschen“. Dabei werden alle deine Daten unwiderruflich entfernt. Laufende Hard-Mode-Challenges solltest du vorher abschließen.</string>
+    <string name="faq_q7">Warum sehe ich Werbung?</string>
+    <string name="faq_a7">Du siehst keine Werbung. Detox ist komplett werbefrei und finanziert sich ausschließlich über die Gebühren der Hard-Mode-Challenges. Solltest du dennoch Werbung sehen, kontaktiere bitte den Support.</string>
+    <string name="faq_q8">Die App blockiert nicht richtig</string>
+    <string name="faq_a8">Prüfe zuerst, ob alle Berechtigungen (Overlay und Bedienungshilfen) aktiviert sind. Auf Huawei-Geräten musst du Detox zusätzlich von der Akku-Optimierung ausnehmen und den Autostart erlauben: Einstellungen → Apps → Detox → Akku → Autostart aktivieren.</string>
 
     <!-- Welcome Onboarding — Page 0: Willkommen -->
     <string name="welcome_p0_stat_value">4.2h</string>
@@ -1388,5 +1458,8 @@
     <string name="connect_bank_account">Bankkonto verbinden</string>
     <string name="group_bonus_transfer">Bonus (€%1$d) wird auf dein Bankkonto überwiesen</string>
     <string name="notif_overlay_captured_body">Die Overlay-Berechtigung war zu lange deaktiviert. Dein Einsatz wurde eingezogen.</string>
+
+    <!-- Broadcast message (admin → all users) -->
+    <string name="broadcast_acknowledge">Verstanden</string>
 
 </resources>

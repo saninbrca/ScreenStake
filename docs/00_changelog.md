@@ -15,6 +15,253 @@
 
 ## [Unreleased] — June 2026
 
+### FEATURE — Admin Dashboard Paket 3: Statistics, Revenue, Broadcast, Counter Backfill, Remote Stake Limits
+
+Final admin-dashboard expansion: an overview landing tab, revenue tracking, a broadcast system
+(admin → all users), a counter backfill Cloud Function, and remote-controlled stake limits.
+
+- **`backfillCounters` Cloud Function** (`functions/src/index.ts`, onRequest + `requireAdmin`):
+  one-time/sparingly-run recompute. Counts all `users`; scans `collectionGroup("challenges")` for
+  solo Hard Mode (`mode==="hard" && !groupChallengeId`) active/completed/failed; sums revenue =
+  retained app fees on wins (`appFeeAmount`, fallback `floor(20%)`) + full captured stakes on
+  fails + 10% fees from `groupChallenges` with `status=="completed"`. **OVERWRITES** `counters/global`
+  (plain `.set`, not increment). Cost note in code: unbounded scan, admin-gated, manual trigger only.
+  **Deployed.**
+- **Übersicht tab (new, default landing):** first tab, active on load. Cheap live cards read from
+  `counters/global` (Nutzer gesamt / Aktive / Abgeschlossen / Gescheitert / Gesamtumsatz). "Heute"
+  cards via limited queries (`users createdAt>=startOfToday`, `collectionGroup challenges
+  createdAt>=startOfToday`, open-ticket count). Recent activity feed: last 10 challenges
+  (collection-group, `orderBy createdAt desc limit 10`, usernames batch-resolved from parent user
+  docs) + last 5 tickets (reuses loaded tickets). "🧮 Counter neu berechnen" button → confirm modal →
+  `backfillCounters` → reload.
+- **Umsatz tab (new):** Gesamtumsatz / diesen Monat / letzte 7 Tage + breakdown (Hard Mode 20%
+  fees, eingezogene Einsätze, Group 10% fees) + Ausstehende Verbindlichkeiten (sum of
+  `payoutRequests` status `requested`/`pending`). Scans `collectionGroup("challenges")` +
+  completed groups client-side; time-bucketed via `payoutDate`/`completedAt`. **Documented cost
+  tradeoff** (move to counter-based tracking if it grows) — `counters/global.totalRevenueCents`
+  already exists as the cheap alternative.
+- **Broadcast system (Part 4):** new `broadcasts/{id}` collection (`title`, `message`, `createdAt`,
+  `active`). Admin "📢 Broadcast" tab sends (confirm modal → `add` with `active:true`) + lists past
+  broadcasts with Aktivieren/Deaktivieren toggle. **App side** (`DashboardViewModel` +
+  `DashboardScreen`): on Dashboard load reads the newest active broadcast (`whereEqualTo("active",
+  true).orderBy("createdAt", DESC).limit(1)`); if its id differs from the SharedPreferences
+  `last_seen_broadcast_id` (prefs file `detox_broadcast`), shows a one-time `AlertDialog`
+  (title + message + "Verstanden" → stores the id, never shown again). Fail-open: any read error
+  leaves the banner hidden. New string `broadcast_acknowledge`.
+- **Remote stake limits (Part 5):** `AppConfig` gains `hardModeMinStake` (5), `hardModeMaxStake`
+  (100), `groupMinBuyIn` (10), `groupMaxBuyIn` (50) — read from `config/app`, cached in
+  SharedPreferences, **hardcoded fallback so a missing config never breaks the picker**. The Hard
+  Mode stake picker (`ChallengeCreationScreen.Step6Duration`) and Group buy-in picker
+  (`GroupChallengeCreateScreen.GStep4BuyIn`) now build their `DetoxHorizontalPicker` range from
+  AppConfig (`(safeMin..safeMax)`, value `coerceIn`'d), replacing the hardcoded `(5..100)` /
+  `(10..50)`. `GroupChallengeCreateViewModel` now injects `AppConfigRepository` and exposes
+  `appConfig`. Admin App Config tab gains 4 number fields wired into `loadConfig`/`saveConfig`.
+- **Firestore rules:** new `broadcasts/{id}` — `read: if request.auth != null`,
+  `write: if admin email`. **Deployed.**
+- **Indexes:** new composite `broadcasts (active ASC, createdAt DESC)` + collection-group
+  `fieldOverride` for `challenges.createdAt` (ASC + DESC, COLLECTION + COLLECTION_GROUP scope) so
+  the Übersicht/today/recent collection-group queries work. **Deployed** (`firebase deploy --only
+  firestore:rules,firestore:indexes,functions:backfillCounters`).
+
+**ACTION REQUIRED:** run "🧮 Counter neu berechnen" once in the dashboard to seed `counters/global`
+with real current totals. Optionally set the stake-limit fields in App Config (defaults apply if unset).
+
+**Files changed:** `functions/src/index.ts`, `admin/index.html`, `firestore.rules`,
+`firestore.indexes.json`, `data/repository/AppConfigRepository.kt`,
+`presentation/screens/challengecreation/ChallengeCreationScreen.kt`,
+`presentation/screens/groupchallenge/create/{GroupChallengeCreateScreen,GroupChallengeCreateViewModel}.kt`,
+`presentation/screens/dashboard/{DashboardScreen,DashboardViewModel}.kt`, `res/values/strings.xml`,
+`docs/00_changelog.md`
+**New Firestore: `broadcasts` collection; `config/app` stake-limit fields. New CF: `backfillCounters`.
+No Room schema changes. No Stripe flow changes.**
+
+### FEATURE — Admin Dashboard Paket 2: Enhanced Support Ticket Management
+
+Made support tickets powerful in the admin dashboard (`admin/index.html`) — full user context,
+private internal notes, archived dashboard replies, and filtering. **Admin-dashboard-only — no
+user-facing app changes.**
+
+- **Ticket detail panel (large modal):** clicking any ticket row opens a scrollable detail modal
+  (`#ticket-modal`) with: **Ticket-Info** (category, subject, full message, status, created/resolved
+  dates, device model, Android + app version) and an auto-loaded **Benutzer-Kontext** section
+  (username, email, member since, account status Aktiv/Gesperrt, challenge counts gesamt/aktiv/
+  gewonnen/verloren, payment summary eingesetzt/erstattet/einbehalten, "Dieser User hat X weitere
+  Tickets gestellt", and a "Vollständiges Profil ansehen →" link → switches to the Benutzer tab and
+  opens that user's detail via `gotoUserProfile`). User context is loaded from the ticket's `userId`
+  (same queries as the Benutzer tab, minus the redundant payout query).
+- **Interne Notizen (admin-only, truly private):** stored in a **separate sub-collection**
+  `supportTickets/{ticketId}/adminNotes/{noteId}` (`{ note, createdAt }`, epoch millis) written via
+  `.add()`. NOT an array field on the ticket doc — because the ticket owner can read their own ticket
+  doc, array notes would leak to them. The sub-collection rule is admin-read/write-only so notes
+  never reach the user. UI: notes list (newest first) + text field + "📝 Notiz hinzufügen"
+  (`addAdminNote` / `loadAdminNotes`).
+- **Dashboard reply (archive):** new ticket-doc fields `adminReply` (String) + `adminReplyAt`
+  (Long, epoch millis). "Antwort" section with a textarea (pre-filled with any existing reply),
+  an "Als erledigt markieren" checkbox (defaults checked unless already resolved), and two buttons:
+  **"✉️ Per E-Mail antworten"** (saves `adminReply` + opens `mailto:` with the reply pre-filled in
+  the body) and **"💾 Nur speichern"** (saves without email) — both via `saveTicketReply(sendEmail)`,
+  which also sets `status='resolved'` + `resolvedAt` when the checkbox is ticked. **The actual reply
+  reaches the user via email; `adminReply` is the admin's archive only** (the app has no in-app reply
+  view, and although the user *could* read `adminReply` via direct Firestore, the app never surfaces it).
+- **Filter & search (client-side on loaded tickets):** the two separate open/resolved tables were
+  merged into a **single filterable list** (`allTickets = open + resolved`, `tickets-content`) with a
+  filter bar — category dropdown (Alle/Bug/Frage/Beschwerde/Auszahlung/Sonstiges), status dropdown
+  (Alle/Offen/In Bearbeitung/Erledigt), sort (Neueste/Älteste zuerst, default newest), and a
+  username/subject search box. All filtering/sorting is client-side in `renderTickets()`. Rows are
+  click-to-open; a ✉️ marker shows tickets that have a saved reply. The "Offene Tickets" stat card
+  still counts `openTickets` only. `markInProgress` retained (now also closes the modal + refreshes);
+  the old per-row `confirmResolve`/`replyTicket`/`renderOpenTickets`/`renderResolvedTickets` and the
+  `resolveTicket` confirm-modal branch were removed (dead code).
+- **Firestore rules:** new `supportTickets/{ticketId}/adminNotes/{noteId}` sub-collection match —
+  `allow read, write: if request.auth.token.email == "sanin.brica@gmail.com"` (admin-only; the parent
+  ticket read rule does NOT cascade to sub-collections, so the owner can never read notes). The
+  existing admin `update` rule on the ticket doc is field-unrestricted, so `adminReply`/`adminReplyAt`
+  + `status`/`resolvedAt` writes are already covered (comment added). **Deployed** (`firebase deploy
+  --only firestore:rules` → compiled + released successfully).
+
+**Files changed:** `admin/index.html`, `firestore.rules`, `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Stripe changes. New Firestore:
+`supportTickets/{id}/adminNotes` sub-collection; `supportTickets.adminReply`/`adminReplyAt` fields.**
+
+### FEATURE — Admin Dashboard Paket 1: Counters + User Management + Ban System
+
+Data foundation + user moderation for the admin dashboard. (Statistics dashboards and
+broadcast are Paket 3 — not built here.)
+
+- **Counter document `counters/global`** (best-effort dashboard stats): `totalUsers`,
+  `totalActiveChallenges`, `totalCompletedChallenges`, `totalFailedChallenges`,
+  `totalRevenueCents`, `updatedAt`. All updates use `FieldValue.increment` (never
+  read-then-write) via a `bumpCounters()` helper wrapped in try/catch — **a counter failure
+  never blocks a payment/challenge op**. Increment points (Cloud Functions, `functions/src/index.ts`):
+  - `onUserCreated` (new v1 Firestore `onCreate(users/{userId})` trigger) → `totalUsers +1`.
+  - `createPaymentIntent` (solo, `!isGroupChallenge`) → `totalActiveChallenges +1`.
+  - `capturePayment` (Hard fail / emergency unlock) → active −1, failed +1, revenue += captured.
+  - `cancelOrRefundPayment` (solo/redemption win) → active −1, completed +1, revenue += app fee.
+  - `checkPermissionViolations` (permission + usage capture) → active −1, failed +1, revenue += captured.
+  - `completeGroupChallenge` (someone-failed) → revenue += 10% group fee.
+  - **Scope note:** active/completed/failed track **Hard Mode** challenges only (the events with
+    an authoritative server-side money step); Soft Mode has no reliable completion signal and is
+    excluded to keep counts balanced. Doc auto-creates on first increment (`set(merge)`).
+- **Ban system — both layers** via new CF `setUserBanStatus` (onRequest, admin-email auth):
+  Layer 2 `admin.auth().updateUser(uid, { disabled })` (hard — blocks token refresh/sign-in) +
+  Layer 1 Firestore `users/{uid}.{disabled, disabledReason, disabledAt}` (instant, app-startup
+  enforced). A banned user with an active Hard Mode stake is NOT auto-refunded — existing capture
+  rules apply.
+- **`AccountDisabledScreen`** (`presentation/screens/system/`, route `account_disabled`): 🚫 red,
+  `BackHandler` blocks back, shows `disabledReason` or default, "Support kontaktieren" → mailto.
+  Backed by `AccountDisabledViewModel`.
+- **`MainActivity` startup ban gate:** after the AppConfig (force-update/maintenance) checks and
+  before normal navigation, reads `users/{uid}.disabled` via `FirestoreService.isUserDisabled`
+  (**fail-open** — read error → not blocked; Auth-disable is the hard backstop).
+- **Admin dashboard "👤 Benutzer" tab:** user search by username OR email (two queries merged —
+  Firestore can't OR across fields); detail view (account info + consent + Stripe/IBAN status,
+  challenge history with counts, payment totals staked/refunded/captured, support tickets);
+  "Sperren"/"Entsperren" actions with a `reason` prompt + confirmation modal → `setUserBanStatus`.
+- **Firestore rules:** new `counters/{doc}` (admin read, CF-only write); `users` rule now allows
+  **admin read/list** (user search) and admin-only writes to the ban fields, and the **owner
+  self-update now blocks `disabled`/`disabledReason`/`disabledAt`** (prevents a banned user
+  self-unbanning within their 1h token window). **Deployed** (functions + rules).
+
+**Files changed:** `functions/src/index.ts`,
+`presentation/screens/system/{AccountDisabledScreen,AccountDisabledViewModel}.kt` (new),
+`data/remote/firebase/FirestoreService.kt`, `MainActivity.kt`,
+`presentation/navigation/DetoxNavGraph.kt`, `res/values/strings.xml`, `firestore.rules`,
+`admin/index.html`, `docs/00_changelog.md`
+**New Firestore: `counters/global` doc, `users.disabled/disabledReason/disabledAt` fields.
+New CFs: `setUserBanStatus`, `onUserCreated`. No Room schema changes. No Stripe flow changes.**
+
+### FEATURE — Huawei-safe remote control: Feature Flags + Maintenance + Force Update
+
+A single Firestore document `config/app` now remotely controls the app — no Firebase Remote
+Config (incompatible with Huawei/no-GMS). All reads go through the existing `FirebaseFirestore`
+instance. **Fail-open contract:** a missing doc or any read error (offline/Huawei) keeps cached
+or safe defaults and NEVER locks the user out.
+
+- **`config/app` document fields:** `minVersionCode` (Int), `latestVersionCode` (Int),
+  `maintenanceMode` (Bool), `maintenanceMessage` (String), `hardModeEnabled` (Bool),
+  `groupChallengeEnabled` (Bool), `updateUrl` (String). Safe defaults: minVersionCode=1,
+  maintenanceMode=false, hardModeEnabled=true, groupChallengeEnabled=true.
+- **`data/repository/AppConfigRepository.kt` (new):** `@Singleton`, injects `FirebaseFirestore`
+  + `@ApplicationContext`. Exposes `config: StateFlow<AppConfig>`; `refresh()` reads `config/app`,
+  mirrors to SharedPreferences (`detox_app_config`) and never throws (returns cached/defaults on
+  failure). `AppConfig` data class holds the seven fields.
+- **Startup gating (`MainActivity.onCreate`):** after computing the normal start destination,
+  `appConfigRepository.refresh()` runs, then — highest priority — `VERSION_CODE < minVersionCode`
+  → `ForceUpdateScreen`; else `maintenanceMode` → `MaintenanceScreen`; else normal destination.
+  Offline → fail-open into the app. The real destination is threaded into `DetoxNavGraph`
+  (`maintenanceClearedDestination`) so maintenance "Erneut versuchen" can forward the user once
+  cleared.
+- **`presentation/screens/system/` (new):** `ForceUpdateScreen` (route `force_update`, ⬆️ icon
+  #00C853, `BackHandler` blocks back, "Jetzt aktualisieren" opens `updateUrl`), `MaintenanceScreen`
+  (route `maintenance`, 🔧 icon #FF9500, shows `maintenanceMessage` or default, "Erneut versuchen"
+  re-reads config and proceeds only if cleared), `SystemViewModel` (config flow + retry).
+- **Feature flags (NEW creation only — active challenges untouched):**
+  - Hard Mode: `hardModeEnabled=false` greys the Hard Mode card in the wizard Step 1
+    (`ChallengeCreationScreen`) with "Vorübergehend nicht verfügbar"; `selectMode` also guards
+    server-side. Flag exposed via `ChallengeCreationViewModel.appConfig`.
+  - Group Challenge: `groupChallengeEnabled=false` disables the "Erstellen" button in
+    `FriendsHubScreen` + shows the unavailable note. Flag from `FriendsHubViewModel.groupChallengeEnabled`.
+- **Soft update banner (`DashboardScreen`):** dismissible green banner when
+  `VERSION_CODE < latestVersionCode` (and not force-blocked). "Aktualisieren" opens `updateUrl`;
+  dismissal stored in `detox_update_banner` SharedPreferences and re-shows after 3 days
+  (`DashboardViewModel.showUpdateBanner` / `dismissUpdateBanner`).
+- **Firestore rules:** `match /config/app` — `read: if request.auth != null`,
+  `write: if request.auth.token.email == "sanin.brica@gmail.com"`. **Deployed** (`firebase deploy
+  --only firestore:rules` → released successfully).
+- **Admin dashboard:** fourth tab "⚙️ App Config" — toggles (Wartungsmodus, Hard Mode,
+  Gruppen-Challenge), text fields (Wartungsnachricht, Update URL), number fields (min/latest
+  VersionCode), "Speichern" writes via `.set(payload, { merge: true })`. Loads on tab open.
+
+**Files changed:** `data/repository/AppConfigRepository.kt` (new),
+`presentation/screens/system/{ForceUpdateScreen,MaintenanceScreen,SystemViewModel}.kt` (new),
+`MainActivity.kt`, `presentation/navigation/DetoxNavGraph.kt`,
+`presentation/screens/challengecreation/{ChallengeCreationScreen,ChallengeCreationViewModel}.kt`,
+`presentation/screens/friends/{FriendsHubScreen,FriendsHubViewModel}.kt`,
+`presentation/screens/dashboard/{DashboardScreen,DashboardViewModel}.kt`, `res/values/strings.xml`,
+`firestore.rules`, `admin/index.html`, `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Stripe changes. New Firestore doc: `config/app`.**
+
+### FEATURE — In-App Support System + Admin Support-Tickets tab + security fix
+
+Added an in-app support flow (contact form + FAQ), extended the admin dashboard with a
+Support-Tickets tab, secured the new `supportTickets` collection in Firestore rules, and
+removed a hardcoded admin password comment.
+
+- **SECURITY (Part 0):** Removed the `<!-- ADMIN PASSWORD: admin123 -->` comment from line 1
+  of `admin/index.html`. Passwords must never live in code/comments. **ACTION REQUIRED:** verify
+  the Firebase admin account password is NOT `admin123` and change it in the Firebase console if so.
+- **Settings (Part 1):** Replaced the two `mailto:` rows ("Feedback senden" / "Support
+  kontaktieren") with a new **HILFE & SUPPORT** section (above APP INFO) containing
+  "Support kontaktieren" → `SupportScreen` and "Häufige Fragen (FAQ)" → `FaqScreen`. New nav
+  callbacks `onNavigateToSupport` / `onNavigateToFaq` wired in `MainScreen.kt` (routes `support`, `faq`).
+- **Support form:** `SupportScreen.kt` + `SupportViewModel.kt`. iOS-style white card (bg `#F2F2F7`):
+  Kategorie dropdown (Bug/Frage/Beschwerde/Auszahlung/Sonstiges), Betreff (single line), Nachricht
+  (multiline). Validates category + subject + message≥10 chars. On submit writes a **new** doc via
+  `supportTickets.add()` (auto-ID — NOT `SetOptions.merge`, this is a create not an upsert) with
+  fields: userId, username, email (all from Firebase Auth), category, subject, message,
+  status="open", appVersion (`BuildConfig.VERSION_NAME`), deviceModel (`Build.MANUFACTURER+MODEL`),
+  androidVersion (`Build.VERSION.RELEASE`), createdAt (epoch millis), resolvedAt (null). Success →
+  confirmation screen; failure → inline error.
+- **FAQ (Part 2):** `FaqScreen.kt` — 8 expandable cards (chevron rotates) with all Q&A in
+  `strings.xml` (`faq_q1..8` / `faq_a1..8`), German.
+- **Admin (Part 3):** Third tab "💬 Support Tickets" + "Offene Tickets" stat card. Open tickets
+  query `where('status','in',['open','in_progress']).orderBy('createdAt','desc')`; resolved
+  `where('status','==','resolved').orderBy('resolvedAt','desc')`. Actions: "In Bearbeitung"
+  (status='in_progress'), "Erledigt" (status='resolved' + `resolvedAt: Date.now()` millis to match
+  the Android format), "Antworten" (`mailto:` to the ticket's Firebase-Auth email). Category +
+  status colored badges.
+- **Firestore rules (Part 4):** New `supportTickets` match block — user may `create` only with
+  `userId == request.auth.uid` and `read` only their own; `update`/`list` gated on
+  `request.auth.token.email == "sanin.brica@gmail.com"`; `delete: false`. **ACTION REQUIRED:**
+  `firebase deploy --only firestore:rules`.
+
+**Files changed:** `presentation/screens/settings/SettingsScreen.kt`,
+`presentation/navigation/MainScreen.kt`, `presentation/screens/support/SupportScreen.kt` (new),
+`presentation/screens/support/SupportViewModel.kt` (new),
+`presentation/screens/support/FaqScreen.kt` (new), `res/values/strings.xml`, `firestore.rules`,
+`admin/index.html`, `docs/00_changelog.md`
+**No Cloud Function changes. No Room schema changes. No Stripe changes. New Firestore collection: `supportTickets`.**
+
 ### FEATURE — New launcher icon: brand-green Shield + Checkmark
 
 Replaced the default Android launcher icon with a Shield + Checkmark design while keeping the

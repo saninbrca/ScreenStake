@@ -63,6 +63,31 @@ function handleError(tag: string, e: unknown, res: functions.Response): void {
   }
 }
 
+// ── Counters (best-effort dashboard statistics) ─────────────────────────────────
+// Atomically bumps fields on counters/global via FieldValue.increment (never
+// read-then-write). BEST EFFORT: any failure is logged and swallowed — a counter
+// update must NEVER block or fail a payment / challenge operation.
+//
+// Scope note: challenge active/completed/failed counters track HARD MODE solo
+// challenges only — those are the events with an authoritative server-side money
+// step (createPaymentIntent / capturePayment / cancelOrRefundPayment / permission
+// capture), so the counts stay balanced. Soft Mode challenges have no reliable
+// server-side completion signal and are intentionally excluded. totalRevenueCents
+// also includes the 10% Group Challenge fee.
+const ADMIN_EMAIL = "sanin.brica@gmail.com";
+
+async function bumpCounters(deltas: Record<string, number>): Promise<void> {
+  try {
+    const update: Record<string, unknown> = { updatedAt: Date.now() };
+    for (const [key, value] of Object.entries(deltas)) {
+      update[key] = admin.firestore.FieldValue.increment(value);
+    }
+    await admin.firestore().collection("counters").doc("global").set(update, { merge: true });
+  } catch (e) {
+    functions.logger.error("bumpCounters failed (non-fatal)", { deltas, error: e });
+  }
+}
+
 // ── Participant type ───────────────────────────────────────────────────────────
 
 interface Participant {
@@ -108,6 +133,12 @@ export const createPaymentIntent = functions.region(REGION).https.onRequest(asyn
       .collection("challenges").doc(challengeId)
       .set({ stripePaymentIntentId: paymentIntent.id, stripeCustomerId: customerId }, { merge: true });
 
+    // Counter: a solo Hard Mode challenge is being started. Group buy-ins are tracked
+    // separately and excluded here. (Best-effort; PaymentSheet cancel may slightly over-count.)
+    if (!isGroupChallenge) {
+      await bumpCounters({ totalActiveChallenges: 1 });
+    }
+
     res.json({ paymentIntentId: paymentIntent.id, clientSecret: paymentIntent.client_secret, isImmediateCapture });
   } catch (e) { handleError("createPaymentIntent", e, res); }
 });
@@ -129,6 +160,14 @@ export const capturePayment = functions.region(REGION).https.onRequest(async (re
         amountCaptured: paymentIntent.amount_received,
         capturedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+    // Counter: Hard Mode fail (worker fail path / emergency unlock). The full captured
+    // stake is service revenue.
+    await bumpCounters({
+      totalActiveChallenges: -1,
+      totalFailedChallenges: 1,
+      totalRevenueCents: paymentIntent.amount_received,
+    });
 
     res.json({ success: true });
   } catch (e) { handleError("capturePayment", e, res); }
@@ -222,6 +261,14 @@ export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(as
           appFeeAmount: fullAmount - refundedAmount,
           payoutDate: Date.now(),
         }, { merge: true });
+
+      // Counter: a solo Hard Mode (or Redemption) challenge was won. The retained app
+      // fee (stake minus refund) is service revenue.
+      await bumpCounters({
+        totalActiveChallenges: -1,
+        totalCompletedChallenges: 1,
+        totalRevenueCents: fullAmount - refundedAmount,
+      });
     }
 
     res.json({ success: true });
@@ -1029,6 +1076,9 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
       participants: updatedParticipants,
     });
 
+    // Counter: the 10% Group Challenge fee on the failed-participants pot is service revenue.
+    await bumpCounters({ totalRevenueCents: appFee });
+
     functions.logger.info("completeGroupChallenge: completed", { groupId });
     res.json({ success: true });
   } catch (e) { handleError("completeGroupChallenge", e, res); }
@@ -1198,12 +1248,17 @@ async function runPermissionViolationCheck(): Promise<number> {
       if (!paymentIntentId) continue;
 
       try {
-        await getStripe().paymentIntents.capture(paymentIntentId);
+        const capturedPi = await getStripe().paymentIntents.capture(paymentIntentId);
         await challenge.ref.update({
           status: "failed",
           failReason: "permission_violation",
           failedAt: now,
           payoutStatus: "captured",
+        });
+        await bumpCounters({
+          totalActiveChallenges: -1,
+          totalFailedChallenges: 1,
+          totalRevenueCents: capturedPi.amount_received,
         });
         functions.logger.info(`checkPermissionViolations: captured solo challenge ${challenge.id} user ${userId}`);
       } catch (e) {
@@ -1266,12 +1321,17 @@ async function runPermissionViolationCheck(): Promise<number> {
       if (!paymentIntentId) continue;
 
       try {
-        await getStripe().paymentIntents.capture(paymentIntentId);
+        const capturedPi = await getStripe().paymentIntents.capture(paymentIntentId);
         await challenge.ref.update({
           status: "failed",
           failReason: "usage_violation",
           failedAt: now,
           payoutStatus: "captured",
+        });
+        await bumpCounters({
+          totalActiveChallenges: -1,
+          totalFailedChallenges: 1,
+          totalRevenueCents: capturedPi.amount_received,
         });
         functions.logger.info(`checkPermissionViolations: usage violation captured solo challenge ${challenge.id} user ${userId}`);
       } catch (e) {
@@ -1337,3 +1397,138 @@ async function getOrCreateStripeCustomer(userId: string): Promise<string> {
 
   return customer.id;
 }
+
+// ── Admin auth helper ──────────────────────────────────────────────────────────
+// Verifies the caller's ID token AND that the token email matches the admin account.
+async function requireAdmin(req: functions.https.Request): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new HttpError(401, "Missing Authorization: Bearer <token>");
+  }
+  let decoded: admin.auth.DecodedIdToken;
+  try {
+    decoded = await admin.auth().verifyIdToken(authHeader.slice(7));
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    throw new HttpError(401, "Invalid or expired ID token.");
+  }
+  if (decoded.email !== ADMIN_EMAIL) {
+    throw new HttpError(403, "Admin privileges required.");
+  }
+}
+
+// ── totalUsers counter trigger ──────────────────────────────────────────────────
+// Fires once when a users/{userId} document is first created (registration).
+export const onUserCreated = functions.region(REGION).firestore
+  .document("users/{userId}")
+  .onCreate(async () => {
+    await bumpCounters({ totalUsers: 1 });
+  });
+
+// ── setUserBanStatus ────────────────────────────────────────────────────────────
+// Admin-only. Bans/unbans a user on BOTH layers:
+//   1) Firebase Auth `disabled` flag (hard — blocks token refresh / new sign-in)
+//   2) Firestore users/{uid} flag (instant — enforced at app startup)
+// A banned user with an active Hard Mode challenge keeps the existing capture rules;
+// this never refunds a stake.
+export const setUserBanStatus = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const { uid, banned, reason } = req.body as {
+      uid?: string;
+      banned?: boolean;
+      reason?: string;
+    };
+    if (!uid) throw new HttpError(400, "uid is required.");
+    if (typeof banned !== "boolean") throw new HttpError(400, "banned (boolean) is required.");
+
+    // Layer 2 — Firebase Auth hard disable.
+    await admin.auth().updateUser(uid, { disabled: banned });
+
+    // Layer 1 — Firestore flag for instant in-app enforcement.
+    await admin.firestore().collection("users").doc(uid).set({
+      disabled: banned,
+      disabledReason: banned ? (reason ?? "") : null,
+      disabledAt: banned ? Date.now() : null,
+    }, { merge: true });
+
+    functions.logger.info(`setUserBanStatus: uid=${uid} banned=${banned}`);
+    res.json({ success: true, uid, banned });
+  } catch (e) { handleError("setUserBanStatus", e, res); }
+});
+
+// ── backfillCounters ─────────────────────────────────────────────────────────────
+// Admin-only, one-time (run sparingly — scans ALL users + ALL challenges). Recomputes
+// counters/global from scratch and OVERWRITES the doc (not increment). Use to seed the
+// counter after introducing the live increments, or to repair drift.
+//
+// Scope matches bumpCounters: active/completed/failed track solo HARD MODE challenges
+// only (mode === "hard" && no groupChallengeId). totalRevenueCents = retained app fees
+// on wins (appFeeAmount, fallback floor(20%)) + full captured stakes on fails/abandons
+// + 10% Group Challenge fees from completed groups.
+//
+// COST NOTE: this is an unbounded collectionGroup + collection scan. It is intentionally
+// admin-gated and meant to be triggered manually, not on a schedule.
+export const backfillCounters = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const db = admin.firestore();
+
+    // 1. Total users.
+    const usersSnap = await db.collection("users").get();
+    const totalUsers = usersSnap.size;
+
+    // 2. All challenges (collection-group scan).
+    let totalActiveChallenges = 0;
+    let totalCompletedChallenges = 0;
+    let totalFailedChallenges = 0;
+    let totalRevenueCents = 0;
+
+    const challengesSnap = await db.collectionGroup("challenges").get();
+    challengesSnap.forEach((doc) => {
+      const c = doc.data();
+      // Counter scope: solo Hard Mode only (matches the live bumpCounters increments).
+      const isSoloHard = c.mode === "hard" && !c.groupChallengeId;
+      if (!isSoloHard) return;
+
+      const status = c.status as string | undefined;
+      const payoutStatus = c.payoutStatus as string | undefined;
+      const amountCents = typeof c.amountCents === "number" ? c.amountCents : 0;
+      const appFeeAmount = typeof c.appFeeAmount === "number" ? c.appFeeAmount : 0;
+
+      if (payoutStatus === "refunded" || status === "completed") {
+        // Win: app keeps the recorded fee (or floor(20%) if not stored).
+        totalCompletedChallenges++;
+        totalRevenueCents += appFeeAmount > 0 ? appFeeAmount : Math.floor(amountCents * 0.20);
+      } else if (payoutStatus === "captured" || status === "failed") {
+        // Fail / abandon / permission capture: the full stake is service revenue.
+        totalFailedChallenges++;
+        totalRevenueCents += amountCents;
+      } else if (status === "active") {
+        totalActiveChallenges++;
+      }
+    });
+
+    // 3. Group Challenge 10% fees (completed groups only).
+    const groupsSnap = await db.collection("groupChallenges").where("status", "==", "completed").get();
+    groupsSnap.forEach((doc) => {
+      const g = doc.data();
+      if (typeof g.appFee === "number") totalRevenueCents += g.appFee;
+    });
+
+    const counters = {
+      totalUsers,
+      totalActiveChallenges,
+      totalCompletedChallenges,
+      totalFailedChallenges,
+      totalRevenueCents,
+      updatedAt: Date.now(),
+    };
+
+    // OVERWRITE (not increment) — this is the authoritative recompute.
+    await db.collection("counters").doc("global").set(counters);
+
+    functions.logger.info("backfillCounters complete", counters);
+    res.json({ success: true, counters });
+  } catch (e) { handleError("backfillCounters", e, res); }
+});

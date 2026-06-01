@@ -7,12 +7,24 @@ service cloud.firestore {
     // User can read/write their own profile. Stripe account fields are
     // Cloud-Function-only: the CF uses Admin SDK which bypasses these rules.
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // Owner reads own doc; admin may read/list ALL users (dashboard user search).
+      allow read: if request.auth != null
+        && (request.auth.uid == userId
+            || request.auth.token.email == "sanin.brica@gmail.com");
       allow create: if request.auth != null && request.auth.uid == userId;
+      // Owner self-update — Stripe + moderation (ban) fields are NOT client-writable.
+      // (The ban fields must be CF/admin-only, else a banned user could self-unban
+      //  within their token's 1h validity window.)
       allow update: if request.auth != null
         && request.auth.uid == userId
         && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['stripeConnectedAccountId', 'stripeCustomerId']);
+          .hasAny(['stripeConnectedAccountId', 'stripeCustomerId',
+                   'disabled', 'disabledReason', 'disabledAt']);
+      // Admin may flip ONLY the ban flag fields (setUserBanStatus CF also does this
+      // via Admin SDK, which bypasses rules — this is the defensive client path).
+      allow update: if request.auth.token.email == "sanin.brica@gmail.com"
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['disabled', 'disabledReason', 'disabledAt']);
       allow delete: if false;
     }
 
@@ -44,6 +56,19 @@ service cloud.firestore {
       match /dailyLogs/{logId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+    }
+
+    // ── Challenges — admin collection-group read ──────────────────────────────
+    // The per-user rule above (match /users/{userId}/challenges/{challengeId}) does
+    // NOT authorise collectionGroup("challenges") queries — those are evaluated only
+    // against recursive-wildcard rules. The admin dashboard (Übersicht "Heute",
+    // Umsatz, recent-activity feed, backfillCounters fallback) needs to read EVERY
+    // user's challenges, so grant the admin a collection-group read across all
+    // `challenges` sub-collections at any path. This is ADDITIVE — the owner's
+    // per-user read/create/update/delete rules above are unchanged, so normal users
+    // still only access their own challenges.
+    match /{path=**}/challenges/{challengeId} {
+      allow read: if request.auth.token.email == "sanin.brica@gmail.com";
     }
 
     // ── Daily logs (flat sub-collection under users) ──────────────────────────
@@ -142,12 +167,16 @@ service cloud.firestore {
     // User can create their own request (no status/paidAt on creation).
     // Updates are Cloud-Function/admin-only (marking as paid/rejected).
     match /payoutRequests/{requestId} {
+      // A user reads their own requests; the admin may read/list ALL of them
+      // (the dashboard queries the whole collection with no userId filter).
       allow read: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+        && (resource.data.userId == request.auth.uid
+            || request.auth.token.email == "sanin.brica@gmail.com");
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid
         && !request.resource.data.keys().hasAny(['status', 'paidAt']);
-      allow update: if false;
+      // Admin marks requests paid/rejected from the dashboard. Clients can't.
+      allow update: if request.auth.token.email == "sanin.brica@gmail.com";
       allow delete: if false;
     }
 
@@ -162,6 +191,55 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && !exists(/databases/$(database)/documents/usernames/$(username));
       allow update, delete: if false;
+    }
+
+    // ── Support tickets ───────────────────────────────────────────────────────
+    // A user creates tickets for themselves (userId must match their uid) and can
+    // read only their own. Resolving/listing tickets is admin-only, gated on the
+    // admin's verified email. Tickets are never deleted.
+    // NOTE: the admin `update` rule is unrestricted on fields, so the admin
+    // dashboard's adminReply/adminReplyAt + status/resolvedAt writes are covered.
+    // adminReply lives on the ticket doc (the user CAN read it via direct Firestore
+    // access, but the app never surfaces it) — truly private content goes in the
+    // adminNotes sub-collection below instead.
+    match /supportTickets/{ticketId} {
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      allow update, list: if request.auth.token.email == "sanin.brica@gmail.com";
+      allow delete: if false;
+
+      // ── Internal admin notes (private) ──────────────────────────────────────
+      // Lives in its own sub-collection so the ticket owner can NEVER read it
+      // (the parent ticket read rule does NOT cascade to sub-collections).
+      // Admin-only read AND write, gated on the admin's verified email.
+      match /adminNotes/{noteId} {
+        allow read, write: if request.auth.token.email == "sanin.brica@gmail.com";
+      }
+    }
+
+    // ── Counters (dashboard statistics) ───────────────────────────────────────
+    // Admin-only read. Writes are Cloud-Function-only (Admin SDK bypasses rules).
+    match /counters/{doc} {
+      allow read: if request.auth.token.email == "sanin.brica@gmail.com";
+      allow write: if false;
+    }
+
+    // ── Broadcasts (admin → all users) ────────────────────────────────────────
+    // Any authenticated client reads the latest active broadcast (shown once as a
+    // Dashboard dialog). Only the admin may create/update/deactivate broadcasts.
+    match /broadcasts/{broadcastId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.token.email == "sanin.brica@gmail.com";
+    }
+
+    // ── Remote app config (single doc: config/app) ────────────────────────────
+    // Any authenticated client may read (feature flags, maintenance, version gates).
+    // Only the admin may write — flipping maintenance / force-update / feature flags.
+    match /config/app {
+      allow read: if request.auth != null;
+      allow write: if request.auth.token.email == "sanin.brica@gmail.com";
     }
 
     // ── Admin collection ──────────────────────────────────────────────────────

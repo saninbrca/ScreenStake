@@ -26,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
@@ -120,6 +122,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToLogin: () -> Unit,
     onNavigateToHistory: () -> Unit = {},
+    onNavigateToSupport: () -> Unit = {},
+    onNavigateToFaq: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -570,8 +574,26 @@ fun SettingsScreen(
                 )
             }
 
-            // ── 8. APP INFO ────────────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_app_info), entranceDelayMs = 420) {
+            // ── 8. HILFE & SUPPORT ─────────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_help), entranceDelayMs = 420) {
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.SupportAgent, GreenColor) },
+                    label = stringResource(R.string.settings_contact_support),
+                    subtitle = stringResource(R.string.settings_contact_support_subtitle),
+                    showChevron = true,
+                    onClick = onNavigateToSupport
+                )
+                IosRowDivider()
+                IosRow(
+                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.HelpOutline, PurpleColor) },
+                    label = stringResource(R.string.settings_faq),
+                    showChevron = true,
+                    onClick = onNavigateToFaq
+                )
+            }
+
+            // ── 9. APP INFO ────────────────────────────────────────────────────
+            IosSection(stringResource(R.string.settings_section_app_info), entranceDelayMs = 480) {
                 IosRow(
                     iconContent = { IosIconBox(Icons.Filled.Info, GreyIconBg) },
                     label = stringResource(R.string.settings_version),
@@ -604,35 +626,6 @@ fun SettingsScreen(
                                 )
                             )
                         }
-                    }
-                )
-                IosRowDivider()
-                IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Email, GreenColor) },
-                    label = stringResource(R.string.settings_send_feedback),
-                    showChevron = true,
-                    onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("mailto:sanin.brica@gmail.com")
-                                putExtra(Intent.EXTRA_SUBJECT, "Detox App Feedback")
-                            }
-                        )
-                    }
-                )
-                IosRowDivider()
-                IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Email, GreyIconBg) },
-                    label = stringResource(R.string.settings_contact_support),
-                    subtitle = stringResource(R.string.settings_contact_support_subtitle),
-                    showChevron = true,
-                    onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("mailto:sanin.brica@gmail.com")
-                                putExtra(Intent.EXTRA_SUBJECT, "Detox App Support Request")
-                            }
-                        )
                     }
                 )
             }

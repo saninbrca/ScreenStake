@@ -3,6 +3,8 @@ package com.detox.app.presentation.screens.groupchallenge.create
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.data.repository.AppConfig
+import com.detox.app.data.repository.AppConfigRepository
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
@@ -76,7 +78,11 @@ class GroupChallengeCreateViewModel @Inject constructor(
     private val getAddictiveAppsUseCase: GetAddictiveAppsUseCase,
     private val usageStatsRepository: UsageStatsRepository,
     private val challengeRepository: ChallengeRepository,
+    appConfigRepository: AppConfigRepository,
 ) : ViewModel() {
+
+    /** Live remote config — exposes the remote group buy-in range. */
+    val appConfig: StateFlow<AppConfig> = appConfigRepository.config
 
     private val _formState = MutableStateFlow(GroupCreateFormState())
     val formState: StateFlow<GroupCreateFormState> = _formState.asStateFlow()

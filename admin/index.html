@@ -1,4 +1,3 @@
-<!-- ADMIN PASSWORD: admin123 -->
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -129,6 +128,7 @@
     .stat-card .value.green  { color: var(--green); }
     .stat-card .value.yellow { color: var(--yellow); }
     .stat-card .value.blue   { color: var(--blue); }
+    .stat-card .value.red    { color: var(--red); }
 
     /* ── Tabs ── */
     .tabs {
@@ -204,7 +204,39 @@
     .badge-paid    { background: #2f7d5e; color: var(--green); }
     .badge-rejected{ background: #7d2f2f; color: var(--red); }
 
+    /* Ticket status badges */
+    .badge-open        { background: #7d2f2f; color: var(--red); }
+    .badge-in_progress { background: #7d6b2f; color: var(--yellow); }
+    .badge-resolved    { background: #2f7d5e; color: var(--green); }
+
+    /* Ticket category badges */
+    .cat { display:inline-block; padding:3px 10px; border-radius:20px; font-size:0.75rem; font-weight:600; }
+    .cat-bug       { background:#7d2f2f; color: var(--red); }
+    .cat-question  { background:#2f4d7d; color: var(--blue); }
+    .cat-complaint { background:#7d5a2f; color: #f6ad55; }
+    .cat-payout    { background:#2f7d5e; color: var(--green); }
+    .cat-other     { background:#3a3f54; color: var(--muted); }
+
     .action-btns { display: flex; gap: 8px; }
+
+    /* ── Config form ── */
+    .config-form { padding: 20px; display: flex; flex-direction: column; gap: 18px; max-width: 560px; }
+    .cfg-field { display: flex; flex-direction: column; gap: 6px; }
+    .cfg-field > span { font-size: 0.8rem; color: var(--muted); }
+    .cfg-field input, .cfg-field textarea {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      resize: vertical;
+    }
+    .cfg-field input:focus, .cfg-field textarea:focus { border-color: var(--accent); }
+    .cfg-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem; }
+    .cfg-toggle input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
 
     .empty {
       padding: 48px;
@@ -269,6 +301,80 @@
     .modal h3 { font-size: 1.1rem; margin-bottom: 10px; }
     .modal p  { color: var(--muted); font-size: 0.875rem; margin-bottom: 24px; line-height: 1.5; }
     .modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ── Ticket filter bar ── */
+    .ticket-filters {
+      display: flex;
+      gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .ticket-filters select, .ticket-filters input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      outline: none;
+    }
+    .ticket-filters input { flex: 1; min-width: 180px; }
+    .ticket-filters select:focus, .ticket-filters input:focus { border-color: var(--accent); }
+    tr.clickable { cursor: pointer; }
+
+    /* ── Ticket detail modal (large) ── */
+    .modal-lg {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      width: 760px;
+      max-width: 94vw;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-lg-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .modal-lg-header h3 { font-size: 1.05rem; }
+    .modal-lg-body { padding: 24px; overflow-y: auto; }
+    .detail-section { margin-bottom: 26px; }
+    .detail-section:last-child { margin-bottom: 0; }
+    .detail-section > h4 {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .detail-grid .cfg-field span { font-size: 0.75rem; color: var(--muted); }
+    .full-msg {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 0.875rem;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    .note-item {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .note-item .note-time { font-size: 0.7rem; color: var(--muted); margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -314,16 +420,126 @@
         <div class="label">Bezahlt gesamt</div>
         <div class="value blue" id="stat-paid-total">—</div>
       </div>
+      <div class="stat-card">
+        <div class="label">Offene Tickets</div>
+        <div class="value red" id="stat-open-tickets">—</div>
+      </div>
     </div>
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('pending', this)">⏳ Ausstehend</button>
+      <button class="tab active" onclick="switchTab('overview', this)">📊 Übersicht</button>
+      <button class="tab" onclick="switchTab('pending', this)">⏳ Ausstehend</button>
       <button class="tab" onclick="switchTab('paid', this)">✅ Bezahlt</button>
+      <button class="tab" onclick="switchTab('revenue', this)">💶 Umsatz</button>
+      <button class="tab" onclick="switchTab('tickets', this)">💬 Support Tickets</button>
+      <button class="tab" onclick="switchTab('broadcast', this)">📢 Broadcast</button>
+      <button class="tab" onclick="switchTab('users', this)">👤 Benutzer</button>
+      <button class="tab" onclick="switchTab('config', this)">⚙️ App Config</button>
+    </div>
+
+    <!-- Overview / Übersicht tab (default) -->
+    <div id="tab-overview">
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header">
+          <h2>Live-Statistiken (counters/global)</h2>
+          <div class="action-btns">
+            <button class="refresh-btn" onclick="loadOverview()">↻ Aktualisieren</button>
+            <button class="btn-ghost" onclick="confirmBackfill()" style="padding:6px 14px;font-size:0.8rem">🧮 Counter neu berechnen</button>
+          </div>
+        </div>
+        <div class="stats-grid" style="margin:0;padding:20px">
+          <div class="stat-card"><div class="label">Nutzer gesamt</div><div class="value blue" id="ov-users">—</div></div>
+          <div class="stat-card"><div class="label">Aktive Challenges</div><div class="value yellow" id="ov-active">—</div></div>
+          <div class="stat-card"><div class="label">Abgeschlossen</div><div class="value green" id="ov-completed">—</div></div>
+          <div class="stat-card"><div class="label">Gescheitert</div><div class="value red" id="ov-failed">—</div></div>
+          <div class="stat-card"><div class="label">Gesamtumsatz</div><div class="value green" id="ov-revenue">—</div></div>
+        </div>
+        <div style="padding:0 20px 8px;font-size:0.75rem;color:var(--muted)" id="ov-counters-updated"></div>
+      </div>
+
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header"><h2>Heute</h2></div>
+        <div class="stats-grid" style="margin:0;padding:20px">
+          <div class="stat-card"><div class="label">Neue Nutzer heute</div><div class="value blue" id="ov-users-today">—</div></div>
+          <div class="stat-card"><div class="label">Neue Challenges heute</div><div class="value yellow" id="ov-challenges-today">—</div></div>
+          <div class="stat-card"><div class="label">Offene Tickets</div><div class="value red" id="ov-open-tickets">—</div></div>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header"><h2>Letzte Challenges</h2></div>
+        <div id="ov-recent-challenges"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-header"><h2>Letzte Tickets</h2></div>
+        <div id="ov-recent-tickets"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Revenue / Umsatz tab -->
+    <div id="tab-revenue" style="display:none">
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header">
+          <h2>Umsatz</h2>
+          <button class="refresh-btn" onclick="loadRevenue()">↻ Aktualisieren</button>
+        </div>
+        <div class="stats-grid" style="margin:0;padding:20px">
+          <div class="stat-card"><div class="label">Gesamtumsatz</div><div class="value green" id="rev-total">—</div></div>
+          <div class="stat-card"><div class="label">Diesen Monat</div><div class="value green" id="rev-month">—</div></div>
+          <div class="stat-card"><div class="label">Letzte 7 Tage</div><div class="value green" id="rev-week">—</div></div>
+        </div>
+        <div style="padding:0 20px 16px;font-size:0.75rem;color:var(--muted)">
+          Hinweis: berechnet aus allen Challenges mit <code>payoutStatus</code> (Solo Hard Mode) + Gruppen-Gebühren.
+          Bei vielen Dokumenten teuer — bei Bedarf später auf Counter-basiertes Tracking umstellen.
+        </div>
+      </div>
+
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header"><h2>Aufschlüsselung</h2></div>
+        <div class="config-form" style="max-width:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+          <div class="cfg-field"><span>Hard Mode Gebühren (20%)</span><div class="amount" id="rev-hardfee">—</div></div>
+          <div class="cfg-field"><span>Eingezogene Einsätze (verloren)</span><div class="amount" id="rev-captured">—</div></div>
+          <div class="cfg-field"><span>Group Challenge Gebühren (10%)</span><div class="amount" id="rev-groupfee">—</div></div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-header"><h2>Ausstehende Verbindlichkeiten</h2></div>
+        <div class="config-form" style="max-width:none;display:grid;grid-template-columns:1fr;gap:14px">
+          <div class="cfg-field"><span>Ausstehende Auszahlungen (an Gewinner geschuldet)</span><div class="amount" id="rev-liabilities">—</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Broadcast tab -->
+    <div id="tab-broadcast" style="display:none">
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header"><h2>Broadcast an alle Nutzer</h2></div>
+        <div class="config-form">
+          <label class="cfg-field">
+            <span>Titel</span>
+            <input type="text" id="bc-title" placeholder="z. B. Wartung geplant">
+          </label>
+          <label class="cfg-field">
+            <span>Nachricht</span>
+            <textarea id="bc-message" rows="3" placeholder="Nachricht an alle Nutzer…"></textarea>
+          </label>
+          <button class="btn-primary" onclick="confirmSendBroadcast()" style="margin-top:8px">📢 An alle senden</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-header">
+          <h2>Vergangene Broadcasts</h2>
+          <button class="refresh-btn" onclick="loadBroadcasts()">↻ Aktualisieren</button>
+        </div>
+        <div id="broadcast-list"><div class="loading"><div class="spinner"></div><br>Lade…</div></div>
+      </div>
     </div>
 
     <!-- Pending tab -->
-    <div id="tab-pending">
+    <div id="tab-pending" style="display:none">
       <div class="table-wrap">
         <div class="table-header">
           <h2>Ausstehende Auszahlungen</h2>
@@ -343,6 +559,118 @@
         <div id="paid-content"><div class="loading"><div class="spinner"></div><br>Lade…</div></div>
       </div>
     </div>
+
+    <!-- Support tickets tab -->
+    <div id="tab-tickets" style="display:none">
+      <div class="table-wrap">
+        <div class="table-header">
+          <h2>Support Tickets</h2>
+          <button class="refresh-btn" onclick="loadAll()">↻ Aktualisieren</button>
+        </div>
+        <div class="ticket-filters">
+          <select id="filter-category" onchange="renderTickets()">
+            <option value="all">Alle Kategorien</option>
+            <option value="bug">Bug</option>
+            <option value="question">Frage</option>
+            <option value="complaint">Beschwerde</option>
+            <option value="payout">Auszahlung</option>
+            <option value="other">Sonstiges</option>
+          </select>
+          <select id="filter-status" onchange="renderTickets()">
+            <option value="all">Alle Status</option>
+            <option value="open">Offen</option>
+            <option value="in_progress">In Bearbeitung</option>
+            <option value="resolved">Erledigt</option>
+          </select>
+          <select id="filter-sort" onchange="renderTickets()">
+            <option value="newest">Neueste zuerst</option>
+            <option value="oldest">Älteste zuerst</option>
+          </select>
+          <input type="text" id="filter-search" placeholder="Username oder Betreff…" oninput="renderTickets()">
+        </div>
+        <div id="tickets-content"><div class="loading"><div class="spinner"></div><br>Lade…</div></div>
+      </div>
+    </div>
+
+    <!-- User management tab -->
+    <div id="tab-users" style="display:none">
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header">
+          <h2>Benutzer suchen</h2>
+        </div>
+        <div style="padding:20px">
+          <div style="display:flex;gap:10px;max-width:520px">
+            <input type="text" id="user-search-input" placeholder="Username oder E-Mail…"
+                   style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:0.9rem;outline:none">
+            <button class="btn-primary" style="width:auto;padding:10px 20px" onclick="searchUsers()">Suchen</button>
+          </div>
+          <div id="user-search-results" style="margin-top:16px"></div>
+        </div>
+      </div>
+      <div id="user-detail"></div>
+    </div>
+
+    <!-- App config tab -->
+    <div id="tab-config" style="display:none">
+      <div class="table-wrap">
+        <div class="table-header">
+          <h2>App-Konfiguration (config/app)</h2>
+          <button class="refresh-btn" onclick="loadConfig()">↻ Neu laden</button>
+        </div>
+        <div class="config-form">
+          <label class="cfg-toggle">
+            <input type="checkbox" id="cfg-maintenanceMode">
+            <span>Wartungsmodus aktiv</span>
+          </label>
+          <label class="cfg-field">
+            <span>Wartungsnachricht</span>
+            <textarea id="cfg-maintenanceMessage" rows="2" placeholder="ScreenStake wird gerade gewartet…"></textarea>
+          </label>
+          <label class="cfg-field">
+            <span>minVersionCode (Force Update wenn darunter)</span>
+            <input type="number" id="cfg-minVersionCode" min="1" step="1">
+          </label>
+          <label class="cfg-field">
+            <span>latestVersionCode (Soft-Update-Hinweis)</span>
+            <input type="number" id="cfg-latestVersionCode" min="1" step="1">
+          </label>
+          <label class="cfg-toggle">
+            <input type="checkbox" id="cfg-hardModeEnabled">
+            <span>Hard Mode aktiviert</span>
+          </label>
+          <label class="cfg-toggle">
+            <input type="checkbox" id="cfg-groupChallengeEnabled">
+            <span>Gruppen-Challenge aktiviert</span>
+          </label>
+          <label class="cfg-field">
+            <span>Update URL (Play Store / AppGallery)</span>
+            <input type="text" id="cfg-updateUrl" placeholder="https://play.google.com/store/apps/details?id=com.detox.app">
+          </label>
+
+          <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:8px">Einsatz-Limits (remote)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <label class="cfg-field">
+              <span>Hard Mode Min-Einsatz (€)</span>
+              <input type="number" id="cfg-hardModeMinStake" min="1" step="1">
+            </label>
+            <label class="cfg-field">
+              <span>Hard Mode Max-Einsatz (€)</span>
+              <input type="number" id="cfg-hardModeMaxStake" min="1" step="1">
+            </label>
+            <label class="cfg-field">
+              <span>Group Min-Buy-in (€)</span>
+              <input type="number" id="cfg-groupMinBuyIn" min="1" step="1">
+            </label>
+            <label class="cfg-field">
+              <span>Group Max-Buy-in (€)</span>
+              <input type="number" id="cfg-groupMaxBuyIn" min="1" step="1">
+            </label>
+          </div>
+
+          <button class="btn-primary" id="cfg-save-btn" onclick="saveConfig()" style="margin-top:8px">💾 Speichern</button>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -355,6 +683,17 @@
       <button class="btn-ghost" onclick="closeModal()">Abbrechen</button>
       <button id="modal-confirm-btn" onclick="confirmAction()">Bestätigen</button>
     </div>
+  </div>
+</div>
+
+<!-- ── TICKET DETAIL MODAL ── -->
+<div class="modal-overlay" id="ticket-modal">
+  <div class="modal-lg">
+    <div class="modal-lg-header">
+      <h3 id="ticket-modal-title">Ticket</h3>
+      <button class="btn-ghost" onclick="closeTicketModal()" style="padding:6px 12px">✕ Schließen</button>
+    </div>
+    <div class="modal-lg-body" id="ticket-modal-body"></div>
   </div>
 </div>
 
@@ -423,11 +762,16 @@
     const d = document.getElementById('dashboard-view');
     d.style.display = 'flex';
     loadAll();
+    loadOverview(); // Übersicht is the default landing tab
   }
 
   // ── Data & state ──────────────────────────────────────────────────────────────
   let pendingDocs   = [];
   let paidDocs      = [];
+  let openTickets     = [];
+  let resolvedTickets = [];
+  let allTickets      = [];
+  let currentTicketId = null;
   let pendingAction = null;
 
   function snapToDocs(snapshot) {
@@ -446,20 +790,32 @@
   async function loadAll() {
     document.getElementById('last-refresh').textContent = 'Lade…';
     try {
-      const [pendingSnap, paidSnap] = await Promise.all([
+      const [pendingSnap, paidSnap, openTicketSnap, resolvedTicketSnap] = await Promise.all([
         db.collection('payoutRequests').where('status', '==', 'pending').orderBy('createdAt', 'desc').get(),
         db.collection('payoutRequests').where('status', '==', 'paid').orderBy('paidAt', 'desc').get(),
+        db.collection('supportTickets').where('status', 'in', ['open', 'in_progress']).orderBy('createdAt', 'desc').get(),
+        db.collection('supportTickets').where('status', '==', 'resolved').orderBy('resolvedAt', 'desc').get(),
       ]);
-      pendingDocs = snapToDocs(pendingSnap);
-      paidDocs    = snapToDocs(paidSnap);
+      pendingDocs     = snapToDocs(pendingSnap);
+      paidDocs        = snapToDocs(paidSnap);
+      openTickets     = ticketsToDocs(openTicketSnap);
+      resolvedTickets = ticketsToDocs(resolvedTicketSnap);
+      allTickets      = [...openTickets, ...resolvedTickets];
       renderStats();
       renderPending();
       renderPaid();
+      renderTickets();
       document.getElementById('last-refresh').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-AT');
     } catch (e) {
       showToast('Fehler beim Laden: ' + e.message, 'error');
       document.getElementById('last-refresh').textContent = 'Fehler';
     }
+  }
+
+  // Tickets store createdAt / resolvedAt as epoch-millis numbers (from Android),
+  // not Firestore Timestamps — so map them as-is without .toDate().
+  function ticketsToDocs(snapshot) {
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -477,6 +833,8 @@
       return t instanceof Date && t.getMonth() === now.getMonth() && t.getFullYear() === now.getFullYear();
     });
     document.getElementById('stat-paid-month').textContent = eur(thisMonth.reduce((s, d) => s + (d.amountCents || 0), 0));
+
+    document.getElementById('stat-open-tickets').textContent = openTickets.length;
   }
 
   // ── Render tables ─────────────────────────────────────────────────────────────
@@ -561,6 +919,270 @@
       </table>`;
   }
 
+  // ── Support tickets ─────────────────────────────────────────────────────────
+  const CATEGORY_LABELS = {
+    bug: 'Bug', question: 'Frage', complaint: 'Beschwerde',
+    payout: 'Auszahlung', other: 'Sonstiges',
+  };
+  const STATUS_LABELS = {
+    open: 'Offen', in_progress: 'In Bearbeitung', resolved: 'Erledigt',
+  };
+
+  function fmtMillis(ms) {
+    if (typeof ms !== 'number' || !isFinite(ms)) return '—';
+    return fmtDate(new Date(ms));
+  }
+
+  function categoryBadge(cat) {
+    const key = CATEGORY_LABELS[cat] ? cat : 'other';
+    return `<span class="cat cat-${key}">${esc(CATEGORY_LABELS[key])}</span>`;
+  }
+
+  function statusBadge(status) {
+    const key = STATUS_LABELS[status] ? status : 'open';
+    return `<span class="badge badge-${key}">${esc(STATUS_LABELS[key])}</span>`;
+  }
+
+  function fieldVal(id) {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  }
+
+  // Single filterable/sortable list (open + in_progress + resolved merged).
+  function renderTickets() {
+    const el = document.getElementById('tickets-content');
+    if (!el) return;
+    const cat    = fieldVal('filter-category') || 'all';
+    const status = fieldVal('filter-status')   || 'all';
+    const sort   = fieldVal('filter-sort')     || 'newest';
+    const search = (fieldVal('filter-search') || '').toLowerCase().trim();
+
+    let list = allTickets.slice();
+    if (cat !== 'all')    list = list.filter(t => (t.category || 'other') === cat);
+    if (status !== 'all') list = list.filter(t => (t.status || 'open') === status);
+    if (search) list = list.filter(t =>
+      (t.username || '').toLowerCase().includes(search) ||
+      (t.subject  || '').toLowerCase().includes(search));
+    list.sort((a, b) => sort === 'oldest'
+      ? (a.createdAt || 0) - (b.createdAt || 0)
+      : (b.createdAt || 0) - (a.createdAt || 0));
+
+    if (list.length === 0) {
+      el.innerHTML = '<div class="empty">Keine Tickets gefunden</div>';
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Datum</th><th>Username</th><th>Kategorie</th><th>Betreff</th><th>Status</th><th>Gerät</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map(t => `
+            <tr class="clickable" onclick="openTicketDetail('${t.id}')">
+              <td class="date">${fmtMillis(t.createdAt)}</td>
+              <td><strong>${esc(t.username || '—')}</strong></td>
+              <td>${categoryBadge(t.category)}</td>
+              <td>${esc(t.subject || '—')}${t.adminReply ? ' <span title="Beantwortet" style="color:var(--green)">✉️</span>' : ''}<br>
+                  <span style="font-size:0.75rem;color:var(--muted)">${esc((t.message || '').substring(0, 80))}${(t.message || '').length > 80 ? '…' : ''}</span></td>
+              <td>${statusBadge(t.status)}</td>
+              <td><span style="font-size:0.75rem;color:var(--muted)">${esc(t.deviceModel || '—')}<br>${esc(t.androidVersion ? 'Android ' + t.androidVersion : '')} · v${esc(t.appVersion || '—')}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Ticket detail panel ───────────────────────────────────────────────────────
+  function openTicketDetail(ticketId) {
+    const t = allTickets.find(x => x.id === ticketId);
+    if (!t) return;
+    currentTicketId = ticketId;
+    document.getElementById('ticket-modal-title').textContent = 'Ticket — ' + (t.subject || '—');
+    document.getElementById('ticket-modal-body').innerHTML = renderTicketDetail(t);
+    document.getElementById('ticket-modal').classList.add('show');
+    loadTicketUserContext(t.userId);
+    loadAdminNotes(ticketId);
+  }
+
+  function closeTicketModal() {
+    currentTicketId = null;
+    document.getElementById('ticket-modal').classList.remove('show');
+  }
+
+  function renderTicketDetail(t) {
+    return `
+      <div class="detail-section">
+        <h4>Ticket-Info</h4>
+        <div class="detail-grid">
+          <div class="cfg-field"><span>Kategorie</span><div>${categoryBadge(t.category)}</div></div>
+          <div class="cfg-field"><span>Status</span><div>${statusBadge(t.status)}</div></div>
+          <div class="cfg-field"><span>Erstellt</span><div>${fmtMillis(t.createdAt)}</div></div>
+          <div class="cfg-field"><span>Erledigt</span><div>${t.resolvedAt ? fmtMillis(t.resolvedAt) : '—'}</div></div>
+          <div class="cfg-field"><span>Gerät</span><div>${esc(t.deviceModel || '—')}</div></div>
+          <div class="cfg-field"><span>Android / App-Version</span><div>${esc(t.androidVersion ? 'Android ' + t.androidVersion : '—')} · v${esc(t.appVersion || '—')}</div></div>
+        </div>
+        <div class="cfg-field" style="margin-top:14px"><span>Betreff</span><div style="font-weight:600">${esc(t.subject || '—')}</div></div>
+        <div class="cfg-field" style="margin-top:14px"><span>Nachricht</span><div class="full-msg">${esc(t.message || '—')}</div></div>
+      </div>
+
+      <div class="detail-section">
+        <h4>Benutzer-Kontext</h4>
+        <div id="ticket-user-context"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+
+      <div class="detail-section">
+        <h4>Interne Notizen (nur für Admin sichtbar)</h4>
+        <div id="ticket-notes-list"><div class="loading"><div class="spinner"></div></div></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <input type="text" id="new-note-input" placeholder="Notiz hinzufügen…"
+                 onkeydown="if(event.key==='Enter')addAdminNote()"
+                 style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:0.85rem;outline:none">
+          <button class="btn-ghost" onclick="addAdminNote()">📝 Notiz hinzufügen</button>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h4>Antwort</h4>
+        <p style="color:var(--muted);font-size:0.8rem;margin-bottom:10px">Die eigentliche Antwort erreicht den Nutzer per E-Mail. Das gespeicherte Feld ist nur dein Archiv (im App-UI sieht der Nutzer es nicht).</p>
+        ${t.adminReplyAt ? `<p style="color:var(--muted);font-size:0.75rem;margin-bottom:8px">Zuletzt gespeichert: ${fmtMillis(t.adminReplyAt)}</p>` : ''}
+        <textarea id="reply-input" rows="4"
+                  style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:0.875rem;font-family:inherit;outline:none;resize:vertical">${esc(t.adminReply || '')}</textarea>
+        <label class="cfg-toggle" style="margin:12px 0">
+          <input type="checkbox" id="reply-resolve-check" ${t.status !== 'resolved' ? 'checked' : ''}>
+          <span>Als erledigt markieren</span>
+        </label>
+        <div class="action-btns">
+          <button class="btn-primary" style="width:auto;padding:10px 18px" onclick="saveTicketReply(true)">✉️ Per E-Mail antworten</button>
+          <button class="btn-ghost" onclick="saveTicketReply(false)">💾 Nur speichern</button>
+          ${t.status === 'open' ? `<button class="btn-ghost" onclick="markInProgress('${t.id}')">🛠 In Bearbeitung</button>` : ''}
+        </div>
+      </div>`;
+  }
+
+  async function loadTicketUserContext(userId) {
+    const el = document.getElementById('ticket-user-context');
+    if (!el) return;
+    if (!userId) { el.innerHTML = '<div class="empty">Keine Benutzer-ID am Ticket</div>'; return; }
+    try {
+      const [userSnap, challengeSnap, ticketSnap] = await Promise.all([
+        db.collection('users').doc(userId).get(),
+        db.collection('users').doc(userId).collection('challenges').get(),
+        db.collection('supportTickets').where('userId', '==', userId).get(),
+      ]);
+      if (!userSnap.exists) { el.innerHTML = '<div class="empty">Benutzer nicht gefunden</div>'; return; }
+      const u = userSnap.data();
+      const challenges = challengeSnap.docs.map(d => d.data());
+      const total = challenges.length;
+      const active = challenges.filter(c => c.status === 'active').length;
+      const completed = challenges.filter(c => c.status === 'completed' || c.payoutStatus === 'refunded').length;
+      const failed = challenges.filter(c => c.status === 'failed').length;
+      const totalStaked = challenges.reduce((s, c) => s + (c.amountCents || 0), 0);
+      const totalRefunded = challenges.reduce((s, c) => s + (c.payoutAmount || 0), 0);
+      const totalCaptured = challenges
+        .filter(c => c.payoutStatus === 'captured' || c.status === 'failed')
+        .reduce((s, c) => s + (c.amountCents || 0), 0);
+      const otherTickets = Math.max(0, ticketSnap.size - 1);
+
+      el.innerHTML = `
+        <div class="detail-grid">
+          <div class="cfg-field"><span>Username</span><div><strong>${esc(u.username || u.displayName || '—')}</strong></div></div>
+          <div class="cfg-field"><span>E-Mail</span><div>${esc(u.email || '—')}</div></div>
+          <div class="cfg-field"><span>Mitglied seit</span><div>${fmtTimestamp(u.createdAt)}</div></div>
+          <div class="cfg-field"><span>Account-Status</span><div>${u.disabled ? '<span class="badge badge-rejected">Gesperrt</span>' : '<span class="badge badge-paid">Aktiv</span>'}</div></div>
+          <div class="cfg-field"><span>Challenges (gesamt / aktiv / gewonnen / verloren)</span><div>${total} / <span style="color:var(--yellow)">${active}</span> / <span style="color:var(--green)">${completed}</span> / <span style="color:var(--red)">${failed}</span></div></div>
+          <div class="cfg-field"><span>Eingesetzt / Erstattet / Einbehalten</span><div>${eur(totalStaked)} / ${eur(totalRefunded)} / ${eur(totalCaptured)}</div></div>
+        </div>
+        <p style="color:var(--muted);font-size:0.8rem;margin-top:14px">Dieser User hat ${otherTickets} weitere${otherTickets === 1 ? 's' : ''} Ticket${otherTickets === 1 ? '' : 's'} gestellt.</p>
+        <button class="btn-ghost" style="margin-top:10px" onclick="gotoUserProfile('${userId}')">Vollständiges Profil ansehen →</button>`;
+    } catch (e) {
+      el.innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function gotoUserProfile(userId) {
+    closeTicketModal();
+    switchTab('users');
+    document.getElementById('user-detail').innerHTML = '';
+    openUserDetail(userId);
+  }
+
+  // ── Internal admin notes (private sub-collection) ───────────────────────────────
+  async function loadAdminNotes(ticketId) {
+    const el = document.getElementById('ticket-notes-list');
+    if (!el) return;
+    try {
+      const snap = await db.collection('supportTickets').doc(ticketId)
+        .collection('adminNotes').orderBy('createdAt', 'desc').get();
+      if (snap.empty) {
+        el.innerHTML = '<div style="color:var(--muted);font-size:0.85rem">Noch keine Notizen.</div>';
+        return;
+      }
+      el.innerHTML = snap.docs.map(d => {
+        const n = d.data();
+        return `<div class="note-item">${esc(n.note || '')}<div class="note-time">${fmtMillis(n.createdAt)}</div></div>`;
+      }).join('');
+    } catch (e) {
+      el.innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function addAdminNote() {
+    if (!currentTicketId) return;
+    const input = document.getElementById('new-note-input');
+    const note = (input.value || '').trim();
+    if (!note) return;
+    try {
+      await db.collection('supportTickets').doc(currentTicketId)
+        .collection('adminNotes').add({ note, createdAt: Date.now() });
+      input.value = '';
+      showToast('📝 Notiz gespeichert', 'success');
+      loadAdminNotes(currentTicketId);
+    } catch (e) {
+      showToast('Fehler: ' + e.message, 'error');
+    }
+  }
+
+  // ── Dashboard reply (admin archive — actual reply goes via email) ───────────────
+  async function saveTicketReply(sendEmail) {
+    if (!currentTicketId) return;
+    const t = allTickets.find(x => x.id === currentTicketId);
+    const reply = (document.getElementById('reply-input').value || '').trim();
+    if (!reply) { showToast('Bitte Antwort eingeben', 'error'); return; }
+    const resolve = document.getElementById('reply-resolve-check').checked;
+    try {
+      const payload = { adminReply: reply, adminReplyAt: Date.now() };
+      if (resolve) { payload.status = 'resolved'; payload.resolvedAt = Date.now(); }
+      await db.collection('supportTickets').doc(currentTicketId).update(payload);
+      if (sendEmail) {
+        if (t && t.email) {
+          window.location = 'mailto:' + t.email
+            + '?subject=' + encodeURIComponent('Re: ' + (t.subject || ''))
+            + '&body=' + encodeURIComponent(reply);
+        } else {
+          showToast('Keine E-Mail-Adresse — Antwort nur gespeichert', 'error');
+        }
+      }
+      showToast('✅ Antwort gespeichert', 'success');
+      closeTicketModal();
+      await loadAll();
+    } catch (e) {
+      showToast('Fehler: ' + e.message, 'error');
+    }
+  }
+
+  async function markInProgress(id) {
+    try {
+      await db.collection('supportTickets').doc(id).update({ status: 'in_progress' });
+      showToast('🛠 Als „In Bearbeitung" markiert', 'success');
+      closeTicketModal();
+      await loadAll();
+    } catch (e) {
+      showToast('Fehler: ' + e.message, 'error');
+    }
+  }
+
   // ── Actions ───────────────────────────────────────────────────────────────────
   function confirmPaid(id, name, cents, userId) {
     showModal(
@@ -595,6 +1217,31 @@
           }).catch(() => {});
         }
         showToast('✅ Als bezahlt markiert', 'success');
+      } else if (type === 'banUser') {
+        await callSetBanStatus(pendingAction.uid, pendingAction.banned, pendingAction.reason);
+        showToast(pendingAction.banned ? '🚫 Benutzer gesperrt' : '✅ Benutzer entsperrt', 'success');
+        closeModal();
+        await openUserDetail(pendingAction.uid);
+        return;
+      } else if (type === 'backfill') {
+        await callBackfillCounters();
+        showToast('🧮 Counter neu berechnet', 'success');
+        closeModal();
+        await loadOverview();
+        return;
+      } else if (type === 'sendBroadcast') {
+        await db.collection('broadcasts').add({
+          title: pendingAction.title,
+          message: pendingAction.message,
+          createdAt: Date.now(),
+          active: true,
+        });
+        showToast('📢 Broadcast gesendet', 'success');
+        document.getElementById('bc-title').value = '';
+        document.getElementById('bc-message').value = '';
+        closeModal();
+        await loadBroadcasts();
+        return;
       } else {
         await db.collection('payoutRequests').doc(id).update({ status: 'rejected', rejectedAt: new Date() });
         showToast('❌ Abgelehnt', 'success');
@@ -616,11 +1263,528 @@
   }
 
   // ── Tabs ──────────────────────────────────────────────────────────────────────
+  const TAB_NAMES = ['overview', 'pending', 'paid', 'revenue', 'tickets', 'broadcast', 'users', 'config'];
+
   function switchTab(name, btn) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-pending').style.display = name === 'pending' ? 'block' : 'none';
-    document.getElementById('tab-paid').style.display    = name === 'paid'    ? 'block' : 'none';
+    if (btn) {
+      btn.classList.add('active');
+    } else {
+      // Programmatic switch (e.g. from a ticket's "Vollständiges Profil ansehen").
+      const idx = TAB_NAMES.indexOf(name);
+      const tabs = document.querySelectorAll('.tab');
+      if (tabs[idx]) tabs[idx].classList.add('active');
+    }
+    TAB_NAMES.forEach(t => {
+      const el = document.getElementById('tab-' + t);
+      if (el) el.style.display = (t === name) ? 'block' : 'none';
+    });
+    if (name === 'config')    loadConfig();
+    if (name === 'overview')  loadOverview();
+    if (name === 'revenue')   loadRevenue();
+    if (name === 'broadcast') loadBroadcasts();
+  }
+
+  // ── User management ─────────────────────────────────────────────────────────────
+  const FUNCTIONS_BASE = 'https://us-central1-detox-33208.cloudfunctions.net';
+
+  async function searchUsers() {
+    const term = document.getElementById('user-search-input').value.trim();
+    const out = document.getElementById('user-search-results');
+    document.getElementById('user-detail').innerHTML = '';
+    if (!term) { out.innerHTML = '<div class="empty">Bitte Username oder E-Mail eingeben</div>'; return; }
+    out.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    try {
+      // Firestore can't OR across fields — run two queries and merge by doc id.
+      const [byUsername, byEmail] = await Promise.all([
+        db.collection('users').where('username', '==', term.toLowerCase()).get(),
+        db.collection('users').where('email', '==', term).get(),
+      ]);
+      const map = {};
+      byUsername.forEach(d => { map[d.id] = { id: d.id, ...d.data() }; });
+      byEmail.forEach(d => { map[d.id] = { id: d.id, ...d.data() }; });
+      const users = Object.values(map);
+      if (users.length === 0) { out.innerHTML = '<div class="empty">Keine Benutzer gefunden</div>'; return; }
+      out.innerHTML = `
+        <table>
+          <thead><tr><th>Username</th><th>E-Mail</th><th>Mitglied seit</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            ${users.map(u => `
+              <tr>
+                <td><strong>${esc(u.username || u.displayName || '—')}</strong></td>
+                <td>${esc(u.email || '—')}</td>
+                <td class="date">${fmtTimestamp(u.createdAt)}</td>
+                <td>${u.disabled ? '<span class="badge badge-rejected">Gesperrt</span>' : '<span class="badge badge-paid">Aktiv</span>'}</td>
+                <td><button class="btn-ghost" onclick="openUserDetail('${u.id}')">Details →</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+    } catch (e) {
+      out.innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function fmtTimestamp(ts) {
+    if (!ts) return '—';
+    if (typeof ts.toDate === 'function') return fmtDate(ts.toDate());
+    if (typeof ts === 'number') return fmtDate(new Date(ts));
+    return '—';
+  }
+
+  async function openUserDetail(uid) {
+    const el = document.getElementById('user-detail');
+    el.innerHTML = '<div class="table-wrap"><div class="loading"><div class="spinner"></div><br>Lade Benutzer…</div></div>';
+    try {
+      const [userSnap, challengeSnap, ticketSnap, payoutSnap] = await Promise.all([
+        db.collection('users').doc(uid).get(),
+        db.collection('users').doc(uid).collection('challenges').get(),
+        db.collection('supportTickets').where('userId', '==', uid).get(),
+        db.collection('payoutRequests').where('userId', '==', uid).get(),
+      ]);
+      if (!userSnap.exists) { el.innerHTML = '<div class="empty">Benutzer nicht gefunden</div>'; return; }
+      const u = userSnap.data();
+      const challenges = challengeSnap.docs.map(d => d.data());
+      const tickets = ticketSnap.docs.map(d => d.data());
+      const payouts = payoutSnap.docs.map(d => d.data());
+
+      const active = challenges.filter(c => c.status === 'active').length;
+      const completed = challenges.filter(c => c.status === 'completed' || c.payoutStatus === 'refunded').length;
+      const failed = challenges.filter(c => c.status === 'failed').length;
+      const totalStaked = challenges.reduce((s, c) => s + (c.amountCents || 0), 0);
+      const totalRefunded = challenges.reduce((s, c) => s + (c.payoutAmount || 0), 0);
+      const totalCaptured = challenges
+        .filter(c => c.payoutStatus === 'captured' || c.status === 'failed')
+        .reduce((s, c) => s + (c.amountCents || 0), 0);
+
+      const modeBadge = (c) => {
+        if (c.mode === 'hard') return '<span class="cat cat-bug">HARD</span>';
+        return '<span class="cat cat-payout">SOFT</span>';
+      };
+
+      el.innerHTML = `
+        <div class="table-wrap" style="margin-bottom:20px">
+          <div class="table-header">
+            <h2>${esc(u.username || u.displayName || uid)} ${u.disabled ? '<span class="badge badge-rejected" style="margin-left:8px">Gesperrt</span>' : ''}</h2>
+            <div class="action-btns">
+              ${u.disabled
+                ? `<button class="btn-green" onclick="confirmUnban('${uid}', '${esc(u.username || u.email || '')}')">✅ Entsperren</button>`
+                : `<button class="btn-red" onclick="confirmBan('${uid}', '${esc(u.username || u.email || '')}')">🚫 Sperren</button>`}
+            </div>
+          </div>
+          <div class="config-form" style="max-width:none;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div class="cfg-field"><span>E-Mail</span><div>${esc(u.email || '—')}</div></div>
+            <div class="cfg-field"><span>Mitglied seit</span><div>${fmtTimestamp(u.createdAt)}</div></div>
+            <div class="cfg-field"><span>Consent (AGB / Datenschutz / 18+)</span><div>${u.consentAGB ? '✅' : '❌'} / ${u.consentDatenschutz ? '✅' : '❌'} / ${u.consentAge18 ? '✅' : '❌'} ${u.consentTimestamp ? '· ' + fmtTimestamp(u.consentTimestamp) : ''}</div></div>
+            <div class="cfg-field"><span>Stripe Customer ID</span><div>${esc(u.stripeCustomerId || '—')}</div></div>
+            <div class="cfg-field"><span>IBAN hinterlegt</span><div>${u.payoutIban ? '✅ ' + esc(maskIban(u.payoutIban)) : '❌'}</div></div>
+            <div class="cfg-field"><span>Gesperrt-Grund</span><div>${esc(u.disabledReason || '—')}</div></div>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card"><div class="label">Challenges gesamt</div><div class="value">${challenges.length}</div></div>
+          <div class="stat-card"><div class="label">Aktiv</div><div class="value yellow">${active}</div></div>
+          <div class="stat-card"><div class="label">Gewonnen</div><div class="value green">${completed}</div></div>
+          <div class="stat-card"><div class="label">Verloren</div><div class="value red">${failed}</div></div>
+        </div>
+
+        <div class="table-wrap" style="margin-bottom:20px">
+          <div class="table-header"><h2>Zahlungen</h2></div>
+          <div class="config-form" style="max-width:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+            <div class="cfg-field"><span>Eingesetzt gesamt</span><div class="amount">${eur(totalStaked)}</div></div>
+            <div class="cfg-field"><span>Zurückerstattet</span><div class="amount">${eur(totalRefunded)}</div></div>
+            <div class="cfg-field"><span>Verloren (einbehalten)</span><div class="amount">${eur(totalCaptured)}</div></div>
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-bottom:20px">
+          <div class="table-header"><h2>Challenge-Verlauf (${challenges.length})</h2></div>
+          ${challenges.length === 0 ? '<div class="empty">Keine Challenges</div>' : `
+          <table>
+            <thead><tr><th>App</th><th>Modus</th><th>Status</th><th>Einsatz</th><th>Start</th><th>Ende</th></tr></thead>
+            <tbody>
+              ${challenges.map(c => `
+                <tr>
+                  <td><strong>${esc(c.appDisplayName || '—')}</strong></td>
+                  <td>${modeBadge(c)}</td>
+                  <td class="date">${esc(c.status || '—')}${c.payoutStatus ? ' · ' + esc(c.payoutStatus) : ''}</td>
+                  <td>${c.amountCents ? eur(c.amountCents) : '—'}</td>
+                  <td class="date">${c.startDate ? fmtDate(new Date(c.startDate)) : '—'}</td>
+                  <td class="date">${c.endDate ? fmtDate(new Date(c.endDate)) : '—'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`}
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-header"><h2>Support Tickets (${tickets.length})</h2></div>
+          ${tickets.length === 0 ? '<div class="empty">Keine Tickets</div>' : `
+          <table>
+            <thead><tr><th>Betreff</th><th>Kategorie</th><th>Status</th></tr></thead>
+            <tbody>
+              ${tickets.map(t => `
+                <tr>
+                  <td>${esc(t.subject || '—')}</td>
+                  <td>${categoryBadge(t.category)}</td>
+                  <td>${statusBadge(t.status)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`}
+        </div>`;
+      el.scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+      el.innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function confirmBan(uid, label) {
+    const reason = prompt(`Grund für die Sperrung von "${label}":`, '');
+    if (reason === null) return; // cancelled
+    showModal(
+      '🚫 Benutzer sperren?',
+      `${label}\n\nGrund: ${reason || '(kein Grund angegeben)'}\n\nDer Benutzer wird auf beiden Ebenen gesperrt (App + Login).`,
+      { type: 'banUser', uid, banned: true, reason }
+    );
+  }
+
+  function confirmUnban(uid, label) {
+    showModal(
+      '✅ Benutzer entsperren?',
+      `${label}\n\nDer Benutzer kann die App und den Login wieder nutzen.`,
+      { type: 'banUser', uid, banned: false, reason: '' }
+    );
+  }
+
+  async function callSetBanStatus(uid, banned, reason) {
+    const token = await firebase.auth().currentUser.getIdToken();
+    const resp = await fetch(`${FUNCTIONS_BASE}/setUserBanStatus`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, banned, reason }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + resp.status));
+    }
+  }
+
+  // ── Overview / Übersicht ────────────────────────────────────────────────────
+  function startOfTodayMs() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  // Normalises a Firestore Timestamp OR an epoch-millis number to millis (or null).
+  function tsToMillis(v) {
+    if (v == null) return null;
+    if (typeof v === 'number') return v;
+    if (typeof v.toMillis === 'function') return v.toMillis();
+    if (typeof v.toDate === 'function') return v.toDate().getTime();
+    return null;
+  }
+
+  async function loadOverview() {
+    // Cheap live stats from counters/global.
+    try {
+      const cSnap = await db.collection('counters').doc('global').get();
+      const c = cSnap.exists ? cSnap.data() : {};
+      document.getElementById('ov-users').textContent     = c.totalUsers ?? '—';
+      document.getElementById('ov-active').textContent    = c.totalActiveChallenges ?? '—';
+      document.getElementById('ov-completed').textContent = c.totalCompletedChallenges ?? '—';
+      document.getElementById('ov-failed').textContent    = c.totalFailedChallenges ?? '—';
+      document.getElementById('ov-revenue').textContent   = eur(c.totalRevenueCents || 0);
+      document.getElementById('ov-counters-updated').textContent = c.updatedAt
+        ? ('Counter aktualisiert: ' + fmtMillis(c.updatedAt))
+        : 'Counter noch nicht berechnet — „Counter neu berechnen" ausführen.';
+    } catch (e) {
+      showToast('Counter laden fehlgeschlagen: ' + e.message, 'error');
+    }
+    loadTodayStats();
+    loadRecentActivity();
+  }
+
+  async function loadTodayStats() {
+    const start = startOfTodayMs();
+    try {
+      const [usersToday, challengesToday, openTicketSnap] = await Promise.all([
+        db.collection('users').where('createdAt', '>=', start).get(),
+        db.collectionGroup('challenges').where('createdAt', '>=', start).get(),
+        db.collection('supportTickets').where('status', 'in', ['open', 'in_progress']).get(),
+      ]);
+      document.getElementById('ov-users-today').textContent      = usersToday.size;
+      document.getElementById('ov-challenges-today').textContent = challengesToday.size;
+      document.getElementById('ov-open-tickets').textContent     = openTicketSnap.size;
+    } catch (e) {
+      document.getElementById('ov-users-today').textContent      = '—';
+      document.getElementById('ov-challenges-today').textContent = '—';
+      document.getElementById('ov-open-tickets').textContent     = '—';
+      showToast('Heute-Statistik fehlgeschlagen: ' + e.message, 'error');
+    }
+  }
+
+  async function loadRecentActivity() {
+    const chEl = document.getElementById('ov-recent-challenges');
+    const tkEl = document.getElementById('ov-recent-tickets');
+
+    // Last 10 challenges (collection-group, newest first).
+    try {
+      const snap = await db.collectionGroup('challenges').orderBy('createdAt', 'desc').limit(10).get();
+      if (snap.empty) {
+        chEl.innerHTML = '<div class="empty">Keine Challenges</div>';
+      } else {
+        const rows = snap.docs.map(d => ({
+          c: d.data(),
+          uid: d.ref.parent.parent ? d.ref.parent.parent.id : '',
+        }));
+        // Resolve usernames (batch — up to 10 user reads).
+        const uids = [...new Set(rows.map(r => r.uid).filter(Boolean))];
+        const userDocs = await Promise.all(uids.map(u => db.collection('users').doc(u).get().catch(() => null)));
+        const nameByUid = {};
+        userDocs.forEach(ud => {
+          if (ud && ud.exists) {
+            const u = ud.data();
+            nameByUid[ud.id] = u.username || u.displayName || u.email || ud.id;
+          }
+        });
+        chEl.innerHTML = `
+          <table>
+            <thead><tr><th>Zeit</th><th>Username</th><th>App</th><th>Modus</th><th>Einsatz</th></tr></thead>
+            <tbody>
+              ${rows.map(({ c, uid }) => `
+                <tr>
+                  <td class="date">${fmtTimestamp(c.createdAt)}</td>
+                  <td><strong>${esc(nameByUid[uid] || uid || '—')}</strong></td>
+                  <td>${esc(c.appDisplayName || '—')}</td>
+                  <td>${c.mode === 'hard' ? '<span class="cat cat-bug">HARD</span>' : '<span class="cat cat-payout">SOFT</span>'}</td>
+                  <td>${c.amountCents ? eur(c.amountCents) : '—'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`;
+      }
+    } catch (e) {
+      chEl.innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+    }
+
+    // Last 5 tickets — reuse already-loaded tickets, else query.
+    try {
+      let list = allTickets.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5);
+      if (list.length === 0) {
+        const snap = await db.collection('supportTickets').orderBy('createdAt', 'desc').limit(5).get();
+        list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (list.length === 0) {
+        tkEl.innerHTML = '<div class="empty">Keine Tickets</div>';
+      } else {
+        tkEl.innerHTML = `
+          <table>
+            <thead><tr><th>Zeit</th><th>Username</th><th>Kategorie</th><th>Betreff</th><th>Status</th></tr></thead>
+            <tbody>
+              ${list.map(t => `
+                <tr class="clickable" onclick="openTicketDetail('${t.id}')">
+                  <td class="date">${fmtMillis(t.createdAt)}</td>
+                  <td><strong>${esc(t.username || '—')}</strong></td>
+                  <td>${categoryBadge(t.category)}</td>
+                  <td>${esc(t.subject || '—')}</td>
+                  <td>${statusBadge(t.status)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`;
+      }
+    } catch (e) {
+      tkEl.innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function confirmBackfill() {
+    showModal(
+      '🧮 Counter neu berechnen?',
+      'Liest ALLE Nutzer und Challenges (teuer bei vielen Dokumenten) und überschreibt counters/global mit den echten Werten. Kann bei großer Nutzerzahl einige Sekunden dauern.',
+      { type: 'backfill' }
+    );
+  }
+
+  async function callBackfillCounters() {
+    const token = await firebase.auth().currentUser.getIdToken();
+    const resp = await fetch(`${FUNCTIONS_BASE}/backfillCounters`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + resp.status));
+    }
+    const data = await resp.json().catch(() => ({}));
+    return data.counters;
+  }
+
+  // ── Revenue / Umsatz ──────────────────────────────────────────────────────────
+  // COST TRADEOFF: scans every challenge (collection-group) + completed groups +
+  // open payout requests on each load. Fine at current scale; if it gets expensive,
+  // move to counter-based tracking (counters/global already holds totalRevenueCents).
+  async function loadRevenue() {
+    const now = Date.now();
+    const som = new Date(); som.setDate(1); som.setHours(0, 0, 0, 0);
+    const monthMs = som.getTime();
+    const weekMs = now - 7 * 24 * 60 * 60 * 1000;
+    try {
+      const [challengesSnap, groupsSnap, payoutSnap] = await Promise.all([
+        db.collectionGroup('challenges').get(),
+        db.collection('groupChallenges').where('status', '==', 'completed').get(),
+        db.collection('payoutRequests').where('status', 'in', ['requested', 'pending']).get(),
+      ]);
+
+      let hardFee = 0, captured = 0, groupFee = 0;
+      let total = 0, month = 0, week = 0;
+      const addBucket = (cents, at) => {
+        total += cents;
+        if (typeof at === 'number') {
+          if (at >= monthMs) month += cents;
+          if (at >= weekMs) week += cents;
+        }
+      };
+
+      challengesSnap.forEach(d => {
+        const c = d.data();
+        if (c.mode !== 'hard' || c.groupChallengeId) return; // solo Hard Mode only
+        const at = tsToMillis(c.payoutDate) ?? tsToMillis(c.endDate) ?? tsToMillis(c.createdAt);
+        if (c.payoutStatus === 'refunded' || c.status === 'completed') {
+          const fee = (typeof c.appFeeAmount === 'number' && c.appFeeAmount > 0)
+            ? c.appFeeAmount : Math.floor((c.amountCents || 0) * 0.20);
+          hardFee += fee; addBucket(fee, at);
+        } else if (c.payoutStatus === 'captured' || c.status === 'failed') {
+          const amt = c.amountCents || 0;
+          captured += amt; addBucket(amt, at);
+        }
+      });
+
+      groupsSnap.forEach(d => {
+        const g = d.data();
+        const fee = typeof g.appFee === 'number' ? g.appFee : 0;
+        const at = tsToMillis(g.completedAt) ?? tsToMillis(g.endDate);
+        groupFee += fee; addBucket(fee, at);
+      });
+
+      const liabilities = payoutSnap.docs.reduce((s, d) => s + (d.data().amountCents || 0), 0);
+
+      document.getElementById('rev-total').textContent       = eur(total);
+      document.getElementById('rev-month').textContent       = eur(month);
+      document.getElementById('rev-week').textContent        = eur(week);
+      document.getElementById('rev-hardfee').textContent     = eur(hardFee);
+      document.getElementById('rev-captured').textContent    = eur(captured);
+      document.getElementById('rev-groupfee').textContent    = eur(groupFee);
+      document.getElementById('rev-liabilities').textContent = eur(liabilities);
+    } catch (e) {
+      showToast('Umsatz laden fehlgeschlagen: ' + e.message, 'error');
+    }
+  }
+
+  // ── Broadcast ─────────────────────────────────────────────────────────────────
+  function confirmSendBroadcast() {
+    const title = document.getElementById('bc-title').value.trim();
+    const message = document.getElementById('bc-message').value.trim();
+    if (!title || !message) { showToast('Titel und Nachricht erforderlich', 'error'); return; }
+    showModal(
+      '📢 Broadcast senden?',
+      `"${title}"\n\nWird an ALLE Nutzer gesendet und beim nächsten App-Start als Hinweis angezeigt.`,
+      { type: 'sendBroadcast', title, message }
+    );
+  }
+
+  async function loadBroadcasts() {
+    const el = document.getElementById('broadcast-list');
+    try {
+      const snap = await db.collection('broadcasts').orderBy('createdAt', 'desc').get();
+      if (snap.empty) { el.innerHTML = '<div class="empty">Noch keine Broadcasts</div>'; return; }
+      el.innerHTML = `
+        <table>
+          <thead><tr><th>Datum</th><th>Titel</th><th>Nachricht</th><th>Status</th><th>Aktion</th></tr></thead>
+          <tbody>
+            ${snap.docs.map(d => {
+              const b = d.data();
+              return `
+                <tr>
+                  <td class="date">${fmtMillis(b.createdAt)}</td>
+                  <td><strong>${esc(b.title || '—')}</strong></td>
+                  <td><span style="font-size:0.8rem;color:var(--muted)">${esc((b.message || '').substring(0, 100))}${(b.message || '').length > 100 ? '…' : ''}</span></td>
+                  <td>${b.active ? '<span class="badge badge-paid">Aktiv</span>' : '<span class="badge badge-rejected">Inaktiv</span>'}</td>
+                  <td>${b.active
+                    ? `<button class="btn-ghost" onclick="toggleBroadcast('${d.id}', false)">Deaktivieren</button>`
+                    : `<button class="btn-ghost" onclick="toggleBroadcast('${d.id}', true)">Aktivieren</button>`}</td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    } catch (e) {
+      el.innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function toggleBroadcast(id, active) {
+    try {
+      await db.collection('broadcasts').doc(id).update({ active });
+      showToast(active ? '✅ Broadcast aktiviert' : '🔕 Broadcast deaktiviert', 'success');
+      await loadBroadcasts();
+    } catch (e) {
+      showToast('Fehler: ' + e.message, 'error');
+    }
+  }
+
+  // ── App config ────────────────────────────────────────────────────────────────
+  async function loadConfig() {
+    try {
+      const snap = await db.collection('config').doc('app').get();
+      const c = snap.exists ? snap.data() : {};
+      document.getElementById('cfg-maintenanceMode').checked       = c.maintenanceMode === true;
+      document.getElementById('cfg-maintenanceMessage').value      = c.maintenanceMessage || '';
+      document.getElementById('cfg-minVersionCode').value          = c.minVersionCode ?? 1;
+      document.getElementById('cfg-latestVersionCode').value       = c.latestVersionCode ?? 1;
+      // Default feature flags to ON (fail-open) when unset.
+      document.getElementById('cfg-hardModeEnabled').checked       = c.hardModeEnabled !== false;
+      document.getElementById('cfg-groupChallengeEnabled').checked = c.groupChallengeEnabled !== false;
+      document.getElementById('cfg-updateUrl').value               = c.updateUrl || '';
+      // Stake limits — fall back to the app's hardcoded defaults when unset.
+      document.getElementById('cfg-hardModeMinStake').value        = c.hardModeMinStake ?? 5;
+      document.getElementById('cfg-hardModeMaxStake').value        = c.hardModeMaxStake ?? 100;
+      document.getElementById('cfg-groupMinBuyIn').value           = c.groupMinBuyIn ?? 10;
+      document.getElementById('cfg-groupMaxBuyIn').value           = c.groupMaxBuyIn ?? 50;
+    } catch (e) {
+      showToast('Config laden fehlgeschlagen: ' + e.message, 'error');
+    }
+  }
+
+  async function saveConfig() {
+    const btn = document.getElementById('cfg-save-btn');
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = '…';
+    try {
+      const payload = {
+        maintenanceMode:       document.getElementById('cfg-maintenanceMode').checked,
+        maintenanceMessage:    document.getElementById('cfg-maintenanceMessage').value.trim(),
+        minVersionCode:        parseInt(document.getElementById('cfg-minVersionCode').value, 10) || 1,
+        latestVersionCode:     parseInt(document.getElementById('cfg-latestVersionCode').value, 10) || 1,
+        hardModeEnabled:       document.getElementById('cfg-hardModeEnabled').checked,
+        groupChallengeEnabled: document.getElementById('cfg-groupChallengeEnabled').checked,
+        updateUrl:             document.getElementById('cfg-updateUrl').value.trim(),
+        hardModeMinStake:      parseInt(document.getElementById('cfg-hardModeMinStake').value, 10) || 5,
+        hardModeMaxStake:      parseInt(document.getElementById('cfg-hardModeMaxStake').value, 10) || 100,
+        groupMinBuyIn:         parseInt(document.getElementById('cfg-groupMinBuyIn').value, 10) || 10,
+        groupMaxBuyIn:         parseInt(document.getElementById('cfg-groupMaxBuyIn').value, 10) || 50,
+      };
+      await db.collection('config').doc('app').set(payload, { merge: true });
+      showToast('✅ Config gespeichert', 'success');
+    } catch (e) {
+      showToast('Speichern fehlgeschlagen: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
   }
 
   // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -629,8 +1793,15 @@
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').textContent  = body;
     const btn = document.getElementById('modal-confirm-btn');
-    btn.className = action.type === 'paid' ? 'btn-green' : 'btn-red';
-    btn.textContent = action.type === 'paid' ? '✅ Bestätigen' : '❌ Ablehnen';
+    const isGreen = action.type === 'paid'
+      || action.type === 'backfill'
+      || action.type === 'sendBroadcast'
+      || (action.type === 'banUser' && action.banned === false);
+    btn.className = isGreen ? 'btn-green' : 'btn-red';
+    btn.textContent = action.type === 'sendBroadcast' ? '📢 Senden'
+      : action.type === 'backfill' ? '🧮 Neu berechnen'
+      : isGreen ? '✅ Bestätigen'
+      : (action.type === 'banUser' ? '🚫 Sperren' : '❌ Ablehnen');
     btn.disabled = false;
     document.getElementById('modal').classList.add('show');
   }
@@ -642,6 +1813,10 @@
 
   document.getElementById('modal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeModal();
+  });
+
+  document.getElementById('ticket-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeTicketModal();
   });
 
   // ── Toast ─────────────────────────────────────────────────────────────────────

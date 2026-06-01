@@ -132,6 +132,7 @@ fun GroupChallengeCreateScreen(
     val formState by viewModel.formState.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val appListState by viewModel.appListState.collectAsStateWithLifecycle()
+    val appConfig by viewModel.appConfig.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -244,6 +245,8 @@ fun GroupChallengeCreateScreen(
                     4 -> GStep4BuyIn(
                         buyIn = formState.buyInEuros,
                         onBuyInChange = viewModel::setBuyInEuros,
+                        buyInMin = appConfig.groupMinBuyIn,
+                        buyInMax = appConfig.groupMaxBuyIn,
                     )
                     5 -> GStep5StartDateAndBonus(
                         startDateEnabled = formState.startDateEnabled,
@@ -568,7 +571,12 @@ private fun GStep3LimitAndDuration(
 private fun GStep4BuyIn(
     buyIn: Int,
     onBuyInChange: (Int) -> Unit,
+    buyInMin: Int = 10,
+    buyInMax: Int = 50,
 ) {
+    // Remote-controlled buy-in range (config/app) with hardcoded €10–€50 fallback.
+    val safeMin = buyInMin.coerceAtLeast(1)
+    val safeMax = buyInMax.coerceAtLeast(safeMin)
     val estimatedPot = buyIn * 20
 
     Column(
@@ -601,8 +609,8 @@ private fun GStep4BuyIn(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 DetoxHorizontalPicker(
-                    values = (10..50).toList(),
-                    selectedValue = buyIn.coerceAtMost(50),
+                    values = (safeMin..safeMax).toList(),
+                    selectedValue = buyIn.coerceIn(safeMin, safeMax),
                     onValueChange = onBuyInChange,
                     unit = stringResource(R.string.group_wizard_buyin_unit),
                 )

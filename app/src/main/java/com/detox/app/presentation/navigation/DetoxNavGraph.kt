@@ -10,6 +10,9 @@ import com.detox.app.presentation.screens.auth.AuthScreen
 import com.detox.app.presentation.screens.auth.AuthTab
 import com.detox.app.presentation.screens.auth.EmailVerificationScreen
 import com.detox.app.presentation.screens.onboarding.OnboardingScreen
+import com.detox.app.presentation.screens.system.AccountDisabledScreen
+import com.detox.app.presentation.screens.system.ForceUpdateScreen
+import com.detox.app.presentation.screens.system.MaintenanceScreen
 import com.detox.app.presentation.screens.username.UsernameSelectionScreen
 import com.detox.app.presentation.screens.welcome.WelcomeOnboardingScreen
 
@@ -20,6 +23,9 @@ sealed class Screen(val route: String) {
     data object UsernameSelection : Screen("username_selection")
     data object Onboarding : Screen("onboarding")
     data object Main : Screen("main")
+    data object ForceUpdate : Screen("force_update")
+    data object Maintenance : Screen("maintenance")
+    data object AccountDisabled : Screen("account_disabled")
 }
 
 @Composable
@@ -30,6 +36,9 @@ fun DetoxNavGraph(
     accessibilityMissing: Boolean = false,
     onOpenPermissionSettings: () -> Unit = {},
     onOpenAccessibilitySettings: () -> Unit = {},
+    // Where the maintenance screen sends the user once maintenance is cleared (the
+    // destination the app would normally have started on).
+    maintenanceClearedDestination: String = Screen.Main.route,
 ) {
     NavHost(
         navController = navController,
@@ -151,6 +160,28 @@ fun DetoxNavGraph(
                     }
                 }
             )
+        }
+
+        // ── Force update (hard block — version below minVersionCode) ────────────
+        composable(Screen.ForceUpdate.route) {
+            ForceUpdateScreen()
+        }
+
+        // ── Maintenance mode (block until cleared) ──────────────────────────────
+        composable(Screen.Maintenance.route) {
+            MaintenanceScreen(
+                onMaintenanceCleared = {
+                    navController.navigate(maintenanceClearedDestination) {
+                        popUpTo(Screen.Maintenance.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        // ── Account disabled (ban — hard block) ─────────────────────────────────
+        composable(Screen.AccountDisabled.route) {
+            AccountDisabledScreen()
         }
 
         // ── Main app (with bottom nav) ──────────────────────────────────────────

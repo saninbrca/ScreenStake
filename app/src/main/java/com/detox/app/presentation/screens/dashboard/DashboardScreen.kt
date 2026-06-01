@@ -1,6 +1,7 @@
 package com.detox.app.presentation.screens.dashboard
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -27,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
@@ -86,6 +88,9 @@ fun DashboardScreen(
     val successDialogState by viewModel.successDialogState.collectAsStateWithLifecycle()
     val failedHardChallenge by viewModel.failedHardChallenge.collectAsStateWithLifecycle()
     val redemptionChallenges by viewModel.redemptionChallenges.collectAsStateWithLifecycle()
+    val showUpdateBanner by viewModel.showUpdateBanner.collectAsStateWithLifecycle()
+    val updateUrl by viewModel.updateUrl.collectAsStateWithLifecycle()
+    val broadcast by viewModel.broadcast.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
 
@@ -215,6 +220,24 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
+                        if (showUpdateBanner) {
+                            item(key = "update_banner") {
+                                UpdateAvailableBanner(
+                                    onUpdate = {
+                                        val url = updateUrl.ifBlank {
+                                            "https://play.google.com/store/apps/details?id=${context.packageName}"
+                                        }
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            )
+                                        }
+                                    },
+                                    onDismiss = { viewModel.dismissUpdateBanner() }
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                        }
                         itemsIndexed(
                             items = state.activeChallenges,
                             key = { _, it -> it.challengeId }
@@ -264,6 +287,19 @@ fun DashboardScreen(
                 onTryAgain = {
                     viewModel.dismissHardFailOverlay()
                     onAddChallenge()
+                }
+            )
+        }
+
+        broadcast?.let { msg ->
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissBroadcast() },
+                title = { Text(text = msg.title, fontWeight = FontWeight.Bold) },
+                text = { Text(text = msg.message) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.dismissBroadcast() }) {
+                        Text(text = stringResource(R.string.broadcast_acknowledge))
+                    }
                 }
             )
         }
@@ -558,6 +594,58 @@ private fun RedemptionBanner(
                 ) {
                     Text(
                         text = stringResource(R.string.redemption_banner_cta),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateAvailableBanner(
+    onUpdate: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF00C853), MaterialTheme.shapes.medium),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F8EF))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E7A3C)
+                )
+                TextButton(
+                    onClick = onUpdate,
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF00C853))
+                ) {
+                    Text(
+                        text = stringResource(R.string.update_banner_cta),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )

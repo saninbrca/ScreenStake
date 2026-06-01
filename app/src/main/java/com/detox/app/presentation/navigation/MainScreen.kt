@@ -73,6 +73,8 @@ import com.detox.app.presentation.screens.history.HistoryDetailScreen
 import com.detox.app.presentation.screens.history.HistoryScreen
 import com.detox.app.presentation.screens.profile.ProfileScreen
 import com.detox.app.presentation.screens.settings.SettingsScreen
+import com.detox.app.presentation.screens.support.FaqScreen
+import com.detox.app.presentation.screens.support.SupportScreen
 import com.detox.app.presentation.screens.softfail.SoftFailResultScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
 import timber.log.Timber
@@ -399,8 +401,20 @@ fun MainScreen(
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToLogin = onLoggedOut,
-                    onNavigateToHistory = { navController.navigate("history") }
+                    onNavigateToHistory = { navController.navigate("history") },
+                    onNavigateToSupport = { navController.navigate("support") },
+                    onNavigateToFaq = { navController.navigate("faq") }
                 )
+            }
+
+            // ── Support contact form ─────────────────────────────────────────────
+            composable("support") {
+                SupportScreen(onBack = { navController.popBackStack() })
+            }
+
+            // ── FAQ ──────────────────────────────────────────────────────────────
+            composable("faq") {
+                FaqScreen(onBack = { navController.popBackStack() })
             }
 
             // ── Group Challenge — Create wizard ───────────────────────────────────

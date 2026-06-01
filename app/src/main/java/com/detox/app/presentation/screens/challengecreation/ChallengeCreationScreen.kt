@@ -60,6 +60,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -124,6 +125,7 @@ fun ChallengeCreationScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val appListState by viewModel.appListState.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val appConfig by viewModel.appConfig.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(lifecycleOwner) {
@@ -228,6 +230,7 @@ fun ChallengeCreationScreen(
                     1 -> Step1ModeSelection(
                         selectedMode = state.selectedMode,
                         onSelectMode = viewModel::selectMode,
+                        hardModeEnabled = appConfig.hardModeEnabled,
                     )
                     2 -> AppWebsiteSelectionStep(
                         appListState = appListState,
@@ -276,6 +279,8 @@ fun ChallengeCreationScreen(
                         onUpdateDuration = viewModel::updateDurationDays,
                         onToggleNoEndDate = viewModel::updateNoEndDate,
                         onUpdateAmount = viewModel::updateAmountEuros,
+                        stakeMin = appConfig.hardModeMinStake,
+                        stakeMax = appConfig.hardModeMaxStake,
                     )
                     7 -> Step7Confirm(
                         state = state,
@@ -372,6 +377,7 @@ private fun WizardHeader(
 private fun Step1ModeSelection(
     selectedMode: ChallengeMode?,
     onSelectMode: (ChallengeMode) -> Unit,
+    hardModeEnabled: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -418,6 +424,8 @@ private fun Step1ModeSelection(
             badgeText = OrangeBadgeText,
             isSelected = selectedMode == ChallengeMode.HARD,
             onClick = { onSelectMode(ChallengeMode.HARD) },
+            enabled = hardModeEnabled,
+            disabledNote = stringResource(R.string.feature_temporarily_unavailable),
         )
     }
 }
@@ -435,6 +443,8 @@ private fun ModeCard(
     badgeText: Color,
     isSelected: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
+    disabledNote: String? = null,
 ) {
     val borderColor = if (isSelected) GreenPrimary else CardBorder
     val borderWidth = if (isSelected) 2.dp else 0.5.dp
@@ -446,7 +456,8 @@ private fun ModeCard(
             .clip(CardShape)
             .background(bgColor)
             .border(borderWidth, borderColor, CardShape)
-            .clickable(onClick = onClick)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .alpha(if (enabled) 1f else 0.5f)
             .padding(16.dp),
     ) {
         Row(
@@ -509,24 +520,34 @@ private fun ModeCard(
                     color = TextSecondary,
                     lineHeight = 18.sp,
                 )
+                if (!enabled && disabledNote != null) {
+                    Text(
+                        text = disabledNote,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OrangeBadgeText,
+                    )
+                }
             }
 
-            // Right indicator
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = GreenPrimary,
-                    modifier = Modifier.size(20.dp),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(CardBg)
-                        .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
-                )
+            // Right indicator — hidden when the card is disabled
+            if (enabled) {
+                if (isSelected) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = GreenPrimary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(CardBg)
+                            .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
+                    )
+                }
             }
         }
     }
@@ -1003,8 +1024,13 @@ private fun Step6Duration(
     onUpdateDuration: (Int) -> Unit,
     onToggleNoEndDate: (Boolean) -> Unit,
     onUpdateAmount: (Int) -> Unit,
+    stakeMin: Int = 5,
+    stakeMax: Int = 100,
 ) {
     val isHardMode = state.selectedMode == ChallengeMode.HARD
+    // Remote-controlled stake range (config/app) with hardcoded €5–€100 fallback.
+    val safeStakeMin = stakeMin.coerceAtLeast(1)
+    val safeStakeMax = stakeMax.coerceAtLeast(safeStakeMin)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1029,8 +1055,8 @@ private fun Step6Duration(
             )
             Spacer(modifier = Modifier.height(8.dp))
             DetoxHorizontalPicker(
-                values = (5..100).toList(),
-                selectedValue = state.amountEuros.coerceAtMost(100),
+                values = (safeStakeMin..safeStakeMax).toList(),
+                selectedValue = state.amountEuros.coerceIn(safeStakeMin, safeStakeMax),
                 onValueChange = onUpdateAmount,
                 unit = "Euro Einsatz",
             )

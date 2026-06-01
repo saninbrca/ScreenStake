@@ -75,6 +75,7 @@ fun FriendsHubScreen(
     viewModel: FriendsHubViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val groupChallengeEnabled by viewModel.groupChallengeEnabled.collectAsStateWithLifecycle()
     val onForceStart: (String) -> Unit = { groupId -> viewModel.forceStartChallenge(groupId) }
 
     Scaffold(
@@ -108,6 +109,7 @@ fun FriendsHubScreen(
                         ) {
                             Button(
                                 onClick = onCreateGroupChallenge,
+                                enabled = groupChallengeEnabled,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
@@ -126,6 +128,18 @@ fun FriendsHubScreen(
                                     modifier = Modifier.padding(start = 8.dp)
                                 )
                             }
+                        }
+                    }
+
+                    // Remote kill-switch note when Group Challenge creation is disabled.
+                    if (!groupChallengeEnabled) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.feature_temporarily_unavailable),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFFF9500),
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
                         }
                     }
 

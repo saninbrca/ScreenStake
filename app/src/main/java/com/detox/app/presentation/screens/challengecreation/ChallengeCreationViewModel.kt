@@ -7,6 +7,8 @@ import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.data.repository.AppConfig
+import com.detox.app.data.repository.AppConfigRepository
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.ChallengeMode
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
 
@@ -127,11 +130,15 @@ class ChallengeCreationViewModel @Inject constructor(
     private val usageStatsRepository: UsageStatsRepository,
     private val firebaseAuthService: FirebaseAuthService,
     private val analyticsService: AnalyticsService,
+    appConfigRepository: AppConfigRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ChallengeCreationState())
     val state: StateFlow<ChallengeCreationState> = _state.asStateFlow()
+
+    /** Live remote feature flags (Hard Mode toggle, etc.). */
+    val appConfig: StateFlow<AppConfig> = appConfigRepository.config
 
     private val _appListState = MutableStateFlow(AppListState())
     val appListState: StateFlow<AppListState> = _appListState.asStateFlow()
@@ -191,6 +198,12 @@ class ChallengeCreationViewModel @Inject constructor(
     // ── Step 1: Mode ──────────────────────────────────────────────────────────
 
     fun selectMode(mode: ChallengeMode) {
+        // Remote kill-switch: Hard Mode creation can be disabled server-side (e.g. Stripe
+        // issue). Active challenges are unaffected — this only blocks NEW Hard Mode creation.
+        if (mode == ChallengeMode.HARD && !appConfig.value.hardModeEnabled) {
+            Timber.w("Hard Mode creation blocked — hardModeEnabled flag is off")
+            return
+        }
         _state.update { s ->
             val minDays = hardModeMinDays()
             val newDuration = if (mode == ChallengeMode.HARD) maxOf(minDays, s.durationDays) else s.durationDays

@@ -33,6 +33,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.work.WorkManager
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirestoreService
+import com.detox.app.data.repository.AppConfigRepository
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -69,7 +70,13 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var firestoreService: FirestoreService
 
+    @Inject
+    lateinit var appConfigRepository: AppConfigRepository
+
     private var startDestination by mutableStateOf<String?>(null)
+    // The destination the app would normally start on, preserved so the Maintenance
+    // screen can forward the user there once maintenance is cleared.
+    private var maintenanceClearedDestination by mutableStateOf(Screen.Main.route)
     private var isDarkMode by mutableStateOf(false)
     private var hasActiveChallenge by mutableStateOf(false)
     private var overlayMissing by mutableStateOf(false)
@@ -93,7 +100,36 @@ class MainActivity : ComponentActivity() {
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         lifecycleScope.launch {
-            startDestination = determineStartDestination()
+            val realDestination = determineStartDestination()
+            maintenanceClearedDestination = realDestination
+
+            // Remote control gating (Huawei-safe Firestore read). FAIL OPEN: refresh()
+            // never throws and returns cached/default config on any error, so an offline
+            // or no-GMS device proceeds straight into the app.
+            val config = appConfigRepository.refresh()
+            // Ban check (fail-open): only when a user is signed in. A read failure returns
+            // false so a network problem never locks out a legitimate user; the Firebase
+            // Auth disabled flag is the hard backstop.
+            val uid = firebaseAuth.currentUser?.uid
+            val accountDisabled = uid != null && firestoreService.isUserDisabled(uid)
+            startDestination = when {
+                BuildConfig.VERSION_CODE < config.minVersionCode -> {
+                    Timber.w(
+                        "Force update: versionCode=%d < minVersionCode=%d",
+                        BuildConfig.VERSION_CODE, config.minVersionCode
+                    )
+                    Screen.ForceUpdate.route
+                }
+                config.maintenanceMode -> {
+                    Timber.w("Maintenance mode active — blocking app entry")
+                    Screen.Maintenance.route
+                }
+                accountDisabled -> {
+                    Timber.w("Account disabled — blocking app entry for uid=%s", uid)
+                    Screen.AccountDisabled.route
+                }
+                else -> realDestination
+            }
             handleDeepLink(intent)
 
             val activeChallenges = challengeRepository.getActiveChallenges().first()
@@ -132,6 +168,7 @@ class MainActivity : ComponentActivity() {
                                 accessibilityMissing = accessibilityMissing,
                                 onOpenPermissionSettings = ::openPermissionSettings,
                                 onOpenAccessibilitySettings = ::openAccessibilitySettings,
+                                maintenanceClearedDestination = maintenanceClearedDestination,
                             )
                         }
                         SnackbarHost(

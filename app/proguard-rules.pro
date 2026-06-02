@@ -31,3 +31,9 @@
 -keepattributes Annotation
 -keepattributes SourceFile,LineNumberTable
 -keep class io.sentry.** { *; }
+
+# SQLCipher — native AES library loaded via JNI; keep its classes and the androidx.sqlite
+# support interfaces it implements so R8 doesn't strip JNI-referenced members.
+-keep class net.zetetic.** { *; }
+-keep class androidx.sqlite.** { *; }
+-dontwarn net.zetetic.**

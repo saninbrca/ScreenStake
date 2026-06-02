@@ -68,6 +68,33 @@ class SyncRepositoryImpl @Inject constructor(
                 logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
             }
 
+            // 2b. Restore FINISHED (completed/failed) challenges + their daily logs.
+            //     ADDITIVE history-restore path — fully isolated from the active-challenge sync
+            //     above (steps 1–2 are untouched). syncUserData otherwise resyncs only ACTIVE
+            //     challenges, and the History screen reads finished challenges from Room only, so
+            //     without this they are lost whenever Room is cleared (logout, or the SQLCipher
+            //     plaintext-DB drop). Wrapped in its own try/catch so a failure here can never
+            //     break the rest of the sync.
+            //     Per-challenge guard: only insert when ABSENT — finished challenges are immutable,
+            //     so we never REPLACE an existing row (which would CASCADE-delete its daily logs).
+            try {
+                val finished = firestoreService.fetchFinishedChallenges(userId)
+                Timber.d("SyncRepository: fetched ${finished.size} finished challenges")
+                finished.forEach { challenge ->
+                    if (challengeDao.getChallengeById(challenge.id) != null) return@forEach
+                    // Insert the challenge BEFORE its logs (Room FK on daily_logs.challengeId).
+                    challengeDao.insertChallenge(challenge.toEntity())
+                    val logs = firestoreService.fetchDailyLogs(userId, challenge.id)
+                    logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
+                    Timber.d(
+                        "SyncRepository: restored finished challenge %s with %d logs",
+                        challenge.id, logs.size
+                    )
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "SyncRepository: finished-challenge restore failed (non-fatal)")
+            }
+
             // 3. Sync group challenge statuses from Firestore → Room so stale 'active' records
             //    (from cancelled/completed group challenges) don't block app selection.
             groupChallengeRepository.refreshFromFirestore(userId)

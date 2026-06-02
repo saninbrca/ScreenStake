@@ -15,6 +15,186 @@
 
 ## [Unreleased] — June 2026
 
+### SECURITY — Room database encrypted at rest with SQLCipher (Keystore-backed, Huawei-safe)
+
+Defense-in-depth against **offline DB tampering on rooted devices** — the Room DB is now
+AES-256 encrypted via SQLCipher, with the passphrase wrapped by an Android Keystore key. This
+raises the bar for the residual Hard Mode cheat paths (editing local Room state to fake a win).
+Built + verified (`:app:assembleDebug` BUILD SUCCESSFUL; all four ABIs' `libsqlcipher.so`
+package correctly).
+
+- **Dependency:** `net.zetetic:sqlcipher-android:4.6.1` + `androidx.sqlite:sqlite:2.4.0` (catalog
+  + `app/build.gradle.kts`). Uses the **current** artifact — the old
+  `net.zetetic:android-database-sqlcipher` is deprecated. Native AES `.so` per ABI, **no Google
+  Play Services dependency → Huawei-safe**. APK grows ~4–6 MB universal (~1.5–2 MB/device with
+  ABI splits / App Bundle).
+- **`DatabaseKeyManager` (NEW, `data/local/db`).** Generates a random **32-byte** passphrase,
+  AES/GCM-encrypts it with a key in the **Android Keystore** (`AndroidKeyStore`, alias
+  `detox_db_key`, hardware-backed where available — AOSP, works without GMS), and stores only the
+  **encrypted** passphrase + IV in `detox_db_security` prefs. The wrapping key never leaves secure
+  hardware. The key is intentionally **not** `setUserAuthenticationRequired(true)` so background
+  workers can open the DB without a screen unlock and lock-screen/biometric changes don't
+  invalidate it.
+- **`DatabaseModule` wiring.** Loads `libsqlcipher` and builds Room with
+  `SupportOpenHelperFactory(passphrase, null, clearPassphrase=false)`. Existing migrations
+  unchanged.
+- **Existing-user migration — Option A (drop + resync), NOT in-place.** On first encrypted launch
+  (`db_encrypted_v1` flag unset) the old **unencrypted** `detox_database` is deleted and
+  repopulated from Firestore (the source of truth). Chose Option A over an in-place
+  `sqlcipher_export` migration because untested raw-crypto migration on a live payments DB risks
+  corrupting **every** existing user — Option A cannot corrupt (worst case: re-sync).
+  - **Finished-challenge history is now preserved (history-restore path added).** Investigation
+    found `syncUserData()` resynced **only `status=="active"`** challenges, and `HistoryViewModel`
+    reads finished (completed/failed) challenges **only from Room** — they exist in Firestore but
+    were never re-fetched, so clearing Room (logout `clearAllTables()` OR the SQLCipher plaintext
+    drop) wiped the History screen. **Fixed** (see next entry) so the drop is non-lossy. No
+    money/active state was ever at risk (those always resync).
+
+### FIX — Finished-challenge history now restored from Firestore (closes logout/encryption history loss)
+
+`syncUserData()` resynced only active challenges, so completed/failed challenges (read by
+`HistoryViewModel` from Room only) were permanently lost whenever Room was cleared — a
+pre-existing bug on every logout, and a blocker for the SQLCipher plaintext-DB drop.
+
+- **`FirestoreService.fetchFinishedChallenges(userId)` (NEW)** — `whereIn("status", ["completed",
+  "failed"])`. Deliberately a **separate** method from `fetchActiveChallenges` with a **duplicated**
+  parser (not a shared refactor) so the money-critical active-sync path is byte-for-byte untouched
+  and cannot regress.
+- **`SyncRepositoryImpl.syncUserData()` step 2b (NEW, additive)** — after the active sync, fetches
+  finished challenges and, **only when absent in Room** (immutable → never `REPLACE`, which would
+  CASCADE-delete daily logs), inserts the challenge then its nested daily logs (FK order). Wrapped
+  in its own try/catch — a failure here can never break the rest of the sync. Steps 1–4 unchanged.
+- **Effect:** History survives logout/login and the encryption upgrade; eventually-consistent if
+  offline at the moment Room is cleared (restored on the next online sync). Compile-verified.
+- **Graceful Keystore-invalidation fallback.** If the wrapping key is ever lost/invalidated,
+  `DatabaseKeyManager` regenerates the passphrase and signals `wasReset`; `DatabaseModule` then
+  drops the now-unreadable encrypted DB and lets sync repopulate it — **the app never crashes on a
+  lost key.**
+- **ProGuard:** `-keep class net.zetetic.** { *; }` + `-keep class androidx.sqlite.** { *; }` +
+  `-dontwarn net.zetetic.**` so R8 doesn't strip the JNI-referenced SQLCipher classes in release.
+
+### SECURITY — Server-side authority over Hard Mode money decisions
+
+Moved money-authority for Hard Mode refunds/captures to the server and closed two unvalidated
+Stripe paths. **Root problem:** the win/loss decision lived entirely client-side
+(`DailyEvaluationWorker`), so a cheater editing local Room state could force a wrongful 80%
+refund; plus `capturePayment` and the redemption refund branch had no server validation.
+**Deployed** (`firebase deploy --only functions,firestore:rules`).
+
+- **Fix 1 — `cancelOrRefundPayment` win-gate (FAIL-OPEN), non-redemption path.** Before issuing
+  the 80% win-refund, the CF now reads `users/{uid}/challenges/{cid}/dailyLogs` and **denies the
+  refund only if it positively sees `limitExceeded === true`** on any day (a violation day means
+  the stake should have been captured, not refunded). **Absence of logs never denies** — sync is
+  best-effort, so a legitimate winner is never wrongly refused (a real winner never has an
+  exceeded day, since an exceeded day triggers capture). This catches the **Room-only** tamper
+  path. Added alongside the existing server-clock `endDate`, idempotency (`payoutStatus`), and PI-
+  binding checks. **DECISION — known residual:** there is no server-side source of app-usage
+  truth, so a cheater who *suppresses* the violation write (offline / disabled worker) still looks
+  like a clean win. The permission-violation capture path (`checkPermissionViolations`, 1h/24h)
+  remains the backstop for disabled enforcement.
+- **Fix 2 — `capturePayment` IDOR guard.** The CF retrieves the PaymentIntent and returns **403**
+  when `metadata.userId` ≠ the authenticated caller. `createPaymentIntent` already stamps
+  `metadata.userId` on every PI. All three callers (`DailyEvaluationWorker`, Emergency Unlock in
+  `OverlayManager`, `PermissionCheckWorker`) only pass the caller's own PI, so no legitimate
+  capture breaks. PIs without the metadata field (legacy/test) fall through unchanged.
+- **Fix 3 — `cancelOrRefundPayment` redemption branch now fully server-validated.** Previously it
+  refunded the client-supplied `partialRefundCents` with **zero validation** (no ownership, no
+  idempotency, no endDate). Now it re-fetches the redemption challenge and requires:
+  `isRedemption === true`, `payoutStatus !== "refunded"` (idempotency), `originalPaymentIntentId`
+  matches the supplied PI, server-clock `endDate` passed, and **recomputes the 60% refund from the
+  *original* challenge's stored `amountCents`** (an update-protected field) — the client's
+  `partialRefundCents` is discarded.
+- **`onChallengeDeleted` Cloud Function (NEW, Firestore `onDelete` trigger on
+  `users/{userId}/challenges/{challengeId}`).** Cascade-deletes the challenge's nested `dailyLogs`
+  sub-collection via the Admin SDK (batched, 400/commit). Required so the `dailyLogs` rules can
+  block ALL client deletes (below). **Also fixes a pre-existing bug:** per-challenge
+  `deleteChallenge` deleted only the challenge doc and **orphaned** its `dailyLogs` (Firestore does
+  not cascade sub-collections). `FirestoreService.deleteUserData` dropped its now-redundant
+  (and now rules-blocked) client-side log-delete loop — cleanup is server-side via the trigger.
+- **Firestore rules — `dailyLogs` hardening (nested path).** `limitExceeded` is now tamper-evident:
+  `update` may **never flip `limitExceeded` true → false** (false → true is still allowed so the
+  worker can record a violation), and `delete` is **CF-only** (`allow delete: if false`). This
+  stops a cheater from deleting/rewriting an exceeded-day log to dodge the Fix 1 win-gate.
+  **Note:** the *flat* `users/{uid}/dailyLogs/{cid}_{date}` path is intentionally left
+  client-writable — it carries `consciousOpens`/budget for client restore and does **not** hold
+  `limitExceeded`, so it does not feed the server gate.
+
+### FEATURE — Anti-Cheat Detection System (admin flagging) + closed data gaps
+
+A **flagging-only** anti-cheat system that surfaces suspicious users for **manual admin review**.
+**It NEVER auto-bans** — money is involved, so a human always decides. Three layers: close the
+data gaps so detection has data, a read-only Cloud Function that risk-scores users, and an admin
+dashboard tab to review + act.
+
+- **Part 1 — Data gaps closed (every paid challenge now carries anti-cheat metadata):**
+  - **`deviceId` (Settings.Secure.ANDROID_ID) + `isRooted` (RootBeer) added to the `Challenge`
+    data class + `FirestoreService.toMap()`.** Populated **only** for Hard Mode creation (null on
+    Soft Mode). `CreateChallengeUseCase` gained `deviceId`/`isRooted` params;
+    `ChallengeCreationViewModel.onPaymentConfirmed` computes both and passes them through so they
+    flow into the **single** `saveChallenge` `toMap()` write. **Why threaded, not a post-create
+    merge:** `ChallengeRepositoryImpl.createChallenge` syncs to Firestore **fire-and-forget**
+    (`appScope.launch`, not awaited), so a ViewModel merge write would race with `saveChallenge`
+    overwriting it with nulls. `isRooted` is written on **both** true AND false → full coverage on
+    paid challenges (previously only logged to `deviceInfo/security` when true). The existing
+    `logRootedDeviceToFirestore` (`deviceInfo/security`) write is kept.
+  - **Group Challenge join now stores `deviceId` on the participant object.**
+    `confirmGroupJoin` CF reads an optional `deviceId` from the body and adds it to the
+    `participants` arrayUnion entry. `CloudFunctionsService.confirmGroupJoin` /
+    `JoinGroupChallengeUseCase.confirmJoin` gained a `deviceId` param;
+    `GroupChallengeJoinViewModel` (now `@ApplicationContext`-injected) reads ANDROID_ID and passes
+    it. (Group participation lives in `groupChallenges.participants`, not a `challenges` doc, so the
+    detection CF reads device IDs from **both** sources.)
+- **Part 2 — `detectSuspiciousUsers` Cloud Function** (onRequest, `requireAdmin`). **READ-ONLY —
+  never bans, modifies, or deletes user data.** Computes an **additive** risk score per user from
+  5 signals and returns flagged users sorted by `riskScore` desc:
+  1. **Shared IBAN (40)** — 2+ users share the same `payoutIban`.
+  2. **Shared deviceId (40)** — 2+ users share an Android deviceId (across solo challenges +
+     group participants).
+  3. **Rooted device (25)** — any challenge with `isRooted === true`.
+  4. **Perfect win (20)** — completed solo Hard Mode with ≥ 3 daily logs, ALL with
+     `consciousOpens === 0` AND `totalMinutes === 0`.
+  5. **Instant win (15)** — completed solo Hard Mode in < 1 day of actual elapsed time
+     (`payoutDate`/`endDate` − `startDate`).
+  Response: `{ success, flaggedCount, flagged: [{ userId, username, email, riskScore, signals:
+  [{type, description, points}], sharedWith: [userIds], reviewed: {decision, reviewedAt, note}|null }] }`.
+  Reads `antiCheatReviews` to attach prior review decisions. **Cost note in code:** unbounded
+  scans (all users + collectionGroup challenges + all groups + per-completed-challenge dailyLogs);
+  admin-gated, manual trigger only.
+- **Part 3 — Admin dashboard "🛡️ Anti-Cheat" tab** (`admin/index.html`): "Analyse starten"
+  (confirmation modal → `detectSuspiciousUsers`), results table sorted by risk with a color-coded
+  badge (rot ≥ 60, orange 30–59, gelb < 30), expandable per-signal details, "Verbundene Konten"
+  links (→ Benutzer tab), and actions: "Profil ansehen", "✓ Geprüft – OK" (false positive), and
+  "🚫 Sperren" (reuses `setUserBanStatus`). Review decisions are stored in
+  `antiCheatReviews/{userId}` (`decision: "cleared" | "banned"`, `reviewedAt`, `reviewedBy`,
+  `note`); cleared users show **greyed out + "bereits geprüft (OK)"** in future analyses, banned
+  users show "gesperrt". All strings German.
+- **Part 4 — Firestore rules + indexes:** new `antiCheatReviews/{userId}` match
+  (`read, write: if admin email`). Index additions (`firestore.indexes.json`): collection-group
+  field override for `challenges.deviceId` (COLLECTION + COLLECTION_GROUP) and a single-field
+  index declaration for `users.payoutIban`. (The CF currently groups in-memory like
+  `backfillCounters`; the indexes support a future where-query approach and honor the deploy spec.)
+
+**PRIVACY (DSGVO):** `deviceId` (ANDROID_ID) is collected for **fraud prevention** —
+**already legally covered** in the Datenschutzerklärung under "Gerätedaten / Betrugsschutz,
+Art. 6 Abs. 1 lit. f DSGVO" (berechtigtes Interesse). No new consent flow required.
+
+**CRITICAL RULES (never reverse):** FLAGGING ONLY — `detectSuspiciousUsers` never auto-bans and
+never writes user data; a human always reviews. Risk score is additive. Cleared false positives
+are remembered in `antiCheatReviews` and not re-flagged as new. `deviceId` + `isRooted` are stored
+on every Hard Mode challenge (deviceId also on group joins).
+
+**Files changed:** `domain/model/Challenge.kt`, `domain/usecase/CreateChallengeUseCase.kt`,
+`presentation/screens/challengecreation/ChallengeCreationViewModel.kt`,
+`data/remote/firebase/FirestoreService.kt`, `data/remote/firebase/CloudFunctionsService.kt`,
+`domain/usecase/JoinGroupChallengeUseCase.kt`,
+`presentation/screens/groupchallenge/join/GroupChallengeJoinViewModel.kt`,
+`functions/src/index.ts` (`confirmGroupJoin` + new `detectSuspiciousUsers` + `tsToMillis` helper),
+`firestore.rules`, `firestore.indexes.json`, `admin/index.html`, `docs/00_changelog.md`
+**New Firestore: `antiCheatReviews` collection; `challenges.deviceId`/`isRooted` fields;
+`groupChallenges.participants[].deviceId`. New CF: `detectSuspiciousUsers`. No Room schema changes
+(anti-cheat fields are Firestore-only). No Stripe flow changes.**
+**Deploy:** `firebase deploy --only firestore:rules,firestore:indexes,functions`
+
 ### FEATURE — Admin Dashboard Paket 3: Statistics, Revenue, Broadcast, Counter Backfill, Remote Stake Limits
 
 Final admin-dashboard expansion: an overview landing tab, revenue tracking, a broadcast system

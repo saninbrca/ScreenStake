@@ -355,6 +355,90 @@ class FirestoreService @Inject constructor(
     }
 
     /**
+     * Fetches the user's FINISHED (completed + failed) challenges.
+     *
+     * ADDITIVE history-restore path — intentionally a separate method from [fetchActiveChallenges]
+     * (its money-critical sibling) so it can NEVER affect the active-sync path. syncUserData()
+     * resyncs only ACTIVE challenges, and the History screen reads finished challenges from Room
+     * only, so without this they are lost whenever Room is cleared (logout, or the SQLCipher
+     * plaintext-DB drop). The parser is duplicated (not shared) deliberately to avoid touching the
+     * working active path.
+     */
+    suspend fun fetchFinishedChallenges(userId: String): List<Challenge> {
+        return try {
+            val snapshot = firestore
+                .collection("users").document(userId)
+                .collection("challenges")
+                .whereIn("status", listOf("completed", "failed"))
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { doc ->
+                val d = doc.data ?: return@mapNotNull null
+                try {
+                    val primaryPkg = d["appPackageName"] as? String ?: return@mapNotNull null
+                    val pkgNamesRaw = d["appPackageNames"] as? String
+                    val packageNames = pkgNamesRaw
+                        ?.split(",")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: listOf(primaryPkg)
+                    val domainsRaw = d["blockedDomains"] as? String
+                    val domains = domainsRaw
+                        ?.split(",")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?: emptyList()
+                    Challenge(
+                        id = d["id"] as? String ?: doc.id,
+                        appPackageName = packageNames.firstOrNull(),
+                        appPackageNames = packageNames,
+                        appDisplayName = d["appDisplayName"] as? String ?: return@mapNotNull null,
+                        mode = ChallengeMode.valueOf((d["mode"] as? String ?: "soft").uppercase()),
+                        limitType = LimitType.valueOf((d["limitType"] as? String ?: "time").uppercase()),
+                        limitValueMinutes = (d["limitValueMinutes"] as? Long)?.toInt() ?: 0,
+                        limitValueSessions = (d["limitValueSessions"] as? Long)?.toInt(),
+                        startDate = d["startDate"] as? Long ?: 0L,
+                        endDate = d["endDate"] as? Long ?: 0L,
+                        amountCents = (d["amountCents"] as? Long)?.toInt(),
+                        stripePaymentIntentId = d["stripePaymentIntentId"] as? String,
+                        customMotivation = d["customMotivation"] as? String,
+                        status = ChallengeStatus.valueOf((d["status"] as? String ?: "active").uppercase()),
+                        createdAt = d["createdAt"] as? Long ?: 0L,
+                        dailyBudgetMinutes = (d["dailyBudgetMinutes"] as? Long)?.toInt(),
+                        blockedDomains = domains,
+                        partialBlockDomains = (d["partialBlockDomains"] as? String)
+                            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                            ?: emptyList(),
+                        blockingType = runCatching {
+                            BlockingType.valueOf((d["blockingType"] as? String ?: "app").uppercase())
+                        }.getOrDefault(BlockingType.APP),
+                        blockAdultContent = d["blockAdultContent"] as? Boolean ?: false,
+                        scheduleStartTime = d["scheduleStartTime"] as? String,
+                        scheduleEndTime = d["scheduleEndTime"] as? String,
+                        activeDays = (d["activeDays"] as? String)
+                            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                            ?: emptyList(),
+                        partialBlockSections = (d["partialBlockSections"] as? List<*>)
+                            ?.filterIsInstance<String>()
+                            ?.mapNotNull { PartialBlockSection.fromId(it) }
+                            ?: emptyList(),
+                        isPartialBlockOnly = d["isPartialBlockOnly"] as? Boolean ?: false,
+                        pendingLimitValue = (d["pendingLimitValue"] as? Long)?.toInt(),
+                        pendingLimitAppliesAt = d["pendingLimitAppliesAt"] as? Long,
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to parse finished challenge document ${doc.id}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to fetch finished challenges for uid=$userId")
+            emptyList()
+        }
+    }
+
+    /**
      * Fetches all daily log entries for the given challenge.
      */
     suspend fun fetchDailyLogs(userId: String, challengeId: String): List<DailyLog> {
@@ -570,10 +654,8 @@ class FirestoreService @Inject constructor(
             val challenges = challengesRef.get().await()
             for (challengeDoc in challenges.documents) {
                 try {
-                    val logs = challengeDoc.reference.collection("dailyLogs").get().await()
-                    for (log in logs.documents) {
-                        log.reference.delete().await()
-                    }
+                    // Nested dailyLogs are cleared server-side by the onChallengeDeleted
+                    // Cloud Function trigger (client deletes are blocked by Firestore rules).
                     challengeDoc.reference.delete().await()
                 } catch (e: Exception) {
                     Timber.w(e, "Failed to delete challenge ${challengeDoc.id} for uid=$userId")
@@ -642,6 +724,9 @@ class FirestoreService @Inject constructor(
         "refundAmountCents" to refundAmountCents,
         "pendingLimitValue" to pendingLimitValue,
         "pendingLimitAppliesAt" to pendingLimitAppliesAt,
+        // Anti-cheat metadata — only populated for Hard Mode creation (null otherwise).
+        "deviceId" to deviceId,
+        "isRooted" to isRooted,
         "syncedAt" to com.google.firebase.Timestamp.now()
     )
 

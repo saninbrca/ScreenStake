@@ -108,6 +108,10 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // SQLCipher — encrypted Room database (Huawei-safe native AES, no GMS)
+    implementation(libs.sqlcipher.android)
+    implementation(libs.androidx.sqlite)
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)                  // com.google.dagger:hilt-compiler — processes @HiltViewModel, @Inject, etc.

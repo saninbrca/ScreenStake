@@ -8,8 +8,8 @@
 
 | Rule | Value |
 |------|-------|
-| Minimum buy-in | **€10** per participant |
-| Maximum buy-in | **€50** per participant |
+| Minimum buy-in | **€10** per participant (default — remotely configurable via `AppConfig.groupMinBuyIn`) |
+| Maximum buy-in | **€50** per participant (default — remotely configurable via `AppConfig.groupMaxBuyIn`) |
 | Minimum participants to start | **2** |
 | Minimum duration | **3 days** |
 | Maximum duration | **30 days** |
@@ -53,6 +53,16 @@ It is Soft Mode + Stripe + Firestore participants sync.
 RULE: Any fix applied to Soft Mode blocking/overlay/DailyLog logic
 MUST be verified for Group Challenge as well.
 Never create separate overlay implementations for Group vs Solo challenges.
+
+---
+
+## Feature Flag — `groupChallengeEnabled`
+
+Group Challenge **creation** is gated by the remote `AppConfig.groupChallengeEnabled` flag
+(`config/app`, default `true`). When `false`, the "Erstellen" button in `FriendsHubScreen` is
+disabled and an "unavailable" note is shown (`FriendsHubViewModel.groupChallengeEnabled`). Active
+challenges are **never** affected — the flag gates new creation only. Fail-open: a missing config or
+read error leaves the feature enabled. See `docs/13_remote_config_and_flags.md`.
 
 ---
 
@@ -151,6 +161,8 @@ PaymentSheetResult.Failed:
 **confirmGroupJoin Cloud Function:**
 - Validates payment
 - Adds participant to `participants` array AND `participantUserIds`
+- Reads an optional `deviceId` (ANDROID_ID) from the body and stores it on the participant object
+  for anti-cheat shared-device detection (`GroupChallengeJoinViewModel` passes it). See `docs/10`.
 - Returns `{success: true}` or `{success: true, alreadyJoined: true}`
 - Uses `onRequest` pattern (never `onCall`)
 
@@ -219,6 +231,7 @@ Participant object:
     opensToday: Int
     timeUsedMinutes: Int
     joinedAt: Long
+    deviceId: String?                ← ANDROID_ID, added on join for anti-cheat (docs/10)
 
 payoutRequests/{requestId}/
     userId: String

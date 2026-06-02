@@ -32,13 +32,14 @@
 | Auth | Firebase Authentication (Email/Password primary, Google Sign-In secondary) |
 | Database | Firestore |
 | Functions | Firebase Cloud Functions (Node.js 22 / TypeScript, region: `us-central1`) |
-| Crash Reporting | Firebase Crashlytics |
+| Crash Reporting | Sentry (Huawei-safe — own HTTP transport, no Google Play Services). Crashlytics removed. |
 | Payments | Stripe Android SDK + Stripe Node.js SDK in Cloud Functions |
 
 ### Services & Workers
 - **Foreground Service:** `UsageTrackingService` — screen time tracking
 - **Accessibility Service:** `AppDetectionAccessibilityService` — app detection + overlay trigger
-- **Workers:** `DailyEvaluationWorker`, `DailyReminderWorker`, `PermissionCheckWorker`, `ServiceWatchdogWorker`
+- **Workers:** `DailyEvaluationWorker`, `PermissionCheckWorker`, `RedemptionNotificationWorker`, `AdultDomainsUpdateWorker`
+  (`DailyReminderWorker` + `ServiceWatchdogWorker` were deleted in the notification cleanup)
 - **Boot:** `BootReceiver` — restarts services after device reboot
 
 ---
@@ -57,13 +58,15 @@ com.detox.app/
 │   │   │   ├── ChallengeEntity.kt
 │   │   │   ├── DailyLogEntity.kt
 │   │   │   └── GroupChallengeEntity.kt
-│   │   └── DetoxDatabase.kt          ← Room DB, check for current version
+│   │   ├── DatabaseKeyManager.kt     ← SQLCipher passphrase, Keystore-wrapped (see docs/10)
+│   │   └── DetoxDatabase.kt          ← Room DB (SQLCipher-encrypted), check for current version
 │   ├── remote/firebase/
 │   │   ├── FirebaseAuthService.kt
 │   │   ├── FirestoreService.kt
 │   │   ├── CloudFunctionsService.kt  ← onRequest pattern (NOT onCall)
 │   │   └── GroupChallengeFirestoreService.kt
 │   └── repository/
+│       ├── AppConfigRepository.kt     ← remote config/app (feature flags, maintenance — see docs/13)
 │       ├── ChallengeRepositoryImpl.kt
 │       ├── DailyLogRepositoryImpl.kt
 │       ├── GroupChallengeRepositoryImpl.kt
@@ -85,8 +88,8 @@ com.detox.app/
 │   │   ├── GroupChallengeStatus.kt
 │   │   ├── LimitType.kt
 │   │   ├── Participant.kt
-│   │   ├── PartialBlockSection.kt    ← NEW
-│   │   └── ThresholdFlags.kt
+│   │   └── PartialBlockSection.kt
+│   │   (ThresholdFlags.kt removed — usage-threshold subsystem deleted, Room migration 24→25)
 │   ├── repository/        ← interfaces
 │   └── usecase/
 │       ├── CheckDailyLimitUseCase.kt
@@ -123,7 +126,9 @@ com.detox.app/
 │   └── screens/
 │       ├── activechallenge/   ActiveChallengeScreen + ViewModel
 │       ├── appselection/      AppSelectionScreen + ViewModel
-│       ├── auth/              AuthScreen + ViewModel
+│       ├── auth/              AuthScreen + ViewModel,
+│       │                      EmailVerificationScreen + ViewModel,
+│       │                      UsernameSelectionScreen + ViewModel
 │       ├── challengecreation/ ChallengeCreationScreen (7-step wizard) + ViewModel
 │       ├── dashboard/         DashboardScreen + ViewModel
 │       ├── friends/           FriendsHubScreen + ViewModel
@@ -132,17 +137,20 @@ com.detox.app/
 │       │   ├── detail/        GroupChallengeDetailScreen + ViewModel
 │       │   ├── join/          GroupChallengeJoinScreen + ViewModel
 │       │   └── results/       GroupChallengeResultsScreen
-│       ├── history/           HistoryScreen + ViewModel
+│       ├── hardmodefail/      HardModeFailScreen + ViewModel  ← manual Hard Mode quit
+│       ├── history/           HistoryScreen + ViewModel, HistoryDetailScreen
 │       ├── onboarding/        OnboardingScreen + ViewModel
 │       ├── profile/           ProfileScreen + ViewModel
 │       ├── settings/          SettingsScreen + ViewModel
-│       └── statistics/        StatisticsScreen + ViewModel
+│       ├── statistics/        StatisticsScreen + ViewModel
+│       ├── support/           SupportScreen + ViewModel, FaqScreen  ← in-app support (docs/12)
+│       └── system/            ForceUpdateScreen, MaintenanceScreen, SystemViewModel,
+│                              AccountDisabledScreen + ViewModel  ← remote control (docs/13)
 ├── service/
 │   ├── AppDetectionAccessibilityService.kt  ← CORE
 │   ├── AdultDomainsUpdateWorker.kt
 │   ├── BootReceiver.kt
 │   ├── DailyEvaluationWorker.kt
-│   ├── DailyReminderWorker.kt
 │   ├── DetoxFirebaseMessagingService.kt
 │   ├── NotificationHelper.kt
 │   ├── OverlayManager.kt                    ← CORE
@@ -183,6 +191,12 @@ Repositories: [Name]RepositoryImpl.kt (impl) / [Name]Repository.kt (interface)
 ---
 
 ## Room Database Rules
+
+> **Encrypted at rest (SQLCipher).** The Room DB is AES-256 encrypted via
+> `net.zetetic:sqlcipher-android`. The passphrase is generated + Keystore-wrapped by
+> `DatabaseKeyManager` and supplied to Room through `SupportOpenHelperFactory` in `DatabaseModule`.
+> NEVER hardcode the passphrase. Migrations are unaffected (they run inside the encrypted DB).
+> Full detail: **docs/10_security_and_anticheat.md**.
 
 ```kotlin
 // Check DetoxDatabase.kt for CURRENT version before any change.
@@ -396,6 +410,11 @@ val request = Request.Builder()
 - `checkPermissionViolations`
 - `scheduledPermissionCheck`
 - `claimPendingPayouts`
+- `onUserCreated` — Firestore `onCreate(users/{uid})` trigger → bumps `counters/global.totalUsers`
+- `setUserBanStatus` — admin-only ban/unban (Auth disable + Firestore flag) (docs/11)
+- `backfillCounters` — admin-only one-time recompute of `counters/global` (docs/11)
+- `detectSuspiciousUsers` — admin-only read-only anti-cheat risk scoring (docs/10)
+- `onChallengeDeleted` — Firestore `onDelete` trigger → cascade-deletes nested `dailyLogs` (docs/10)
 
 ### Deploy Commands
 ```bash

@@ -283,14 +283,18 @@ Full redesign: grouped white cards (#FFFFFF), colored icon circles (28dp), secti
 (13sp, #8E8E93, uppercase). Sections in order:
 
 1. **Konto** — E-Mail ändern, Passwort ändern, Konto löschen
-2. **Aktivität** — Daily Reminder toggle + time picker
-3. **Auszahlungskonto** — IBAN hinterlegen / bearbeiten
-4. **Erscheinungsbild** — Dark Mode (marked "Experimentell")
-5. **Benachrichtigungen** — toggle per notification type
+2. **Auszahlungskonto** — IBAN hinterlegen / bearbeiten
+3. **Erscheinungsbild** — Dark Mode (marked "Experimentell")
+4. **Benachrichtigungen** — toggle for "Wenn Teilnehmer scheitert" (the only user-toggleable
+   notification after the notification cleanup)
+5. **Hilfe & Support** — Support kontaktieren (→ SupportScreen), Häufige Fragen (→ FaqScreen)
 6. **Berechtigungen** — live status: Overlay ✅/❌, Accessibility ✅/❌, Usage Stats ✅/❌
-7. **Datenschutz** — privacy policy link
+7. **Datenschutz** — Datenschutz, AGB, Impressum links
 8. **App Info** — version number, Rate App (opens Play Store)
 9. **Entwickler** — debug panel (DEBUG builds only)
+
+*(The "Aktivität — Daily Reminder toggle + time picker" section was removed — the daily-reminder
+feature was deleted in the notification cleanup.)*
 
 Friend Alerts row: removed (feature not implemented).
 
@@ -300,5 +304,7 @@ Friend Alerts row: removed (feature not implemented).
 
 1. Google Sign-In not available on Huawei — by design, not a bug
 2. Password reset email may land in spam — mention in UI
-3. Account deletion while Hard Mode active → must capture Stripe first
-   (not yet fully implemented — manual process currently)
+3. Account deletion now requires re-authentication (password field in the delete dialog →
+   `reauthenticateWithPassword`). On success, any active Hard Mode Stripe payment is captured FIRST,
+   then Firestore data + Auth account are deleted and Room is cleared. (Implemented — was previously
+   a manual process.)

@@ -12,6 +12,8 @@
 * **Navigation:** `presentation/navigation/DetoxNavGraph.kt`
 * **Core Services:** `service/UsageTrackingService.kt`, `service/AppDetectionAccessibilityService.kt`, `service/OverlayManager.kt`
 * **Database:** `data/local/db/DetoxDatabase.kt`
+* **DB Encryption:** `data/local/db/DatabaseKeyManager.kt` (SQLCipher passphrase, Keystore-wrapped)
+* **Remote Config:** `data/repository/AppConfigRepository.kt` (feature flags, maintenance, force-update)
 * **Cloud Functions:** `functions/src/index.ts`
 * **Stripe Logic:** `data/remote/repository/PaymentRepositoryImpl.kt`
 
@@ -21,6 +23,11 @@
 * **Firestore Arrays:** NEVER use dot notation for array updates. ALWAYS use `FieldValue.arrayRemove` + `FieldValue.arrayUnion`.
 * **Overlays:** ALWAYS use `FLAG_SECURE` and `TYPE_APPLICATION_OVERLAY`. Use `Handler(mainLooper).post{}` for showing overlays.
 * **Logout:** Clear ALL Room tables BEFORE calling `Firebase.signOut()`.
+* **Money Authority:** Refund/capture decisions are validated SERVER-SIDE. NEVER trust the client's win/loss, clock, refund amount, or PaymentIntent id — re-derive them from the stored challenge doc. (See `docs/10`.)
+* **DB Encryption:** The Room DB is SQLCipher-encrypted; the passphrase comes from `DatabaseKeyManager` (Keystore-wrapped). NEVER hardcode it.
+* **dailyLogs tamper-evidence:** `limitExceeded` may NEVER flip true→false; `dailyLogs` deletes are Cloud-Function-only (`allow delete: if false`).
+* **Anti-Cheat:** FLAGGING ONLY — `detectSuspiciousUsers` never auto-bans or writes user data; a human always reviews.
+* **AppConfig:** FAIL-OPEN — a missing config or network error keeps cached/safe defaults and NEVER locks the user out.
 
 ## 4. Coding Conventions
 * **UI:** Kotlin & Jetpack Compose ONLY. No XML.
@@ -43,3 +50,7 @@
   - Onboarding & Auth: `docs/07_onboarding_and_auth.md`
   - UI Design System: `docs/08_ui_design_system.md`
   - Payout & Fees: `docs/09_payout_and_fees.md`
+  - Security & Anti-Cheat: `docs/10_security_and_anticheat.md` (SQLCipher, server-side money authority, anti-cheat, ban system)
+  - Admin Dashboard: `docs/11_admin_dashboard.md` (7 tabs, counters, broadcasts, ban actions)
+  - Support System: `docs/12_support_system.md` (in-app support form, FAQ, supportTickets)
+  - Remote Config & Flags: `docs/13_remote_config_and_flags.md` (config/app, feature flags, maintenance, force-update)

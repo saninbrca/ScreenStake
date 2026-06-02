@@ -389,16 +389,17 @@ Each row: colored icon circle (28dp) + label + disclosure arrow or toggle.
 
 Sections in order:
 1. **Konto** — E-Mail ändern, Passwort ändern, Konto löschen
-2. **Aktivität** — Daily Reminder toggle + time picker
-3. **Auszahlungskonto** — IBAN hinterlegen / bearbeiten (moved from ProfileScreen)
-4. **Erscheinungsbild** — Dark Mode (row labeled "Experimentell")
-5. **Benachrichtigungen** — toggle per notification type
+2. **Auszahlungskonto** — IBAN hinterlegen / bearbeiten (moved from ProfileScreen)
+3. **Erscheinungsbild** — Dark Mode (row labeled "Experimentell")
+4. **Benachrichtigungen** — single toggle "Wenn Teilnehmer scheitert" (only user-toggleable notif)
+5. **Hilfe & Support** — Support kontaktieren (→ SupportScreen), Häufige Fragen (→ FaqScreen)
 6. **Berechtigungen** — live status rows: Overlay ✅/❌, Accessibility ✅/❌, Usage Stats ✅/❌
-7. **Datenschutz** — privacy policy link
+7. **Datenschutz** — Datenschutz, AGB, Impressum links
 8. **App Info** — version number, Rate App (opens Play Store)
 9. **Entwickler** — debug panel (DEBUG builds only)
 
 Friend Alerts row: removed (feature not implemented).
+Daily Reminder toggle + time picker: removed (daily-reminder feature deleted in notification cleanup).
 
 ---
 
@@ -448,3 +449,57 @@ iOS-style solid red card on Dashboard when any required permission is missing.
 
 **Visibility rule:** Banner shown only when at least one permission is missing AND active
 challenges exist (Success state only). CTA navigates to `Settings.ACTION_ACCESSIBILITY_SETTINGS`.
+
+---
+
+## Win Screen — `ChallengeSuccessDialog` (Dashboard dialog)
+
+Dismissible `Dialog {}` shown on top of the Dashboard (other cards stay visible behind the scrim) —
+replaces the old fullscreen success overlays. Handles both modes from one composable.
+- **Soft Mode:** time-saved card. **Hard Mode:** money-refund card (€ back + 20% fee line).
+- Canvas confetti, staggered phase reveals (0 / 300 / 600 / 900 ms), count-up stat animations.
+- Dismiss: an **X** button and a "Zurück zum Dashboard" link both dismiss; "Neue Challenge starten"
+  navigates to the wizard.
+- Show guard: SharedPreferences `"win_shown_{challengeId}"` (file `"detox_win_popup"`); DB
+  `completionShown` flag marked on dismiss (belt-and-suspenders).
+
+## Hard Mode Fail Screen — `HardModeFailScreen` (route `hard_mode_fail/{challengeId}`)
+
+Dark fullscreen (`#0A0A0A`, `isAppearanceLightStatusBars = false`) — for the manual "Aufgeben" quit
+path (the auto-fail / limit-exceeded path still uses the Dashboard `HardModeFailOverlay`).
+- 💸 icon, "Challenge verloren." title (red period).
+- White money card showing the captured stake `€X,XX` (formatted from integer cents — never rounds up).
+- Encouragement line.
+- Primary: "Zurück zum Dashboard" (white bg, black text, 54dp). Text link: "Neue Challenge starten".
+
+## System Screens (`presentation/screens/system/`) — see docs/13
+
+| Screen | Route | Icon | Behavior |
+|--------|-------|------|----------|
+| `ForceUpdateScreen` | `force_update` | ⬆️ `#00C853` | `BackHandler` blocks back; "Jetzt aktualisieren" opens `updateUrl` |
+| `MaintenanceScreen` | `maintenance` | 🔧 `#FF9500` | shows `maintenanceMessage` or default; "Erneut versuchen" re-reads config, proceeds only if cleared |
+| `AccountDisabledScreen` | `account_disabled` | 🚫 red | `BackHandler` blocks back; shows `disabledReason` or default; "Support kontaktieren" → mailto |
+
+## Auth Screens (new)
+
+- **`EmailVerificationScreen`** (route `email_verification?fromRegister={bool}`): "Ich habe bestätigt"
+  (inline error if still unverified), "E-Mail erneut senden" with 60s cooldown countdown, auto-polls
+  every 5s, "Falsche E-Mail?" link. Detail in docs/07.
+- **`UsernameSelectionScreen`** (route `username_selection?fromRegister={bool}`): @-prefixed lowercase
+  input (a–z/0–9/_), min 3 / max 20, "X / 20" counter, 500ms debounced availability check
+  (green "Verfügbar" / red "Bereits vergeben"); `BackHandler` blocks back. Detail in docs/07.
+
+## Support Screens (`presentation/screens/support/`) — see docs/12
+
+- **`SupportScreen`:** iOS-style white card (bg `#F2F2F7`) — Kategorie dropdown (Bug / Frage /
+  Beschwerde / Auszahlung / Sonstiges), Betreff (single line), Nachricht (multiline). Validates
+  category + subject + message ≥ 10 chars. Submit → confirmation screen; failure → inline error.
+- **`FaqScreen`:** 8 expandable cards (chevron rotates), all Q&A in `strings.xml` (German).
+
+## Dashboard Banners (remote-driven) — see docs/13
+
+- **Soft-update banner:** dismissible green banner when `VERSION_CODE < latestVersionCode` (and not
+  force-blocked). "Aktualisieren" opens `updateUrl`; dismissal stored in `detox_update_banner` prefs,
+  re-shows after 3 days.
+- **Broadcast dialog:** one-time `AlertDialog` (title + message + "Verstanden") for the newest active
+  `broadcasts` doc whose id differs from the stored `last_seen_broadcast_id` (prefs `detox_broadcast`).

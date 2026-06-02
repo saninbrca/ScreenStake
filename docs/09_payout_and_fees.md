@@ -70,6 +70,11 @@ Firestore update:
 
 Notification: "Challenge gewonnen! 💚 €X werden zurückgebucht. (20% App-Gebühr: €Y)"
 
+**Revenue tracking:** the retained app fee (`appFeeAmount`, fallback `floor(20%)`) is also added to
+`counters/global.totalRevenueCents` via the CF `bumpCounters()` helper (best-effort, never blocks the
+payout). `counters/global.totalRevenueCents` is the cheap source of truth for the admin Umsatz tab —
+captured stakes on fails and 10% group fees feed it too. See `docs/11_admin_dashboard.md`.
+
 ---
 
 ## Redemption Challenge Payout
@@ -78,11 +83,18 @@ Trigger: DailyEvaluationWorker detects Redemption COMPLETED
 
 ```kotlin
 val refundAmount = floor(originalAmountCents * 0.60).toInt()
-// Call cancelOrRefundPayment with originalPaymentIntentId + refundAmount
+// Call cancelOrRefundPayment with originalPaymentIntentId + partialRefundCents
 ```
 
 Note: refund comes from ORIGINAL paymentIntentId (not redemption — no new payment).
 Stripe 90-day limit: originalDays <= 28 enforced at creation.
+
+**Server-side validated (June 2026):** the redemption branch is **no longer** trusted blindly. The
+`cancelOrRefundPayment` CF re-fetches the redemption challenge and requires `isRedemption === true`,
+`payoutStatus !== "refunded"` (idempotency), `originalPaymentIntentId` matches the supplied PI, and a
+server-clock `endDate` that has passed. It then **recomputes the 60% from the *original* challenge's
+stored `amountCents`** — the client-supplied `partialRefundCents` is discarded. See
+`docs/10_security_and_anticheat.md` and `docs/03_hard_mode_and_stripe.md`.
 
 Notification: "Comeback geschafft! 🎉 €X werden zurückgebucht."
 

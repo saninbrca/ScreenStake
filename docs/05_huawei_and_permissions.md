@@ -38,23 +38,13 @@ val HUAWEI_SYSTEM_MANAGER = "com.huawei.systemmanager"
 ```
 
 ### Notification Channels Used
-- **Daily Reminder:** `DailyReminderWorker` — user-configurable time, toggleable in Settings
 - **Permission warnings:** `PermissionCheckWorker` — escalating urgency (see 24h system below)
-- **Challenge events:** Fail, success, group events — all via local notifications
+- **Challenge events:** money/security events, completion, and 80%-usage — all via local notifications
+  (the daily-reminder / report / lifecycle notifications were removed — see changelog "Notification cleanup")
 
 ### WorkManager Scheduling
 
 ```kotlin
-// Daily reminder (user-configured time):
-val dailyWork = PeriodicWorkRequestBuilder<DailyReminderWorker>(1, TimeUnit.DAYS)
-    .setInitialDelay(delayUntilTime, TimeUnit.MILLISECONDS)
-    .build()
-WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-    "daily_reminder",
-    ExistingPeriodicWorkPolicy.REPLACE,
-    dailyWork
-)
-
 // Permission check (every 15 min):
 val permCheck = PeriodicWorkRequestBuilder<PermissionCheckWorker>(15, TimeUnit.MINUTES)
     .build()
@@ -63,6 +53,10 @@ WorkManager.getInstance(context).enqueueUniquePeriodicWork(
     ExistingPeriodicWorkPolicy.KEEP,
     permCheck
 )
+
+// Daily evaluation (23:59, requires network — Hard Mode refunds depend on it):
+// PeriodicWorkRequest<DailyEvaluationWorker> with
+// Constraints.setRequiredNetworkType(NetworkType.CONNECTED). NEVER remove the constraint.
 ```
 
 ---
@@ -158,15 +152,6 @@ fun allowPackageTemporarily(packageName: String) {
         allowedPackages.remove(packageName)
     }, 5000)  // 5 second window
 }
-```
-
-### On Huawei: Service Watchdog
-
-```kotlin
-// ServiceWatchdogWorker runs periodically:
-// Checks if AppDetectionAccessibilityService is running
-// If not → shows notification guiding user to re-enable
-// Cannot auto-restart AccessibilityService (Android restriction)
 ```
 
 ### Known Huawei Overlay Timing Issue
@@ -484,7 +469,7 @@ Use Debug Panel in ProfileScreen to test permission scenarios:
 On Huawei specifically:
 → After "Simulate Permission Lost" verify:
    - AccessibilityService status also checked
-   - ServiceWatchdogWorker detects missing service
+   - Red banner appears + permission escalation notifications fire
    - Battery optimization warning shown if service killed
 
 ### Debug Panel — PERMISSION VIOLATION TESTS section (DEBUG builds only)

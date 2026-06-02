@@ -10,8 +10,8 @@
 |------|-------|
 | Minimum duration | **7 days** production (1 day DEBUG) — enforced in `CreateChallengeUseCase` |
 | Maximum duration | **90 days** |
-| Minimum stake | **€5** |
-| Maximum stake | **€100** |
+| Minimum stake | **€5** (default — remotely configurable via `AppConfig.hardModeMinStake`) |
+| Maximum stake | **€100** (default — remotely configurable via `AppConfig.hardModeMaxStake`) |
 | Money | Real money via Stripe |
 | End date | Mandatory (minimum 7 days from start) |
 | Fail condition | Daily limit exceeded → Stripe capture → marked FAILED |
@@ -176,8 +176,9 @@ export const cancelOrRefundPayment = functions.https.onRequest(async (req, res) 
     const pi = await stripe.paymentIntents.retrieve(paymentIntentId)
 
     // ── Server-side validation (solo Hard Mode win / non-redemption path) ──────
-    // Redemption branch (partialRefundCents > 0) is validated by its own stored
-    // refundAmountCents against the original PI and is left intact.
+    // Redemption branch (partialRefundCents > 0) is ALSO fully server-validated (June 2026):
+    // isRedemption, payoutStatus != "refunded", originalPaymentIntentId match, server-clock
+    // endDate, and the 60% recomputed from the original challenge's stored amountCents.
     let serverAmountCents = amountCents
     if (!(partialRefundCents && partialRefundCents > 0)) {
         if (!challengeId) throw new HttpError(400, "challengeId is required.")
@@ -227,6 +228,46 @@ matches `challenge.stripePaymentIntentId`. The 80% refund is recomputed from the
 `amountCents` — the client-supplied `amountCents` is discarded. This closes the device-clock-
 forward exploit (client could otherwise trigger an early refund). See
 `docs/00_changelog.md` → "Hard Mode refund clock-forward exploit".
+
+---
+
+## Server-side Money Authority (June 2026 hardening)
+
+The win/loss decision originally lived entirely client-side (`DailyEvaluationWorker`), so a cheater
+editing local Room state could force a wrongful refund. Three Cloud Function fixes + Firestore-rules
+hardening moved money authority to the server. **Full detail: `docs/10_security_and_anticheat.md`.**
+
+- **Fix 1 — `cancelOrRefundPayment` win-gate (non-redemption path, FAIL-OPEN).** Before issuing the
+  80% win-refund, the CF reads `users/{uid}/challenges/{cid}/dailyLogs` and **denies the refund only
+  if it positively sees `limitExceeded === true` on any day** (a violation day means the stake should
+  have been captured, not refunded). **Absence of logs never denies** — sync is best-effort, so a
+  legitimate winner (who never has an exceeded day) is never wrongly refused. This catches the
+  Room-only tamper path.
+- **Fix 2 — `capturePayment` IDOR guard.** The CF retrieves the PaymentIntent and returns **403** when
+  `metadata.userId` ≠ the authenticated caller. `createPaymentIntent` stamps `metadata.userId` on
+  every PI. All three callers (`DailyEvaluationWorker`, Emergency Unlock, `PermissionCheckWorker`)
+  only pass the caller's own PI, so no legitimate capture breaks. Legacy PIs without the metadata
+  field fall through unchanged.
+- **Fix 3 — redemption branch now FULLY server-validated.** Previously the redemption branch refunded
+  the client-supplied `partialRefundCents` with **zero validation**. It now re-fetches the redemption
+  challenge and requires: `isRedemption === true`, `payoutStatus !== "refunded"` (idempotency),
+  `originalPaymentIntentId` matches the supplied PI, server-clock `endDate` passed, and **recomputes
+  the 60% refund from the *original* challenge's stored `amountCents`** — the client's
+  `partialRefundCents` is discarded. *(This supersedes the earlier "redemption branch is left intact"
+  note — that branch is no longer unvalidated.)*
+- **`onChallengeDeleted` CF (Firestore `onDelete` trigger on
+  `users/{userId}/challenges/{challengeId}`).** Cascade-deletes the challenge's nested `dailyLogs`
+  sub-collection (Admin SDK, batched). Required so the `dailyLogs` rules can block ALL client deletes.
+  Also fixes a pre-existing orphaned-`dailyLogs` bug on per-challenge delete.
+- **`dailyLogs` rules hardening (nested path).** `update` may **never flip `limitExceeded`
+  true → false** (false → true still allowed so the worker can record a violation), and `delete` is
+  **CF-only** (`allow delete: if false`). This stops a cheater deleting/rewriting an exceeded-day log
+  to dodge the Fix 1 win-gate.
+
+**DECISION — known residual ("suppress-gap"):** there is no server-side source of app-usage truth, so
+a cheater who *suppresses* the violation write (offline / disabled worker) still looks like a clean
+win. The permission-violation capture path (`checkPermissionViolations`, 1h/24h) remains the backstop
+for disabled enforcement.
 
 ---
 
@@ -482,6 +523,10 @@ client writes to `capturedAt` and `usageCapturedAt` — only Cloud Function Admi
 - RootBeer check runs before Hard Mode payment initiation (in `ChallengeCreationViewModel`).
 - Non-blocking warning dialog: "Verstanden — trotzdem fortfahren" / "Abbrechen".
 - Root status logged to `users/{uid}/deviceInfo/security` for admin visibility.
+- **Anti-cheat metadata on the challenge (June 2026):** `deviceId` (Settings.Secure.ANDROID_ID) and
+  `isRooted` are written onto **every** Hard Mode challenge doc (`isRooted` on both true AND false →
+  full coverage) so `detectSuspiciousUsers` can risk-score shared-device / rooted patterns. Null on
+  Soft Mode. See `docs/10_security_and_anticheat.md`.
 - Hard Mode creation is **NOT blocked** for rooted devices — warn + log only.
 
 ---
@@ -569,7 +614,10 @@ When a Hard Mode Solo challenge fails (`status=failed`, `mode=hard`, `groupChall
 
 **On completion:** `DailyEvaluationWorker` calls `cancelOrRefundPayment` with
 `partialRefundCents = refundAmountCents` (60% of original) against `originalPaymentIntentId`.
-The Cloud Function uses `stripe.refunds.create({ payment_intent, amount: partialRefundCents })` (PI was already captured on original fail).
+The Cloud Function **re-validates server-side** (June 2026 — `isRedemption`, idempotency,
+`originalPaymentIntentId` match, server-clock `endDate`) and **recomputes the 60% from the original
+challenge's stored `amountCents`** before `stripe.refunds.create({ payment_intent, amount })` (PI was
+already captured on original fail). The client-supplied `partialRefundCents` is discarded.
 
 **On failure:** No refund. The staked money is lost permanently.
 

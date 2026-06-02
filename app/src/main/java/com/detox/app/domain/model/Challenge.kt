@@ -76,4 +76,16 @@ data class Challenge(
     val pendingLimitValue: Int? = null,
     /** Timestamp (millis) when pendingLimitValue should be applied (= next midnight). */
     val pendingLimitAppliesAt: Long? = null,
+
+    // ── Anti-cheat / fraud-prevention metadata (Hard Mode + Group; Firestore only) ──
+    // Stored on the Firestore challenge document for the anti-cheat detection system
+    // (collectionGroup query groups by deviceId; isRooted gives full coverage on paid
+    // challenges). NOT persisted in Room — populated only at creation for the doc write.
+    // DSGVO: deviceId (ANDROID_ID) collected under legitimate interest (Betrugsschutz,
+    // Art. 6 Abs. 1 lit. f) — covered by the Datenschutzerklärung.
+
+    /** Settings.Secure.ANDROID_ID, written on Hard Mode creation for multi-account detection. */
+    val deviceId: String? = null,
+    /** RootBeer result captured on Hard Mode creation (true AND false → full coverage). */
+    val isRooted: Boolean? = null,
 )

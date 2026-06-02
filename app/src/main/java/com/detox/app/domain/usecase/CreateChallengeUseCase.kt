@@ -48,6 +48,10 @@ class CreateChallengeUseCase @Inject constructor(
         sessionDurationMinutes: Int = 5,
         partialBlockSections: List<PartialBlockSection> = emptyList(),
         isPartialBlockOnly: Boolean = false,
+        /** Anti-cheat: Settings.Secure.ANDROID_ID — passed only for Hard Mode creation. */
+        deviceId: String? = null,
+        /** Anti-cheat: RootBeer result — passed only for Hard Mode creation (true AND false). */
+        isRooted: Boolean? = null,
     ): Result<ChallengeCreationResult> {
         // TIME_BUDGET and TIME_WINDOW challenges don't use limitValueMinutes as a usage cap
         if (limitType != LimitType.TIME_BUDGET && limitType != LimitType.TIME_WINDOW && limitValueMinutes <= 0) {
@@ -131,6 +135,9 @@ class CreateChallengeUseCase @Inject constructor(
             sessionDurationMinutes = if (limitType == LimitType.SESSIONS) sessionDurationMinutes else 5,
             partialBlockSections = partialBlockSections,
             isPartialBlockOnly = isPartialBlockOnly,
+            // Anti-cheat metadata — only set for Hard Mode (null on Soft Mode).
+            deviceId = if (mode == ChallengeMode.HARD) deviceId else null,
+            isRooted = if (mode == ChallengeMode.HARD) isRooted else null,
         )
 
         Timber.d(

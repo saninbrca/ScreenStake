@@ -1,5 +1,6 @@
 package com.detox.app.presentation.screens.groupchallenge.join
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
@@ -8,6 +9,7 @@ import com.detox.app.domain.model.PaymentIntentData
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.usecase.JoinGroupChallengeUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,7 +49,8 @@ sealed interface GroupJoinUiState {
 class GroupChallengeJoinViewModel @Inject constructor(
     private val joinGroupChallengeUseCase: JoinGroupChallengeUseCase,
     private val firebaseAuthService: FirebaseAuthService,
-    private val challengeRepository: ChallengeRepository
+    private val challengeRepository: ChallengeRepository,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _codeInput = MutableStateFlow("")
@@ -146,12 +149,20 @@ class GroupChallengeJoinViewModel @Inject constructor(
             _uiState.value = GroupJoinUiState.Error("Nicht angemeldet.")
             return
         }
+        // Anti-cheat: capture deviceId (ANDROID_ID) so the participant entry carries it
+        // for multi-account detection (same purpose as the solo Hard Mode challenge field).
+        @Suppress("HardwareIds")
+        val deviceId = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID,
+        )
         _uiState.value = GroupJoinUiState.ConfirmingJoin(awaiting.groupChallenge)
         viewModelScope.launch {
             joinGroupChallengeUseCase.confirmJoin(
                 groupId = awaiting.groupId,
                 userId = userId,
-                paymentIntentId = awaiting.paymentData.paymentIntentId
+                paymentIntentId = awaiting.paymentData.paymentIntentId,
+                deviceId = deviceId
             ).fold(
                 onSuccess = {
                     Timber.d("GroupJoinVM: join confirmed — groupId=%s", awaiting.groupId)

@@ -564,6 +564,16 @@ class ChallengeCreationViewModel @Inject constructor(
         viewModelScope.launch {
             val (limitMinutes, limitSessions) = resolveLimitPair()
             val appPackagesHard = if (!isWebsiteTab) s.selectedApps.toList() else emptyList()
+            // Anti-cheat: capture deviceId (ANDROID_ID) + rooted status on every Hard Mode
+            // creation so the challenge doc carries them for fraud detection (collectionGroup
+            // query). These flow through the Challenge → toMap() write (the only saveChallenge
+            // call), avoiding a race with the fire-and-forget Firestore sync.
+            @Suppress("HardwareIds")
+            val androidId = android.provider.Settings.Secure.getString(
+                context.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID,
+            )
+            val deviceRooted = RootDetectionManager.isDeviceRooted(context)
             createChallengeUseCase(
                 appPackageName = appPackagesHard.firstOrNull(),
                 appDisplayName = displayName(),
@@ -587,6 +597,8 @@ class ChallengeCreationViewModel @Inject constructor(
                 dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
                 partialBlockSections = emptyList(),
                 isPartialBlockOnly = false,
+                deviceId = androidId,
+                isRooted = deviceRooted,
             ).fold(
                 onSuccess = { result ->
                     // Legal: persist the FAGG § 18 withdrawal-rights waiver consent

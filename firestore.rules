@@ -54,7 +54,22 @@ service cloud.firestore {
       // Must be declared explicitly — parent challenge rules do NOT cover
       // sub-collections. Missing rule caused PERMISSION_DENIED on dailyLogs reads.
       match /dailyLogs/{logId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Money-critical: `limitExceeded` gates the Hard Mode win-refund in the
+        // cancelOrRefundPayment Cloud Function. It must be tamper-evident, so:
+        //  • create  — owner may create logs (worker writes false on clean days,
+        //              true on a violation day).
+        //  • update  — owner may update, EXCEPT flipping limitExceeded true → false
+        //              (true means the stake should have been captured, not refunded).
+        //              false → true is allowed (the worker may record a violation).
+        //  • delete  — CF-ONLY. The onChallengeDeleted trigger cascades log cleanup
+        //              via the Admin SDK; blocking client deletes stops a cheater from
+        //              deleting an exceeded-day log to dodge the win-gate.
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow update: if request.auth != null && request.auth.uid == userId
+          && !(resource.data.limitExceeded == true
+               && request.resource.data.limitExceeded != true);
+        allow delete: if false;
       }
     }
 
@@ -217,6 +232,15 @@ service cloud.firestore {
       match /adminNotes/{noteId} {
         allow read, write: if request.auth.token.email == "sanin.brica@gmail.com";
       }
+    }
+
+    // ── Anti-cheat reviews (admin moderation decisions) ──────────────────────
+    // One doc per reviewed user (doc id = userId). Stores the admin's decision so a
+    // cleared false-positive is not re-flagged as new on the next analysis. Written
+    // by the admin dashboard; never accessible to normal users. The detectSuspiciousUsers
+    // Cloud Function reads these via the Admin SDK (bypasses rules).
+    match /antiCheatReviews/{userId} {
+      allow read, write: if request.auth.token.email == "sanin.brica@gmail.com";
     }
 
     // ── Counters (dashboard statistics) ───────────────────────────────────────

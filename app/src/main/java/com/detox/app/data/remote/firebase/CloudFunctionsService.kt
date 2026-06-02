@@ -190,11 +190,18 @@ class CloudFunctionsService @Inject constructor(
     suspend fun confirmGroupJoin(
         groupId: String,
         userId: String,
-        paymentIntentId: String
+        paymentIntentId: String,
+        deviceId: String?
     ): Result<Unit> = try {
         callFunction(
             "confirmGroupJoin",
-            mapOf("groupId" to groupId, "userId" to userId, "paymentIntentId" to paymentIntentId)
+            mapOf(
+                "groupId" to groupId,
+                "userId" to userId,
+                "paymentIntentId" to paymentIntentId,
+                // Anti-cheat: deviceId stored on the participant for multi-account detection.
+                "deviceId" to (deviceId ?: "")
+            )
         )
         Timber.d("confirmGroupJoin: groupId=%s userId=%s", groupId, userId)
         Result.success(Unit)

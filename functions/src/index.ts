@@ -19,6 +19,15 @@ function endOfDayMillis(startMs: number, durationDays: number): number {
   return d.getTime();
 }
 
+/** Normalises a stored value (epoch-millis number OR Firestore Timestamp) to millis. */
+function tsToMillis(v: unknown): number {
+  if (typeof v === "number") return v;
+  if (v && typeof (v as { toMillis?: () => number }).toMillis === "function") {
+    return (v as { toMillis: () => number }).toMillis();
+  }
+  return 0;
+}
+
 // ── Stripe ─────────────────────────────────────────────────────────────────────
 
 let _stripe: Stripe | null = null;
@@ -61,6 +70,30 @@ function handleError(tag: string, e: unknown, res: functions.Response): void {
     functions.logger.error(`${tag} error`, e);
     res.status(500).json({ error: "Internal server error." });
   }
+}
+
+// ── CORS helper ──────────────────────────────────────────────────────────────
+// The admin dashboard is opened from a local file:// (Origin: "null") and other
+// origins, so the browser sends a CORS preflight before any POST that carries an
+// Authorization header / application/json body. onRequest functions don't get
+// automatic CORS, so without this the preflight hits requireAdmin → 401 with no
+// Access-Control-Allow-Origin → the browser blocks it ("Failed to fetch").
+//
+// We send permissive headers (no cookies are used — the Authorization bearer token
+// is not a credential in the CORS sense, and the dashboard does not set
+// credentials:"include", so "*" is safe) and short-circuit the OPTIONS preflight.
+// Native Android callers are unaffected (no preflight; extra response headers are
+// harmless). Returns true when the request was a preflight and is now fully handled.
+function applyCors(req: functions.https.Request, res: functions.Response): boolean {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.set("Access-Control-Max-Age", "3600");
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return true;
+  }
+  return false;
 }
 
 // ── Counters (best-effort dashboard statistics) ─────────────────────────────────
@@ -151,6 +184,15 @@ export const capturePayment = functions.region(REGION).https.onRequest(async (re
     const { paymentIntentId } = req.body as { paymentIntentId: string };
     if (!paymentIntentId) throw new HttpError(400, "paymentIntentId is required.");
 
+    // Ownership check (IDOR guard): the PaymentIntent must belong to the caller.
+    // createPaymentIntent stamps metadata.userId on every PI; reject any attempt to
+    // capture a PaymentIntent that carries a different owner. (PIs with no userId
+    // metadata are legacy/test-only and fall through unchanged.)
+    const owned = await getStripe().paymentIntents.retrieve(paymentIntentId);
+    if (owned.metadata?.userId && owned.metadata.userId !== userId) {
+      throw new HttpError(403, "PaymentIntent does not belong to caller.");
+    }
+
     const paymentIntent = await getStripe().paymentIntents.capture(paymentIntentId);
 
     await admin.firestore()
@@ -221,15 +263,87 @@ export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(as
         throw new HttpError(400, "paymentIntentId does not match challenge.");
       }
 
-      // 4. Recompute the 80% refund from the stored stake — ignore client-supplied amountCents
+      // 4. Win-gate (FAIL-OPEN): deny the win-refund only if the server can POSITIVELY
+      //    see a limit-exceeded day in the challenge's daily logs. A limit-exceeded day
+      //    means the stake should have been captured, not refunded — so this catches a
+      //    cheater who edits local Room state to fake a win (their real limitExceeded=true
+      //    has already synced to Firestore). Absence of logs NEVER denies (sync is
+      //    best-effort), so a legitimate winner is never wrongly refused.
+      //    NOTE: the daily logs are still client-writable per Firestore rules, so a
+      //    sophisticated cheater who also rewrites/deletes the Firestore logs can bypass
+      //    this. Closing that requires rules hardening (see security report) — this gate
+      //    only raises the bar for the Room-only tamper path.
+      const logsSnap = await admin.firestore()
+        .collection("users").doc(verifiedUserId)
+        .collection("challenges").doc(challengeId)
+        .collection("dailyLogs").get();
+      const anyDayExceeded = logsSnap.docs.some((d) => d.data()["limitExceeded"] === true);
+      if (anyDayExceeded) {
+        throw new HttpError(400, "Challenge had limit-exceeded days — not eligible for win refund.");
+      }
+
+      // 5. Recompute the 80% refund from the stored stake — ignore client-supplied amountCents
       const storedStake: number = typeof challenge["amountCents"] === "number" ? challenge["amountCents"] : 0;
       serverAmountCents = Math.floor(storedStake * 0.80);
+    } else {
+      // ── Redemption refund path (partialRefundCents > 0) — server-validated ──────────
+      // Previously this branch refunded the client-supplied amount with NO validation.
+      // Now: re-fetch the redemption challenge, verify it, and recompute the 60% refund
+      // from the ORIGINAL challenge's stored stake. The client's partialRefundCents is
+      // never trusted.
+      if (!challengeId) throw new HttpError(400, "challengeId is required.");
+
+      const redSnap = await admin.firestore()
+        .collection("users").doc(verifiedUserId)
+        .collection("challenges").doc(challengeId).get();
+      if (!redSnap.exists) throw new HttpError(404, "Redemption challenge not found.");
+      const red = redSnap.data()!;
+
+      // 1. Must actually be a redemption challenge
+      if (red["isRedemption"] !== true) {
+        throw new HttpError(400, "Not a redemption challenge.");
+      }
+
+      // 2. Idempotency — never refund the same redemption twice
+      if (red["payoutStatus"] === "refunded") {
+        throw new HttpError(409, "Redemption already refunded.");
+      }
+
+      // 3. PI binding — the supplied PI must match the stored original PaymentIntent
+      if (red["originalPaymentIntentId"] !== paymentIntentId) {
+        throw new HttpError(400, "paymentIntentId does not match the redemption's original PaymentIntent.");
+      }
+
+      // 4. endDate must have passed — server clock only
+      const redEndDate: number = typeof red["endDate"] === "number"
+        ? red["endDate"]
+        : (red["endDate"] as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
+      if (redEndDate <= 0 || Date.now() < redEndDate) {
+        throw new HttpError(400, "Redemption challenge has not reached its end date.");
+      }
+
+      // 5. Recompute 60% from the ORIGINAL challenge's stored stake (amountCents is
+      //    update-protected by Firestore rules, so it is trustworthy). The redemption
+      //    challenge itself has amountCents = 0 (no new payment).
+      const originalChallengeId = red["originalChallengeId"] as string | undefined;
+      if (!originalChallengeId) throw new HttpError(400, "Redemption is missing originalChallengeId.");
+      const origSnap = await admin.firestore()
+        .collection("users").doc(verifiedUserId)
+        .collection("challenges").doc(originalChallengeId).get();
+      const originalStake: number = origSnap.exists && typeof origSnap.data()!["amountCents"] === "number"
+        ? origSnap.data()!["amountCents"]
+        : 0;
+      serverAmountCents = Math.floor(originalStake * 0.60);
+      if (!serverAmountCents || serverAmountCents <= 0) {
+        throw new HttpError(400, "Computed redemption refund is zero — refusing.");
+      }
     }
 
     if (partialRefundCents && partialRefundCents > 0) {
-      // Redemption Challenge win: PI already captured, partial refund (60% of original)
-      await getStripe().refunds.create({ payment_intent: paymentIntentId, amount: partialRefundCents });
-      refundedAmount = partialRefundCents;
+      // Redemption Challenge win: PI already captured. Refund the SERVER-recomputed 60%
+      // (serverAmountCents, validated above) — the client's partialRefundCents is ignored.
+      await getStripe().refunds.create({ payment_intent: paymentIntentId, amount: serverAmountCents });
+      refundedAmount = serverAmountCents!;
     } else if (pi.status === "requires_capture" && serverAmountCents && serverAmountCents < fullAmount) {
       // Hard Mode win with 20% app fee: capture full pre-auth, then refund 80%
       await getStripe().paymentIntents.capture(paymentIntentId);
@@ -387,7 +501,11 @@ export const joinGroupChallenge = functions.region(REGION).https.onRequest(async
 export const confirmGroupJoin = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
-    const { groupId, paymentIntentId } = req.body as { groupId: string; paymentIntentId: string };
+    const { groupId, paymentIntentId, deviceId } = req.body as {
+      groupId: string;
+      paymentIntentId: string;
+      deviceId?: string;
+    };
     if (!groupId) throw new HttpError(400, "groupId is required.");
     if (!paymentIntentId) throw new HttpError(400, "paymentIntentId is required.");
 
@@ -432,6 +550,8 @@ export const confirmGroupJoin = functions.region(REGION).https.onRequest(async (
         opensToday: 0,
         timeUsedMinutes: 0,
         joinedAt: Date.now(),
+        // Anti-cheat: deviceId for multi-account detection (empty string if client omitted it).
+        deviceId: deviceId ?? "",
       }),
       participantUserIds: admin.firestore.FieldValue.arrayUnion(userId),
     });
@@ -1425,6 +1545,36 @@ export const onUserCreated = functions.region(REGION).firestore
     await bumpCounters({ totalUsers: 1 });
   });
 
+// ── onChallengeDeleted — cascade-delete a challenge's daily logs ──────────────────
+// Firestore does NOT delete sub-collections when a parent document is deleted, so a
+// per-challenge delete used to orphan its dailyLogs. This trigger clears them via the
+// Admin SDK (bypasses security rules). It is also what allows the dailyLogs rules to
+// block ALL client deletes — required so a cheater cannot delete an exceeded-day log to
+// dodge the limitExceeded win-gate in cancelOrRefundPayment.
+export const onChallengeDeleted = functions.region(REGION).firestore
+  .document("users/{userId}/challenges/{challengeId}")
+  .onDelete(async (_snap, context) => {
+    const { userId, challengeId } = context.params as { userId: string; challengeId: string };
+    const logsRef = admin.firestore()
+      .collection("users").doc(userId)
+      .collection("challenges").doc(challengeId)
+      .collection("dailyLogs");
+    try {
+      // Delete in batches of 400 (under the 500-write batch limit).
+      for (;;) {
+        const snap = await logsRef.limit(400).get();
+        if (snap.empty) break;
+        const batch = admin.firestore().batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        if (snap.size < 400) break;
+      }
+      functions.logger.info(`onChallengeDeleted: cleared dailyLogs for ${userId}/${challengeId}`);
+    } catch (e) {
+      functions.logger.error(`onChallengeDeleted: failed clearing dailyLogs for ${userId}/${challengeId}`, e);
+    }
+  });
+
 // ── setUserBanStatus ────────────────────────────────────────────────────────────
 // Admin-only. Bans/unbans a user on BOTH layers:
 //   1) Firebase Auth `disabled` flag (hard — blocks token refresh / new sign-in)
@@ -1433,6 +1583,7 @@ export const onUserCreated = functions.region(REGION).firestore
 // this never refunds a stake.
 export const setUserBanStatus = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
+    if (applyCors(req, res)) return;
     await requireAdmin(req);
     const { uid, banned, reason } = req.body as {
       uid?: string;
@@ -1471,6 +1622,7 @@ export const setUserBanStatus = functions.region(REGION).https.onRequest(async (
 // admin-gated and meant to be triggered manually, not on a schedule.
 export const backfillCounters = functions.region(REGION).https.onRequest(async (req, res) => {
   try {
+    if (applyCors(req, res)) return;
     await requireAdmin(req);
     const db = admin.firestore();
 
@@ -1531,4 +1683,233 @@ export const backfillCounters = functions.region(REGION).https.onRequest(async (
     functions.logger.info("backfillCounters complete", counters);
     res.json({ success: true, counters });
   } catch (e) { handleError("backfillCounters", e, res); }
+});
+
+// ── detectSuspiciousUsers ─────────────────────────────────────────────────────────
+// Admin-only, READ-ONLY anti-cheat analysis. Computes an ADDITIVE risk score per user
+// from 5 signals and returns the flagged users (sorted by riskScore desc). It is a
+// FLAGGING system only — it NEVER bans, modifies, or deletes any user data. A human
+// admin reviews each flag and decides (clear / ban) in the dashboard.
+//
+// Signals (points):
+//   1. Shared IBAN     (40) — 2+ users share the same payoutIban.
+//   2. Shared deviceId (40) — 2+ users share the same Android deviceId (solo challenges
+//                              + group participants).
+//   3. Rooted device   (25) — any Hard Mode challenge created with isRooted === true.
+//   4. Perfect win     (20) — completed solo Hard Mode with >= 3 daily logs, ALL with
+//                              consciousOpens == 0 AND totalMinutes == 0.
+//   5. Instant win     (15) — completed solo Hard Mode in < 1 day of elapsed time.
+//
+// COST NOTE: unbounded scans (all users + collectionGroup challenges + all groups +
+// per-completed-challenge dailyLogs). Admin-gated + manual trigger only (the dashboard
+// "Analyse starten" button shows a confirmation modal). Move to a scheduled/cached job
+// if it grows expensive.
+export const detectSuspiciousUsers = functions.region(REGION).https.onRequest(async (req, res) => {
+  try {
+    if (applyCors(req, res)) return;
+    await requireAdmin(req);
+    const db = admin.firestore();
+
+    const POINTS = {
+      sharedIban: 40,
+      sharedDevice: 40,
+      rooted: 25,
+      perfectWin: 20,
+      instantWin: 15,
+    };
+
+    // ── Load all users ──────────────────────────────────────────────────────────
+    interface UserInfo { userId: string; username: string; email: string; payoutIban: string | null }
+    const users: Record<string, UserInfo> = {};
+    const usersSnap = await db.collection("users").get();
+    usersSnap.forEach((doc) => {
+      const u = doc.data();
+      const ibanRaw = typeof u.payoutIban === "string" ? u.payoutIban.trim() : "";
+      users[doc.id] = {
+        userId: doc.id,
+        username: u.username || u.displayName || "",
+        email: u.email || "",
+        payoutIban: ibanRaw.length > 0 ? ibanRaw : null,
+      };
+    });
+
+    // Per-user accumulator: triggered signals + the set of accounts they are linked to.
+    interface Signal { type: string; description: string; points: number }
+    interface Flag { signals: Signal[]; sharedWith: Set<string> }
+    const flags: Record<string, Flag> = {};
+    function ensureFlag(uid: string): Flag {
+      let f = flags[uid];
+      if (!f) { f = { signals: [], sharedWith: new Set<string>() }; flags[uid] = f; }
+      return f;
+    }
+    function pushUnique(uid: string, signal: Signal): void {
+      const f = ensureFlag(uid);
+      if (!f.signals.some((s) => s.type === signal.type)) f.signals.push(signal);
+    }
+    function plural(n: number, singular: string, plural: string): string {
+      return n === 1 ? singular : plural;
+    }
+
+    // ── Signal 1 — Shared IBAN (40) ───────────────────────────────────────────────
+    const ibanToUsers: Record<string, string[]> = {};
+    for (const u of Object.values(users)) {
+      if (u.payoutIban) {
+        const list = ibanToUsers[u.payoutIban] || (ibanToUsers[u.payoutIban] = []);
+        list.push(u.userId);
+      }
+    }
+    for (const uids of Object.values(ibanToUsers)) {
+      if (uids.length < 2) continue;
+      for (const uid of uids) {
+        const others = uids.length - 1;
+        pushUnique(uid, {
+          type: "shared_iban",
+          description: `Gleiche IBAN wie ${others} ${plural(others, "anderes Konto", "andere Konten")}.`,
+          points: POINTS.sharedIban,
+        });
+        const f = ensureFlag(uid);
+        uids.forEach((o) => { if (o !== uid) f.sharedWith.add(o); });
+      }
+    }
+
+    // ── Scan challenges: deviceIds + rooted + collect completed solo Hard Mode ─────
+    const deviceToUsers: Record<string, Set<string>> = {};
+    function addDevice(deviceId: unknown, uid: string): void {
+      if (typeof deviceId === "string" && deviceId.trim().length > 0 && uid) {
+        const key = deviceId.trim();
+        const set = deviceToUsers[key] || (deviceToUsers[key] = new Set<string>());
+        set.add(uid);
+      }
+    }
+
+    interface CompletedChallenge {
+      uid: string;
+      ref: admin.firestore.DocumentReference;
+      startDate: number;
+      endDate: number;
+      payoutDate: number | null;
+    }
+    const completedHard: CompletedChallenge[] = [];
+
+    const challengesSnap = await db.collectionGroup("challenges").get();
+    challengesSnap.forEach((doc) => {
+      const c = doc.data();
+      const uid = doc.ref.parent.parent ? doc.ref.parent.parent.id : "";
+      if (!uid) return;
+
+      addDevice(c.deviceId, uid);
+
+      // Signal 3 — Rooted device.
+      if (c.isRooted === true) {
+        pushUnique(uid, {
+          type: "rooted",
+          description: "Hard Mode auf einem gerooteten Gerät erstellt.",
+          points: POINTS.rooted,
+        });
+      }
+
+      // Collect completed solo Hard Mode wins for signals 4 + 5 (exclude group + redemption).
+      const isSoloHard = c.mode === "hard" && !c.groupChallengeId && c.isRedemption !== true;
+      const won = c.status === "completed" || c.payoutStatus === "refunded";
+      if (isSoloHard && won) {
+        completedHard.push({
+          uid,
+          ref: doc.ref,
+          startDate: tsToMillis(c.startDate),
+          endDate: tsToMillis(c.endDate),
+          payoutDate: c.payoutDate != null ? tsToMillis(c.payoutDate) : null,
+        });
+      }
+    });
+
+    // Group participants also carry a deviceId (written by confirmGroupJoin).
+    const groupsSnap = await db.collection("groupChallenges").get();
+    groupsSnap.forEach((doc) => {
+      const participants = (doc.data().participants || []) as Array<Record<string, unknown>>;
+      participants.forEach((p) => addDevice(p.deviceId, typeof p.userId === "string" ? p.userId : ""));
+    });
+
+    // ── Signal 2 — Shared deviceId (40) ───────────────────────────────────────────
+    for (const set of Object.values(deviceToUsers)) {
+      if (set.size < 2) continue;
+      const uids = Array.from(set);
+      for (const uid of uids) {
+        const others = uids.length - 1;
+        pushUnique(uid, {
+          type: "shared_device",
+          description: `Gleiche Geräte-ID wie ${others} ${plural(others, "anderes Konto", "andere Konten")}.`,
+          points: POINTS.sharedDevice,
+        });
+        const f = ensureFlag(uid);
+        uids.forEach((o) => { if (o !== uid) f.sharedWith.add(o); });
+      }
+    }
+
+    // ── Signals 4 + 5 — per completed solo Hard Mode challenge ────────────────────
+    for (const ch of completedHard) {
+      // Signal 5 — Instant win: completed in < 1 day of actual elapsed time.
+      const completionTs = ch.payoutDate != null ? ch.payoutDate : ch.endDate;
+      const elapsed = completionTs - ch.startDate;
+      if (ch.startDate > 0 && elapsed >= 0 && elapsed < MILLIS_PER_DAY) {
+        pushUnique(ch.uid, {
+          type: "instant_win",
+          description: "Challenge in unter 24 Stunden abgeschlossen (zu schnell gewonnen).",
+          points: POINTS.instantWin,
+        });
+      }
+
+      // Signal 4 — Perfect win: >= 3 daily logs, ALL with 0 opens AND 0 minutes.
+      const logsSnap = await ch.ref.collection("dailyLogs").get();
+      if (logsSnap.size >= 3) {
+        const allZero = logsSnap.docs.every((d) => {
+          const l = d.data();
+          const opens = typeof l.consciousOpens === "number" ? l.consciousOpens : 0;
+          const minutes = typeof l.totalMinutes === "number" ? l.totalMinutes : 0;
+          return opens === 0 && minutes === 0;
+        });
+        if (allZero) {
+          pushUnique(ch.uid, {
+            type: "perfect_win",
+            description: `Perfekter Gewinn: 0 Öffnungen und 0 Minuten an ${logsSnap.size} Tagen (echte Nutzer öffnen Apps gelegentlich).`,
+            points: POINTS.perfectWin,
+          });
+        }
+      }
+    }
+
+    // ── Attach review decisions (false positives + prior bans) ────────────────────
+    const reviews: Record<string, { decision?: string; reviewedAt?: number; note?: string }> = {};
+    const reviewsSnap = await db.collection("antiCheatReviews").get();
+    reviewsSnap.forEach((doc) => { reviews[doc.id] = doc.data(); });
+
+    // ── Build sorted response ─────────────────────────────────────────────────────
+    const flagged = Object.keys(flags)
+      .map((uid) => {
+        const f = flags[uid];
+        const u = users[uid];
+        const riskScore = f.signals.reduce((sum, s) => sum + s.points, 0);
+        const r = reviews[uid];
+        return {
+          userId: uid,
+          username: u ? u.username : "",
+          email: u ? u.email : "",
+          riskScore,
+          signals: f.signals,
+          sharedWith: Array.from(f.sharedWith),
+          reviewed: r
+            ? { decision: r.decision || null, reviewedAt: r.reviewedAt || null, note: r.note || null }
+            : null,
+        };
+      })
+      .filter((x) => x.signals.length > 0)
+      .sort((a, b) => b.riskScore - a.riskScore);
+
+    functions.logger.info("detectSuspiciousUsers complete", {
+      scannedUsers: usersSnap.size,
+      scannedChallenges: challengesSnap.size,
+      scannedGroups: groupsSnap.size,
+      flagged: flagged.length,
+    });
+    res.json({ success: true, flaggedCount: flagged.length, flagged });
+  } catch (e) { handleError("detectSuspiciousUsers", e, res); }
 });

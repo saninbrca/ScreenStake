@@ -435,6 +435,7 @@
       <button class="tab" onclick="switchTab('tickets', this)">💬 Support Tickets</button>
       <button class="tab" onclick="switchTab('broadcast', this)">📢 Broadcast</button>
       <button class="tab" onclick="switchTab('users', this)">👤 Benutzer</button>
+      <button class="tab" onclick="switchTab('anticheat', this)">🛡️ Anti-Cheat</button>
       <button class="tab" onclick="switchTab('config', this)">⚙️ App Config</button>
     </div>
 
@@ -669,6 +670,28 @@
 
           <button class="btn-primary" id="cfg-save-btn" onclick="saveConfig()" style="margin-top:8px">💾 Speichern</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Anti-Cheat tab -->
+    <div id="tab-anticheat" style="display:none">
+      <div class="table-wrap" style="margin-bottom:20px">
+        <div class="table-header">
+          <h2>🛡️ Anti-Cheat-Analyse</h2>
+          <button class="btn-primary" style="width:auto;padding:10px 20px" onclick="confirmRunAntiCheat()">▶ Analyse starten</button>
+        </div>
+        <div style="padding:16px 20px;font-size:0.82rem;color:var(--muted)">
+          Markiert verdächtige Konten für die manuelle Prüfung — <strong>es wird niemals automatisch gesperrt</strong>.
+          Jeder Treffer wird von einem Menschen geprüft. Die Analyse liest ALLE Nutzer, Challenges und Tageslogs
+          (teuer bei vielen Dokumenten) — daher nur manuell per Button.
+          <br>Risiko-Score (additiv): Gleiche IBAN +40 · Gleiche Geräte-ID +40 · Gerootet +25 · Perfekter Gewinn +20 · Sofort-Gewinn +15.
+          <div id="ac-summary" style="margin-top:10px"></div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-header"><h2>Markierte Konten</h2></div>
+        <div id="ac-results"><div class="empty">Noch keine Analyse durchgeführt. „Analyse starten" klicken.</div></div>
       </div>
     </div>
   </main>
@@ -1229,6 +1252,27 @@
         closeModal();
         await loadOverview();
         return;
+      } else if (type === 'anticheat') {
+        const data = await callDetectSuspiciousUsers();
+        lastAntiCheatResult = data.flagged || [];
+        document.getElementById('ac-summary').innerHTML =
+          `Analyse abgeschlossen — <strong>${lastAntiCheatResult.length}</strong> markierte Konto${lastAntiCheatResult.length === 1 ? '' : 'en'}. (Stand: ${fmtMillis(Date.now())})`;
+        renderAntiCheat();
+        showToast('🛡️ Analyse abgeschlossen', 'success');
+        closeModal();
+        return;
+      } else if (type === 'anticheatBan') {
+        await callSetBanStatus(pendingAction.uid, true, pendingAction.reason);
+        // Record the moderation decision so the user is shown as "gesperrt", not re-flagged as new.
+        await db.collection('antiCheatReviews').doc(pendingAction.uid).set({
+          decision: 'banned', reviewedAt: Date.now(), reviewedBy: 'admin', note: pendingAction.reason || null,
+        }, { merge: true });
+        const acEntry = lastAntiCheatResult.find(u => u.userId === pendingAction.uid);
+        if (acEntry) acEntry.reviewed = { decision: 'banned', reviewedAt: Date.now(), note: pendingAction.reason || null };
+        showToast('🚫 Benutzer gesperrt', 'success');
+        closeModal();
+        renderAntiCheat();
+        return;
       } else if (type === 'sendBroadcast') {
         await db.collection('broadcasts').add({
           title: pendingAction.title,
@@ -1263,7 +1307,7 @@
   }
 
   // ── Tabs ──────────────────────────────────────────────────────────────────────
-  const TAB_NAMES = ['overview', 'pending', 'paid', 'revenue', 'tickets', 'broadcast', 'users', 'config'];
+  const TAB_NAMES = ['overview', 'pending', 'paid', 'revenue', 'tickets', 'broadcast', 'users', 'anticheat', 'config'];
 
   function switchTab(name, btn) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1469,6 +1513,115 @@
       const err = await resp.json().catch(() => ({}));
       throw new Error(err.error || ('HTTP ' + resp.status));
     }
+  }
+
+  // ── Anti-Cheat ────────────────────────────────────────────────────────────────
+  let lastAntiCheatResult = [];
+
+  const AC_SIGNAL_LABELS = {
+    shared_iban:   'Gleiche IBAN',
+    shared_device: 'Gleiche Geräte-ID',
+    rooted:        'Gerootetes Gerät',
+    perfect_win:   'Perfekter Gewinn',
+    instant_win:   'Sofort-Gewinn',
+  };
+
+  // Color-coded by risk: rot >= 60, orange 30–59, gelb < 30.
+  function acRiskColor(score) {
+    return score >= 60 ? '#FF3B30' : score >= 30 ? '#FF9500' : '#E6B800';
+  }
+
+  function confirmRunAntiCheat() {
+    showModal(
+      '🛡️ Analyse starten?',
+      'Liest ALLE Nutzer, Challenges und Tageslogs (teuer bei vielen Dokumenten). Bei großer Nutzerzahl kann es einige Sekunden dauern. Es wird NICHTS verändert — reine Analyse. Fortfahren?',
+      { type: 'anticheat' }
+    );
+  }
+
+  async function callDetectSuspiciousUsers() {
+    const token = await firebase.auth().currentUser.getIdToken();
+    const resp = await fetch(`${FUNCTIONS_BASE}/detectSuspiciousUsers`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + resp.status));
+    }
+    return await resp.json();
+  }
+
+  function renderAntiCheat() {
+    const el = document.getElementById('ac-results');
+    const list = lastAntiCheatResult || [];
+    const nameByUid = {};
+    list.forEach(u => { nameByUid[u.userId] = u.username || u.email || u.userId; });
+
+    if (list.length === 0) {
+      el.innerHTML = '<div class="empty">Keine verdächtigen Konten gefunden. 🎉</div>';
+      return;
+    }
+
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Risiko</th><th>Konto</th><th>Signale</th><th>Verbundene Konten</th><th>Aktionen</th></tr></thead>
+        <tbody>
+          ${list.map(u => {
+            const decision = u.reviewed && u.reviewed.decision;
+            const cleared = decision === 'cleared';
+            const banned  = decision === 'banned';
+            const color = acRiskColor(u.riskScore);
+            const signalsHtml = `<details><summary style="cursor:pointer">${u.signals.length} Signal${u.signals.length === 1 ? '' : 'e'}</summary>
+              <ul style="margin:6px 0 0;padding-left:18px;font-size:0.8rem">
+                ${u.signals.map(s => `<li><strong>${esc(AC_SIGNAL_LABELS[s.type] || s.type)}</strong> (+${s.points}): ${esc(s.description)}</li>`).join('')}
+              </ul></details>`;
+            const shared = (u.sharedWith || []).length
+              ? (u.sharedWith).map(o => `<button class="btn-ghost" style="padding:3px 8px;font-size:0.72rem;margin:2px" onclick="gotoUserProfile('${o}')">${esc(nameByUid[o] || (o.slice(0, 8) + '…'))}</button>`).join('')
+              : '<span style="color:var(--muted)">—</span>';
+            const badge = cleared ? ' <span class="badge badge-paid">bereits geprüft (OK)</span>'
+              : banned ? ' <span class="badge badge-rejected">gesperrt</span>' : '';
+            const actions = `
+              <button class="btn-ghost" style="padding:5px 10px;font-size:0.75rem" onclick="gotoUserProfile('${u.userId}')">Profil ansehen</button>
+              ${(cleared || banned) ? '' : `
+                <button class="btn-green" style="padding:5px 10px;font-size:0.75rem" onclick="markAntiCheatCleared('${u.userId}')">✓ Geprüft – OK</button>
+                <button class="btn-red" style="padding:5px 10px;font-size:0.75rem" onclick="confirmAntiCheatBan('${u.userId}','${esc(nameByUid[u.userId])}')">🚫 Sperren</button>`}`;
+            return `
+              <tr style="${cleared ? 'opacity:0.5' : ''}">
+                <td><span style="display:inline-block;min-width:34px;text-align:center;padding:4px 9px;border-radius:8px;font-weight:700;color:#fff;background:${color}">${u.riskScore}</span></td>
+                <td><strong>${esc(u.username || '—')}</strong>${badge}<br><span style="font-size:0.75rem;color:var(--muted)">${esc(u.email || '')}</span></td>
+                <td>${signalsHtml}</td>
+                <td>${shared}</td>
+                <td>${actions}</td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // Mark a flagged user as a reviewed false positive (greyed out, not re-flagged as new).
+  async function markAntiCheatCleared(uid) {
+    try {
+      await db.collection('antiCheatReviews').doc(uid).set({
+        decision: 'cleared', reviewedAt: Date.now(), reviewedBy: 'admin', note: null,
+      }, { merge: true });
+      const entry = lastAntiCheatResult.find(u => u.userId === uid);
+      if (entry) entry.reviewed = { decision: 'cleared', reviewedAt: Date.now(), note: null };
+      showToast('✓ Als geprüft (OK) markiert', 'success');
+      renderAntiCheat();
+    } catch (e) {
+      showToast('Fehler: ' + e.message, 'error');
+    }
+  }
+
+  function confirmAntiCheatBan(uid, label) {
+    const reason = prompt(`Grund für die Sperrung von "${label}" (Anti-Cheat):`, 'Betrugsverdacht (Anti-Cheat)');
+    if (reason === null) return; // cancelled
+    showModal(
+      '🚫 Benutzer sperren?',
+      `${label}\n\nGrund: ${reason || '(kein Grund angegeben)'}\n\nDer Benutzer wird auf beiden Ebenen gesperrt (App + Login) und als „gesperrt" in der Anti-Cheat-Prüfung vermerkt.`,
+      { type: 'anticheatBan', uid, reason }
+    );
   }
 
   // ── Overview / Übersicht ────────────────────────────────────────────────────
@@ -1796,10 +1949,13 @@
     const isGreen = action.type === 'paid'
       || action.type === 'backfill'
       || action.type === 'sendBroadcast'
+      || action.type === 'anticheat'
       || (action.type === 'banUser' && action.banned === false);
     btn.className = isGreen ? 'btn-green' : 'btn-red';
     btn.textContent = action.type === 'sendBroadcast' ? '📢 Senden'
       : action.type === 'backfill' ? '🧮 Neu berechnen'
+      : action.type === 'anticheat' ? '▶ Analyse starten'
+      : action.type === 'anticheatBan' ? '🚫 Sperren'
       : isGreen ? '✅ Bestätigen'
       : (action.type === 'banUser' ? '🚫 Sperren' : '❌ Ablehnen');
     btn.disabled = false;

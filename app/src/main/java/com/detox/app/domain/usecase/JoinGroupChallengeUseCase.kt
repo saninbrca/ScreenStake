@@ -74,8 +74,9 @@ class JoinGroupChallengeUseCase @Inject constructor(
     suspend fun confirmJoin(
         groupId: String,
         userId: String,
-        paymentIntentId: String
-    ): Result<Unit> = cloudFunctionsService.confirmGroupJoin(groupId, userId, paymentIntentId)
+        paymentIntentId: String,
+        deviceId: String?
+    ): Result<Unit> = cloudFunctionsService.confirmGroupJoin(groupId, userId, paymentIntentId, deviceId)
 
     /**
      * Fetches the newly joined challenge from Firestore and writes it to Room

@@ -161,10 +161,13 @@ export const createPaymentIntent = functions.region(REGION).https.onRequest(asyn
       description: `Detox Hard Mode challenge — ${challengeId}`,
     });
 
-    await admin.firestore()
-      .collection("users").doc(userId)
-      .collection("challenges").doc(challengeId)
-      .set({ stripePaymentIntentId: paymentIntent.id, stripeCustomerId: customerId }, { merge: true });
+    // NOTE: the challenge doc is intentionally NOT written here. The client's saveChallenge()
+    // performs a single full CREATE under this same challengeId after the PaymentSheet confirms.
+    // Firestore rules allow all fields on create but block status/endDate/amountCents/
+    // stripePaymentIntentId on a client UPDATE — so pre-writing the doc here turned that create into
+    // a rejected update and left a gutted doc, which made server-side win validation fail forever.
+    // stripeCustomerId still lives on the user doc (getOrCreateStripeCustomer) and nothing reads it
+    // from the challenge doc; metadata.challengeId (above) keeps the PI bound to the same cid.
 
     // Counter: a solo Hard Mode challenge is being started. Group buy-ins are tracked
     // separately and excluded here. (Best-effort; PaymentSheet cancel may slightly over-count.)

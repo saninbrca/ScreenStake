@@ -52,6 +52,13 @@ class CreateChallengeUseCase @Inject constructor(
         deviceId: String? = null,
         /** Anti-cheat: RootBeer result — passed only for Hard Mode creation (true AND false). */
         isRooted: Boolean? = null,
+        /**
+         * Money-critical (Hard Mode): the id already sent to createPaymentIntent (Stripe
+         * metadata.challengeId). When provided, the challenge is persisted under THIS id so the
+         * PaymentIntent and the challenge doc share one cid. When null (Soft Mode), a fresh id is
+         * minted. Never let Hard Mode mint its own id — it would orphan the payment.
+         */
+        challengeId: String? = null,
     ): Result<ChallengeCreationResult> {
         // TIME_BUDGET and TIME_WINDOW challenges don't use limitValueMinutes as a usage cap
         if (limitType != LimitType.TIME_BUDGET && limitType != LimitType.TIME_WINDOW && limitValueMinutes <= 0) {
@@ -92,7 +99,7 @@ class CreateChallengeUseCase @Inject constructor(
             }
         }
 
-        val id = UUID.randomUUID().toString()
+        val id = challengeId ?: UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val durationMultiplier = if (BuildConfig.DEBUG) {
             val prefs = context.getSharedPreferences("detox_settings", Context.MODE_PRIVATE)

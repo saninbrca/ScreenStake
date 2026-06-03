@@ -13,6 +13,7 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.repository.ChallengeRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -28,21 +29,59 @@ class ChallengeRepositoryImpl @Inject constructor(
     @ApplicationScope private val appScope: CoroutineScope
 ) : ChallengeRepository {
 
+    private companion object {
+        /** Bounded retry for the awaited Hard Mode Firestore mirror create. */
+        const val HARD_SYNC_MAX_ATTEMPTS = 3
+        const val HARD_SYNC_RETRY_BASE_MS = 500L
+    }
+
     override suspend fun createChallenge(challenge: Challenge): Result<Unit> {
         return try {
             challengeDao.insertChallenge(challenge.toEntity())
-            // Fire-and-forget Firestore sync
-            appScope.launch {
+            if (challenge.mode == ChallengeMode.HARD) {
+                // MONEY-CRITICAL: the Firestore challenge doc is the server's source of truth for
+                // win/refund validation (cancelOrRefundPayment re-reads it). It MUST land completely
+                // before we report success — a missing/gutted doc means the server can never confirm
+                // a win and the winner is never refunded. So AWAIT the sync (not fire-and-forget),
+                // retry transient failures, and propagate failure so the ViewModel can surface it.
                 firebaseAuthService.logAuthState("ChallengeRepo.createChallenge")
                 val uid = firebaseAuthService.currentUserId()
-                if (uid == null) {
-                    Timber.w("createChallenge: skipping Firestore sync — user not signed in")
-                } else {
-                    Timber.d("createChallenge: syncing challenge %s for uid=%s", challenge.id, uid)
-                    firestoreService.saveChallenge(uid, challenge)
+                    ?: return Result.failure(IllegalStateException("Nicht authentifiziert"))
+                var lastError: Exception? = null
+                repeat(HARD_SYNC_MAX_ATTEMPTS) { attempt ->
+                    try {
+                        Timber.d("createChallenge: syncing Hard Mode challenge %s for uid=%s (attempt %d)", challenge.id, uid, attempt + 1)
+                        firestoreService.saveChallenge(uid, challenge)
+                        return Result.success(Unit)
+                    } catch (e: Exception) {
+                        lastError = e
+                        Timber.w(e, "createChallenge: Hard Mode Firestore sync attempt %d failed", attempt + 1)
+                        if (attempt < HARD_SYNC_MAX_ATTEMPTS - 1) delay(HARD_SYNC_RETRY_BASE_MS * (attempt + 1))
+                    }
                 }
+                // TODO(reconciliation): a persistent failure here leaves Room populated but Firestore
+                // missing. A follow-up Room→Firestore up-sync should re-create the doc on next launch
+                // so a transient outage self-heals instead of stranding an auto-captured stake.
+                Result.failure(lastError ?: IllegalStateException("Firestore sync failed"))
+            } else {
+                // Soft Mode: no createPaymentIntent pre-write, no withdrawal-waiver write, and no
+                // server-side money authority — so there is no doc race and fire-and-forget is fine.
+                appScope.launch {
+                    firebaseAuthService.logAuthState("ChallengeRepo.createChallenge")
+                    val uid = firebaseAuthService.currentUserId()
+                    if (uid == null) {
+                        Timber.w("createChallenge: skipping Firestore sync — user not signed in")
+                    } else {
+                        Timber.d("createChallenge: syncing challenge %s for uid=%s", challenge.id, uid)
+                        try {
+                            firestoreService.saveChallenge(uid, challenge)
+                        } catch (e: Exception) {
+                            Timber.e(e, "createChallenge: soft-mode Firestore sync failed (non-fatal)")
+                        }
+                    }
+                }
+                Result.success(Unit)
             }
-            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -178,18 +178,24 @@ class FirestoreService @Inject constructor(
 
     // ── Challenges ─────────────────────────────────────────────────────────────
 
+    /**
+     * Persists the challenge doc. This is a full CREATE on a fresh unified cid (createPaymentIntent
+     * no longer pre-writes the doc, so the create lands with ALL fields — Firestore rules only
+     * restrict fields on an UPDATE). SetOptions.merge() is a belt-and-suspenders guard so a future
+     * re-sync can never wipe CF-owned fields.
+     *
+     * MONEY-CRITICAL: exceptions are intentionally NOT swallowed — they propagate so the Hard Mode
+     * caller (ChallengeRepositoryImpl.createChallenge) can retry and surface failure. A silently
+     * failed mirror previously left Room healthy while Firestore stayed gutted, which broke
+     * server-side win validation.
+     */
     suspend fun saveChallenge(userId: String, challenge: Challenge) {
-        try {
-            firestore
-                .collection("users").document(userId)
-                .collection("challenges").document(challenge.id)
-                // Full create — merge not needed (saveChallenge is only called on challenge creation).
-                .set(challenge.toMap())
-                .await()
-            Timber.d("Synced challenge ${challenge.id} to Firestore")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to sync challenge ${challenge.id}")
-        }
+        firestore
+            .collection("users").document(userId)
+            .collection("challenges").document(challenge.id)
+            .set(challenge.toMap(), com.google.firebase.firestore.SetOptions.merge())
+            .await()
+        Timber.d("Synced challenge ${challenge.id} to Firestore")
     }
 
     suspend fun updateChallengeStatus(userId: String, challengeId: String, status: String) {

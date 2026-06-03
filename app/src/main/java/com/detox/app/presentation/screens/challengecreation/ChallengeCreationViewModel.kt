@@ -148,6 +148,13 @@ class ChallengeCreationViewModel @Inject constructor(
 
     private var confirmedPaymentIntentId: String? = null
 
+    /**
+     * The single challenge id that was sent to createPaymentIntent (Stripe metadata.challengeId).
+     * Threaded into CreateChallengeUseCase so the PaymentIntent and the persisted challenge doc
+     * share ONE cid — otherwise the payment is orphaned and the server can't validate the win.
+     */
+    private var confirmedChallengeId: String? = null
+
     init {
         val prePackage = savedStateHandle.get<String>("prePackage") ?: ""
         if (prePackage.isNotBlank()) {
@@ -544,6 +551,8 @@ class ChallengeCreationViewModel @Inject constructor(
             ).fold(
                 onSuccess = { paymentData ->
                     confirmedPaymentIntentId = paymentData.paymentIntentId
+                    // Persist the SAME id the PI was created with (Stripe metadata.challengeId).
+                    confirmedChallengeId = tempId
                     _uiState.value = ChallengeCreationUiState.AwaitingPayment(
                         clientSecret = paymentData.clientSecret,
                         pendingChallengeId = tempId,
@@ -599,10 +608,15 @@ class ChallengeCreationViewModel @Inject constructor(
                 isPartialBlockOnly = false,
                 deviceId = androidId,
                 isRooted = deviceRooted,
+                // Unify the id: persist under the same cid the PaymentIntent was created with.
+                challengeId = confirmedChallengeId,
             ).fold(
                 onSuccess = { result ->
-                    // Legal: persist the FAGG § 18 withdrawal-rights waiver consent
-                    // alongside the challenge doc (the checkbox is the payment gate).
+                    // Legal: persist the FAGG § 18 withdrawal-rights waiver consent alongside the
+                    // challenge doc. Ordering is now safe: for Hard Mode createChallenge AWAITS the
+                    // Firestore full-create before returning success, so this merge update of only
+                    // the two waiver fields lands on an existing doc (rules allow those keys on
+                    // update) and can no longer pre-create the doc and block the full write.
                     logWithdrawalWaiver(result.challengeId)
                     analyticsService.logChallengeCreated(
                         mode = "hard",
@@ -613,7 +627,14 @@ class ChallengeCreationViewModel @Inject constructor(
                     _uiState.value = ChallengeCreationUiState.Success(result.challengeId)
                 },
                 onFailure = { error ->
-                    _uiState.value = ChallengeCreationUiState.Error(error.message ?: "Failed to save challenge")
+                    // Payment already succeeded; the only realistic failure here is the awaited
+                    // Hard Mode Firestore mirror create. Surface a clear German message instead of
+                    // a raw Firestore error, and do NOT report a fake success (a missing doc means
+                    // the server can't validate the win).
+                    Timber.e(error, "onPaymentConfirmed: Hard Mode challenge persistence failed")
+                    _uiState.value = ChallengeCreationUiState.Error(
+                        context.getString(R.string.challenge_create_sync_failed)
+                    )
                 },
             )
         }
@@ -621,6 +642,7 @@ class ChallengeCreationViewModel @Inject constructor(
 
     fun onPaymentCancelled() {
         confirmedPaymentIntentId = null
+        confirmedChallengeId = null
         _uiState.value = ChallengeCreationUiState.Idle
     }
 }

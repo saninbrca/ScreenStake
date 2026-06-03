@@ -73,6 +73,7 @@
     <string name="challenge_setup_error_fix_limits">Please fix the highlighted fields before starting</string>
     <string name="challenge_setup_error_min_budget">Minimum 5 minutes</string>
     <string name="challenge_setup_error_hard_mode_min_days">Hard Mode requires minimum 14 days</string>
+    <string name="challenge_create_sync_failed">Challenge konnte nicht gespeichert werden. Bitte prüfe deine Internetverbindung und versuche es erneut. Deine Zahlung ist sicher.</string>
     <string name="challenge_setup_budget_field_label">Daily budget (minutes)</string>
     <string name="challenge_setup_duration_field_label">Duration</string>
     <string name="challenge_setup_no_end_date">No end date</string>

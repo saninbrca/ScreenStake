@@ -15,6 +15,34 @@
 
 ## [Unreleased] — June 2026
 
+### FIX — Day-boundary leak: in-memory daily overlay state now reset by a lazy day-stamp guard
+
+Conscious opens / usage sometimes showed the **previous day's** values after midnight, intermittently.
+Root cause: `OverlayManager`'s daily in-memory state (`consciousOpensToday`, `exceededAppsToday`,
+`hardLockedPackages`, `lastSessionEndedAt`, `failedSessionAppsToday`, `failedGroupChallengeIds`) was
+cleared **only** by `scheduleMidnightReset()`'s `mainHandler.postDelayed(...)`. That callback runs on
+the **uptime clock, which freezes during Doze/deep sleep**, and never runs at all if the service is
+killed (Huawei). The overlay read path only re-reads Room when a package key is **absent** from the
+map, so a surviving-but-not-reset process kept yesterday's counts — and worse, wrote them back into
+**today's** Room row via `upsertConsciousOpens(today, …)` (which overwrites, not increments).
+Intermittent because the outcome depended on whether the process was killed overnight (map empty →
+correct) vs. survived through Doze (stale → wrong).
+
+- **NEW `dailyStateDay: Long`** (`DateUtils.todayKey()` stamp) + **`ensureDailyStateFresh()`** — at the
+  head of every overlay-dispatch entry point (`handleAppOpen`, and `onBudgetSessionExpired` which
+  bypasses it), if the stamp != today, clears all daily in-memory state and re-stamps. This is now the
+  **authoritative** reset; it runs **before any read that feeds a write-back** (`startSessionTimer`,
+  `writeDailyLogForSessionFailed`, `writeDailyLogForHardCapture`), so a stale value can no longer reach
+  Room. Self-healing across Doze **and** service kills.
+- **`scheduleMidnightReset()` kept as a best-effort live trigger only** — no longer the sole defense.
+  Both paths now share `clearDailyInMemoryState()` (DRY).
+- **DECISION — no in-flight guard inside the write-back paths.** The residual micro-edge (day rolls
+  over while an overlay is already on screen, between show and tap) is left unguarded on purpose:
+  re-clearing mid-flow would wipe a legitimately-incremented count, and the DailyLog write-backs are
+  already idempotency-protected by their `getLogForDate(today)` skip. Not a timezone bug —
+  `DateUtils.todayKey()` is used consistently for both reads and writes.
+- Verified `:app:compileDebugKotlin` clean. Device testing pending.
+
 ### SECURITY — Room database encrypted at rest with SQLCipher (Keystore-backed, Huawei-safe)
 
 Defense-in-depth against **offline DB tampering on rooted devices** — the Room DB is now

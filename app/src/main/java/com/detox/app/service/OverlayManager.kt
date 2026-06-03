@@ -159,6 +159,17 @@ class OverlayManager @Inject constructor(
      */
     private val failedGroupChallengeIds = mutableSetOf<String>()
 
+    /**
+     * [DateUtils.todayKey] of the calendar day that all daily in-memory state above belongs to.
+     * Compared on every overlay-dispatch entry by [ensureDailyStateFresh]; when it no longer
+     * matches today the state is cleared lazily. This is the AUTHORITATIVE daily reset —
+     * [scheduleMidnightReset] is only a best-effort live trigger that can silently miss when the
+     * device is in Doze across midnight (its postDelayed runs on the uptime clock) or when the
+     * service is killed (Huawei). Without this guard a stale count from yesterday could be both
+     * read into an overlay AND written back into today's Room row.
+     */
+    private var dailyStateDay: Long = DateUtils.todayKey()
+
     private var limitReachedTimerJob: Job? = null
     private var foregroundListenerJob: Job? = null
 
@@ -268,6 +279,8 @@ class OverlayManager @Inject constructor(
         mainHandler.post {
             val scope = serviceScope ?: return@post
             scope.launch {
+                // This path bypasses handleAppOpen, so run the daily guard here too.
+                ensureDailyStateFresh()
                 if (isOverlayVisible) {
                     Timber.d("OverlayManager: budget expired for $packageName but overlay already visible — skip")
                     return@launch
@@ -300,6 +313,8 @@ class OverlayManager @Inject constructor(
     private suspend fun handleAppOpen(packageName: String, scope: CoroutineScope) {
         val tEnter = android.os.SystemClock.elapsedRealtime()
         Timber.d("Blocking chain: handleAppOpen entered pkg=$packageName")
+        // Authoritative daily reset: clear stale yesterday state before any read/write below.
+        ensureDailyStateFresh()
         if (isOverlayVisible) {
             Timber.d("Overlay visible=$isOverlayVisible, skipping new overlay for $packageName (after ${android.os.SystemClock.elapsedRealtime() - tEnter}ms)")
             return
@@ -1287,7 +1302,32 @@ class OverlayManager @Inject constructor(
         }
     }
 
-    // ── Midnight reset ─────────────────────────────────────────────────────────
+    // ── Daily reset (lazy day-stamp guard + best-effort midnight trigger) ───────
+
+    /** Clears every daily in-memory set/map. Shared by the lazy guard and the midnight timer. */
+    private fun clearDailyInMemoryState() {
+        exceededAppsToday.clear()
+        hardLockedPackages.clear()
+        consciousOpensToday.clear()
+        lastSessionEndedAt.clear()
+        failedSessionAppsToday.clear()
+        failedGroupChallengeIds.clear()
+        TrackedAppEventBus.clearFreePackages()
+    }
+
+    /**
+     * Lazily resets all daily in-memory state when the calendar day has rolled over since the
+     * state was last stamped. Called at the head of every overlay-dispatch entry point so a stale
+     * value from yesterday can never be read into an overlay or written back into today's Room row.
+     * Self-healing: works even when [scheduleMidnightReset] never fired (Doze / service kill).
+     */
+    private fun ensureDailyStateFresh() {
+        val today = DateUtils.todayKey()
+        if (dailyStateDay == today) return
+        Timber.d("OverlayManager: day rolled over ($dailyStateDay → $today) — lazy daily reset")
+        clearDailyInMemoryState()
+        dailyStateDay = today
+    }
 
     private fun scheduleMidnightReset() {
         val now = System.currentTimeMillis()
@@ -1302,13 +1342,8 @@ class OverlayManager @Inject constructor(
         val delay = midnight - now
         mainHandler.postDelayed({
             Timber.d("Midnight reset — clearing all daily overlay state")
-            exceededAppsToday.clear()
-            hardLockedPackages.clear()
-            consciousOpensToday.clear()
-            lastSessionEndedAt.clear()
-            failedSessionAppsToday.clear()
-            failedGroupChallengeIds.clear()
-            TrackedAppEventBus.clearFreePackages()
+            clearDailyInMemoryState()
+            dailyStateDay = DateUtils.todayKey()
             sessionTimerJob?.cancel()
             sessionTimerJob = null
             sessionTimerPackage?.let { pkg ->

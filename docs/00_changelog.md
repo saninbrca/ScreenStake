@@ -19,11 +19,9 @@
 
 Tracked here so they are not lost. None are fixed yet — investigate before launch.
 
-- **Limit evaluation review (MONEY-CRITICAL — needs investigation).** Two suspected defects in the
-  fail-detection math: (1) **SESSIONS** uses `opens >= limit` — a possible off-by-one vs. the intended
-  "exceed the limit" semantics; (2) **TIME_BUDGET** writes `budgetUsedMs` (the `*Ms` fields) but the
-  worker's loss check reads the `*Minutes` value — so a **TIME_BUDGET loss may never trigger**. Both
-  affect whether a Hard Mode stake is captured, so confirm against `DailyEvaluationWorker` before launch.
+- ~~**Limit evaluation review (MONEY-CRITICAL).**~~ **FIXED** — see "Worker limit-detection" entry
+  below. SESSIONS now reads Room conscious opens (strict `>`), TIME_BUDGET reads `budgetUsedMs`
+  (strict `>`); both fail-safe on a null limit.
 - **`checkPermissionViolations` returns HTTP 500.** Suspected root cause: the CF crashes while iterating
   **old gutted challenge docs** that lack the fields it expects (legacy docs created before the
   unified-cid / full-CREATE fix below). Needs a null-safe iteration + a backfill/skip for legacy docs.
@@ -42,6 +40,45 @@ Tracked here so they are not lost. None are fixed yet — investigate before lau
   `failed`/`revenue` counters: Stripe captures at creation with no CF involvement, and `capturePayment`'s
   `succeeded` branch deliberately does not bump (to avoid double-counting manual captures). A dedicated
   server-side fail-accounting source is needed.
+
+### FIX — Worker limit-detection: SESSIONS wrongful capture + TIME_BUDGET missed capture (money-critical)
+
+`DailyEvaluationWorker`'s loss trigger was wrong for two of the three limit types — the capture/refund
+mechanics and CRITICAL ORDER (capture success → then FAILED) were always correct; only what counts as a
+loss was wrong.
+
+- **SESSIONS — was WRONGFUL capture.** The worker compared **raw UsageStats opens** (`ACTIVITY_RESUMED`
+  count) against `limitValueSessions` with `>=`. Raw opens run far above conscious opens (every
+  resume/return/notification counts), and the UI promises **N conscious opens** — so compliant users had
+  their Hard Mode stake captured. Also violated the CLAUDE.md "never count opens via UsageStatsManager"
+  rule. **Fix:** the solo SESSIONS money decision now reads **Room conscious opens**
+  (`dailyLogRepository.getConsciousOpens`, the same source as `CheckDailyLimitUseCase`/Detail screen) and
+  uses strict **`>`** (a user who used exactly their allowed N is NOT failed). The overlay caps conscious
+  opens at N, so this is effectively never true → SESSIONS no longer auto-fails; loss comes via abandon or
+  server-side permission-violation. Computed **inline** so the shared `computeLimitExceeded` helper and the
+  stats-only group path are left byte-for-byte unchanged.
+- **TIME_BUDGET — was MISSED capture.** The worker read `budgetUsedMinutes`, but live tracking
+  (`UsageTrackingService.checkBudgetSession` → `updateBudgetStateMs`) only ever writes the `*Ms` columns,
+  so `budgetUsedMinutes` was always 0 → an overrun never registered and the stake was never captured (the
+  Detail-screen display path was fixed to `budgetUsedMs` back in May 2026; the worker was left wrong).
+  **Fix:** read **`budgetUsedMs`** and compare `budgetUsedMs > dailyBudgetMinutes * 60_000L` (strict `>`,
+  consistent units). The overlay caps usage at the budget, so consuming the full budget is a WIN — only
+  exceeding it is a loss → TIME_BUDGET also no longer auto-fails.
+- **Fail-safe on missing limit data (both types):** a null `limitValueSessions` / `dailyBudgetMinutes`
+  now means **NOT exceeded** (never capture on missing/invalid limit data). For TIME_BUDGET this also
+  closes a latent path where the old `?: 0` fallback made `totalBudgetMs = 0` and any usage triggered
+  capture.
+- **Preserved fields:** the worker's REPLACE-insert now carries `consciousOpens` (SESSIONS) and the
+  `budgetUsedMs`/`budgetRemainingMs` source-of-truth (TIME_BUDGET) so it no longer wipes them; the minute
+  fields stay populated so the same-day-retry skip guard still recognises a worker-written log.
+- **TIME unchanged** (already correct: live UsageStats minutes, `>=`). The same-day-retry skip guard
+  (`:152-158`) was intentionally **not** changed — switching its `budgetUsedMinutes>0` clause to
+  `budgetUsedMs>0` would make routine live-tracked budget rows look "already evaluated" and re-break the
+  missed-capture bug.
+- **Follow-up noted:** the group path's `computeLimitExceeded` TIME_BUDGET arm still compares UsageStats
+  minutes vs `limitValueMinutes` (stats-only, no money). Not fixed here.
+- **Files changed:** `service/DailyEvaluationWorker.kt`, `docs/00_changelog.md`. Verified
+  `:app:compileDebugKotlin` (BUILD SUCCESSFUL). No CF / Room schema / Stripe changes. Device test pending.
 
 ### FIX — Soft Mode fail screen: dead "Zur Startseite" button now returns to the Dashboard
 

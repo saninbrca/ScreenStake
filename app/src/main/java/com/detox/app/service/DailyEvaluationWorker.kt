@@ -252,16 +252,28 @@ class DailyEvaluationWorker @AssistedInject constructor(
 
                 // ── TIME_BUDGET: use explicit budget columns, not UsageStats ──────────
                 if (challenge.limitType == LimitType.TIME_BUDGET) {
-                    val totalBudget = challenge.dailyBudgetMinutes ?: 0
-                    val budgetUsed = existingLog.getOrNull()?.budgetUsedMinutes ?: 0
+                    // Source of truth is budgetUsedMs (the *Ms columns written every 10s by live
+                    // tracking in UsageTrackingService.checkBudgetSession). The budgetUsedMinutes
+                    // column is NOT written by the live path, so reading it here always saw 0 — a
+                    // budget overrun was never detected and the stake was never captured. Read the
+                    // Ms column (matching the already-fixed Detail-screen display path) and compare
+                    // in ms.
+                    val budgetMinutes = challenge.dailyBudgetMinutes
+                    val budgetUsedMs = existingLog.getOrNull()?.budgetUsedMs ?: 0L
+                    val budgetUsedMin = (budgetUsedMs / 60_000L).toInt()
                     val overlayPausedMs = existingLog.getOrNull()?.overlayPausedMs ?: 0L
 
                     Timber.d(
                         "DailyEvaluationWorker: TIME_BUDGET '${challenge.appDisplayName}' — " +
-                                "budgetUsed=${budgetUsed}min, totalBudget=${totalBudget}min"
+                                "budgetUsedMs=$budgetUsedMs (${budgetUsedMin}min), totalBudget=${budgetMinutes}min"
                     )
 
-                    val limitExceeded = budgetUsed >= totalBudget
+                    // Fail-safe: missing budget data → NOT exceeded (never capture on null limit; the
+                    // old `?: 0` fallback would make totalBudgetMs=0 and trigger capture on any usage).
+                    // Strict '>' (design decision): the overlay caps usage at the budget, so consuming
+                    // the full budget is a WIN — only genuinely exceeding it is a loss.
+                    val totalBudgetMs = (budgetMinutes ?: 0) * 60_000L
+                    val limitExceeded = budgetMinutes != null && budgetUsedMs > totalBudgetMs
 
                     var moneyLostCents = 0
                     var hardModeWinRefundFailed = false
@@ -316,11 +328,16 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         id = UUID.randomUUID().toString(),
                         challengeId = challenge.id,
                         date = today,
-                        totalMinutes = budgetUsed,
+                        totalMinutes = budgetUsedMin,
                         openCount = 0,
                         overlayPausedMs = overlayPausedMs,
-                        budgetUsedMinutes = budgetUsed,
-                        budgetRemainingMinutes = maxOf(0, totalBudget - budgetUsed),
+                        budgetUsedMinutes = budgetUsedMin,
+                        budgetRemainingMinutes = maxOf(0, (budgetMinutes ?: 0) - budgetUsedMin),
+                        // Preserve the ms source of truth on the worker-written log. The minute
+                        // fields above are also kept populated so the same-day-retry skip guard
+                        // (which keys on budgetUsedMinutes>0) recognises this worker-written log.
+                        budgetUsedMs = budgetUsedMs,
+                        budgetRemainingMs = maxOf(0L, totalBudgetMs - budgetUsedMs),
                         pointsEarned = 0,
                         limitExceeded = limitExceeded,
                         moneyLostCents = moneyLostCents
@@ -328,7 +345,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     dailyLogRepository.insertDailyLog(dailyLog)
                     Timber.d(
                         "DailyEvaluationWorker: TIME_BUDGET DailyLog saved — " +
-                                "budgetUsed=${budgetUsed}min, limitExceeded=$limitExceeded"
+                                "budgetUsedMin=$budgetUsedMin, limitExceeded=$limitExceeded"
                     )
 
                     // If the Hard Mode win refund failed, leave the challenge ACTIVE and exit so the
@@ -419,16 +436,39 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             "= $adjustedMinutes adjusted min, ${todayUsage.opens} opens"
                 )
 
-                val limitExceeded = computeLimitExceeded(
-                    limitType = challenge.limitType,
-                    limitValueMinutes = challenge.limitValueMinutes,
-                    limitValueSessions = challenge.limitValueSessions,
-                    adjustedMinutes = adjustedMinutes,
-                    opens = todayUsage.opens
-                )
-                Timber.d(
-                    "DailyEvaluationWorker: limitExceeded=$limitExceeded for '${challenge.appDisplayName}'"
-                )
+                // SESSIONS money decision MUST use Room conscious opens — the same source the live
+                // overlay (CheckDailyLimitUseCase) and Detail screen use — NEVER raw UsageStats opens
+                // (CLAUDE.md core rule: never count opens via UsageStatsManager). Raw resume counts
+                // run far above conscious opens and were wrongfully capturing compliant users.
+                // Strict '>' so a user who used exactly their allowed N opens is NOT failed; the
+                // overlay caps conscious opens at N, so this is essentially never true (loss comes
+                // via abandon / permission-violation, not daily evaluation).
+                // Fail-safe: a null limit → NOT exceeded (never capture on missing limit data).
+                val consciousOpensForLog: Int
+                val limitExceeded: Boolean
+                if (challenge.limitType == LimitType.SESSIONS) {
+                    val consciousOpens = dailyLogRepository
+                        .getConsciousOpens(challenge.id, today).getOrElse { 0 }
+                    consciousOpensForLog = consciousOpens
+                    val maxSessions = challenge.limitValueSessions
+                    limitExceeded = maxSessions != null && consciousOpens > maxSessions
+                    Timber.d(
+                        "DailyEvaluationWorker: SESSIONS '${challenge.appDisplayName}' — " +
+                                "consciousOpens=$consciousOpens limit=$maxSessions exceeded=$limitExceeded"
+                    )
+                } else {
+                    consciousOpensForLog = 0
+                    limitExceeded = computeLimitExceeded(
+                        limitType = challenge.limitType,
+                        limitValueMinutes = challenge.limitValueMinutes,
+                        limitValueSessions = challenge.limitValueSessions,
+                        adjustedMinutes = adjustedMinutes,
+                        opens = todayUsage.opens
+                    )
+                    Timber.d(
+                        "DailyEvaluationWorker: limitExceeded=$limitExceeded for '${challenge.appDisplayName}'"
+                    )
+                }
 
                 // ── Hard Mode: handle Stripe payment ──────────────────────────
                 var moneyLostCents = 0
@@ -507,6 +547,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     date = today,
                     totalMinutes = adjustedMinutes,
                     openCount = todayUsage.opens,
+                    // Preserve the overlay-persisted conscious opens (0 for non-SESSIONS). The worker's
+                    // insertDailyLog uses REPLACE, so omitting this would wipe the count to 0.
+                    consciousOpens = consciousOpensForLog,
                     overlayPausedMs = overlayPausedMs,
                     pointsEarned = 0,
                     limitExceeded = limitExceeded,

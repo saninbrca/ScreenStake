@@ -61,11 +61,8 @@ import kotlinx.coroutines.delay
 import kotlin.math.floor
 import kotlin.random.Random
 
-private val DialogBg = Color(0xFFF2F2F7)
-private val AccentGreen = Color(0xFF00C853)
-private val TextSecondary = Color(0xFF8E8E93)
-private val CardBg = Color.White
-private val BadgeBorder = Color(0xFFE0E0E5)
+// Shared colors (DialogBg, AccentGreen, TextSecondary, CardBg, BadgeBorder) now live in
+// ResultDialogComponents.kt and are reused by both the win and loss dialogs.
 private val ConfettiColors = listOf(
     Color(0xFFFF9500),
     Color(0xFF00C853),
@@ -179,17 +176,9 @@ fun ChallengeSuccessDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(DialogBg)
-        ) {
+    ResultDialogScaffold(
+        onDismiss = onDismiss,
+        background = {
             // Confetti canvas behind content
             Canvas(modifier = Modifier.matchParentSize()) {
                 val t = (elapsedMs % 4000L) / 4000f
@@ -210,13 +199,8 @@ fun ChallengeSuccessDialog(
                     }
                 }
             }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+        }
+    ) {
                 // Phase 1: Icon + title + subtitle + streak badge
                 AnimatedVisibility(
                     visible = phase1Visible,
@@ -292,14 +276,7 @@ fun ChallengeSuccessDialog(
                     visible = phase2Visible,
                     enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { 30 }
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(CardBg)
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    ResultCard {
                         if (challenge.mode == ChallengeMode.HARD) {
                             // Hard Mode: money card
                             Text(
@@ -429,56 +406,6 @@ fun ChallengeSuccessDialog(
                     }
                 }
             }
-
-            // X close button
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(CardBg)
-                    .clickable { onDismiss() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = null,
-                    tint = TextSecondary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatColumn(
-    value: String,
-    label: String,
-    valueColor: Color
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = value,
-            fontFamily = PoppinsFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = 20.sp,
-            color = valueColor
-        )
-        Text(
-            text = label,
-            fontFamily = PoppinsFamily,
-            fontSize = 11.sp,
-            color = TextSecondary,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            modifier = Modifier.width(80.dp)
-        )
-    }
 }
 
 /** Computes `durationDays` from a Challenge, handling both timestamp and day-offset endDate formats. */

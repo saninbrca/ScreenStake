@@ -43,6 +43,12 @@ data class SuccessDialogState(
     val streak: Int
 )
 
+/** State backing the unified RED loss dialog ([ChallengeFailedDialog]). */
+data class FailedDialogState(
+    val challenge: Challenge,
+    val allLogs: List<DailyLog>
+)
+
 /** A remote admin broadcast shown once on the Dashboard. */
 data class BroadcastMessage(
     val id: String,
@@ -105,9 +111,9 @@ class DashboardViewModel @Inject constructor(
     private val _successDialogState = MutableStateFlow<SuccessDialogState?>(null)
     val successDialogState: StateFlow<SuccessDialogState?> = _successDialogState.asStateFlow()
 
-    /** Non-null while the Hard Mode failure overlay should be shown. Null = overlay hidden. */
-    private val _failedHardChallenge = MutableStateFlow<Challenge?>(null)
-    val failedHardChallenge: StateFlow<Challenge?> = _failedHardChallenge.asStateFlow()
+    /** Non-null while the Hard Mode loss dialog should be shown. Null = dialog hidden. */
+    private val _failedHardChallenge = MutableStateFlow<FailedDialogState?>(null)
+    val failedHardChallenge: StateFlow<FailedDialogState?> = _failedHardChallenge.asStateFlow()
 
     /** Failed Hard Mode challenges with an active redemption window. Empty = banner hidden. */
     private val _redemptionChallenges = MutableStateFlow<List<ChallengeEntity>>(emptyList())
@@ -237,7 +243,8 @@ class DashboardViewModel @Inject constructor(
                 .onSuccess { challenge ->
                     if (challenge != null) {
                         Timber.d("Dashboard: unseen failed Hard Mode challenge found — ${challenge.id}")
-                        _failedHardChallenge.value = challenge
+                        val logs = dailyLogRepository.getLogsForChallengeOnce(challenge.id)
+                        _failedHardChallenge.value = FailedDialogState(challenge, logs)
                     }
                 }
                 .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Hard Mode challenge") }
@@ -310,13 +317,13 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    /** Called when the user taps CTA on the Hard Mode fail overlay. */
+    /** Called when the user dismisses or acts on the Hard Mode loss dialog (X, back link, or CTA). */
     fun dismissHardFailOverlay() {
-        val challenge = _failedHardChallenge.value ?: return
+        val state = _failedHardChallenge.value ?: return
         _failedHardChallenge.value = null
         viewModelScope.launch {
-            challengeRepository.markCompletionShown(challenge.id)
-                .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for ${challenge.id}") }
+            challengeRepository.markCompletionShown(state.challenge.id)
+                .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for ${state.challenge.id}") }
         }
     }
 }

@@ -281,10 +281,12 @@ fun DashboardScreen(
             )
         }
 
-        failedHardChallenge?.let { challenge ->
-            HardModeFailOverlay(
-                challenge = challenge,
-                onTryAgain = {
+        failedHardChallenge?.let { state ->
+            ChallengeFailedDialog(
+                challenge = state.challenge,
+                allLogs = state.allLogs,
+                onDismiss = { viewModel.dismissHardFailOverlay() },
+                onStartNewChallenge = {
                     viewModel.dismissHardFailOverlay()
                     onAddChallenge()
                 }
@@ -378,76 +380,6 @@ private fun EmptyState(
         }
 
         Spacer(modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun HardModeFailOverlay(
-    challenge: Challenge,
-    onTryAgain: () -> Unit
-) {
-    val amountCents = challenge.amountCents ?: 0
-    val amountEuros = amountCents / 100f
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0A0A0A)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(text = "💸", fontSize = 64.sp)
-            Text(
-                text = stringResource(R.string.hard_fail_title),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = stringResource(R.string.hard_fail_subtitle),
-                fontSize = 15.sp,
-                color = Color(0xFF8E8E93),
-                textAlign = TextAlign.Center
-            )
-            if (amountCents > 0) {
-                Text(
-                    text = stringResource(R.string.hard_fail_amount, amountEuros),
-                    fontSize = 15.sp,
-                    color = Color(0xFFFF3B30),
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-            Text(
-                text = stringResource(R.string.hard_fail_motivation),
-                fontSize = 13.sp,
-                color = Color(0xFF8E8E93),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onTryAgain,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF00C853),
-                    contentColor = Color.Black
-                )
-            ) {
-                Text(
-                    text = stringResource(R.string.hard_fail_cta),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
     }
 }
 

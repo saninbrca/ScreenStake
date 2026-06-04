@@ -433,6 +433,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 // ── Hard Mode: handle Stripe payment ──────────────────────────
                 var moneyLostCents = 0
                 var hardModeWinRefundFailed = false
+                // True once a Hard Mode limit-exceeded loss has flipped status→FAILED below
+                // (only ever set inside capturePayment.onSuccess). Guards the end-date block from
+                // issuing a duplicate updateChallengeStatus(FAILED) for the same challenge.
+                var hardModeFailHandled = false
                 if (challenge.mode == ChallengeMode.HARD &&
                     challenge.stripePaymentIntentId != null
                 ) {
@@ -447,8 +451,19 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 moneyLostCents = challenge.amountCents ?: 0
                                 Timber.d("Payment captured: €${moneyLostCents / 100f}")
                                 setRedemptionInfo(challenge, now)
+                                // CRITICAL ORDER: mark FAILED only AFTER a confirmed capture —
+                                // never before, never on failure, never re-running the capture.
+                                // This flips a multi-day challenge off the dashboard immediately so
+                                // the unified loss dialog can surface (status='failed' is its gate).
+                                // updateChallengeStatus writes only the status column, so the
+                                // redemption fields set just above survive untouched.
+                                challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED)
+                                    .onFailure { e -> Timber.e(e, "Failed to mark FAILED after capture for ${challenge.id}") }
+                                analyticsService.logChallengeFailed("hard")
+                                hardModeFailHandled = true
                             }
                             .onFailure { e ->
+                                // Capture failed → leave ACTIVE so the next worker cycle retries.
                                 Timber.e(e, "Failed to capture payment for ${challenge.id}")
                             }
                     } else if (now >= challenge.endDate || durationDays == 1) {
@@ -528,15 +543,19 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     } else {
                         ChallengeStatus.COMPLETED
                     }
-                    challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
-                    val mode = challenge.mode.name.lowercase()
-                    if (finalStatus == ChallengeStatus.COMPLETED) {
-                        analyticsService.logChallengeCompleted(
-                            mode = mode,
-                            durationDays = durationDays
-                        )
-                    } else {
-                        analyticsService.logChallengeFailed(mode)
+                    // Skip if a Hard Mode loss already flipped status→FAILED above (post-capture) —
+                    // avoids a duplicate updateChallengeStatus / logChallengeFailed for the same fail.
+                    if (!(hardModeFailHandled && finalStatus == ChallengeStatus.FAILED)) {
+                        challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                        val mode = challenge.mode.name.lowercase()
+                        if (finalStatus == ChallengeStatus.COMPLETED) {
+                            analyticsService.logChallengeCompleted(
+                                mode = mode,
+                                durationDays = durationDays
+                            )
+                        } else {
+                            analyticsService.logChallengeFailed(mode)
+                        }
                     }
                     Timber.d(
                         "Challenge ${challenge.appDisplayName} ended with status: $finalStatus"

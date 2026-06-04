@@ -60,7 +60,6 @@ import android.net.Uri
 import androidx.navigation.navArgument
 import com.detox.app.R
 import com.detox.app.presentation.screens.activechallenge.ActiveChallengeScreen
-import com.detox.app.presentation.screens.challenge.HardModeFailScreen
 import com.detox.app.presentation.screens.challengecreation.ChallengeCreationScreen
 import com.detox.app.presentation.screens.challenges.ChallengesScreen
 import com.detox.app.presentation.screens.dashboard.DashboardScreen
@@ -363,31 +362,7 @@ fun MainScreen(
                 arguments = listOf(navArgument("challengeId") { type = NavType.StringType })
             ) {
                 ActiveChallengeScreen(
-                    onBack = { navController.popBackStack() },
-                    onHardModeFail = { challengeId ->
-                        navController.navigate("hard_mode_fail/$challengeId") {
-                            popUpTo(BottomNavTab.Dashboard.route) { inclusive = false }
-                            launchSingleTop = true
-                        }
-                    }
-                )
-            }
-
-            // ── Hard Mode Fail Screen ────────────────────────────────────────────
-            composable(
-                route = "hard_mode_fail/{challengeId}",
-                arguments = listOf(navArgument("challengeId") { type = NavType.StringType })
-            ) {
-                HardModeFailScreen(
-                    onBackToDashboard = {
-                        navController.navigate(BottomNavTab.Dashboard.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                inclusive = false
-                            }
-                            launchSingleTop = true
-                        }
-                    },
-                    onNewChallenge = { navController.navigate("challenge_creation") }
+                    onBack = { navController.popBackStack() }
                 )
             }
 

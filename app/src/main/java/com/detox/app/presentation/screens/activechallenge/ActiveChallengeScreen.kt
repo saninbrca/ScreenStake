@@ -101,20 +101,14 @@ private val DividerColor = Color(0xFFF2F2F7)
 @Composable
 fun ActiveChallengeScreen(
     onBack: () -> Unit,
-    onHardModeFail: (challengeId: String) -> Unit,
     viewModel: ActiveChallengeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val abandonSuccess by viewModel.abandonSuccess.collectAsStateWithLifecycle()
-    val hardModeFailChallengeId by viewModel.hardModeFailChallengeId.collectAsStateWithLifecycle()
     val reduceLimitState by viewModel.reduceLimitState.collectAsStateWithLifecycle()
 
     LaunchedEffect(abandonSuccess) {
         if (abandonSuccess) onBack()
-    }
-
-    LaunchedEffect(hardModeFailChallengeId) {
-        hardModeFailChallengeId?.let { onHardModeFail(it) }
     }
 
     LaunchedEffect(reduceLimitState) {

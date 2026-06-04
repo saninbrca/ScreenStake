@@ -601,6 +601,11 @@
     <string name="success_dialog_cta_new">Neue Challenge starten</string>
     <string name="success_dialog_cta_back">Zurück zum Dashboard</string>
 
+    <!-- Loss result dialog (ChallengeFailedDialog) -->
+    <string name="failed_dialog_money_label">EINSATZ EINGEZOGEN</string>
+    <string name="failed_dialog_stat_lost">verloren</string>
+    <string name="failed_dialog_comeback">💪 In 24 Std. kannst du eine Comeback-Challenge starten und einen Teil zurückholen.</string>
+
     <!-- Legacy overlay strings (kept for any remaining references) -->
     <string name="success_overlay_title">Herzlichen Glückwunsch!</string>
     <string name="success_overlay_subtitle">Du hast deine Challenge geschafft!</string>

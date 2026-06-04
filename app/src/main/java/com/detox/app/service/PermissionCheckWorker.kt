@@ -251,6 +251,10 @@ class PermissionCheckWorker @AssistedInject constructor(
 
             val paymentIntentId = challenge.stripePaymentIntentId
             if (paymentIntentId != null) {
+                // TODO(perm-worker-fail-gate): this sets FAILED below even when capturePayment FAILS
+                // (we only log the failure). Unlike the worker/abandon paths, the status flip is not
+                // gated on a confirmed capture, so a transient capture error can mark FAILED without the
+                // stake being taken. Gate updateChallengeStatus on capture success in a follow-up.
                 cloudFunctionsService.capturePayment(paymentIntentId).onFailure { e ->
                     Timber.e(e, "PermissionCheckWorker: capturePayment failed for ${challenge.id}")
                 }

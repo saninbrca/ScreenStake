@@ -257,6 +257,8 @@
     <string name="active_challenge_abandon_hard_message">Wenn du abbrichst verlierst du €%.2f sofort. Bist du sicher?</string>
     <string name="active_challenge_abandon_hard_yes">Ja, Geld verlieren</string>
     <string name="active_challenge_abandon_hard_no">Nein, weitermachen</string>
+    <string name="active_challenge_abandon_error_title">Einzug fehlgeschlagen</string>
+    <string name="active_challenge_abandon_error_message">Dein Einsatz konnte nicht eingezogen werden. Die Challenge läuft weiter. Bitte überprüfe deine Internetverbindung und versuche es erneut.</string>
 
     <!-- Blocking Overlay — Hard Mode addition -->
     <string name="blocking_overlay_amount_stake">⚠ €%.2f at stake</string>

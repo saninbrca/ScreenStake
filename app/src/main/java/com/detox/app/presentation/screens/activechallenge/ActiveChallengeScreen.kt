@@ -105,6 +105,7 @@ fun ActiveChallengeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val abandonSuccess by viewModel.abandonSuccess.collectAsStateWithLifecycle()
+    val abandonStatus by viewModel.abandonStatus.collectAsStateWithLifecycle()
     val reduceLimitState by viewModel.reduceLimitState.collectAsStateWithLifecycle()
 
     LaunchedEffect(abandonSuccess) {
@@ -164,6 +165,32 @@ fun ActiveChallengeScreen(
                         isReducing = reduceLimitState is ReduceLimitState.Loading
                     )
                 }
+            }
+
+            // Capturing the solo Hard Mode stake on abandon → block interaction until the CF returns.
+            if (abandonStatus is AbandonState.Loading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0x66000000)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            // Capture (or post-capture status write) failed → challenge stays ACTIVE; let the user retry.
+            if (abandonStatus is AbandonState.Error) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.resetAbandonStatus() },
+                    title = { Text(stringResource(R.string.active_challenge_abandon_error_title)) },
+                    text = { Text(stringResource(R.string.active_challenge_abandon_error_message)) },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.resetAbandonStatus() }) {
+                            Text(stringResource(R.string.dialog_ok))
+                        }
+                    }
+                )
             }
         }
     }

@@ -196,6 +196,25 @@ export const capturePayment = functions.region(REGION).https.onRequest(async (re
       throw new HttpError(403, "PaymentIntent does not belong to caller.");
     }
 
+    // Idempotent capture — branch on the status of the PI we already fetched (no extra Stripe call).
+    // CRITICAL: a `success` response ALWAYS means "the stake is captured"; callers gate FAILED on it.
+    //  - succeeded         → money is ALREADY gone (>7-day auto-capture, or a racing/duplicate caller).
+    //                        Do NOT re-capture, re-bump counters, or re-write paymentCaptures.
+    //  - requires_capture  → ≤7-day manual-capture stake → capture now, record + bump counters once.
+    //  - anything else     → not capturable (canceled / requires_payment_method / …) → surface a real
+    //                        error so the caller leaves the challenge ACTIVE.
+    if (owned.status === "succeeded") {
+      // TODO(counter-gap): auto-captured (>7d) losses never bump failed/revenue counters — Stripe
+      // captured at challenge creation with no CF involvement, so this branch cannot tell a genuine
+      // first-time >7d loss from a benign re-capture race. Bumping here would double-count manual
+      // captures; a dedicated server-side fail-accounting source is needed. Out of scope here.
+      res.json({ success: true, alreadyCaptured: true });
+      return;
+    }
+    if (owned.status !== "requires_capture") {
+      throw new HttpError(409, `PaymentIntent is not capturable (status: ${owned.status}).`);
+    }
+
     const paymentIntent = await getStripe().paymentIntents.capture(paymentIntentId);
 
     await admin.firestore()
@@ -206,15 +225,16 @@ export const capturePayment = functions.region(REGION).https.onRequest(async (re
         capturedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-    // Counter: Hard Mode fail (worker fail path / emergency unlock). The full captured
-    // stake is service revenue.
+    // Counter: Hard Mode fail (worker fail path / abandon / emergency unlock). The full captured
+    // stake is service revenue. Bumped ONLY on a fresh capture (never the succeeded branch above),
+    // so an auto-captured / racing re-capture never double-counts.
     await bumpCounters({
       totalActiveChallenges: -1,
       totalFailedChallenges: 1,
       totalRevenueCents: paymentIntent.amount_received,
     });
 
-    res.json({ success: true });
+    res.json({ success: true, alreadyCaptured: false });
   } catch (e) { handleError("capturePayment", e, res); }
 });
 

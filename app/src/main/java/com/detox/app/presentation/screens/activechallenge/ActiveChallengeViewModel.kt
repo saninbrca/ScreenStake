@@ -11,6 +11,7 @@ import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.util.DateUtils
@@ -29,6 +30,17 @@ sealed interface ReduceLimitState {
     data object Loading : ReduceLimitState
     data object Success : ReduceLimitState
     data class Error(val message: String) : ReduceLimitState
+}
+
+/**
+ * Progress of an abandon that must first capture the Stripe stake (solo Hard Mode). [Idle] for the
+ * no-capture cases (Soft Mode / group / no pre-auth). [Loading] while the capture CF is in flight;
+ * [Error] when capture (or the post-capture status write) fails — the challenge stays ACTIVE.
+ */
+sealed interface AbandonState {
+    data object Idle : AbandonState
+    data object Loading : AbandonState
+    data class Error(val message: String) : AbandonState
 }
 
 sealed interface ActiveChallengeUiState {
@@ -50,6 +62,7 @@ class ActiveChallengeViewModel @Inject constructor(
     private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
+    private val paymentRepository: PaymentRepository,
 ) : ViewModel() {
 
     private val challengeId: String = savedStateHandle.get<String>("challengeId") ?: ""
@@ -59,6 +72,9 @@ class ActiveChallengeViewModel @Inject constructor(
 
     private val _abandonState = MutableStateFlow(false)
     val abandonSuccess: StateFlow<Boolean> = _abandonState.asStateFlow()
+
+    private val _abandonStatus = MutableStateFlow<AbandonState>(AbandonState.Idle)
+    val abandonStatus: StateFlow<AbandonState> = _abandonStatus.asStateFlow()
 
     private val _reduceLimitState = MutableStateFlow<ReduceLimitState>(ReduceLimitState.Idle)
     val reduceLimitState: StateFlow<ReduceLimitState> = _reduceLimitState.asStateFlow()
@@ -213,17 +229,60 @@ class ActiveChallengeViewModel @Inject constructor(
         viewModelScope.launch {
             val challenge = (uiState.value as? ActiveChallengeUiState.Success)?.challenge
             val mode = challenge?.mode?.name?.lowercase() ?: "unknown"
-            challengeRepository.updateChallengeStatus(challengeId, ChallengeStatus.FAILED)
-                .onSuccess {
-                    Timber.d("Challenge $challengeId abandoned")
-                    analyticsService.logChallengeAbandoned(mode)
-                    // Both modes return to the Dashboard. A Hard Mode abandon is now status=FAILED,
-                    // so the unified RED loss dialog surfaces there via getUnshownFailedHardChallenge().
-                    _abandonState.value = true
-                }
-                .onFailure { e ->
-                    Timber.e(e, "Failed to abandon challenge $challengeId")
-                }
+
+            // Abandoning is a LOSS. For a solo Hard Mode challenge with a live pre-auth the stake MUST
+            // be captured before we mark FAILED — the confirm dialog already told the user "€X wird
+            // eingezogen". Group challenges (groupChallengeId != null) are intentionally EXCLUDED: their
+            // stake is settled by the completeGroupChallenge prize-pool flow, never direct-captured here.
+            val paymentIntentId = challenge?.stripePaymentIntentId
+            val needsCapture = challenge != null &&
+                challenge.mode == ChallengeMode.HARD &&
+                challenge.groupChallengeId == null &&
+                paymentIntentId != null
+
+            if (needsCapture) {
+                _abandonStatus.value = AbandonState.Loading
+                // Idempotent CF: ANY success means the money is gone (fresh capture OR already captured).
+                paymentRepository.capturePayment(paymentIntentId!!)
+                    .onSuccess {
+                        // CRITICAL ORDER: FAILED + navigation happen ONLY after a confirmed capture.
+                        markFailedAndFinish(mode)
+                    }
+                    .onFailure { e ->
+                        // Real failure (network / Stripe / non-capturable PI). Leave the challenge ACTIVE
+                        // and surface the error — NEVER mark FAILED without the stake being captured.
+                        Timber.e(e, "Abandon: stake capture failed for $challengeId — staying ACTIVE")
+                        _abandonStatus.value = AbandonState.Error(e.message ?: "capture_failed")
+                    }
+            } else {
+                // Soft Mode, group challenge, or no pre-auth → no money to capture; behave as before.
+                markFailedAndFinish(mode)
+            }
         }
+    }
+
+    /**
+     * Flips the challenge to FAILED and signals navigation back to the Dashboard, where the unified RED
+     * loss dialog surfaces via getUnshownFailedHardChallenge(). For Hard Mode this runs ONLY after the
+     * stake is confirmed captured. If the status write itself fails after a Hard Mode capture, the money
+     * is already gone but the row stays ACTIVE — surfaced as an error; a retry/worker cycle reconciles
+     * it (capturePayment is idempotent, so re-running abandon is safe).
+     */
+    private suspend fun markFailedAndFinish(mode: String) {
+        challengeRepository.updateChallengeStatus(challengeId, ChallengeStatus.FAILED)
+            .onSuccess {
+                Timber.d("Challenge $challengeId abandoned")
+                analyticsService.logChallengeAbandoned(mode)
+                _abandonStatus.value = AbandonState.Idle
+                _abandonState.value = true
+            }
+            .onFailure { e ->
+                Timber.e(e, "Failed to mark FAILED on abandon for $challengeId")
+                _abandonStatus.value = AbandonState.Error(e.message ?: "status_update_failed")
+            }
+    }
+
+    fun resetAbandonStatus() {
+        _abandonStatus.value = AbandonState.Idle
     }
 }

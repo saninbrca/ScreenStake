@@ -479,12 +479,8 @@ fun MainScreen(
                     },
                     onHome = {
                         navController.navigate(BottomNavTab.Dashboard.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                                inclusive = false
-                            }
+                            popUpTo(BottomNavTab.Dashboard.route) { inclusive = false }
                             launchSingleTop = true
-                            restoreState = true
                         }
                     },
                 )

@@ -1363,12 +1363,20 @@ async function runPermissionViolationCheck(): Promise<number> {
   const db = admin.firestore();
   let processed = 0;
 
-  const snapshot = await db
-    .collectionGroup("permissionStatus")
-    .where("permissionLostAt", "!=", null)
-    .get();
+  let permissionDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+  try {
+    const snapshot = await db
+      .collectionGroup("permissionStatus")
+      .where("permissionLostAt", "!=", null)
+      .get();
+    permissionDocs = snapshot.docs;
+  } catch (e) {
+    // A failed query (e.g. missing collection-group index) must NOT abort the
+    // whole run — log and skip this pass so the usage pass still executes.
+    functions.logger.error("checkPermissionViolations: permissionLostAt collection-group query failed", e);
+  }
 
-  for (const doc of snapshot.docs) {
+  for (const doc of permissionDocs) {
     const data = doc.data();
     const lostAt: number = data["permissionLostAt"];
 
@@ -1410,12 +1418,20 @@ async function runPermissionViolationCheck(): Promise<number> {
     }
 
     // Group Challenge participants
-    const groups = await db.collectionGroup("participants")
-      .where("userId", "==", userId)
-      .where("status", "==", "active")
-      .get();
+    let groupDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+    try {
+      const groups = await db.collectionGroup("participants")
+        .where("userId", "==", userId)
+        .where("status", "==", "active")
+        .get();
+      groupDocs = groups.docs;
+    } catch (e) {
+      // A failed participants query must not abort the run — log and skip group
+      // captures for this user; the solo capture above already ran.
+      functions.logger.error(`checkPermissionViolations: participants query failed for user ${userId}`, e);
+    }
 
-    for (const participant of groups.docs) {
+    for (const participant of groupDocs) {
       const pd = participant.data();
       if (!pd["paymentIntentId"]) continue;
       try {
@@ -1438,12 +1454,20 @@ async function runPermissionViolationCheck(): Promise<number> {
 
   // ── Usage violation check (accessibility disabled + blocked app used > 1h ago) ─
   const oneHour = 60 * 60 * 1000;
-  const usageSnapshot = await db
-    .collectionGroup("permissionStatus")
-    .where("usageViolationDetectedAt", "!=", null)
-    .get();
+  let usageDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+  try {
+    const usageSnapshot = await db
+      .collectionGroup("permissionStatus")
+      .where("usageViolationDetectedAt", "!=", null)
+      .get();
+    usageDocs = usageSnapshot.docs;
+  } catch (e) {
+    // A failed query (e.g. missing collection-group index) must NOT abort the
+    // whole run — log and skip this pass.
+    functions.logger.error("checkPermissionViolations: usageViolationDetectedAt collection-group query failed", e);
+  }
 
-  for (const doc of usageSnapshot.docs) {
+  for (const doc of usageDocs) {
     const data = doc.data();
     const violatedAt: number = data["usageViolationDetectedAt"];
 

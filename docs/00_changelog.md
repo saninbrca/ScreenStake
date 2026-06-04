@@ -15,6 +15,149 @@
 
 ## [Unreleased] — June 2026
 
+### KNOWN OPEN ISSUES / FOLLOW-UPS (as of June 2026)
+
+Tracked here so they are not lost. None are fixed yet — investigate before launch.
+
+- **Limit evaluation review (MONEY-CRITICAL — needs investigation).** Two suspected defects in the
+  fail-detection math: (1) **SESSIONS** uses `opens >= limit` — a possible off-by-one vs. the intended
+  "exceed the limit" semantics; (2) **TIME_BUDGET** writes `budgetUsedMs` (the `*Ms` fields) but the
+  worker's loss check reads the `*Minutes` value — so a **TIME_BUDGET loss may never trigger**. Both
+  affect whether a Hard Mode stake is captured, so confirm against `DailyEvaluationWorker` before launch.
+- **`checkPermissionViolations` returns HTTP 500.** Suspected root cause: the CF crashes while iterating
+  **old gutted challenge docs** that lack the fields it expects (legacy docs created before the
+  unified-cid / full-CREATE fix below). Needs a null-safe iteration + a backfill/skip for legacy docs.
+- **Reconciliation safety net not yet built.** A server-guaranteed deferred capture (Room→Firestore
+  up-sync that re-creates a missing Hard Mode challenge doc, and a server reconciliation for captures
+  that failed after Room marked state) is **not implemented**. Needed before launch — see the
+  `TODO(reconciliation)` marker in `ChallengeRepositoryImpl.createChallenge`.
+- **Redemption / comeback feature: planned for removal.** User decision pending final scope; the
+  redemption challenge flow (`docs/03`/`docs/09`) may be cut. Do not build new dependencies on it.
+- **Unit test suite does not compile + cannot run.** Pre-existing stale-test rot (tests reference
+  removed/renamed APIs), and the local JDK/Gradle toolchain cannot run the test task. No automated test
+  coverage is currently available; verification is via `:app:compileDebugKotlin` + manual device testing.
+- **`TODO(perm-worker-fail-gate)`** — `PermissionCheckWorker` currently marks a challenge FAILED even when
+  the capture call fails (it should gate FAILED on a confirmed capture, like the abandon path now does).
+- **`TODO(counter-gap)`** — auto-captured (>7-day) Hard Mode losses do **not** bump the
+  `failed`/`revenue` counters: Stripe captures at creation with no CF involvement, and `capturePayment`'s
+  `succeeded` branch deliberately does not bump (to avoid double-counting manual captures). A dedicated
+  server-side fail-accounting source is needed.
+
+### FIX — Soft Mode fail screen: dead "Zur Startseite" button now returns to the Dashboard
+
+Abandoning a **Soft Mode** challenge routes the user (via `getUnshownFailedSoftChallenge()` →
+`TrackedAppEventBus.emitNavigateToSoftFailResult`) to the full-screen `SoftFailResultScreen`
+("Neue Challenge 🚀" / "Zur Startseite"). Tapping **"Zur Startseite"** did nothing — the user was stuck.
+
+- **Root cause (navigation, not the shared dialog):** in `MainScreen`'s `soft_fail_result` composable,
+  `onHome` navigated to the dashboard with `popUpTo(startDestination = "dashboard"){ saveState = true }`
+  **plus** `restoreState = true` on the **same** `navigate` call. `saveState` saved the just-popped
+  `soft_fail_result` entry keyed to the dashboard destination, and `restoreState` immediately restored it
+  → the screen was re-pushed onto itself, so the user never left. (That `saveState`/`restoreState` pair is
+  the multi-back-stack **tab-switching** pattern; it is wrong for clearing a screen above an existing
+  dashboard.)
+- **Fix:** dropped `saveState`/`restoreState`; `onHome` now mirrors the working sibling `onNewChallenge`:
+  `navigate(Dashboard.route){ popUpTo(Dashboard.route){ inclusive = false }; launchSingleTop = true }`.
+- **Scope:** soft-mode-only. The WIN (`ChallengeSuccessDialog`) and RED loss (`ChallengeFailedDialog`)
+  dialogs route their "Zurück zum Dashboard" link through `onDismiss` (just hides the dialog over the
+  already-present dashboard — no navController), so they were never affected; the shared
+  `ResultDialogScaffold` is untouched. **Pre-existing bug** (authored in `79afb7a9`, April 2026), **not** a
+  regression from the abandon-capture commit. Verified `:app:compileDebugKotlin` clean. Device test pending.
+- **Files changed:** `presentation/navigation/MainScreen.kt`, `docs/00_changelog.md`
+
+### FIX — Abandon now captures the Hard Mode stake; capturePayment made idempotent (money-critical)
+
+Abandoning a solo Hard Mode challenge set `status=FAILED` but **never captured the Stripe stake**. For a
+manual-capture PI (≤7-day pre-auth) the authorization expired uncaptured — the user lost but the stake was
+never taken.
+
+- **`capturePayment` CF is now idempotent**, branching on the PI status already fetched for the IDOR guard
+  (no extra Stripe call). `requires_capture` → **capture + bump counters once** (`alreadyCaptured:false`);
+  `succeeded` → **money already gone, no re-capture / no counter re-bump** (`alreadyCaptured:true`); any
+  other status → **409** so callers leave the challenge ACTIVE. **CONTRACT:** a `success` response ALWAYS
+  means "the stake is captured"; callers gate FAILED on it. The counter `bumpCounters` now fires **only on
+  a fresh capture** (never the `succeeded` branch), so an auto-captured / racing re-capture never
+  double-counts. **IDOR guard intact.** This also fixes the same latent uncaptured-loss bug in the worker
+  >7-day (auto-capture) path.
+- **`abandonChallenge()` captures for SOLO Hard Mode only** — `mode==HARD && groupChallengeId==null &&
+  stripePaymentIntentId!=null`. `FAILED` + navigation happen **ONLY inside `capturePayment.onSuccess`**;
+  `onFailure` keeps the challenge **ACTIVE** and surfaces an error (never mark FAILED without the stake
+  captured). Soft Mode / group / no-PI behave as before (no capture). Group stakes stay with the
+  `completeGroupChallenge` prize-pool flow — never direct-captured here.
+- **New `AbandonState` (Idle/Loading/Error)** drives a blocking loading overlay + an error dialog on the
+  active-challenge detail screen; `markFailedAndFinish()` flips FAILED then signals navigation. New strings
+  in `strings.xml`.
+- **TODO markers** added for two pre-existing follow-ups: `perm-worker-fail-gate` (PermissionCheckWorker
+  marks FAILED even on capture failure) and `counter-gap` (>7d auto-captured losses don't bump counters) —
+  see Known Open Issues above. No behavior change there this commit.
+- **Files changed:** `presentation/screens/activechallenge/ActiveChallengeViewModel.kt`,
+  `presentation/screens/activechallenge/ActiveChallengeScreen.kt`,
+  `service/PermissionCheckWorker.kt`, `functions/src/index.ts` (`capturePayment`), `res/values/strings.xml`,
+  `docs/00_changelog.md`. **CF change → `firebase deploy --only functions`.**
+
+### FIX — Hard Mode loss UX unified into a single RED result dialog; lost challenge leaves the dashboard
+
+Every Hard Mode loss path now surfaces the **same** dialog, and a lost challenge no longer lingers on the
+dashboard.
+
+- **`DailyEvaluationWorker`:** on a limit-exceeded loss the status now flips to **FAILED immediately —
+  but ONLY inside `capturePayment.onSuccess`** (never before, never on failure, never re-running the
+  capture). Multi-day challenges now leave the dashboard the same day. Redemption fields survive
+  (`updateChallengeStatus` writes only the status column). The end-date block was guarded against a
+  duplicate `updateChallengeStatus`/analytics call.
+- **`ResultDialogComponents.kt` (NEW):** extracted shared `ResultDialogScaffold` + `ResultCard` +
+  `StatColumn` + palette. `ChallengeSuccessDialog` now consumes them (behavior identical; confetti moved
+  into the scaffold's background slot).
+- **`ChallengeFailedDialog` (NEW):** red Close icon, "Challenge verloren.", "EINSATZ EINGEZOGEN" card, loss
+  stats, optional comeback hint, no confetti. Surfaced from the Dashboard via `getUnshownFailedHardChallenge`
+  (`DashboardViewModel.FailedDialogState(challenge, logs)`).
+- **Abandon rerouted to the dashboard dialog** (nav-only; status was already set FAILED) so the same dialog
+  surfaces. The old `hard_mode_fail` route + `HardModeFailScreen` + `HardModeFailViewModel` were **removed**
+  (single loss UI). Money/capture behavior unchanged in this commit.
+- **Files changed:** `presentation/navigation/MainScreen.kt`,
+  `presentation/screens/activechallenge/{ActiveChallengeScreen,ActiveChallengeViewModel}.kt`,
+  `presentation/screens/dashboard/{ChallengeFailedDialog(new),ChallengeSuccessDialog,DashboardScreen,DashboardViewModel,ResultDialogComponents(new)}.kt`,
+  `service/DailyEvaluationWorker.kt`, `res/values/strings.xml`; removed
+  `presentation/screens/challenge/{HardModeFailScreen,HardModeFailViewModel}.kt`. **No CF changes.**
+
+### FIX — Hard Mode "gutted challenge doc": full doc now created, server win-validation + 80% refund work
+
+Hard Mode challenge docs in Firestore were landing **gutted** — only `stripePaymentIntentId` /
+`stripeCustomerId` (+ waiver) fields, missing `status`/`endDate`/`amountCents`/etc. Because the server
+re-reads the challenge doc to validate a win, the gutted doc made `cancelOrRefundPayment` fail forever and
+the 80% winner refund never happened.
+
+- **Root cause — three racing writes to the same doc + a divergent id + a rules-blocked update:**
+  `createPaymentIntent` (CF) pre-wrote the challenge doc (`stripePaymentIntentId`/`stripeCustomerId`), a
+  withdrawal-waiver write also touched it, and the client's `saveChallenge` then tried to write the full
+  doc. But Firestore rules **allow all fields on CREATE yet block** `status`/`endDate`/`amountCents`/
+  `stripePaymentIntentId` on a client **UPDATE** — so once the CF had pre-created the doc, the client's
+  create became a **rejected update**, leaving the gutted doc. Worse, `CreateChallengeUseCase` minted its
+  **own** `UUID`, divergent from the `challengeId` sent to `createPaymentIntent`, so the PI and doc could
+  reference different ids.
+- **Fixes:**
+  - **Unified `challengeId` threaded through creation** — `CreateChallengeUseCase` takes the id already
+    sent to `createPaymentIntent` (Stripe `metadata.challengeId`) and persists under **that** id; only Soft
+    Mode mints a fresh `UUID`. Hard Mode never mints its own id (would orphan the payment).
+  - **`createPaymentIntent` CF no longer writes the challenge doc** — the client's `saveChallenge` performs
+    a **single full CREATE** under the same cid (lands with ALL fields). `stripeCustomerId` still lives on
+    the user doc; `metadata.challengeId` keeps the PI bound to the cid.
+  - **`saveChallenge` is a single rules-allowed CREATE + `SetOptions.merge()` safety net** so a future
+    re-sync can never wipe CF-owned fields; exceptions are **no longer swallowed** (propagate so the caller
+    can retry/surface).
+  - **Hard Mode mirror is AWAITED with bounded retry** (`HARD_SYNC_MAX_ATTEMPTS=3`, 500ms × attempt
+    backoff) instead of fire-and-forget — `ChallengeRepositoryImpl.createChallenge` returns failure if the
+    doc never lands (with a `TODO(reconciliation)` for a self-healing up-sync). Soft Mode stays
+    fire-and-forget (no money authority, no doc race).
+  - **Dead code removed:** `ChallengeSetupScreen` + `ChallengeSetupViewModel` (~1.4k lines).
+- **Result:** the full challenge doc lands, the server can validate wins, and the 80% refund works.
+- **Files changed:** `domain/usecase/CreateChallengeUseCase.kt`,
+  `data/repository/ChallengeRepositoryImpl.kt`, `data/remote/firebase/FirestoreService.kt`,
+  `presentation/screens/challengecreation/ChallengeCreationViewModel.kt`, `functions/src/index.ts`
+  (`createPaymentIntent`), `res/values/strings.xml`; removed
+  `presentation/screens/challengesetup/{ChallengeSetupScreen,ChallengeSetupViewModel}.kt`.
+  **CF change → `firebase deploy --only functions`.**
+
 ### FIX — Day-boundary leak: in-memory daily overlay state now reset by a lazy day-stamp guard
 
 Conscious opens / usage sometimes showed the **previous day's** values after midnight, intermittently.

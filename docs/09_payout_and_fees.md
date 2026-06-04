@@ -77,6 +77,35 @@ captured stakes on fails and 10% group fees feed it too. See `docs/11_admin_dash
 
 ---
 
+## Stake Capture on Fail / Abandon (`capturePayment`)
+
+When a solo Hard Mode challenge is **lost** (worker fail path, manual **abandon**, permission violation, or
+emergency unlock) the **full** stake is captured — `0%` back to the user, full `amount_received` becomes
+app revenue.
+
+**`capturePayment` is IDEMPOTENT (June 2026).** It branches on the PI status already fetched for the IDOR
+guard:
+- `requires_capture` → capture now, record `paymentCaptures`, and **bump counters once**
+  (`totalActiveChallenges −1`, `totalFailedChallenges +1`, `totalRevenueCents += amount_received`) →
+  `{ success:true, alreadyCaptured:false }`.
+- `succeeded` → money is **already gone** (>7-day auto-capture, or a racing/duplicate caller) →
+  `{ success:true, alreadyCaptured:true }`, **no re-capture and no counter re-bump** (so revenue is never
+  double-counted).
+- anything else → **409** (not capturable) so the caller leaves the challenge **ACTIVE**.
+
+**Counters bump ONLY on a fresh capture** (the `requires_capture` branch), never on `succeeded`. **Known
+gap — `TODO(counter-gap)`:** a genuine first-time >7-day (auto-captured) loss therefore does **not** bump
+the failed/revenue counters (Stripe captured at creation with no CF involvement, and this branch can't
+distinguish it from a benign re-capture race). A dedicated server-side fail-accounting source is needed.
+
+**Abandon (manual quit) — June 2026:** `ActiveChallengeViewModel.abandonChallenge()` now captures the
+stake for **solo Hard Mode only** (`mode==HARD && groupChallengeId==null && stripePaymentIntentId!=null`)
+and marks `FAILED` **only after** `capturePayment` succeeds; on capture failure the challenge stays ACTIVE.
+Previously abandon set FAILED without capturing, so a ≤7-day pre-auth expired uncaptured. Group abandons
+are settled by `completeGroupChallenge`, not direct-captured. See `docs/03_hard_mode_and_stripe.md`.
+
+---
+
 ## Redemption Challenge Payout
 
 Trigger: DailyEvaluationWorker detects Redemption COMPLETED

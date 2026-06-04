@@ -91,8 +91,18 @@ Android: Stripe Payment Sheet → user enters card details → confirms
     ↓
 Payment status: AUTHORIZED (money held, not captured)
     ↓
-challengeId + paymentIntentId stored in Room + Firestore
+challengeId + paymentIntentId stored in Room, then mirrored to Firestore
 ```
+
+**Write order (June 2026 — "gutted doc" fix, CRITICAL).** `createPaymentIntent` is called with the
+**same `challengeId`** that the challenge will be saved under (Stripe `metadata.challengeId`) — the client
+never mints a second id for Hard Mode. The CF **no longer writes the challenge doc**; the client's
+`saveChallenge` performs a **single full CREATE** under that unified cid (Firestore rules allow all fields
+on CREATE but block `status`/`endDate`/`amountCents`/`stripePaymentIntentId` on a client UPDATE — so a
+CF pre-write turned the create into a rejected update and left a gutted doc that broke server win-
+validation forever). The Hard Mode mirror is **awaited with bounded retry** (not fire-and-forget) so the
+doc is guaranteed to land before creation reports success. See `docs/00_changelog.md` → "Hard Mode 'gutted
+challenge doc'".
 
 ### Phase 2a: Challenge FAILED → Capture Money
 
@@ -157,16 +167,25 @@ export const createPaymentIntent = functions.https.onRequest(async (req, res) =>
         amount: amountCents,
         currency: 'eur',
         capture_method: 'manual',
+        metadata: { userId, challengeId },   // userId → IDOR guard; challengeId → binds PI to the doc
     })
+    // NOTE (June 2026): the challenge doc is intentionally NOT written here. The client's
+    // saveChallenge() does a single full CREATE under this same challengeId. Pre-writing it turned
+    // that create into a rules-rejected UPDATE → gutted doc. stripeCustomerId lives on the user doc.
     res.json({ paymentIntentId: intent.id, clientSecret: intent.client_secret })
 })
 
-// capturePayment
+// capturePayment — IDEMPOTENT (June 2026), IDOR-guarded
 export const capturePayment = functions.https.onRequest(async (req, res) => {
-    // auth check ...
+    // auth check ... + IDOR guard: PI.metadata.userId must equal the caller (else 403)
     const { paymentIntentId } = req.body
-    await stripe.paymentIntents.capture(paymentIntentId)
-    res.json({ success: true })
+    // Branch on the PI status already fetched for the IDOR guard (no extra Stripe call):
+    //   succeeded        → money ALREADY gone → { success:true, alreadyCaptured:true }, NO re-capture,
+    //                       NO counter re-bump (covers >7d auto-capture + racing/duplicate callers)
+    //   requires_capture → capture now, record paymentCaptures, bump counters ONCE → alreadyCaptured:false
+    //   anything else    → 409 (not capturable) so the caller leaves the challenge ACTIVE
+    // CONTRACT: a `success` response ALWAYS means "the stake is captured" — callers gate FAILED on it.
+    res.json({ success: true, alreadyCaptured: false /* or true */ })
 })
 
 // cancelOrRefundPayment
@@ -480,6 +499,14 @@ Data source: Room (solo) + Firestore group doc (prizePerWinner, appFee) + pendin
   server clock `Date.now() >= challenge.endDate`, `payoutStatus != "refunded"` (idempotency),
   `stripePaymentIntentId === paymentIntentId` (PI binding). NEVER trust the client's clock or
   client-supplied `amountCents` — recompute `floor(storedStake × 0.80)`. **Never reverse these checks.**
+- `capturePayment` CF is IDEMPOTENT: a `success` response ALWAYS means "captured". Bump counters ONLY on a
+  fresh `requires_capture` capture — never on the `succeeded` branch (would double-count). Non-capturable
+  status → 409 so the caller leaves the challenge ACTIVE. Keep the IDOR guard (`metadata.userId`).
+- Hard Mode creation = a SINGLE rules-allowed CREATE under the unified `challengeId` (the one passed to
+  `createPaymentIntent`); the CF NEVER writes the challenge doc, and the client never mints a second id.
+  The Hard Mode Firestore mirror is AWAITED (with bounded retry), never fire-and-forget.
+- Abandon captures SOLO Hard Mode only (`mode==HARD && groupChallengeId==null && PI!=null`); status→FAILED
+  ONLY inside `capturePayment.onSuccess`. NEVER mark FAILED without a confirmed capture.
 - Hard Mode win: PI is `requires_capture` → capture first, then partial refund (80%). NEVER cancel (would give 100%)
 - Stripe refund ALWAYS before marking COMPLETED in Room/Firestore — and the client only marks
   COMPLETED after the refund CF returns success; a failed refund leaves the challenge ACTIVE for retry
@@ -589,6 +616,23 @@ Same layout as Soft Mode with the following differences:
 
 **"Challenge aufgeben":** text only, 14sp, `#FF3B30`, centered.
 Mentions "€X wird eingezogen" — no button background (psychologically de-emphasized).
+
+### Abandon (manual quit) — captures the stake (June 2026)
+
+Abandoning is a **LOSS**, so for a **solo Hard Mode** challenge with a live pre-auth the stake is now
+captured before the challenge is marked FAILED (previously it set FAILED but never captured — the ≤7-day
+manual pre-auth then expired uncaptured and the stake was never taken).
+
+- **`ActiveChallengeViewModel.abandonChallenge()` captures only when** `mode==HARD &&
+  groupChallengeId==null && stripePaymentIntentId!=null`. It calls `capturePayment` (idempotent) and only
+  inside `.onSuccess` does `markFailedAndFinish()` flip `status=FAILED` + signal navigation.
+  `.onFailure` leaves the challenge **ACTIVE** and shows an error — **never** mark FAILED without a
+  confirmed capture.
+- **Soft Mode / group / no-PI** abandon behaves as before (no capture). Group stakes are settled by the
+  `completeGroupChallenge` prize-pool flow, never direct-captured on abandon.
+- `AbandonState` (Idle/Loading/Error) drives a blocking loading overlay + an error dialog during capture.
+- After FAILED, abandon returns to the Dashboard, where the unified RED `ChallengeFailedDialog` surfaces
+  (same dialog as the worker/permission loss paths).
 
 ---
 

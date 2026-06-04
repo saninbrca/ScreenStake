@@ -24,6 +24,9 @@
 * **Overlays:** ALWAYS use `FLAG_SECURE` and `TYPE_APPLICATION_OVERLAY`. Use `Handler(mainLooper).post{}` for showing overlays.
 * **Logout:** Clear ALL Room tables BEFORE calling `Firebase.signOut()`.
 * **Money Authority:** Refund/capture decisions are validated SERVER-SIDE. NEVER trust the client's win/loss, clock, refund amount, or PaymentIntent id — re-derive them from the stored challenge doc. (See `docs/10`.)
+* **Hard Mode create:** A SINGLE rules-allowed Firestore CREATE under the unified `challengeId` (the same id passed to `createPaymentIntent`). The CF NEVER writes the challenge doc; never mint a second id. The Hard Mode mirror is AWAITED (bounded retry), never fire-and-forget. (See `docs/03`.)
+* **capturePayment idempotency:** A `success` response ALWAYS means "captured". Counters bump ONLY on a fresh `requires_capture` capture — never on the `succeeded` branch. Non-capturable status → 409. Keep the IDOR guard.
+* **Abandon:** Captures SOLO Hard Mode only (`mode==HARD && groupChallengeId==null && PI!=null`); status→FAILED ONLY after a confirmed capture (inside `capturePayment.onSuccess`). NEVER mark FAILED without the stake captured.
 * **DB Encryption:** The Room DB is SQLCipher-encrypted; the passphrase comes from `DatabaseKeyManager` (Keystore-wrapped). NEVER hardcode it.
 * **dailyLogs tamper-evidence:** `limitExceeded` may NEVER flip true→false; `dailyLogs` deletes are Cloud-Function-only (`allow delete: if false`).
 * **Anti-Cheat:** FLAGGING ONLY — `detectSuspiciousUsers` never auto-bans or writes user data; a human always reviews.

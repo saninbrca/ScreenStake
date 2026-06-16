@@ -1,13 +1,16 @@
 package com.detox.app.service
 
 import android.content.Context
+import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.detox.app.R
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.GroupChallengeDao
 import com.detox.app.data.remote.firebase.AnalyticsService
@@ -37,6 +40,9 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.floor
 
+/** Foreground-notification id used only when WorkManager runs this worker as an expedited job. */
+private const val FOREGROUND_NOTIF_ID = 9100
+
 @HiltWorker
 class DailyEvaluationWorker @AssistedInject constructor(
     @Assisted context: Context,
@@ -54,7 +60,28 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val firestoreService: FirestoreService,
     private val firestore: FirebaseFirestore,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
+    private val challengeSettlementGuard: ChallengeSettlementGuard,
 ) : CoroutineWorker(context, workerParams) {
+
+    /**
+     * Required when WorkManager runs this worker as a foreground/expedited job (e.g. when it
+     * resumes pending work after connectivity returns on some EMUI/Android versions). Without
+     * this override CoroutineWorker throws IllegalStateException("Not implemented"). Reuses the
+     * existing [NotificationHelper.CHANNEL_REMINDERS] channel — no schedule/logic change.
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        NotificationHelper.createChannels(applicationContext)
+        val notification = NotificationCompat.Builder(
+            applicationContext, NotificationHelper.CHANNEL_REMINDERS
+        )
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(applicationContext.getString(R.string.app_name))
+            .setContentText("Challenge wird ausgewertet…")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+        return ForegroundInfo(FOREGROUND_NOTIF_ID, notification)
+    }
 
     override suspend fun doWork(): Result {
         Timber.d("DailyEvaluationWorker: ▶ starting (runAttemptCount=$runAttemptCount)")
@@ -170,6 +197,21 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         } else {
                             ChallengeStatus.COMPLETED
                         }
+                        // ── Money-safety gate (already-evaluated short-circuit) ──────────────
+                        // This Hard-Mode end-of-challenge branch issues a win refund and flips
+                        // status. Defer to the server: if it already settled, the guard pulls the
+                        // terminal status into Room (DAO-only) and we skip; if the server can't be
+                        // confirmed (offline), we leave the challenge active for next cycle.
+                        if (challenge.mode == ChallengeMode.HARD && challenge.stripePaymentIntentId != null) {
+                            if (challengeSettlementGuard.resolveBeforeLocalSettlement(challenge.id)
+                                == SettlementDecision.SKIP) {
+                                Timber.w(
+                                    "DailyEvaluationWorker: '${challenge.appDisplayName}' deferred to server settlement " +
+                                            "(already-logged branch) — skipping local refund/status"
+                                )
+                                continue
+                            }
+                        }
                         // Hard Mode win in this short-circuit branch: issue the refund BEFORE
                         // marking COMPLETED. If the refund fails, leave the challenge ACTIVE so the
                         // next worker cycle retries — never mark COMPLETED before the money is refunded.
@@ -280,6 +322,17 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     if (challenge.mode == ChallengeMode.HARD &&
                         challenge.stripePaymentIntentId != null
                     ) {
+                        // ── Money-safety gate (TIME_BUDGET) ─────────────────────────────────
+                        // Defer to the server before any capture/refund: settled → pull status
+                        // into Room (DAO-only) + skip; unconfirmed (offline) → skip + leave active.
+                        if (challengeSettlementGuard.resolveBeforeLocalSettlement(challenge.id)
+                            == SettlementDecision.SKIP) {
+                            Timber.w(
+                                "DailyEvaluationWorker: TIME_BUDGET '${challenge.appDisplayName}' deferred to " +
+                                        "server settlement — skipping local capture/refund"
+                            )
+                            continue
+                        }
                         val durationDays = ((challenge.endDate - challenge.startDate) /
                                 DateUtils.MILLIS_PER_DAY).toInt()
                         if (limitExceeded) {
@@ -480,6 +533,17 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 if (challenge.mode == ChallengeMode.HARD &&
                     challenge.stripePaymentIntentId != null
                 ) {
+                    // ── Money-safety gate (TIME / SESSIONS) ─────────────────────────────────
+                    // Defer to the server before any capture/refund: settled → pull status into
+                    // Room (DAO-only) + skip; unconfirmed (offline) → skip + leave active.
+                    if (challengeSettlementGuard.resolveBeforeLocalSettlement(challenge.id)
+                        == SettlementDecision.SKIP) {
+                        Timber.w(
+                            "DailyEvaluationWorker: '${challenge.appDisplayName}' deferred to server settlement " +
+                                    "— skipping local capture/refund"
+                        )
+                        continue
+                    }
                     val durationDays = ((challenge.endDate - challenge.startDate) /
                             DateUtils.MILLIS_PER_DAY).toInt()
 

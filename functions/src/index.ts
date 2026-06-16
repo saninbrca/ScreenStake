@@ -6,6 +6,7 @@ admin.initializeApp();
 
 const REGION = "us-central1";
 const MILLIS_PER_DAY = 86_400_000;
+const HOUR_MS = 3_600_000;
 
 /**
  * Returns 23:59:59.999 of the day that is durationDays days after startMs.
@@ -121,6 +122,42 @@ async function bumpCounters(deltas: Record<string, number>): Promise<void> {
   }
 }
 
+// ── Per-UID rate limit (Huawei-safe, App-Check-free) ─────────────────────────────
+// Fixed-window throttle keyed on the VERIFIED uid. Call AFTER requireAuth; NEVER on the
+// x-internal-secret scheduler path or any requireAdmin path. State lives in rateLimits/{uid}
+// as one map field per key — the Admin SDK write bypasses Firestore rules (which deny ALL
+// client access to rateLimits, see firestore.rules). FAIL-OPEN: any throttle-store error is
+// logged and ALLOWED — an infra blip must never block a paying user (maxInstances still caps
+// blast radius). Over the limit → 429.
+async function enforceRateLimit(uid: string, key: string, limit: number, windowMs: number): Promise<void> {
+  try {
+    const ref = admin.firestore().collection("rateLimits").doc(uid);
+    const now = Date.now();
+    const allowed = await admin.firestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const entry = (snap.exists ? snap.data()! : {})[key] as
+        { windowStart?: number; count?: number } | undefined;
+      let windowStart: number;
+      let count: number;
+      if (!entry || typeof entry.windowStart !== "number" || (now - entry.windowStart) >= windowMs) {
+        // Window expired or first hit → start a fresh window.
+        windowStart = now;
+        count = 1;
+      } else {
+        windowStart = entry.windowStart;
+        count = (entry.count ?? 0) + 1;
+      }
+      if (count > limit) return false; // over limit → do NOT write (count stays pinned at the cap)
+      tx.set(ref, { [key]: { windowStart, count } }, { merge: true });
+      return true;
+    });
+    if (!allowed) throw new HttpError(429, "Rate limit exceeded. Please try again later.");
+  } catch (e) {
+    if (e instanceof HttpError) throw e; // the 429 MUST propagate; only infra errors fail open
+    functions.logger.error("enforceRateLimit failed (fail-open allow)", { uid, key, error: e });
+  }
+}
+
 // ── Participant type ───────────────────────────────────────────────────────────
 
 interface Participant {
@@ -134,9 +171,10 @@ interface Participant {
 
 // ── createPaymentIntent ────────────────────────────────────────────────────────
 
-export const createPaymentIntent = functions.region(REGION).https.onRequest(async (req, res) => {
+export const createPaymentIntent = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "createPaymentIntent", 20, HOUR_MS);
     const { amountCents, durationDays, challengeId, isGroupChallenge } = req.body as {
       amountCents: number;
       durationDays: number;
@@ -181,9 +219,10 @@ export const createPaymentIntent = functions.region(REGION).https.onRequest(asyn
 
 // ── capturePayment ─────────────────────────────────────────────────────────────
 
-export const capturePayment = functions.region(REGION).https.onRequest(async (req, res) => {
+export const capturePayment = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "capturePayment", 30, HOUR_MS);
     const { paymentIntentId } = req.body as { paymentIntentId: string };
     if (!paymentIntentId) throw new HttpError(400, "paymentIntentId is required.");
 
@@ -240,9 +279,10 @@ export const capturePayment = functions.region(REGION).https.onRequest(async (re
 
 // ── cancelOrRefundPayment ──────────────────────────────────────────────────────
 
-export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(async (req, res) => {
+export const cancelOrRefundPayment = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "cancelOrRefundPayment", 30, HOUR_MS);
     const { paymentIntentId, challengeId, amountCents, partialRefundCents } = req.body as {
       paymentIntentId: string;
       challengeId?: string;
@@ -393,6 +433,11 @@ export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(as
       await db.collection("users").doc(verifiedUserId)
         .collection("challenges").doc(challengeId)
         .set({
+          // status is client-immutable (Firestore rules block it); the CF owns the
+          // active→completed transition server-side so it is atomic with the payout
+          // fields below. Without this the doc was left status="active" +
+          // payoutStatus="refunded" (inconsistent) after a win.
+          status: "completed",
           payoutStatus: "refunded",
           payoutAmount: refundedAmount,
           appFeeAmount: fullAmount - refundedAmount,
@@ -416,9 +461,10 @@ export const cancelOrRefundPayment = functions.region(REGION).https.onRequest(as
 // Step 2 of creator join flow: called only after PaymentSheetResult.Completed.
 // Accepts the pre-authorized paymentIntentId — does NOT create a new PaymentIntent.
 
-export const createGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const createGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "createGroupChallenge", 30, HOUR_MS);
     const { groupId, code, groupData, paymentIntentId } = req.body as {
       groupId: string;
       code: string;
@@ -477,9 +523,10 @@ export const createGroupChallenge = functions.region(REGION).https.onRequest(asy
 
 // ── joinGroupChallenge ─────────────────────────────────────────────────────────
 
-export const joinGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const joinGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "joinGroupChallenge", 20, HOUR_MS);
     const { groupId, displayName } = req.body as { groupId: string; displayName: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -521,9 +568,10 @@ export const joinGroupChallenge = functions.region(REGION).https.onRequest(async
 // Called after PaymentSheetResult.Completed — adds user to participants only
 // after Stripe confirms the payment intent is valid.
 
-export const confirmGroupJoin = functions.region(REGION).https.onRequest(async (req, res) => {
+export const confirmGroupJoin = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "confirmGroupJoin", 30, HOUR_MS);
     const { groupId, paymentIntentId, deviceId } = req.body as {
       groupId: string;
       paymentIntentId: string;
@@ -586,9 +634,10 @@ export const confirmGroupJoin = functions.region(REGION).https.onRequest(async (
 
 // ── startGroupChallenge ────────────────────────────────────────────────────────
 
-export const startGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "startGroupChallenge", 30, HOUR_MS);
     const { groupId } = req.body as { groupId: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -678,9 +727,10 @@ export const startGroupChallenge = functions.region(REGION).https.onRequest(asyn
 
 // ── cancelGroupChallenge ───────────────────────────────────────────────────────
 
-export const cancelGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const cancelGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "cancelGroupChallenge", 30, HOUR_MS);
     const { groupId } = req.body as { groupId: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -732,9 +782,10 @@ export const cancelGroupChallenge = functions.region(REGION).https.onRequest(asy
 
 // ── failParticipant ────────────────────────────────────────────────────────────
 
-export const failParticipant = functions.region(REGION).https.onRequest(async (req, res) => {
+export const failParticipant = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "failParticipant", 30, HOUR_MS);
     const { groupId, userId: failedUserId } = req.body as { groupId: string; userId: string };
     if (!groupId || !failedUserId) throw new HttpError(400, "groupId and userId are required.");
     if (verifiedUserId !== failedUserId) throw new HttpError(403, "You can only fail yourself.");
@@ -780,9 +831,10 @@ export const failParticipant = functions.region(REGION).https.onRequest(async (r
 // Any authenticated user can trigger this — no creator check.
 // Idempotent: already-cancelled challenges are silently accepted.
 
-export const expireGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const expireGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
-    await requireAuth(req);
+    const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "expireGroupChallenge", 30, HOUR_MS);
     const { groupId } = req.body as { groupId: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -792,6 +844,12 @@ export const expireGroupChallenge = functions.region(REGION).https.onRequest(asy
     if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
 
     const gc = doc.data()!;
+
+    // Ownership: only the creator or a participant of THIS group may trigger expiry.
+    const expParticipantIds: string[] = gc["participantUserIds"] ?? [];
+    if (gc["creatorUserId"] !== verifiedUserId && !expParticipantIds.includes(verifiedUserId)) {
+      throw new HttpError(403, "Only the group creator or a participant can expire this challenge.");
+    }
 
     if (gc["status"] === "cancelled") {
       functions.logger.info("expireGroupChallenge: already cancelled (idempotent)", { groupId });
@@ -844,9 +902,10 @@ export const expireGroupChallenge = functions.region(REGION).https.onRequest(asy
 // Stripe PI is cancelled → 100% refund.
 // If remaining participants < 2 → status set to "cancelled".
 
-export const leaveGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const leaveGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "leaveGroupChallenge", 30, HOUR_MS);
     const { groupId } = req.body as { groupId: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -916,9 +975,10 @@ export const leaveGroupChallenge = functions.region(REGION).https.onRequest(asyn
 // ── deleteGroupChallenge ───────────────────────────────────────────────────────
 // Creator deletes a WAITING challenge → cancels ALL participant PIs → 100% refund each.
 
-export const deleteGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const deleteGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "deleteGroupChallenge", 30, HOUR_MS);
     const { groupId } = req.body as { groupId: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -977,9 +1037,10 @@ export const deleteGroupChallenge = functions.region(REGION).https.onRequest(asy
 
 // ── completeGroupChallenge ─────────────────────────────────────────────────────
 
-export const completeGroupChallenge = functions.region(REGION).https.onRequest(async (req, res) => {
+export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
-    await requireAuth(req);
+    const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "completeGroupChallenge", 30, HOUR_MS);
     const { groupId } = req.body as { groupId: string };
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
@@ -989,6 +1050,12 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
     if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
 
     const gc = doc.data()!;
+
+    // Ownership: only the creator or a participant of THIS group may settle it.
+    const compParticipantIds: string[] = gc["participantUserIds"] ?? [];
+    if (gc["creatorUserId"] !== verifiedUserId && !compParticipantIds.includes(verifiedUserId)) {
+      throw new HttpError(403, "Only the group creator or a participant can complete this challenge.");
+    }
 
     if (gc["status"] === "completed") {
       functions.logger.info("completeGroupChallenge: already completed", { groupId });
@@ -1229,9 +1296,10 @@ export const completeGroupChallenge = functions.region(REGION).https.onRequest(a
 
 // ── claimPendingPayouts ───────────────────────────────────────────────────────
 
-export const claimPendingPayouts = functions.region(REGION).https.onRequest(async (req, res) => {
+export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "claimPendingPayouts", 30, HOUR_MS);
     const db = admin.firestore();
 
     const userDoc = await db.collection("users").doc(userId).get();
@@ -1285,9 +1353,25 @@ export const claimPendingPayouts = functions.region(REGION).https.onRequest(asyn
 
 // ── createConnectedAccount ────────────────────────────────────────────────────
 
-export const createConnectedAccount = functions.region(REGION).https.onRequest(async (req, res) => {
+export const createConnectedAccount = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     const verifiedUserId = await requireAuth(req);
+    await enforceRateLimit(verifiedUserId, "createConnectedAccount", 5, MILLIS_PER_DAY);
+
+    const db = admin.firestore();
+
+    // Idempotency: never mint a second Connect account. If the user already has one,
+    // return it and leave the stored payout fields untouched — a repeat call must NOT
+    // create a duplicate Stripe account or overwrite stripeConnectedAccountId. Checked
+    // before the iban/name validation so an already-onboarded user is never bounced with a 400.
+    const existingUserDoc = await db.collection("users").doc(verifiedUserId).get();
+    const existingAccountId = existingUserDoc.data()?.stripeConnectedAccountId as string | undefined;
+    if (existingAccountId && existingAccountId.length > 0) {
+      functions.logger.info(`createConnectedAccount: returning existing account ${existingAccountId} for user ${verifiedUserId}`);
+      res.json({ success: true, accountId: existingAccountId, alreadyExists: true });
+      return;
+    }
+
     const { iban, accountHolderName } = req.body as {
       iban: string;
       accountHolderName: string;
@@ -1295,8 +1379,6 @@ export const createConnectedAccount = functions.region(REGION).https.onRequest(a
     if (!iban || !accountHolderName) {
       throw new HttpError(400, "iban and accountHolderName are required.");
     }
-
-    const db = admin.firestore();
 
     const account = await getStripe().accounts.create({
       type: "custom",
@@ -1513,14 +1595,18 @@ async function runPermissionViolationCheck(): Promise<number> {
   return processed;
 }
 
-export const checkPermissionViolations = functions.region(REGION).https.onRequest(async (req, res) => {
+export const checkPermissionViolations = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     // Accept authenticated user calls (DailyEvaluationWorker fallback via Bearer token)
     // OR internal scheduler calls via x-internal-secret header
     const internalSecret = req.headers["x-internal-secret"];
     const isInternalCall = !!process.env.INTERNAL_SECRET && internalSecret === process.env.INTERNAL_SECRET;
     if (!isInternalCall) {
-      await requireAuth(req);
+      const callerUid = await requireAuth(req);
+      // Throttle ONLY the per-user device-fallback path (NEVER the internal scheduler). 12/hour
+      // sits far above the ~1/day device cadence (DailyEvaluationWorker) while capping abuse of
+      // this whole-DB collection-group scan.
+      await enforceRateLimit(callerUid, "checkPermissionViolations", 12, HOUR_MS);
     }
 
     const processed = await runPermissionViolationCheck();
@@ -1535,6 +1621,316 @@ export const scheduledPermissionCheck = functions.region(REGION)
     const processed = await runPermissionViolationCheck();
     functions.logger.info(`scheduledPermissionCheck: processed=${processed}`);
   });
+
+// ── runDueChallengeReconciliation ─────────────────────────────────────────────
+// Server-side safety net: settles DUE solo Hard Mode challenges independently of the
+// device. Today every win/refund and every abandon/intra-day loss is device-triggered,
+// and the only server-scheduled path (checkPermissionViolations) reacts only to
+// permission/usage signals and only ever captures — so a device that never runs again
+// leaves an un-refunded winner (production stake captured upfront, 80% owed back) and a
+// stale-status loser/winner. This closes that gap, and the TODO(counter-gap) for
+// upfront-captured (>7d) losses.
+//
+// MONEY-SAFE BY DEFAULT: OFF + DRY-RUN unless config/app explicitly enables it; a config
+// read failure → treated as DISABLED (the deliberate OPPOSITE of the user-facing AppConfig
+// fail-open contract — money safety). Re-derives every amount from the stored challenge doc
+// (rule 1), captures Stripe FIRST then writes Firestore (rule 2), and is fully idempotent —
+// skips any doc whose payoutStatus is already set, branches on PaymentIntent status before
+// any Stripe call, and bumps counters ONLY on a fresh status transition (rule 3). Never
+// calls capturePayment / cancelOrRefundPayment (both requireAuth + IDOR/per-user); uses the
+// Admin-SDK direct-Stripe + userId-from-doc-path pattern of runPermissionViolationCheck
+// (rule 5). Touches NO existing settlement path and NO TIME/SESSIONS/TIME_BUDGET logic.
+interface ReconciliationTally {
+  enabled: boolean;
+  dryRun: boolean;
+  due: number;
+  settled: number;
+  reconciled: number;
+  skipped: number;
+}
+
+async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
+  const db = admin.firestore();
+  const now = Date.now();
+
+  // ── Flags (server-side, fail-SAFE) ──────────────────────────────────────────
+  // Read config/app via the Admin SDK. ANY failure → both flags DISABLED. This is the
+  // deliberate OPPOSITE of the user-facing AppConfig fail-OPEN (docs/13): for money, a
+  // missing/unreadable config must NEVER cause an unattended capture or refund.
+  let enabled = false;
+  let dryRun = true;
+  try {
+    const cfg = await db.collection("config").doc("app").get();
+    const data = cfg.data() ?? {};
+    enabled = data["reconciliationEnabled"] === true;   // default false
+    dryRun = data["reconciliationDryRun"] !== false;    // default true — only an explicit false disarms
+  } catch (e) {
+    functions.logger.error("reconciliation: config/app read failed → DISABLED + DRY-RUN (fail-safe)", e);
+    enabled = false;
+    dryRun = true;
+  }
+
+  const tally: ReconciliationTally = { enabled, dryRun, due: 0, settled: 0, reconciled: 0, skipped: 0 };
+
+  if (!enabled) {
+    functions.logger.info("reconciliation: disabled (reconciliationEnabled !== true) — no-op");
+    return tally;
+  }
+
+  // ── Due & unsettled query (collection-group; needs the composite index) ──────
+  // endDate is stored as epoch-millis (Challenge.toMap), so a numeric range works.
+  let dueDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+  try {
+    const snap = await db
+      .collectionGroup("challenges")
+      .where("mode", "==", "hard")
+      .where("status", "==", "active")
+      .where("endDate", "<=", now)
+      .get();
+    dueDocs = snap.docs;
+  } catch (e) {
+    // Missing index / transient → log and bail this run; never throw (mirrors the
+    // per-query guards in runPermissionViolationCheck).
+    functions.logger.error("reconciliation: due-challenge collection-group query failed", e);
+    return tally;
+  }
+
+  tally.due = dueDocs.length;
+  functions.logger.info(`reconciliation: ${dueDocs.length} due hard challenge(s), dryRun=${dryRun}`);
+
+  // Cache permissionStatus/current per user across this run (B2).
+  const permCache = new Map<string, admin.firestore.DocumentData | null>();
+  async function getPermStatus(userId: string): Promise<admin.firestore.DocumentData | null> {
+    const cached = permCache.get(userId);
+    if (cached !== undefined) return cached;
+    let result: admin.firestore.DocumentData | null = null;
+    try {
+      const psnap = await db.collection("users").doc(userId)
+        .collection("permissionStatus").doc("current").get();
+      result = psnap.exists ? psnap.data()! : null;
+    } catch (e) {
+      // Cannot read the marker → be conservative and SKIP this user's challenges
+      // (signal an unresolved marker via a sentinel).
+      functions.logger.error(`reconciliation: permissionStatus read failed for ${userId} → skipping user`, e);
+      result = { __readFailed: true };
+    }
+    permCache.set(userId, result);
+    return result;
+  }
+
+  // Unresolved permission marker: permissionLostAt set & not restored & not captured.
+  // Unresolved usage marker: usageViolationDetectedAt set & not captured.
+  function hasUnresolvedMarker(ps: admin.firestore.DocumentData | null): boolean {
+    if (!ps) return false;
+    if (ps["__readFailed"]) return true; // conservative skip on read failure
+    const permUnresolved = !!ps["permissionLostAt"] && !ps["permissionRestoredAt"] && !ps["capturedAt"];
+    const usageUnresolved = !!ps["usageViolationDetectedAt"] && !ps["usageCapturedAt"];
+    return permUnresolved || usageUnresolved;
+  }
+
+  for (const doc of dueDocs) {
+    const cid = doc.id;
+    const userId = doc.ref.parent.parent!.id;
+    try {
+      const cd = doc.data();
+      const payoutStatus: string | undefined = cd["payoutStatus"];
+      const status: string = cd["status"];
+      const amountCents: number = typeof cd["amountCents"] === "number" ? cd["amountCents"] : 0;
+      const stripePaymentIntentId: string | undefined = cd["stripePaymentIntentId"] ?? cd["paymentIntentId"];
+      const isRedemption: boolean = cd["isRedemption"] === true;
+
+      // ── B1. payoutStatus already set → stale-status reconcile / skip (finding A) ──
+      if (payoutStatus) {
+        if (payoutStatus === "refunded" || payoutStatus === "captured") {
+          if (status === "active") {
+            const target = payoutStatus === "refunded" ? "completed" : "failed";
+            if (dryRun) {
+              functions.logger.info(`reconciliation DRY-RUN RECONCILE ${cid}: active→${target} (payoutStatus=${payoutStatus})`);
+            } else {
+              await doc.ref.update({ status: target });
+              functions.logger.info(`reconciliation RECONCILE ${cid}: active→${target}`);
+            }
+            tally.reconciled++;
+          } else {
+            tally.skipped++; // already fully settled
+          }
+        } else {
+          // Unexpected payoutStatus value — never guess a status flip.
+          functions.logger.warn(`reconciliation SKIP ${cid}: unexpected payoutStatus="${payoutStatus}"`);
+          tally.skipped++;
+        }
+        continue;
+      }
+
+      // ── B2. Unresolved permission/usage marker → defer to checkPermissionViolations ──
+      // A challenge can be a LOSS via permission/usage violation with NO limitExceeded log;
+      // if it passed endDate before that path's 24h/1h timer fires, refunding here would pay
+      // a user who actually lost. Leave it ACTIVE for checkPermissionViolations to own.
+      const ps = await getPermStatus(userId);
+      if (hasUnresolvedMarker(ps)) {
+        functions.logger.info(`reconciliation SKIP ${cid}: unresolved permission/usage marker for ${userId} — leaving ACTIVE`);
+        tally.skipped++;
+        continue;
+      }
+
+      // ── B3. Settle: lossProven from the nested tamper-evident dailyLogs (finding C) ──
+      const logsSnap = await db.collection("users").doc(userId)
+        .collection("challenges").doc(cid).collection("dailyLogs").get();
+      const lossProven = logsSnap.docs.some((d) => d.data()["limitExceeded"] === true);
+
+      if (lossProven) {
+        // ── LOSS ──────────────────────────────────────────────────────────────
+        if (!stripePaymentIntentId) {
+          // Redemption / PI-less doc: nothing new was staked (the original stake, if any,
+          // was already captured + counted at its own loss). Mark failed; no Stripe, no counters.
+          if (dryRun) {
+            functions.logger.info(`reconciliation DRY-RUN LOSS ${cid}: no PI (redemption) → would mark failed (no Stripe/counters)`);
+          } else {
+            await doc.ref.update({ status: "failed", failReason: "reconciliation", failedAt: now, payoutStatus: "captured" });
+            functions.logger.warn(`reconciliation LOSS ${cid}: no stripePaymentIntentId → marked failed without capture (review)`);
+          }
+          tally.settled++;
+          continue;
+        }
+
+        if (dryRun) {
+          functions.logger.info(`reconciliation DRY-RUN LOSS ${cid}: would settle loss for €${amountCents / 100} (capture if requires_capture, else mark failed; revenue from stored stake if already captured)`);
+          tally.settled++;
+          continue;
+        }
+
+        const pi = await getStripe().paymentIntents.retrieve(stripePaymentIntentId);
+        let revenueDelta: number;
+        if (pi.status === "requires_capture") {
+          // Idempotency key → a retry after Stripe-success-but-Firestore-write-fail returns the
+          // original capture instead of charging again (Stripe key TTL ~24h; hourly retries fit).
+          const captured = await getStripe().paymentIntents.capture(
+            stripePaymentIntentId, {}, { idempotencyKey: `reconcile-capture-${cid}` });
+          revenueDelta = captured.amount_received; // fresh capture (debug ≤7d)
+        } else if (pi.status === "succeeded") {
+          // Production upfront-captured: money already gone, no Stripe call. Re-derive the
+          // revenue from the STORED stake (carry #5) — there is no fresh capture amount.
+          revenueDelta = amountCents;
+        } else {
+          functions.logger.warn(`reconciliation LOSS ${cid}: PI not settleable (status=${pi.status}) — leaving ACTIVE`);
+          tally.skipped++;
+          continue;
+        }
+
+        await doc.ref.update({ status: "failed", failReason: "reconciliation", failedAt: now, payoutStatus: "captured" });
+        // Only on this fresh active→failed transition (closes TODO(counter-gap) for upfront captures).
+        await bumpCounters({ totalActiveChallenges: -1, totalFailedChallenges: 1, totalRevenueCents: revenueDelta });
+        functions.logger.info(`reconciliation LOSS ${cid}: marked failed, revenue+=€${revenueDelta / 100}`);
+        tally.settled++;
+      } else {
+        // ── WIN — re-derive from the correct stored stake (fail-open: favour the user) ──
+        let refundPiId: string | undefined;
+        let stakeForRefund = 0;
+        let pct: number;
+        if (isRedemption) {
+          // Mirror cancelOrRefundPayment redemption branch EXACTLY: 60% of the ORIGINAL
+          // challenge's stored stake, refunded on originalPaymentIntentId. The redemption
+          // doc's own amountCents is 0 and must never be used.
+          refundPiId = cd["originalPaymentIntentId"];
+          pct = 0.60;
+          const originalChallengeId: string | undefined = cd["originalChallengeId"];
+          if (originalChallengeId) {
+            const origSnap = await db.collection("users").doc(userId)
+              .collection("challenges").doc(originalChallengeId).get();
+            stakeForRefund = origSnap.exists && typeof origSnap.data()!["amountCents"] === "number"
+              ? origSnap.data()!["amountCents"] : 0;
+          }
+        } else {
+          refundPiId = stripePaymentIntentId;
+          stakeForRefund = amountCents;
+          pct = 0.80;
+        }
+
+        if (!refundPiId || stakeForRefund <= 0) {
+          functions.logger.warn(`reconciliation SKIP ${cid}: WIN but missing PI or stake (pi=${refundPiId}, stake=${stakeForRefund}) — leaving ACTIVE`);
+          tally.skipped++;
+          continue;
+        }
+
+        const refundCents = Math.floor(stakeForRefund * pct);
+        const appFee = stakeForRefund - refundCents;
+        const lowEvidence = logsSnap.size === 0; // zero nested dailyLogs → cannot confirm a clean day
+
+        if (dryRun) {
+          functions.logger.info(`reconciliation DRY-RUN WIN ${cid}: would refund €${refundCents / 100} (${Math.round(pct * 100)}% of €${stakeForRefund / 100}), appFee=€${appFee / 100}${lowEvidence ? " [LOW-EVIDENCE]" : ""}`);
+          tally.settled++;
+          continue;
+        }
+
+        const pi = await getStripe().paymentIntents.retrieve(refundPiId);
+        // Idempotency keys → a retry after Stripe-success-but-Firestore-write-fail returns the
+        // original capture/refund instead of acting twice (Stripe key TTL ~24h; hourly retries fit).
+        if (pi.status === "requires_capture") {
+          // Cannot refund an uncaptured PI → capture the full pre-auth FIRST, then refund.
+          await getStripe().paymentIntents.capture(
+            refundPiId, {}, { idempotencyKey: `reconcile-capture-${cid}` });
+          await getStripe().refunds.create(
+            { payment_intent: refundPiId, amount: refundCents },
+            { idempotencyKey: `reconcile-refund-${cid}` });
+        } else if (pi.status === "succeeded") {
+          await getStripe().refunds.create(
+            { payment_intent: refundPiId, amount: refundCents },
+            { idempotencyKey: `reconcile-refund-${cid}` });
+        } else {
+          functions.logger.warn(`reconciliation WIN ${cid}: PI not refundable (status=${pi.status}) — leaving ACTIVE`);
+          tally.skipped++;
+          continue;
+        }
+
+        const update: Record<string, unknown> = {
+          status: "completed",
+          payoutStatus: "refunded",
+          payoutAmount: refundCents,
+          appFeeAmount: appFee,
+          payoutDate: now,
+        };
+        // suppress-gap residual (docs/10): refund proceeds (favour user) but flag for admin review.
+        if (lowEvidence) update["reconciliationLowEvidence"] = true;
+        await doc.ref.update(update);
+        await bumpCounters({ totalActiveChallenges: -1, totalCompletedChallenges: 1, totalRevenueCents: appFee });
+        functions.logger.info(`reconciliation WIN ${cid}: refunded €${refundCents / 100}, appFee=€${appFee / 100}${lowEvidence ? " [LOW-EVIDENCE flagged]" : ""}`);
+        tally.settled++;
+      }
+    } catch (e) {
+      // One bad doc never halts the sweep; leave it ACTIVE for the next run.
+      functions.logger.error(`reconciliation: challenge ${userId}/${cid} failed — leaving ACTIVE`, e);
+    }
+  }
+
+  functions.logger.info(`reconciliation: done due=${tally.due} settled=${tally.settled} reconciled=${tally.reconciled} skipped=${tally.skipped} dryRun=${tally.dryRun}`);
+  return tally;
+}
+
+// Scheduled hourly — mirrors scheduledPermissionCheck exactly. Idempotency makes the
+// overlap with scheduledPermissionCheck safe (both gate on payoutStatus / PI status).
+export const scheduledChallengeReconciliation = functions.region(REGION)
+  .pubsub.schedule("every 1 hours")
+  .onRun(async () => {
+    const tally = await runDueChallengeReconciliation();
+    functions.logger.info(`scheduledChallengeReconciliation: ${JSON.stringify(tally)}`);
+  });
+
+// onRequest twin — internal scheduler (x-internal-secret) OR authenticated debug caller.
+// Same auth shape as checkPermissionViolations. onRequest, never onCall.
+export const reconcileDueChallenges = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const internalSecret = req.headers["x-internal-secret"];
+    const isInternalCall = !!process.env.INTERNAL_SECRET && internalSecret === process.env.INTERNAL_SECRET;
+    if (!isInternalCall) {
+      // The full due-challenge sweep is a whole-DB scan + money mutation — admin-only off the
+      // internal path. No regular user (debug button included) may trigger it.
+      await requireAdmin(req);
+    }
+    const tally = await runDueChallengeReconciliation();
+    functions.logger.info(`reconcileDueChallenges: ${JSON.stringify(tally)}`);
+    res.json(tally);
+  } catch (e) { handleError("reconcileDueChallenges", e, res); }
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -1628,7 +2024,7 @@ export const onChallengeDeleted = functions.region(REGION).firestore
 //   2) Firestore users/{uid} flag (instant — enforced at app startup)
 // A banned user with an active Hard Mode challenge keeps the existing capture rules;
 // this never refunds a stake.
-export const setUserBanStatus = functions.region(REGION).https.onRequest(async (req, res) => {
+export const setUserBanStatus = functions.runWith({ maxInstances: 3 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     if (applyCors(req, res)) return;
     await requireAdmin(req);
@@ -1667,7 +2063,7 @@ export const setUserBanStatus = functions.region(REGION).https.onRequest(async (
 //
 // COST NOTE: this is an unbounded collectionGroup + collection scan. It is intentionally
 // admin-gated and meant to be triggered manually, not on a schedule.
-export const backfillCounters = functions.region(REGION).https.onRequest(async (req, res) => {
+export const backfillCounters = functions.runWith({ maxInstances: 3 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     if (applyCors(req, res)) return;
     await requireAdmin(req);
@@ -1751,7 +2147,7 @@ export const backfillCounters = functions.region(REGION).https.onRequest(async (
 // per-completed-challenge dailyLogs). Admin-gated + manual trigger only (the dashboard
 // "Analyse starten" button shows a confirmation modal). Move to a scheduled/cached job
 // if it grows expensive.
-export const detectSuspiciousUsers = functions.region(REGION).https.onRequest(async (req, res) => {
+export const detectSuspiciousUsers = functions.runWith({ maxInstances: 3 }).region(REGION).https.onRequest(async (req, res) => {
   try {
     if (applyCors(req, res)) return;
     await requireAdmin(req);

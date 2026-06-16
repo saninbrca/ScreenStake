@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.BuildConfig
@@ -17,6 +18,7 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.service.NotificationHelper
+import com.detox.app.service.PermissionCheckWorker
 import com.detox.app.util.DateUtils
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -965,6 +968,61 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    fun debugRunReconciliation(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            cloudFunctionsService.runReconciliation()
+                .onSuccess { tally -> onResult("Reconciliation: $tally") }
+                .onFailure { e -> onResult("Reconciliation Error: ${e.message}") }
+        }
+    }
+
+    /**
+     * DEBUG: enqueues the REAL [DailyEvaluationWorker] once (expedited) so the settlement guard
+     * can be exercised on-device, then reports the worker's terminal state. Mirrors the CF debug
+     * triggers above. Does not change the worker's logic or its periodic schedule.
+     */
+    fun debugRunDailyEvaluation(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        val request = OneTimeWorkRequestBuilder<DailyEvaluationWorker>()
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+            )
+            .addTag(TAG_MANUAL_EVALUATION)
+            .build()
+        observeDebugWorker(request, "Daily Evaluation", onResult)
+    }
+
+    /**
+     * DEBUG: enqueues the REAL [PermissionCheckWorker] once (expedited) so the settlement guard's
+     * permission-loss capture path can be exercised on-device, then reports the worker's terminal
+     * state. Mirrors the CF debug triggers above. Does not change the worker's logic or schedule.
+     */
+    fun debugRunPermissionCheck(onResult: (String) -> Unit) {
+        if (!BuildConfig.DEBUG) return
+        val request = OneTimeWorkRequestBuilder<PermissionCheckWorker>()
+            .addTag(TAG_MANUAL_PERMISSION_CHECK)
+            .build()
+        observeDebugWorker(request, "Permission Check", onResult)
+    }
+
+    /** Enqueues [request] and reports its terminal WorkInfo state once finished. DEBUG-only. */
+    private fun observeDebugWorker(
+        request: OneTimeWorkRequest,
+        label: String,
+        onResult: (String) -> Unit,
+    ) {
+        val wm = WorkManager.getInstance(context)
+        wm.enqueue(request)
+        Timber.d("DEBUG: %s worker enqueued id=%s", label, request.id)
+        viewModelScope.launch {
+            val info = wm.getWorkInfoByIdFlow(request.id)
+                .first { it != null && it.state.isFinished }
+            Timber.d("DEBUG: %s worker finished state=%s", label, info?.state)
+            onResult("$label finished: ${info?.state}")
+        }
+    }
+
     fun debugResetPermissionStatusFirestore(onResult: (String) -> Unit) {
         if (!BuildConfig.DEBUG) return
         viewModelScope.launch {
@@ -993,5 +1051,6 @@ class ProfileViewModel @Inject constructor(
 
     companion object {
         const val TAG_MANUAL_EVALUATION = "manual_evaluation"
+        const val TAG_MANUAL_PERMISSION_CHECK = "manual_permission_check"
     }
 }

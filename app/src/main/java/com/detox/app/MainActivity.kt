@@ -37,6 +37,7 @@ import com.detox.app.data.repository.AppConfigRepository
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.domain.usecase.SyncUserDataUseCase
 import com.detox.app.presentation.navigation.DetoxNavGraph
 import com.detox.app.presentation.navigation.Screen
 import com.detox.app.presentation.screens.settings.KEY_DARK_MODE
@@ -51,6 +52,8 @@ import timber.log.Timber
 import javax.inject.Inject
 
 private const val PREFS_NAME = "detox_settings"
+private const val KEY_LAST_RESUME_SYNC_AT = "last_resume_sync_at"
+private const val RESUME_SYNC_THROTTLE_MS = 5L * 60 * 1000 // 5 minutes
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -72,6 +75,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var appConfigRepository: AppConfigRepository
+
+    @Inject
+    lateinit var syncUserDataUseCase: SyncUserDataUseCase
 
     private var startDestination by mutableStateOf<String?>(null)
     // The destination the app would normally start on, preserved so the Maintenance
@@ -239,6 +245,28 @@ class MainActivity : ComponentActivity() {
         checkPermissionState()
         if (firebaseAuth.currentUser != null) {
             lifecycleScope.launch { checkExpiredGroupChallenges() }
+            maybeResumeSync()
+        }
+    }
+
+    /**
+     * Pulls server-settled challenge state into Room on foreground (the dormant-return fix), so a
+     * challenge already settled server-side is reflected on the dashboard. Throttled: skips if a
+     * resume-sync ran within [RESUME_SYNC_THROTTLE_MS] to avoid wasteful reads/battery on rapid
+     * background↔foreground toggles. The dormant case is hours/days, so the throttle never blocks
+     * the fix. The DashboardViewModel-init sync is independent and unchanged.
+     */
+    private fun maybeResumeSync() {
+        val now = System.currentTimeMillis()
+        val lastSync = prefs.getLong(KEY_LAST_RESUME_SYNC_AT, 0L)
+        if (now - lastSync < RESUME_SYNC_THROTTLE_MS) {
+            Timber.d("MainActivity: resume-sync throttled (last ran ${(now - lastSync) / 1000}s ago)")
+            return
+        }
+        prefs.edit().putLong(KEY_LAST_RESUME_SYNC_AT, now).apply()
+        lifecycleScope.launch {
+            syncUserDataUseCase()
+                .onFailure { e -> Timber.w(e, "MainActivity: resume-sync failed (offline?)") }
         }
     }
 

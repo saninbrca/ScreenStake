@@ -984,8 +984,12 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
                 // ── SECTION 2: Daily Evaluation ───────────────────────────────
                 DebugSectionHeader("DAILY EVALUATION")
                 DebugButton("Run Daily Evaluation Now") {
-                    viewModel.runEvaluationNow()
-                    toast("Daily evaluation started")
+                    toast("Daily evaluation started…")
+                    viewModel.debugRunDailyEvaluation { msg -> toast(msg) }
+                }
+                DebugButton("Run Permission Check Now") {
+                    toast("Permission check started…")
+                    viewModel.debugRunPermissionCheck { msg -> toast(msg) }
                 }
 
                 HorizontalDivider(
@@ -1247,6 +1251,11 @@ Usage Stats: ${if (usageStats) "✅" else "❌"}""".trimIndent()
                 }
                 DebugButton("Force CF Permission Check") {
                     viewModel.debugForceCheckPermissionViolations { msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+                DebugButton("Run Reconciliation Now") {
+                    viewModel.debugRunReconciliation { msg ->
                         android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                     }
                 }

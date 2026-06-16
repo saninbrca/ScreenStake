@@ -330,4 +330,17 @@ class CloudFunctionsService @Inject constructor(
         Timber.e(e, "checkPermissionViolations failed")
         Result.failure(e)
     }
+
+    // ── Reconciliation safety net (debug manual trigger) ───────────────────────
+    // Calls the reconcileDueChallenges onRequest twin (Bearer auth). The CF itself is a
+    // no-op unless config/app.reconciliationEnabled === true; dry-run is its own flag.
+    // Returns the CF tally string for the debug Toast.
+    suspend fun runReconciliation(): Result<String> = try {
+        val response = callFunction("reconcileDueChallenges", mapOf("source" to "DebugPanel"))
+        Timber.d("runReconciliation: %s", response)
+        Result.success(response.toString())
+    } catch (e: Exception) {
+        Timber.e(e, "runReconciliation failed")
+        Result.failure(e)
+    }
 }

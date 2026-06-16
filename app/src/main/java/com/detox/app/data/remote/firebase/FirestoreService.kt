@@ -14,6 +14,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Terminal settlement snapshot of a challenge doc (server source of truth).
+ * "Settled" = [payoutStatus] is non-null OR [status] is anything other than "active".
+ */
+data class ChallengeSettlement(
+    val status: String?,
+    val payoutStatus: String?,
+) {
+    /** True once the server has recorded a payout outcome or moved the doc off "active". */
+    val isSettled: Boolean
+        get() = payoutStatus != null || (status != null && status != "active")
+}
+
+/**
  * Handles all Firestore read/write operations.
  * All writes are fire-and-forget — callers should invoke these inside a background scope
  * so failures never block the local Room operations.
@@ -248,6 +261,34 @@ class FirestoreService @Inject constructor(
             Timber.d("Payout status updated for challenge $challengeId: refunded €${amountCents / 100f}")
         } catch (e: Exception) {
             Timber.e(e, "Failed to update payout status for challenge $challengeId")
+        }
+    }
+
+    /**
+     * Reads ONLY the terminal settlement fields of a single challenge doc.
+     *
+     * Used by the sync-down / pre-settlement guard paths (syncUserData reconcile,
+     * DailyEvaluationWorker, PermissionCheckWorker) to learn whether the server has already
+     * settled a challenge before the client re-derives win/loss locally. Read-only — never
+     * writes. Returns `null` on a missing document OR any error/offline so callers can apply the
+     * fail-safe money stance (when in doubt, do NOT settle locally; leave the challenge active).
+     * Huawei-safe: a plain Firestore get() works without Google Play Services.
+     */
+    suspend fun fetchChallengeSettlement(userId: String, challengeId: String): ChallengeSettlement? {
+        return try {
+            val snap = firestore
+                .collection("users").document(userId)
+                .collection("challenges").document(challengeId)
+                .get()
+                .await()
+            if (!snap.exists()) return null
+            ChallengeSettlement(
+                status = snap.getString("status"),
+                payoutStatus = snap.getString("payoutStatus"),
+            )
+        } catch (e: Exception) {
+            Timber.w(e, "fetchChallengeSettlement failed for $challengeId — treating as unknown")
+            null
         }
     }
 

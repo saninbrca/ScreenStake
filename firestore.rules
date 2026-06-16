@@ -153,9 +153,17 @@ service cloud.firestore {
       allow delete: if false;
 
       // Taunts sub-collection — any participant can create, nobody can edit/delete.
+      // Shape-hardening: createdAt must be a recent server-consistent epoch-millis value
+      // (±5 min of request.time — the app writes System.currentTimeMillis()) and message is
+      // length-capped. Blocks forged/backdated or oversized taunt spam without a client change.
       match /taunts/{tauntId} {
         allow read: if request.auth != null;
-        allow create: if request.auth != null;
+        allow create: if request.auth != null
+          && request.resource.data.createdAt is int
+          && request.resource.data.createdAt >= request.time.toMillis() - 300000
+          && request.resource.data.createdAt <= request.time.toMillis() + 300000
+          && request.resource.data.message is string
+          && request.resource.data.message.size() <= 500;
         allow update, delete: if false;
       }
 
@@ -218,8 +226,19 @@ service cloud.firestore {
     // access, but the app never surfaces it) — truly private content goes in the
     // adminNotes sub-collection below instead.
     match /supportTickets/{ticketId} {
+      // Shape-hardening (anti-abuse, no volume counter): createdAt must be a recent
+      // server-consistent epoch-millis value (±5 min of request.time — blocks forged/backdated
+      // timestamps without a client change, since the app writes System.currentTimeMillis()), and
+      // subject/message are length-capped. The app already requires subject+message >= 10 chars.
       allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.createdAt is int
+        && request.resource.data.createdAt >= request.time.toMillis() - 300000
+        && request.resource.data.createdAt <= request.time.toMillis() + 300000
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 5000;
       allow read: if request.auth != null
         && resource.data.userId == request.auth.uid;
       allow update, list: if request.auth.token.email == "sanin.brica@gmail.com";
@@ -264,6 +283,14 @@ service cloud.firestore {
     match /config/app {
       allow read: if request.auth != null;
       allow write: if request.auth.token.email == "sanin.brica@gmail.com";
+    }
+
+    // ── Rate limits (per-UID throttle store) ──────────────────────────────────
+    // Written ONLY by the enforceRateLimit Cloud Function helper via the Admin SDK
+    // (which bypasses these rules). Never client-accessible — a client must not be able
+    // to read or reset its own throttle counters.
+    match /rateLimits/{uid} {
+      allow read, write: if false;
     }
 
     // ── Admin collection ──────────────────────────────────────────────────────

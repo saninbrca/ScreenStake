@@ -81,15 +81,37 @@ class SyncRepositoryImpl @Inject constructor(
                 val finished = firestoreService.fetchFinishedChallenges(userId)
                 Timber.d("SyncRepository: fetched ${finished.size} finished challenges")
                 finished.forEach { challenge ->
-                    if (challengeDao.getChallengeById(challenge.id) != null) return@forEach
-                    // Insert the challenge BEFORE its logs (Room FK on daily_logs.challengeId).
-                    challengeDao.insertChallenge(challenge.toEntity())
-                    val logs = firestoreService.fetchDailyLogs(userId, challenge.id)
-                    logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
-                    Timber.d(
-                        "SyncRepository: restored finished challenge %s with %d logs",
-                        challenge.id, logs.size
-                    )
+                    val existing = challengeDao.getChallengeById(challenge.id)
+                    when {
+                        existing == null -> {
+                            // Absent locally → restore the finished challenge + its logs.
+                            // Insert the challenge BEFORE its logs (Room FK on daily_logs.challengeId).
+                            challengeDao.insertChallenge(challenge.toEntity())
+                            val logs = firestoreService.fetchDailyLogs(userId, challenge.id)
+                            logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
+                            Timber.d(
+                                "SyncRepository: restored finished challenge %s with %d logs",
+                                challenge.id, logs.size
+                            )
+                        }
+                        existing.status == "active" -> {
+                            // Local row still ACTIVE but the server has settled it (terminal status).
+                            // Downgrade Room to the server's terminal status — STATUS COLUMN ONLY,
+                            // via the DAO directly (NEVER the repo wrapper, which would delete the
+                            // server doc and destroy its payoutStatus/payout record). Never REPLACE
+                            // the row and never touch DailyLogEntity / live-tracking fields.
+                            val serverStatus = challenge.status.name.lowercase()
+                            challengeDao.updateStatus(challenge.id, serverStatus)
+                            Timber.i(
+                                "SyncRepository: reconciled active→%s for challenge %s from server settlement",
+                                serverStatus, challenge.id
+                            )
+                        }
+                        else -> {
+                            // Already terminal locally — immutable, leave untouched.
+                            return@forEach
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Timber.w(e, "SyncRepository: finished-challenge restore failed (non-fatal)")

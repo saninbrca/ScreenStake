@@ -30,6 +30,8 @@ document **`config/app`** remotely controls the app. All reads go through the ex
 | `hardModeMaxStake` | Int | 100 | Hard Mode stake picker max (€) |
 | `groupMinBuyIn` | Int | 10 | Group buy-in picker min (€) |
 | `groupMaxBuyIn` | Int | 50 | Group buy-in picker max (€) |
+| `reconciliationEnabled` | Bool | **false** | master kill-switch for the reconciliation net (server-read only) |
+| `reconciliationDryRun` | Bool | **true** | true → net logs intended actions, makes NO Stripe call / NO write |
 
 ---
 
@@ -99,6 +101,26 @@ re-shows after 3 days (`DashboardViewModel.showUpdateBanner` / `dismissUpdateBan
 Admin → all-users announcements live in the `broadcasts/{id}` collection and are acknowledged once per
 user via a Dashboard `AlertDialog`. Full flow (collection schema, admin tab, app-side dialog +
 `last_seen_broadcast_id` guard, string `broadcast_acknowledge`): **`docs/11_admin_dashboard.md`**.
+
+---
+
+## Reconciliation safety net flags (server-read only — money fail-SAFE)
+
+`reconciliationEnabled` / `reconciliationDryRun` gate the scheduled reconciliation Cloud Function
+(`runDueChallengeReconciliation`, see `docs/09`/changelog). Unlike every other flag here, they are
+read **server-side** by the Cloud Function via the Admin SDK — **not** by `AppConfigRepository`.
+
+> **FAIL-SAFE CONTRACT (opposite of the app-side fail-OPEN above):** for money, a missing/unreadable
+> `config/app` or a missing flag is treated as **disabled** (`enabled=false`, `dryRun=true`). A config
+> problem must NEVER trigger an unattended capture or refund.
+
+- `reconciliationEnabled=false` (default) → the function is a no-op (no query, no Stripe, no writes).
+- `reconciliationDryRun=true` (default) → the function logs each intended WIN/LOSS/RECONCILE/SKIP but
+  makes **no** Stripe call and **no** Firestore write. Only an explicit `false` disarms it.
+
+**Rollout:** seed `reconciliationEnabled=true` + `reconciliationDryRun=true` first, verify logs in the
+Cloud Functions console, **then** set `reconciliationDryRun=false`. Edited via the ⚙️ App Config admin
+tab (`.set(payload, { merge: true })`).
 
 ---
 

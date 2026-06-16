@@ -3,10 +3,13 @@ package com.detox.app.service
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.detox.app.R
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
@@ -32,6 +35,7 @@ class PermissionCheckWorker @AssistedInject constructor(
     private val challengeRepository: ChallengeRepository,
     private val cloudFunctionsService: CloudFunctionsService,
     private val groupChallengeRepository: GroupChallengeRepository,
+    private val challengeSettlementGuard: ChallengeSettlementGuard,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -43,6 +47,27 @@ class PermissionCheckWorker @AssistedInject constructor(
         private const val ACCELERATE_THRESHOLD_MS = 12 * 60 * 60 * 1_000L
         private const val USAGE_VIOLATION_PREFS = "detox_usage_violation"
         private const val KEY_USAGE_VIOLATION_AT = "usageViolationDetectedAt"
+        private const val FOREGROUND_NOTIF_ID = 9101
+    }
+
+    /**
+     * Required when WorkManager runs this worker as a foreground/expedited job (e.g. when it
+     * resumes pending work after connectivity returns on some EMUI/Android versions). Without
+     * this override CoroutineWorker throws IllegalStateException("Not implemented"). Reuses the
+     * existing [NotificationHelper.CHANNEL_REMINDERS] channel — no schedule/logic change.
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        NotificationHelper.createChannels(applicationContext)
+        val notification = NotificationCompat.Builder(
+            applicationContext, NotificationHelper.CHANNEL_REMINDERS
+        )
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(applicationContext.getString(R.string.app_name))
+            .setContentText("Berechtigungen werden geprüft…")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+        return ForegroundInfo(FOREGROUND_NOTIF_ID, notification)
     }
 
     override suspend fun doWork(): Result {
@@ -251,6 +276,20 @@ class PermissionCheckWorker @AssistedInject constructor(
 
             val paymentIntentId = challenge.stripePaymentIntentId
             if (paymentIntentId != null) {
+                // ── Money-safety gate ────────────────────────────────────────────────
+                // Defer to the server before capturing: if it already settled this challenge,
+                // the guard pulls the terminal status into Room (DAO-only) and we skip; if the
+                // server state can't be confirmed (offline), we leave it active for next cycle.
+                // The server reconciliation / checkPermissionViolations net is the backstop.
+                if (challengeSettlementGuard.resolveBeforeLocalSettlement(challenge.id)
+                    == SettlementDecision.SKIP) {
+                    Timber.w(
+                        "PermissionCheckWorker: '${challenge.id}' deferred to server settlement — " +
+                                "skipping local capture/fail"
+                    )
+                    continue
+                }
+
                 // TODO(perm-worker-fail-gate): this sets FAILED below even when capturePayment FAILS
                 // (we only log the failure). Unlike the worker/abandon paths, the status flip is not
                 // gated on a confirmed capture, so a transient capture error can mark FAILED without the

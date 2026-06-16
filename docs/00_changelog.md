@@ -25,10 +25,12 @@ Tracked here so they are not lost. None are fixed yet — investigate before lau
 - **`checkPermissionViolations` returns HTTP 500.** Suspected root cause: the CF crashes while iterating
   **old gutted challenge docs** that lack the fields it expects (legacy docs created before the
   unified-cid / full-CREATE fix below). Needs a null-safe iteration + a backfill/skip for legacy docs.
-- **Reconciliation safety net not yet built.** A server-guaranteed deferred capture (Room→Firestore
-  up-sync that re-creates a missing Hard Mode challenge doc, and a server reconciliation for captures
-  that failed after Room marked state) is **not implemented**. Needed before launch — see the
-  `TODO(reconciliation)` marker in `ChallengeRepositoryImpl.createChallenge`.
+- **Reconciliation safety net — server-scheduled settlement: IMPLEMENTED (dry-run-first, June 2026).**
+  See the "FEATURE — Server-side reconciliation safety net" entry below. Ships OFF +
+  DRY-RUN by default (`config/app.reconciliationEnabled=false`, `reconciliationDryRun=true`). The
+  remaining device-side `TODO(reconciliation)` marker in `ChallengeRepositoryImpl.createChallenge`
+  (Room→Firestore up-sync that re-creates a *missing* Hard Mode challenge doc) is a separate concern
+  and still open.
 - **Redemption / comeback feature: planned for removal.** User decision pending final scope; the
   redemption challenge flow (`docs/03`/`docs/09`) may be cut. Do not build new dependencies on it.
 - **Unit test suite does not compile + cannot run.** Pre-existing stale-test rot (tests reference
@@ -39,7 +41,40 @@ Tracked here so they are not lost. None are fixed yet — investigate before lau
 - **`TODO(counter-gap)`** — auto-captured (>7-day) Hard Mode losses do **not** bump the
   `failed`/`revenue` counters: Stripe captures at creation with no CF involvement, and `capturePayment`'s
   `succeeded` branch deliberately does not bump (to avoid double-counting manual captures). A dedicated
-  server-side fail-accounting source is needed.
+  server-side fail-accounting source is needed. **→ Addressed by the reconciliation net's LOSS branch
+  (below):** on a fresh active→failed reconcile of an upfront-captured (`succeeded`) loss it bumps
+  `failed +1` / `revenue += stored amountCents` once. (Effective once `reconciliationEnabled=true`,
+  `reconciliationDryRun=false`.)
+
+### FEATURE — Server-side reconciliation safety net (money-critical, dry-run-first)
+
+A scheduled Cloud Function that settles **DUE solo Hard Mode** challenges independently of the device.
+Every win/refund and abandon/intra-day loss was device-triggered, and the only server-scheduled path
+(`checkPermissionViolations`) reacts only to permission/usage signals and only ever captures — so a
+device that never ran again left un-refunded winners (production stake captured upfront, 80% owed back)
+and stale-status losers/winners. This net closes that gap and the `TODO(counter-gap)` above.
+
+- **`functions/src/index.ts`:** new `runDueChallengeReconciliation()` +
+  `scheduledChallengeReconciliation` (pubsub `every 1 hours`, mirrors `scheduledPermissionCheck`) +
+  `reconcileDueChallenges` (`onRequest` twin, `x-internal-secret` OR Bearer; never `onCall`).
+- **OFF + DRY-RUN by default; fail-SAFE.** Reads `config/app.reconciliationEnabled` (default false) and
+  `reconciliationDryRun` (default true) server-side; **any config read error → both disabled** (the
+  deliberate opposite of the user-facing AppConfig fail-open — money safety).
+- **Query:** `collectionGroup("challenges")` `mode=="hard" && status=="active" && endDate<=now` (new
+  composite index in `firestore.indexes.json`). Per-doc branch order: **payoutStatus set →
+  stale-status reconcile/skip** (a settled doc can still be `status=="active"`); **else unresolved
+  `permissionStatus/current` marker → skip** (let `checkPermissionViolations` own a no-`limitExceeded`
+  loss); **else `limitExceeded` in nested dailyLogs → LOSS**; **else → WIN refund**.
+- **Money rules honoured:** re-derives amounts from stored `amountCents` (redemption: 60% of the
+  *original* challenge's stake on `originalPaymentIntentId`); Stripe FIRST → Firestore; WIN on
+  `requires_capture` captures full pre-auth before refunding; counters bump only on a fresh transition;
+  Admin-SDK direct Stripe (never `capturePayment`/`cancelOrRefundPayment`); per-doc try/catch leaves a
+  failing doc ACTIVE. WIN with zero nested dailyLogs sets `reconciliationLowEvidence=true` (refund still
+  proceeds — suppress-gap residual, docs/10).
+- **Debug:** "Run Reconciliation Now" button (`ProfileScreen` debug panel → `ProfileViewModel
+  .debugRunReconciliation` → `CloudFunctionsService.runReconciliation` → `reconcileDueChallenges`).
+- **No existing settlement path or TIME/SESSIONS/TIME_BUDGET logic was touched.** Flags described in
+  `docs/13`; payout math in `docs/09`.
 
 ### FIX — Worker limit-detection: SESSIONS wrongful capture + TIME_BUDGET missed capture (money-critical)
 

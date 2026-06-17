@@ -197,7 +197,9 @@ service cloud.firestore {
             || request.auth.token.email == "sanin.brica@gmail.com");
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid
-        && !request.resource.data.keys().hasAny(['status', 'paidAt']);
+        && (!request.resource.data.keys().hasAny(['paidAt']))
+        && (!request.resource.data.keys().hasAny(['status'])
+            || request.resource.data.status == "pending");
       // Admin marks requests paid/rejected from the dashboard. Clients can't.
       allow update: if request.auth.token.email == "sanin.brica@gmail.com";
       allow delete: if false;

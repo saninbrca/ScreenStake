@@ -33,7 +33,8 @@ data class ChallengeSettlement(
  */
 @Singleton
 class FirestoreService @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val cloudFunctionsService: CloudFunctionsService
 ) {
 
     // ── User document ──────────────────────────────────────────────────────────
@@ -242,6 +243,19 @@ class FirestoreService @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "FirestoreService: failed to delete challenge $challengeId")
         }
+    }
+
+    /**
+     * Marks a challenge FAILED server-side via the markChallengeFailed Cloud Function. Unlike
+     * [deleteChallenge], the doc and its nested dailyLogs are PRESERVED — the CF does an in-place
+     * Admin-SDK `status: "failed"` write (the client cannot write `status` itself; Firestore rules
+     * block it). This keeps the audit trail and the Redemption refund path (which reads the original
+     * challenge's stored stake) intact for client-detected losses. The CF is idempotent and derives
+     * the uid from the auth token, so no userId arg is needed. Fire-and-forget: failures are logged.
+     */
+    suspend fun markChallengeFailed(challengeId: String, failReason: String) {
+        cloudFunctionsService.markChallengeFailed(challengeId, failReason)
+            .onFailure { e -> Timber.e(e, "FirestoreService: markChallengeFailed failed for $challengeId") }
     }
 
     suspend fun updateChallengePayoutStatus(userId: String, challengeId: String, amountCents: Int) {
@@ -473,6 +487,7 @@ class FirestoreService @Inject constructor(
                         isPartialBlockOnly = d["isPartialBlockOnly"] as? Boolean ?: false,
                         pendingLimitValue = (d["pendingLimitValue"] as? Long)?.toInt(),
                         pendingLimitAppliesAt = d["pendingLimitAppliesAt"] as? Long,
+                        failReason = d["failReason"] as? String,
                     )
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to parse finished challenge document ${doc.id}")

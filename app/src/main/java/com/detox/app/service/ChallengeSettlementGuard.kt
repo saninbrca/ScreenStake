@@ -33,9 +33,10 @@ enum class SettlementDecision {
  *  - server still active & unsettled → return [SettlementDecision.PROCEED].
  *
  * CRITICAL: Room status is written via [ChallengeDao.updateStatus] DIRECTLY — NEVER the repo
- * wrapper (ChallengeRepositoryImpl.updateChallengeStatus), which deletes the Firestore doc on
- * FAILED and would destroy the server's just-written payoutStatus/payout record. Only the `status`
- * column is touched; live-tracking fields (opens/time/dailyLogs) are never overwritten.
+ * wrapper (ChallengeRepositoryImpl.updateChallengeStatus), which on FAILED calls the
+ * markChallengeFailed CF (writes status:"failed" + failReason:"client_loss" in-place; doc +
+ * dailyLogs retained) and would clobber the server's just-written payoutStatus/payout record. Only
+ * the `status` column is touched; live-tracking fields (opens/time/dailyLogs) are never overwritten.
  */
 @Singleton
 class ChallengeSettlementGuard @Inject constructor(

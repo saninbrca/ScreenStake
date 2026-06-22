@@ -256,7 +256,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             )
                             continue
                         }
-                        challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                        challengeRepository.updateChallengeStatus(
+                            challenge.id, finalStatus,
+                            failReason = if (finalStatus == ChallengeStatus.FAILED) "limit_exceeded" else null
+                        )
                         val mode = challenge.mode.name.lowercase()
                         NotificationHelper.createChannels(applicationContext)
                         if (finalStatus == ChallengeStatus.COMPLETED) {
@@ -281,6 +284,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             analyticsService.logChallengeFailed(mode)
                             if (challenge.mode == ChallengeMode.SOFT) {
                                 val streak = getChallengeStreakUseCase(challenge)
+                                // Mark shown so the Dashboard's getUnshownFailedSoftChallenge poll
+                                // doesn't emit a second navigation for the same loss.
+                                challengeRepository.markCompletionShown(challenge.id)
                                 TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
                             }
                         }
@@ -419,7 +425,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         } else {
                             ChallengeStatus.COMPLETED
                         }
-                        challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                        challengeRepository.updateChallengeStatus(
+                            challenge.id, finalStatus,
+                            failReason = if (finalStatus == ChallengeStatus.FAILED) "limit_exceeded" else null
+                        )
                         val mode = challenge.mode.name.lowercase()
                         NotificationHelper.createChannels(applicationContext)
                         if (finalStatus == ChallengeStatus.COMPLETED) {
@@ -450,6 +459,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             }
                             if (challenge.mode == ChallengeMode.SOFT) {
                                 val streak = getChallengeStreakUseCase(challenge)
+                                // Mark shown so the Dashboard's getUnshownFailedSoftChallenge poll
+                                // doesn't emit a second navigation for the same loss.
+                                challengeRepository.markCompletionShown(challenge.id)
                                 TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
                             }
                         }
@@ -561,7 +573,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 // the unified loss dialog can surface (status='failed' is its gate).
                                 // updateChallengeStatus writes only the status column, so the
                                 // redemption fields set just above survive untouched.
-                                challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED)
+                                challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED, "limit_exceeded")
                                     .onFailure { e -> Timber.e(e, "Failed to mark FAILED after capture for ${challenge.id}") }
                                 analyticsService.logChallengeFailed("hard")
                                 hardModeFailHandled = true
@@ -653,7 +665,10 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     // Skip if a Hard Mode loss already flipped status→FAILED above (post-capture) —
                     // avoids a duplicate updateChallengeStatus / logChallengeFailed for the same fail.
                     if (!(hardModeFailHandled && finalStatus == ChallengeStatus.FAILED)) {
-                        challengeRepository.updateChallengeStatus(challenge.id, finalStatus)
+                        challengeRepository.updateChallengeStatus(
+                            challenge.id, finalStatus,
+                            failReason = if (finalStatus == ChallengeStatus.FAILED) "limit_exceeded" else null
+                        )
                         val mode = challenge.mode.name.lowercase()
                         if (finalStatus == ChallengeStatus.COMPLETED) {
                             analyticsService.logChallengeCompleted(
@@ -693,6 +708,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         }
                         if (challenge.mode == ChallengeMode.SOFT) {
                             val streak = getChallengeStreakUseCase(challenge)
+                            // Mark shown so the Dashboard's getUnshownFailedSoftChallenge poll
+                            // doesn't emit a second navigation for the same loss.
+                            challengeRepository.markCompletionShown(challenge.id)
                             TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
                         }
                     }

@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.BuildConfig
 import com.detox.app.R
+import com.detox.app.data.local.db.dao.PendingHardChallengeDao
+import com.detox.app.data.local.db.entity.PendingHardChallengeEntity
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.repository.AppConfig
@@ -21,6 +23,7 @@ import com.detox.app.domain.usecase.ProcessPaymentUseCase
 import com.detox.app.service.RootDetectionManager
 import com.detox.app.service.UsageTrackingService
 import androidx.lifecycle.SavedStateHandle
+import io.sentry.Sentry
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -130,6 +133,7 @@ class ChallengeCreationViewModel @Inject constructor(
     private val usageStatsRepository: UsageStatsRepository,
     private val firebaseAuthService: FirebaseAuthService,
     private val analyticsService: AnalyticsService,
+    private val pendingHardChallengeDao: PendingHardChallengeDao,
     appConfigRepository: AppConfigRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
@@ -553,6 +557,20 @@ class ChallengeCreationViewModel @Inject constructor(
                     confirmedPaymentIntentId = paymentData.paymentIntentId
                     // Persist the SAME id the PI was created with (Stripe metadata.challengeId).
                     confirmedChallengeId = tempId
+                    // MONEY-CRITICAL (Part A): durably record the FULL creation payload BEFORE the
+                    // PaymentSheet shows, so a ViewModel/Activity/process recreation during the Stripe
+                    // round trip can no longer lose the challenge after the stake is captured. The
+                    // confirm + startup-recovery paths rebuild from this record, not the volatile
+                    // in-memory fields / _state. Failure to record is non-fatal (the in-memory fast
+                    // path still works) but logged loudly — without it we'd be back to the silent loss.
+                    runCatching {
+                        pendingHardChallengeDao.upsert(
+                            buildPendingRecord(s, challengeId = tempId, paymentIntentId = paymentData.paymentIntentId)
+                        )
+                    }.onFailure { e ->
+                        Timber.e(e, "initiateHardModePayment: failed to persist PendingHardChallenge for $tempId")
+                        Sentry.captureException(e)
+                    }
                     _uiState.value = ChallengeCreationUiState.AwaitingPayment(
                         clientSecret = paymentData.clientSecret,
                         pendingChallengeId = tempId,
@@ -565,73 +583,140 @@ class ChallengeCreationViewModel @Inject constructor(
         }
     }
 
-    fun onPaymentConfirmed() {
-        val s = _state.value
+    /**
+     * Snapshots the current Hard Mode form state into a durable [PendingHardChallengeEntity]. Captures
+     * deviceId (ANDROID_ID) + rooted status here (at PI-create time) so the anti-cheat metadata is part
+     * of the recoverable payload and the confirm path never has to re-read volatile state.
+     */
+    private fun buildPendingRecord(
+        s: ChallengeCreationState,
+        challengeId: String,
+        paymentIntentId: String,
+    ): PendingHardChallengeEntity {
         val isWebsiteTab = s.activeTab == 1
-        val paymentIntentId = confirmedPaymentIntentId ?: return
-        _uiState.value = ChallengeCreationUiState.Loading
+        val (limitMinutes, limitSessions) = resolveLimitPair()
+        val appPackagesHard = if (!isWebsiteTab) s.selectedApps.toList() else emptyList()
+        @Suppress("HardwareIds")
+        val androidId = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID,
+        )
+        val deviceRooted = RootDetectionManager.isDeviceRooted(context)
+        return PendingHardChallengeEntity(
+            challengeId = challengeId,
+            paymentIntentId = paymentIntentId,
+            paymentIntentCreatedAt = System.currentTimeMillis(),
+            isImmediateCapture = if (s.durationDays > 7) 1 else 0,
+            appDisplayName = displayName(),
+            appPackageNames = appPackagesHard.joinToString(","),
+            limitType = (s.limitType ?: LimitType.TIME).name,
+            limitValueMinutes = limitMinutes,
+            limitValueSessions = limitSessions,
+            durationDays = s.durationDays,
+            amountCents = s.amountEuros * 100,
+            customMotivation = s.motivationText.ifBlank { null },
+            blockedDomains = computeBlockedDomains().joinToString(","),
+            partialBlockDomains = "",
+            blockingType = (if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE).name,
+            blockAdultContent = if (s.blockAdultContent) 1 else 0,
+            scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
+            scheduleEndTime = s.scheduleEnd.takeIf { it.length == 5 },
+            activeDays = s.activeDays.joinToString(","),
+            sessionDurationMinutes = s.sessionDurationMinutes,
+            dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
+            partialBlockSections = "",
+            isPartialBlockOnly = 0,
+            deviceId = androidId,
+            isRooted = if (deviceRooted) 1 else 0,
+        )
+    }
+
+    fun onPaymentConfirmed() {
+        // A redundant result callback after the challenge is already created must never downgrade a
+        // shown Success into an error (the record is gone by then).
+        if (_uiState.value is ChallengeCreationUiState.Success) return
         viewModelScope.launch {
-            val (limitMinutes, limitSessions) = resolveLimitPair()
-            val appPackagesHard = if (!isWebsiteTab) s.selectedApps.toList() else emptyList()
-            // Anti-cheat: capture deviceId (ANDROID_ID) + rooted status on every Hard Mode
-            // creation so the challenge doc carries them for fraud detection (collectionGroup
-            // query). These flow through the Challenge → toMap() write (the only saveChallenge
-            // call), avoiding a race with the fire-and-forget Firestore sync.
-            @Suppress("HardwareIds")
-            val androidId = android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                android.provider.Settings.Secure.ANDROID_ID,
-            )
-            val deviceRooted = RootDetectionManager.isDeviceRooted(context)
+            // Source the payload from the DURABLE record, NOT the in-memory fields / _state — those
+            // are lost if the ViewModel/Activity/process was recreated while the Stripe activity was
+            // foreground. Prefer the exact cid; fall back to the latest pending record.
+            val pending = (confirmedChallengeId?.let { pendingHardChallengeDao.getByChallengeId(it) })
+                ?: pendingHardChallengeDao.getLatest()
+
+            if (pending == null) {
+                // MONEY-CRITICAL (Part C): never return silently. If a PI was confirmed but we have
+                // no recoverable payload, the stake may be captured with no way to rebuild — surface
+                // it loudly (Sentry + error UI). The startup recovery net cannot help without a record.
+                val pi = confirmedPaymentIntentId
+                Timber.e(
+                    "onPaymentConfirmed: NO PendingHardChallenge record (confirmedPI=%s) — cannot rebuild challenge after payment",
+                    pi,
+                )
+                Sentry.captureMessage(
+                    "onPaymentConfirmed: payment confirmed but no PendingHardChallenge record" +
+                        (pi?.let { " (PI=$it)" } ?: " (PI unknown)")
+                )
+                _uiState.value = ChallengeCreationUiState.Error(
+                    context.getString(R.string.challenge_create_sync_failed)
+                )
+                return@launch
+            }
+
+            _uiState.value = ChallengeCreationUiState.Loading
+            // Rebuild via CreateChallengeUseCase (keeps validation + date logic) from the record. The
+            // unified challengeId + existing PI mean this writes the doc under the SAME cid as the
+            // PaymentIntent — idempotent, and it NEVER creates a new PaymentIntent.
             createChallengeUseCase(
-                appPackageName = appPackagesHard.firstOrNull(),
-                appDisplayName = displayName(),
-                limitType = s.limitType ?: LimitType.TIME,
-                limitValueMinutes = limitMinutes,
-                limitValueSessions = limitSessions,
-                durationDays = s.durationDays,
-                customMotivation = s.motivationText.ifBlank { null },
+                appPackageName = pending.appPackageNames.toCsvList().firstOrNull(),
+                appDisplayName = pending.appDisplayName,
+                limitType = LimitType.valueOf(pending.limitType.uppercase()),
+                limitValueMinutes = pending.limitValueMinutes,
+                limitValueSessions = pending.limitValueSessions,
+                durationDays = pending.durationDays,
+                customMotivation = pending.customMotivation,
                 mode = ChallengeMode.HARD,
-                amountCents = s.amountEuros * 100,
-                stripePaymentIntentId = paymentIntentId,
-                appPackageNames = appPackagesHard,
-                blockedDomains = computeBlockedDomains(),
-                partialBlockDomains = emptyList(),
-                blockingType = if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE,
-                blockAdultContent = s.blockAdultContent,
-                scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
-                scheduleEndTime = s.scheduleEnd.takeIf { it.length == 5 },
-                activeDays = s.activeDays.toList(),
-                sessionDurationMinutes = s.sessionDurationMinutes,
-                dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
+                amountCents = pending.amountCents,
+                stripePaymentIntentId = pending.paymentIntentId,
+                appPackageNames = pending.appPackageNames.toCsvList(),
+                blockedDomains = pending.blockedDomains.toCsvList(),
+                partialBlockDomains = pending.partialBlockDomains.toCsvList(),
+                blockingType = runCatching { BlockingType.valueOf(pending.blockingType.uppercase()) }
+                    .getOrDefault(BlockingType.APP),
+                blockAdultContent = pending.blockAdultContent != 0,
+                scheduleStartTime = pending.scheduleStartTime,
+                scheduleEndTime = pending.scheduleEndTime,
+                activeDays = pending.activeDays.toCsvList(),
+                sessionDurationMinutes = pending.sessionDurationMinutes,
+                dailyBudgetMinutes = pending.dailyBudgetMinutes,
                 partialBlockSections = emptyList(),
-                isPartialBlockOnly = false,
-                deviceId = androidId,
-                isRooted = deviceRooted,
+                isPartialBlockOnly = pending.isPartialBlockOnly != 0,
+                deviceId = pending.deviceId,
+                isRooted = pending.isRooted?.let { it != 0 },
                 // Unify the id: persist under the same cid the PaymentIntent was created with.
-                challengeId = confirmedChallengeId,
+                challengeId = pending.challengeId,
             ).fold(
                 onSuccess = { result ->
+                    // Doc confirmed written → the durable record has done its job; remove it so the
+                    // startup recovery net doesn't re-process it.
+                    runCatching { pendingHardChallengeDao.deleteByChallengeId(pending.challengeId) }
+                        .onFailure { e -> Timber.w(e, "onPaymentConfirmed: failed to clear pending record ${pending.challengeId}") }
                     // Legal: persist the FAGG § 18 withdrawal-rights waiver consent alongside the
-                    // challenge doc. Ordering is now safe: for Hard Mode createChallenge AWAITS the
-                    // Firestore full-create before returning success, so this merge update of only
-                    // the two waiver fields lands on an existing doc (rules allow those keys on
-                    // update) and can no longer pre-create the doc and block the full write.
+                    // challenge doc (merge update of two fields onto the now-existing doc).
                     logWithdrawalWaiver(result.challengeId)
                     analyticsService.logChallengeCreated(
                         mode = "hard",
-                        limitType = (s.limitType ?: LimitType.TIME).name.lowercase(),
-                        durationDays = s.durationDays,
+                        limitType = pending.limitType.lowercase(),
+                        durationDays = pending.durationDays,
                     )
                     UsageTrackingService.start(context)
+                    confirmedPaymentIntentId = null
+                    confirmedChallengeId = null
                     _uiState.value = ChallengeCreationUiState.Success(result.challengeId)
                 },
                 onFailure = { error ->
-                    // Payment already succeeded; the only realistic failure here is the awaited
-                    // Hard Mode Firestore mirror create. Surface a clear German message instead of
-                    // a raw Firestore error, and do NOT report a fake success (a missing doc means
-                    // the server can't validate the win).
-                    Timber.e(error, "onPaymentConfirmed: Hard Mode challenge persistence failed")
+                    // Payment already succeeded; the realistic failure here is the awaited Hard Mode
+                    // Firestore mirror create. KEEP the durable record so the startup recovery net
+                    // retries (idempotent, no new PI). Surface a clear message; never fake success.
+                    Timber.e(error, "onPaymentConfirmed: Hard Mode persistence failed — record kept for recovery (${pending.challengeId})")
                     _uiState.value = ChallengeCreationUiState.Error(
                         context.getString(R.string.challenge_create_sync_failed)
                     )
@@ -641,8 +726,22 @@ class ChallengeCreationViewModel @Inject constructor(
     }
 
     fun onPaymentCancelled() {
+        // The PaymentSheet was cancelled / failed → no capture. Discard the durable record so the
+        // recovery net never re-creates a challenge for an un-charged attempt. Fall back to the latest
+        // record when the in-memory cid was lost on recreation (symmetric with onPaymentConfirmed).
+        val cid = confirmedChallengeId
         confirmedPaymentIntentId = null
         confirmedChallengeId = null
+        viewModelScope.launch {
+            runCatching {
+                val record = (cid?.let { pendingHardChallengeDao.getByChallengeId(it) })
+                    ?: pendingHardChallengeDao.getLatest()
+                record?.let { pendingHardChallengeDao.deleteByChallengeId(it.challengeId) }
+            }.onFailure { e -> Timber.w(e, "onPaymentCancelled: failed to clear pending record") }
+        }
         _uiState.value = ChallengeCreationUiState.Idle
     }
+
+    private fun String.toCsvList(): List<String> =
+        split(",").map { it.trim() }.filter { it.isNotBlank() }
 }

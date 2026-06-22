@@ -10,7 +10,16 @@ interface ChallengeRepository {
     fun getActiveChallenges(): Flow<List<Challenge>>
     suspend fun getActiveChallengesList(): Result<List<Challenge>>
     suspend fun getActiveChallengeForApp(packageName: String): Result<Challenge?>
-    suspend fun updateChallengeStatus(id: String, status: ChallengeStatus): Result<Unit>
+    /**
+     * Updates the challenge status. For [ChallengeStatus.FAILED], [failReason] records the loss cause
+     * (UX only): "limit_exceeded" | "abandon" | "permission_violation". It is written to the Room
+     * `failReason` column and passed to the `markChallengeFailed` CF. Ignored for non-FAILED statuses.
+     */
+    suspend fun updateChallengeStatus(
+        id: String,
+        status: ChallengeStatus,
+        failReason: String? = null
+    ): Result<Unit>
     /** Returns all challenges (active + completed + failed) ordered by createdAt DESC. */
     fun getAllChallenges(): Flow<List<Challenge>>
     /** Marks the congratulations overlay as shown so it won't appear again. */

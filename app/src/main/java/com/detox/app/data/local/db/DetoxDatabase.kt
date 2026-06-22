@@ -8,23 +8,27 @@ import timber.log.Timber
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.DailyLogDao
 import com.detox.app.data.local.db.dao.GroupChallengeDao
+import com.detox.app.data.local.db.dao.PendingHardChallengeDao
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.DailyLogEntity
 import com.detox.app.data.local.db.entity.GroupChallengeEntity
+import com.detox.app.data.local.db.entity.PendingHardChallengeEntity
 
 @Database(
     entities = [
         ChallengeEntity::class,
         DailyLogEntity::class,
-        GroupChallengeEntity::class
+        GroupChallengeEntity::class,
+        PendingHardChallengeEntity::class
     ],
-    version = 25,
+    version = 27,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
     abstract fun challengeDao(): ChallengeDao
     abstract fun dailyLogDao(): DailyLogDao
     abstract fun groupChallengeDao(): GroupChallengeDao
+    abstract fun pendingHardChallengeDao(): PendingHardChallengeDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -409,6 +413,62 @@ abstract class DetoxDatabase : RoomDatabase() {
                     "ALTER TABLE challenges ADD COLUMN sessionDurationMinutes INTEGER NOT NULL DEFAULT 5"
                 )
                 Timber.d("DB migration 13→14: added sessionDurationMinutes column (default 5 min)")
+            }
+        }
+
+        /**
+         * Creates the pending_hard_challenges table — durable payload for a Hard Mode challenge whose
+         * PaymentIntent was created but whose challenge doc may not yet be persisted (money-critical
+         * recovery after ViewModel/process recreation during the Stripe flow). New table only.
+         */
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `pending_hard_challenges` (
+                        `challengeId` TEXT NOT NULL,
+                        `paymentIntentId` TEXT NOT NULL,
+                        `paymentIntentCreatedAt` INTEGER NOT NULL,
+                        `isImmediateCapture` INTEGER NOT NULL,
+                        `appDisplayName` TEXT NOT NULL,
+                        `appPackageNames` TEXT NOT NULL,
+                        `limitType` TEXT NOT NULL,
+                        `limitValueMinutes` INTEGER NOT NULL,
+                        `limitValueSessions` INTEGER,
+                        `durationDays` INTEGER NOT NULL,
+                        `amountCents` INTEGER NOT NULL,
+                        `customMotivation` TEXT,
+                        `blockedDomains` TEXT NOT NULL,
+                        `partialBlockDomains` TEXT NOT NULL,
+                        `blockingType` TEXT NOT NULL,
+                        `blockAdultContent` INTEGER NOT NULL,
+                        `scheduleStartTime` TEXT,
+                        `scheduleEndTime` TEXT,
+                        `activeDays` TEXT NOT NULL,
+                        `sessionDurationMinutes` INTEGER NOT NULL,
+                        `dailyBudgetMinutes` INTEGER,
+                        `partialBlockSections` TEXT NOT NULL,
+                        `isPartialBlockOnly` INTEGER NOT NULL,
+                        `deviceId` TEXT,
+                        `isRooted` INTEGER,
+                        PRIMARY KEY(`challengeId`)
+                    )
+                    """.trimIndent()
+                )
+                Timber.d("DB migration 26→27: created pending_hard_challenges table")
+            }
+        }
+
+        /**
+         * Adds the failReason column to challenges — used only by the loss result dialog (UX/data,
+         * not money logic). Nullable; existing rows default to NULL → generic loss text.
+         */
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE challenges ADD COLUMN failReason TEXT DEFAULT NULL"
+                )
+                Timber.d("DB migration 25→26: added failReason column to challenges")
             }
         }
 

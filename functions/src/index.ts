@@ -277,6 +277,49 @@ export const capturePayment = functions.runWith({ maxInstances: 10 }).region(REG
   } catch (e) { handleError("capturePayment", e, res); }
 });
 
+// ── markChallengeFailed ─────────────────────────────────────────────────────────
+// Server-side terminal-status write for a CLIENT-detected loss (DailyEvaluationWorker /
+// PermissionCheckWorker / abandon flow). The client can NEVER write `status` (Firestore rules
+// block it), and the OLD client path DELETED the doc — destroying the audit trail and breaking
+// the Redemption refund, which reads the original challenge's stored stake (origSnap.exists →
+// 0 → HTTP 400). This CF instead does an in-place Admin-SDK `status: "failed"` update, mirroring
+// checkPermissionViolations: the challenge doc AND its nested dailyLogs are PRESERVED.
+//
+// Invariants: never deletes the doc; never touches Stripe (the capture always happens BEFORE this
+// call); never bumps counters (the capture path owns those). Idempotent — a doc already terminal
+// (failed/completed) returns success with NO second write.
+export const markChallengeFailed = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const userId = await requireAuth(req);
+    const { challengeId, failReason } = req.body as { challengeId: string; failReason: string };
+    if (!challengeId) throw new HttpError(400, "challengeId is required.");
+    if (!failReason) throw new HttpError(400, "failReason is required.");
+
+    // The doc is read under the AUTHENTICATED uid's own sub-collection, so an attempt to fail
+    // another user's challenge simply resolves to a non-existent path → 400 (no IDOR).
+    const ref = admin.firestore()
+      .collection("users").doc(userId)
+      .collection("challenges").doc(challengeId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpError(400, "Challenge not found for caller.");
+
+    // Idempotency: a challenge already settled to a terminal status is never re-written.
+    const status: string | undefined = snap.data()!["status"];
+    if (status === "failed" || status === "completed") {
+      res.json({ success: true, alreadyFailed: true });
+      return;
+    }
+
+    await ref.update({
+      status: "failed",
+      failReason,
+      failedAt: Date.now(),
+    });
+
+    res.json({ success: true });
+  } catch (e) { handleError("markChallengeFailed", e, res); }
+});
+
 // ── cancelOrRefundPayment ──────────────────────────────────────────────────────
 
 export const cancelOrRefundPayment = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
@@ -1647,6 +1690,7 @@ interface ReconciliationTally {
   settled: number;
   reconciled: number;
   skipped: number;
+  wentDark: number;
 }
 
 async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
@@ -1659,44 +1703,56 @@ async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
   // missing/unreadable config must NEVER cause an unattended capture or refund.
   let enabled = false;
   let dryRun = true;
+  // Went-dark forfeit grace (ms). FAIL-SAFE: a missing/invalid value OR a config read error
+  // ⇒ Number.MAX_SAFE_INTEGER, which makes the went-dark predicate (now - lastSeen > graceMs)
+  // permanently false ⇒ NEVER forfeit anyone. Only an explicit positive number arms it.
+  // Recommended production value: 72h = 259200000. Server-tunable via config/app.wentDarkGraceMs.
+  let graceMs = Number.MAX_SAFE_INTEGER;
   try {
     const cfg = await db.collection("config").doc("app").get();
     const data = cfg.data() ?? {};
     enabled = data["reconciliationEnabled"] === true;   // default false
     dryRun = data["reconciliationDryRun"] !== false;    // default true — only an explicit false disarms
+    const g = data["wentDarkGraceMs"];
+    graceMs = typeof g === "number" && g > 0 ? g : Number.MAX_SAFE_INTEGER;
   } catch (e) {
-    functions.logger.error("reconciliation: config/app read failed → DISABLED + DRY-RUN (fail-safe)", e);
+    functions.logger.error("reconciliation: config/app read failed → DISABLED + DRY-RUN + no-forfeit (fail-safe)", e);
     enabled = false;
     dryRun = true;
+    graceMs = Number.MAX_SAFE_INTEGER;
   }
 
-  const tally: ReconciliationTally = { enabled, dryRun, due: 0, settled: 0, reconciled: 0, skipped: 0 };
+  const tally: ReconciliationTally = { enabled, dryRun, due: 0, settled: 0, reconciled: 0, skipped: 0, wentDark: 0 };
 
   if (!enabled) {
     functions.logger.info("reconciliation: disabled (reconciliationEnabled !== true) — no-op");
     return tally;
   }
 
-  // ── Due & unsettled query (collection-group; needs the composite index) ──────
-  // endDate is stored as epoch-millis (Challenge.toMap), so a numeric range works.
-  let dueDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+  // ── Active hard-challenge query (collection-group) ───────────────────────────
+  // Was filtered by `endDate <= now` (due-only). The went-dark forfeit must also reach
+  // NOT-yet-due challenges so a ≤7d manual-capture authorization can be captured mid-
+  // challenge while still valid (the Stripe auth releases ~7d after creation). So the
+  // endDate filter is dropped here and due-ness is computed per-doc (`isDue`) below; the
+  // existing WIN/lossProven settlement still runs ONLY when isDue, unchanged. The
+  // (mode, status) prefix is served by the existing (mode, status, endDate) index.
+  let candidateDocs: admin.firestore.QueryDocumentSnapshot[] = [];
   try {
     const snap = await db
       .collectionGroup("challenges")
       .where("mode", "==", "hard")
       .where("status", "==", "active")
-      .where("endDate", "<=", now)
       .get();
-    dueDocs = snap.docs;
+    candidateDocs = snap.docs;
   } catch (e) {
     // Missing index / transient → log and bail this run; never throw (mirrors the
     // per-query guards in runPermissionViolationCheck).
-    functions.logger.error("reconciliation: due-challenge collection-group query failed", e);
+    functions.logger.error("reconciliation: active-challenge collection-group query failed", e);
     return tally;
   }
 
-  tally.due = dueDocs.length;
-  functions.logger.info(`reconciliation: ${dueDocs.length} due hard challenge(s), dryRun=${dryRun}`);
+  tally.due = candidateDocs.length;
+  functions.logger.info(`reconciliation: ${candidateDocs.length} active hard challenge(s), dryRun=${dryRun}, graceArmed=${graceMs !== Number.MAX_SAFE_INTEGER}`);
 
   // Cache permissionStatus/current per user across this run (B2).
   const permCache = new Map<string, admin.firestore.DocumentData | null>();
@@ -1728,7 +1784,7 @@ async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
     return permUnresolved || usageUnresolved;
   }
 
-  for (const doc of dueDocs) {
+  for (const doc of candidateDocs) {
     const cid = doc.id;
     const userId = doc.ref.parent.parent!.id;
     try {
@@ -1738,6 +1794,11 @@ async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
       const amountCents: number = typeof cd["amountCents"] === "number" ? cd["amountCents"] : 0;
       const stripePaymentIntentId: string | undefined = cd["stripePaymentIntentId"] ?? cd["paymentIntentId"];
       const isRedemption: boolean = cd["isRedemption"] === true;
+      const startDate: number = typeof cd["startDate"] === "number" ? cd["startDate"] : 0;
+      const endDate: number = typeof cd["endDate"] === "number" ? cd["endDate"] : 0;
+      // Only end-date-reached challenges get the existing WIN/lossProven settlement. The
+      // went-dark forfeit (below) is the ONLY thing that may act on a not-yet-due challenge.
+      const isDue = endDate > 0 && endDate <= now;
 
       // ── B1. payoutStatus already set → stale-status reconcile / skip (finding A) ──
       if (payoutStatus) {
@@ -1773,28 +1834,52 @@ async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
         continue;
       }
 
+      // ── B2.5. Went-dark forfeit (NEW) ────────────────────────────────────────
+      // A device that stopped sending the PermissionCheckWorker heartbeat (app uninstalled
+      // or disabled) is a LOSS — the user consented at challenge creation that deleting/
+      // disabling the app forfeits the stake. Reference point: the last heartbeat, or the
+      // challenge startDate if no heartbeat was ever written (so a pre-heartbeat challenge
+      // is not instantly forfeited — it must be active longer than GRACE). FAIL-SAFE:
+      // graceMs defaults to MAX (never fires); a permissionStatus read failure already
+      // skipped this doc at B2 (__readFailed), so we never forfeit on a read error. Runs
+      // for due AND not-yet-due so a ≤7d manual-capture auth is reached while still valid.
+      const lastSeenAt: number | undefined =
+        ps && typeof ps["lastSeenAt"] === "number" ? ps["lastSeenAt"] : undefined;
+      const darkReference = lastSeenAt ?? (startDate > 0 ? startDate : undefined);
+      const wentDark = darkReference !== undefined && (now - darkReference) > graceMs;
+
+      // Live device that hasn't reached endDate yet → nothing to settle this run.
+      if (!wentDark && !isDue) {
+        tally.skipped++;
+        continue;
+      }
+
       // ── B3. Settle: lossProven from the nested tamper-evident dailyLogs (finding C) ──
       const logsSnap = await db.collection("users").doc(userId)
         .collection("challenges").doc(cid).collection("dailyLogs").get();
       const lossProven = logsSnap.docs.some((d) => d.data()["limitExceeded"] === true);
 
-      if (lossProven) {
+      if (lossProven || wentDark) {
         // ── LOSS ──────────────────────────────────────────────────────────────
+        // failReason distinguishes a proven limit-exceeded loss from a went-dark forfeit.
+        // A proven loss wins precedence (the device DID record a violation).
+        const failReason = lossProven ? "reconciliation" : "device_dark";
+        if (wentDark && !lossProven) tally.wentDark++;
         if (!stripePaymentIntentId) {
           // Redemption / PI-less doc: nothing new was staked (the original stake, if any,
           // was already captured + counted at its own loss). Mark failed; no Stripe, no counters.
           if (dryRun) {
-            functions.logger.info(`reconciliation DRY-RUN LOSS ${cid}: no PI (redemption) → would mark failed (no Stripe/counters)`);
+            functions.logger.info(`reconciliation DRY-RUN LOSS ${cid}: no PI (redemption) → would mark failed (failReason=${failReason}, no Stripe/counters)`);
           } else {
-            await doc.ref.update({ status: "failed", failReason: "reconciliation", failedAt: now, payoutStatus: "captured" });
-            functions.logger.warn(`reconciliation LOSS ${cid}: no stripePaymentIntentId → marked failed without capture (review)`);
+            await doc.ref.update({ status: "failed", failReason, failedAt: now, payoutStatus: "captured" });
+            functions.logger.warn(`reconciliation LOSS ${cid}: no stripePaymentIntentId → marked failed without capture (failReason=${failReason}, review)`);
           }
           tally.settled++;
           continue;
         }
 
         if (dryRun) {
-          functions.logger.info(`reconciliation DRY-RUN LOSS ${cid}: would settle loss for €${amountCents / 100} (capture if requires_capture, else mark failed; revenue from stored stake if already captured)`);
+          functions.logger.info(`reconciliation DRY-RUN LOSS ${cid}: would settle loss for €${amountCents / 100} (failReason=${failReason}; capture if requires_capture, else mark failed; revenue from stored stake if already captured)`);
           tally.settled++;
           continue;
         }
@@ -1817,10 +1902,10 @@ async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
           continue;
         }
 
-        await doc.ref.update({ status: "failed", failReason: "reconciliation", failedAt: now, payoutStatus: "captured" });
+        await doc.ref.update({ status: "failed", failReason, failedAt: now, payoutStatus: "captured" });
         // Only on this fresh active→failed transition (closes TODO(counter-gap) for upfront captures).
         await bumpCounters({ totalActiveChallenges: -1, totalFailedChallenges: 1, totalRevenueCents: revenueDelta });
-        functions.logger.info(`reconciliation LOSS ${cid}: marked failed, revenue+=€${revenueDelta / 100}`);
+        functions.logger.info(`reconciliation LOSS ${cid}: marked failed (failReason=${failReason}), revenue+=€${revenueDelta / 100}`);
         tally.settled++;
       } else {
         // ── WIN — re-derive from the correct stored stake (fail-open: favour the user) ──
@@ -1902,7 +1987,7 @@ async function runDueChallengeReconciliation(): Promise<ReconciliationTally> {
     }
   }
 
-  functions.logger.info(`reconciliation: done due=${tally.due} settled=${tally.settled} reconciled=${tally.reconciled} skipped=${tally.skipped} dryRun=${tally.dryRun}`);
+  functions.logger.info(`reconciliation: done active=${tally.due} settled=${tally.settled} wentDark=${tally.wentDark} reconciled=${tally.reconciled} skipped=${tally.skipped} dryRun=${tally.dryRun}`);
   return tally;
 }
 
@@ -2130,7 +2215,7 @@ export const backfillCounters = functions.runWith({ maxInstances: 3 }).region(RE
 
 // ── detectSuspiciousUsers ─────────────────────────────────────────────────────────
 // Admin-only, READ-ONLY anti-cheat analysis. Computes an ADDITIVE risk score per user
-// from 5 signals and returns the flagged users (sorted by riskScore desc). It is a
+// from 6 signals and returns the flagged users (sorted by riskScore desc). It is a
 // FLAGGING system only — it NEVER bans, modifies, or deletes any user data. A human
 // admin reviews each flag and decides (clear / ban) in the dashboard.
 //
@@ -2142,6 +2227,7 @@ export const backfillCounters = functions.runWith({ maxInstances: 3 }).region(RE
 //   4. Perfect win     (20) — completed solo Hard Mode with >= 3 daily logs, ALL with
 //                              consciousOpens == 0 AND totalMinutes == 0.
 //   5. Instant win     (15) — completed solo Hard Mode in < 1 day of elapsed time.
+//   6. Recon low-ev    (6)  — reconciliation refunded a win with no nested dailyLogs (low evidence).
 //
 // COST NOTE: unbounded scans (all users + collectionGroup challenges + all groups +
 // per-completed-challenge dailyLogs). Admin-gated + manual trigger only (the dashboard
@@ -2159,6 +2245,7 @@ export const detectSuspiciousUsers = functions.runWith({ maxInstances: 3 }).regi
       rooted: 25,
       perfectWin: 20,
       instantWin: 15,
+      reconciliationLowEvidence: 6,   // soft signal — refund already given (favour-user); surface for review
     };
 
     // ── Load all users ──────────────────────────────────────────────────────────
@@ -2248,6 +2335,17 @@ export const detectSuspiciousUsers = functions.runWith({ maxInstances: 3 }).regi
           type: "rooted",
           description: "Hard Mode auf einem gerooteten Gerät erstellt.",
           points: POINTS.rooted,
+        });
+      }
+
+      // Signal 6 — Reconciliation low-evidence win. The server reconciliation net refunded this
+      // challenge despite zero nested dailyLogs (could not confirm a clean day). Soft signal: the
+      // money was already returned under the favour-user policy, but it should surface for review.
+      if (c.reconciliationLowEvidence === true) {
+        pushUnique(uid, {
+          type: "reconciliation_low_evidence",
+          description: "Auszahlung erfolgte trotz fehlender Tagesnachweise (geringe Beweislage).",
+          points: POINTS.reconciliationLowEvidence,
         });
       }
 

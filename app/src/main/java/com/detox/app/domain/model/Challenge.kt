@@ -88,4 +88,12 @@ data class Challenge(
     val deviceId: String? = null,
     /** RootBeer result captured on Hard Mode creation (true AND false → full coverage). */
     val isRooted: Boolean? = null,
+
+    /**
+     * Why the challenge failed, for the loss result UI only (UX, not money logic).
+     * Device-set causes: "limit_exceeded" | "abandon" | "permission_violation". Server-set causes
+     * arrive via sync: "usage_violation" | "reconciliation" (legacy "client_loss" → generic text).
+     * Null when active/completed or cause unknown.
+     */
+    val failReason: String? = null,
 )

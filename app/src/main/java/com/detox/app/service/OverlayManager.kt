@@ -481,6 +481,7 @@ class OverlayManager @Inject constructor(
                     contextHeader = contextHeader,
                     opensUsed = confirmedOpens,
                     maxOpens = maxOpens,
+                    motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
                     onYes = {
                         val newCount =
                             consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0) + 1
@@ -579,6 +580,7 @@ class OverlayManager @Inject constructor(
                     largeNumber = largeNumber,
                     largeNumberLabel = largeNumberLabel,
                     limitCount = maxOpens,
+                    motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
                     onNo = {
                         Timber.d(
                             "OverlayManager: Stage 2 'Nicht öffnen' tapped " +
@@ -867,6 +869,7 @@ class OverlayManager @Inject constructor(
                     contextHeader = contextHeader,
                     remainingMinutes = remainingMinutes,
                     budgetTotalMinutes = challenge.dailyBudgetMinutes ?: remainingMinutes,
+                    motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
                     onStart = { selectedMinutes ->
                         Timber.d(
                             "OverlayManager: Budget session starting: ${selectedMinutes}min " +
@@ -928,6 +931,7 @@ class OverlayManager @Inject constructor(
                         contextHeader = contextHeader,
                         largeNumber = 0,
                         largeNumberLabel = budgetExhaustedLabel,
+                        motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
                         onNo = {
                             dismissOverlay()
                             goHome()
@@ -953,6 +957,7 @@ class OverlayManager @Inject constructor(
                     contextHeader = budgetExhaustedHeader,
                     largeNumber = 0,
                     largeNumberLabel = budgetExhaustedLabel,
+                    motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
                     onNo = {
                         dismissOverlay()
                         goHome()
@@ -1588,7 +1593,7 @@ class OverlayManager @Inject constructor(
         val streak = getStreak(challenge)
         Timber.i("Soft Mode failed: challengeId=${challenge.id} streak=$streak days reason=$reason")
 
-        challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED)
+        challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED, "limit_exceeded")
             .onFailure { Timber.e(it, "markSoftChallengeFailed: failed to update status for ${challenge.id}") }
 
         challenge.appPackageName?.let {
@@ -1604,6 +1609,11 @@ class OverlayManager @Inject constructor(
         }
 
         analyticsService.logLimitExceeded("soft_${reason}", challenge.appPackageName ?: "")
+
+        // Mark the loss result as shown so the Dashboard's getUnshownFailedSoftChallenge poll does
+        // not emit a second navigation for the same loss (the navigation below is the single show).
+        challengeRepository.markCompletionShown(challenge.id)
+            .onFailure { Timber.e(it, "markSoftChallengeFailed: failed to mark completionShown for ${challenge.id}") }
 
         TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
         val launchIntent = Intent(context, com.detox.app.MainActivity::class.java).apply {

@@ -30,8 +30,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
@@ -51,6 +53,8 @@ fun BudgetSelectionOverlay(
     contextHeader: String,
     remainingMinutes: Int,
     budgetTotalMinutes: Int = remainingMinutes,
+    /** The user's own custom motivation ("why"). Null/blank = not shown. */
+    motivationText: String? = null,
     onStart: (Int) -> Unit,
     onGoBack: () -> Unit
 ) {
@@ -124,6 +128,21 @@ fun BudgetSelectionOverlay(
                     color = Color(0xFF00C853),
                     textAlign = TextAlign.Center
                 )
+
+                // ── User's own motivation ("why") — mirrors Stage 1 (conscious-open) ──
+                val motivation = motivationText?.takeIf { it.isNotBlank() }
+                if (motivation != null) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        text = stringResource(R.string.overlay_motivation_quote, motivation),
+                        fontSize = 14.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = Color(0xFFAAAAAA),
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
                 Spacer(Modifier.height(24.dp))
 

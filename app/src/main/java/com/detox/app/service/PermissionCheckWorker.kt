@@ -48,6 +48,17 @@ class PermissionCheckWorker @AssistedInject constructor(
         private const val USAGE_VIOLATION_PREFS = "detox_usage_violation"
         private const val KEY_USAGE_VIOLATION_AT = "usageViolationDetectedAt"
         private const val FOREGROUND_NOTIF_ID = 9101
+
+        // ── Heartbeat ("device went dark = forfeit") ──────────────────────────────
+        // A separate prefs file from PREFS so the permission-restore clear() (which wipes
+        // PREFS) never erases the last-beat timestamp used for the best-effort throttle nudge.
+        private const val HEARTBEAT_PREFS = "detox_heartbeat"
+        private const val KEY_LAST_BEAT_AT = "lastBeatAt"
+        // Best-effort local nudge fired at ~half the server-side GRACE (server default 72h →
+        // warn at 36h) when EMUI has clearly throttled this worker since its last successful
+        // beat. The server config/app.wentDarkGraceMs is authoritative for the actual forfeit;
+        // this is only an early "open the app to stay safe" reminder and is purely device-side.
+        private const val HEARTBEAT_WARN_THRESHOLD_MS = 36L * 60 * 60 * 1_000L
     }
 
     /**
@@ -71,6 +82,12 @@ class PermissionCheckWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        // Heartbeat FIRST — before any early return below — so an installed, honest device
+        // proves liveness every cycle even when overlay permission is fine (the early
+        // `return Result.success()` path). The server treats a stale/absent heartbeat as a
+        // went-dark forfeit (uninstall/disable), so this write is what keeps honest users safe.
+        writeHeartbeatIfHardActive()
+
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         checkAccessibilityPermission()
         checkAndReportUsageViolation()
@@ -166,6 +183,48 @@ class PermissionCheckWorker @AssistedInject constructor(
         }
 
         return Result.success()
+    }
+
+    /**
+     * Writes `lastSeenAt = now` into `users/{uid}/permissionStatus/current` (owner-writable,
+     * merge) to prove the app is still installed and running. Gated on "user has >= 1 active
+     * HARD challenge" so Soft-only / idle users never trigger needless writes — the went-dark
+     * forfeit only concerns money-staked Hard Mode.
+     *
+     * Also fires a best-effort throttle nudge: if EMUI suspended this worker for longer than
+     * [HEARTBEAT_WARN_THRESHOLD_MS] since the last successful beat, warn the user to open the
+     * app before the server forfeits the stake. (Necessarily best-effort — it can only fire
+     * once the throttled worker finally runs again.)
+     */
+    private suspend fun writeHeartbeatIfHardActive() {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+
+        val hasActiveHard = challengeRepository.getActiveChallengesList()
+            .getOrElse {
+                Timber.w(it, "writeHeartbeatIfHardActive: could not load challenges — skipping beat")
+                return
+            }
+            .any { it.mode == ChallengeMode.HARD }
+        if (!hasActiveHard) return
+
+        val now = System.currentTimeMillis()
+
+        // Best-effort throttle warning based on the locally-stored previous beat.
+        val hbPrefs = applicationContext.getSharedPreferences(HEARTBEAT_PREFS, Context.MODE_PRIVATE)
+        val prevBeat = hbPrefs.getLong(KEY_LAST_BEAT_AT, 0L)
+        if (prevBeat > 0L && (now - prevBeat) > HEARTBEAT_WARN_THRESHOLD_MS) {
+            Timber.w("writeHeartbeatIfHardActive: throttled ${(now - prevBeat) / 3_600_000}h since last beat — nudging user")
+            NotificationHelper.createChannels(applicationContext)
+            NotificationHelper.sendHeartbeatWarning(applicationContext)
+        }
+        hbPrefs.edit().putLong(KEY_LAST_BEAT_AT, now).apply()
+
+        // Fire-and-forget merge, matching the other permissionStatus writes in this worker.
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("permissionStatus").document("current")
+            .set(mapOf("lastSeenAt" to now), SetOptions.merge())
+        Timber.d("writeHeartbeatIfHardActive: lastSeenAt=$now written")
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean =
@@ -290,19 +349,32 @@ class PermissionCheckWorker @AssistedInject constructor(
                     continue
                 }
 
-                // TODO(perm-worker-fail-gate): this sets FAILED below even when capturePayment FAILS
-                // (we only log the failure). Unlike the worker/abandon paths, the status flip is not
-                // gated on a confirmed capture, so a transient capture error can mark FAILED without the
-                // stake being taken. Gate updateChallengeStatus on capture success in a follow-up.
-                cloudFunctionsService.capturePayment(paymentIntentId).onFailure { e ->
-                    Timber.e(e, "PermissionCheckWorker: capturePayment failed for ${challenge.id}")
-                }
+                // Mirror DailyEvaluationWorker's loss path: flip FAILED ONLY after a confirmed
+                // capture. Result.success means the stake WAS taken (fresh capture OR an
+                // already-captured `succeeded` PI). Result.failure — 409 not-capturable, Stripe
+                // 5xx, or offline — means NO money was taken; leave the challenge ACTIVE for the
+                // next cycle / server reconciliation net. NEVER mark FAILED here on a failed
+                // capture: updateChallengeStatus(FAILED) calls the markChallengeFailed CF, which
+                // writes status:"failed" on the Firestore doc (doc + dailyLogs retained), so that
+                // would record a loss without the stake being captured.
+                cloudFunctionsService.capturePayment(paymentIntentId)
+                    .onSuccess {
+                        challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED, "permission_violation")
+                            .onFailure { e ->
+                                Timber.e(e, "PermissionCheckWorker: status update failed for ${challenge.id}")
+                            }
+                    }
+                    .onFailure { e ->
+                        Timber.e(e, "PermissionCheckWorker: capturePayment failed for ${challenge.id} — leaving ACTIVE")
+                    }
+            } else {
+                // No PaymentIntent on this Hard doc (malformed/legacy) — out of scope for the
+                // capture gate; preserve prior behavior and mark FAILED.
+                challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED, "permission_violation")
+                    .onFailure { e ->
+                        Timber.e(e, "PermissionCheckWorker: status update failed for ${challenge.id}")
+                    }
             }
-
-            challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED)
-                .onFailure { e ->
-                    Timber.e(e, "PermissionCheckWorker: status update failed for ${challenge.id}")
-                }
         }
     }
 

@@ -44,8 +44,10 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
@@ -76,6 +78,8 @@ fun SessionIntentionOverlay(
     contextHeader: String,
     opensUsed: Int,
     maxOpens: Int,
+    /** The user's own custom motivation ("why"). Null/blank = not shown. */
+    motivationText: String? = null,
     onYes: () -> Unit,
     onNo: () -> Unit
 ) {
@@ -142,6 +146,21 @@ fun SessionIntentionOverlay(
                     color = AccentGreen,
                     textAlign = TextAlign.Center
                 )
+
+                // ── User's own motivation ("why") — primary placement at the decision moment ──
+                val motivation = motivationText?.takeIf { it.isNotBlank() }
+                if (motivation != null) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        text = stringResource(R.string.overlay_motivation_quote, motivation),
+                        fontSize = 14.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = Color(0xFFAAAAAA),
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
                 Spacer(Modifier.height(32.dp))
 

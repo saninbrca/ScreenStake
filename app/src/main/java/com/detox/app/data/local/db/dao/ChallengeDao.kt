@@ -41,6 +41,14 @@ interface ChallengeDao {
     @Query("UPDATE challenges SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)
 
+    /**
+     * Writes the loss-cause column ONLY (never status), so the "sync writes status via updateStatus()
+     * only" invariant is preserved. Used at local loss time and by the sync active→terminal reconcile
+     * for server-detected losses.
+     */
+    @Query("UPDATE challenges SET failReason = :reason WHERE id = :id")
+    suspend fun updateFailReason(id: String, reason: String?)
+
     @Query("SELECT * FROM challenges ORDER BY createdAt DESC")
     fun getAllChallenges(): Flow<List<ChallengeEntity>>
 

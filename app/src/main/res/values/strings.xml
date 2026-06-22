@@ -607,6 +607,16 @@
     <string name="failed_dialog_money_label">EINSATZ EINGEZOGEN</string>
     <string name="failed_dialog_stat_lost">verloren</string>
     <string name="failed_dialog_comeback">💪 In 24 Std. kannst du eine Comeback-Challenge starten und einen Teil zurückholen.</string>
+    <!-- Challenge identity shown on the loss result UI (%1$s = app/challenge display name) -->
+    <string name="failed_dialog_challenge_label">Challenge: %1$s</string>
+
+    <!-- Loss reasons shown on the loss result UI -->
+    <string name="fail_reason_limit_exceeded">Du hast dein Tageslimit überschritten.</string>
+    <string name="fail_reason_abandon">Du hast die Challenge selbst beendet.</string>
+    <string name="fail_reason_permission">Eine nötige Berechtigung wurde entzogen.</string>
+    <string name="fail_reason_usage">Du hast die blockierte App trotz Sperre genutzt.</string>
+    <string name="fail_reason_reconciliation">Die Challenge wurde serverseitig abgeschlossen.</string>
+    <string name="fail_reason_unknown">Challenge nicht geschafft.</string>
 
     <!-- Legacy overlay strings (kept for any remaining references) -->
     <string name="success_overlay_title">Herzlichen Glückwunsch!</string>
@@ -809,6 +819,10 @@
     <string name="notif_perm_warn_12h_body">Noch 12 Stunden bis dein Einsatz automatisch eingezogen wird.</string>
     <string name="notif_perm_warn_23h_title">💸 In 1 Stunde wird dein Einsatz eingezogen</string>
     <string name="notif_perm_warn_23h_body">Aktiviere die Berechtigung jetzt — sonst verlierst du deinen Einsatz.</string>
+
+    <!-- Heartbeat (went-dark forfeit) throttle nudge -->
+    <string name="notif_heartbeat_warn_title">⚠️ Detox meldet sich nicht mehr</string>
+    <string name="notif_heartbeat_warn_body">Öffne die App, damit deine Challenge weiterläuft — sonst gilt sie als abgebrochen und dein Einsatz kann verloren gehen.</string>
 
     <string name="notif_accessibility_lost_title">⚠️ Accessibility Service deaktiviert!</string>
     <string name="notif_accessibility_lost_body">Deine Challenge kann Apps nicht mehr sperren. Tippe um es zu beheben.</string>
@@ -1150,6 +1164,9 @@
     <string name="overlay_v2_limit_reached_title">Tageslimit erreicht 🔒</string>
     <string name="overlay_v2_limit_reached_sub">Morgen bekommst du neue Öffnungen.</string>
 
+    <!-- Wraps the user's own custom motivation ("why") on the decision overlays. %1$s = user text. -->
+    <string name="overlay_motivation_quote">„%1$s“</string>
+
     <!-- Overlay redesign v2 — budget chips label -->
     <string name="overlay_v2_chips_label">Minuten wählen</string>
 
@@ -1360,6 +1377,7 @@
     <string name="fee_return_on_success_group_note">*möglicher Gewinnanteil</string>
     <string name="fee_group_no_loser_note">Bei Gruppen ohne Verlierer: 100%% zurück</string>
     <string name="withdrawal_waiver_text">Ich stimme zu, dass die Challenge sofort beginnt und mein Widerrufsrecht damit gemäß § 18 FAGG erlischt.</string>
+    <string name="uninstall_forfeit_consent_text">Wenn du die App während einer aktiven Challenge löschst oder deaktivierst, verlierst du deinen Einsatz.</string>
 
     <!-- Group Wizard specific -->
     <string name="group_wizard_review_title">Überprüfen &amp; erstellen</string>

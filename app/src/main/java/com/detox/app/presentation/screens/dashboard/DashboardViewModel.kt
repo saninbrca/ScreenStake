@@ -204,6 +204,9 @@ class DashboardViewModel @Inject constructor(
     fun loadStats() {
         viewModelScope.launch {
             _uiState.value = DashboardUiState.Loading
+            // DELAY FIX: surface a device-detected Hard Mode loss immediately from Room — the worker
+            // already wrote status=failed locally, so we don't block this dialog on the sync round-trip.
+            checkUnshownFailedHard()
             // Wait for the one-shot sync to finish before reading Room.
             // If it already completed this is a no-op.
             syncJob.join()
@@ -238,16 +241,9 @@ class DashboardViewModel @Inject constructor(
                 }
                 .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Soft Mode challenge") }
 
-            // Check if there is a Hard Mode challenge that failed since last app open
-            challengeRepository.getUnshownFailedHardChallenge()
-                .onSuccess { challenge ->
-                    if (challenge != null) {
-                        Timber.d("Dashboard: unseen failed Hard Mode challenge found — ${challenge.id}")
-                        val logs = dailyLogRepository.getLogsForChallengeOnce(challenge.id)
-                        _failedHardChallenge.value = FailedDialogState(challenge, logs)
-                    }
-                }
-                .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Hard Mode challenge") }
+            // Re-check after sync so a SERVER-detected loss (reconciled active→failed during sync) is
+            // also caught this session. No-op if the early Room-first check already surfaced it.
+            checkUnshownFailedHard()
 
             if (!redemptionBannerDismissed) {
                 val now = System.currentTimeMillis()
@@ -256,6 +252,28 @@ class DashboardViewModel @Inject constructor(
                 Timber.d("Dashboard: ${available.size} challenge(s) with redemption available")
             }
         }
+    }
+
+    /**
+     * Surfaces the unified RED loss dialog for the first unshown failed Hard Mode challenge, read
+     * from Room. Marks `completionShown` ON SHOW (not on dismiss) so the dialog can never re-pop on a
+     * later RESUME / sync and the dismiss-race is closed. No-op if a dialog is already showing or none
+     * is found. (`completionShown` is shared with the WIN dialog, but the two gate on mutually
+     * exclusive statuses — completed vs failed — so marking it here can never suppress a win.)
+     */
+    private suspend fun checkUnshownFailedHard() {
+        if (_failedHardChallenge.value != null) return
+        challengeRepository.getUnshownFailedHardChallenge()
+            .onSuccess { challenge ->
+                if (challenge != null) {
+                    Timber.d("Dashboard: unseen failed Hard Mode challenge found — ${challenge.id} reason=${challenge.failReason}")
+                    val logs = dailyLogRepository.getLogsForChallengeOnce(challenge.id)
+                    _failedHardChallenge.value = FailedDialogState(challenge, logs)
+                    challengeRepository.markCompletionShown(challenge.id)
+                        .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown on-show for ${challenge.id}") }
+                }
+            }
+            .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Hard Mode challenge") }
     }
 
     /**

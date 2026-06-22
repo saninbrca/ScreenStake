@@ -111,6 +111,9 @@ service cloud.firestore {
     // Android client writes permissionLostAt/permissionType/deviceId on loss,
     // usageViolationDetectedAt/violatingPackage/usageMinutes on usage violation,
     // and clears permissionLostAt + sets permissionRestoredAt on restore.
+    // lastSeenAt is the heartbeat the client merges every PermissionCheckWorker cycle —
+    // intentionally owner-writable: a cheater can only AVOID a went-dark forfeit by keeping
+    // the real app installed and beating, which is exactly the honest behaviour we want.
     // capturedAt, captureReason, and usageCapturedAt are Cloud-Function-only fields.
     match /users/{userId}/permissionStatus/{doc} {
       allow read: if request.auth != null && request.auth.uid == userId;

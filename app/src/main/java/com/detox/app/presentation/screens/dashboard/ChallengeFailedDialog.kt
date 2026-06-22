@@ -36,11 +36,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.annotation.StringRes
 import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.ui.theme.PoppinsFamily
 import kotlinx.coroutines.delay
+
+/**
+ * Maps a stored [Challenge.failReason] to the German user-facing loss reason. `null` and any legacy/
+ * unknown value (e.g. "client_loss") fall back to the generic text — never crashes. Shared by the
+ * Hard loss dialog and the Soft fail screen.
+ */
+@StringRes
+fun failReasonStringRes(failReason: String?): Int = when (failReason) {
+    "limit_exceeded" -> R.string.fail_reason_limit_exceeded
+    "abandon" -> R.string.fail_reason_abandon
+    "permission_violation" -> R.string.fail_reason_permission
+    "usage_violation" -> R.string.fail_reason_usage
+    "reconciliation" -> R.string.fail_reason_reconciliation
+    else -> R.string.fail_reason_unknown
+}
 
 /**
  * RED loss result dialog — the unified screen shown on every Hard Mode loss path (worker capture,
@@ -120,9 +136,19 @@ fun ChallengeFailedDialog(
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                // Subtitle
+                // Challenge identity (which challenge was lost)
                 Text(
-                    text = stringResource(R.string.hard_fail_subtitle),
+                    text = stringResource(R.string.failed_dialog_challenge_label, challenge.appDisplayName),
+                    fontFamily = PoppinsFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = Color.Black,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                // Subtitle — the reason this challenge failed
+                Text(
+                    text = stringResource(failReasonStringRes(challenge.failReason)),
                     fontFamily = PoppinsFamily,
                     fontSize = 14.sp,
                     color = TextSecondary,

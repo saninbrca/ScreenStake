@@ -175,24 +175,38 @@ class ChallengeRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun updateChallengeStatus(id: String, status: ChallengeStatus): Result<Unit> {
+    override suspend fun updateChallengeStatus(
+        id: String,
+        status: ChallengeStatus,
+        failReason: String?
+    ): Result<Unit> {
         return try {
             val statusStr = status.name.lowercase()
             challengeDao.updateStatus(id, statusStr)
+            // For FAILED: persist the loss cause locally (UX only) so the loss dialog can show it
+            // immediately, even before the Firestore round-trip. Falls back to "client_loss" for
+            // callers that don't classify the cause.
+            val effectiveReason = if (status == ChallengeStatus.FAILED) {
+                failReason ?: "client_loss"
+            } else null
+            if (status == ChallengeStatus.FAILED) {
+                challengeDao.updateFailReason(id, effectiveReason)
+            }
             // Fire-and-forget Firestore sync.
-            // For FAILED/CANCELLED: delete the Firestore document so it never reappears on the
-            // next sync (fetchActiveChallenges filters status="active"; Firestore rules block
-            // client status updates so the doc would otherwise stay "active" and be re-inserted
-            // into Room on every restart). Room row is kept at "failed"/"cancelled" for History.
-            // For other statuses: best-effort status update (may be blocked by rules for some).
+            // For FAILED: call the markChallengeFailed Cloud Function, which writes status="failed"
+            // (and failReason) in place via the Admin SDK (the client cannot write `status` itself —
+            // Firestore rules block it). The doc and its dailyLogs are PRESERVED (not deleted),
+            // keeping the audit trail and the Redemption refund path intact; the CF is idempotent on
+            // already-terminal docs. fetchFinishedChallenges + sync Guard B restore it to Room on the
+            // next sync. For other statuses: best-effort status update (may be blocked by rules).
             appScope.launch {
                 firebaseAuthService.logAuthState("ChallengeRepo.updateChallengeStatus")
                 val uid = firebaseAuthService.currentUserId()
                 if (uid == null) {
                     Timber.w("updateChallengeStatus: skipping Firestore sync — user not signed in")
                 } else if (status == ChallengeStatus.FAILED) {
-                    Timber.d("updateChallengeStatus: deleting Firestore doc for %s (status=%s)", id, statusStr)
-                    firestoreService.deleteChallenge(uid, id)
+                    Timber.d("updateChallengeStatus: marking Firestore doc FAILED for %s (status=%s reason=%s)", id, statusStr, effectiveReason)
+                    firestoreService.markChallengeFailed(id, effectiveReason ?: "client_loss")
                 } else {
                     Timber.d("updateChallengeStatus: challenge=%s status=%s uid=%s", id, statusStr, uid)
                     firestoreService.updateChallengeStatus(uid, id, statusStr)
@@ -272,6 +286,7 @@ class ChallengeRepositoryImpl @Inject constructor(
             refundAmountCents = refundAmountCents,
             pendingLimitValue = pendingLimitValue,
             pendingLimitAppliesAt = pendingLimitAppliesAt,
+            failReason = failReason,
         )
     }
 
@@ -317,5 +332,6 @@ class ChallengeRepositoryImpl @Inject constructor(
         refundAmountCents = refundAmountCents,
         pendingLimitValue = pendingLimitValue,
         pendingLimitAppliesAt = pendingLimitAppliesAt,
+        failReason = failReason,
     )
 }

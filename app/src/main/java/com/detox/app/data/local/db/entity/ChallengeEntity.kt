@@ -80,4 +80,12 @@ data class ChallengeEntity(
     @androidx.room.ColumnInfo(name = "pending_limit_value", defaultValue = "NULL") val pendingLimitValue: Int? = null,
     /** Timestamp (millis) when pendingLimitValue should be applied (= next midnight). */
     @androidx.room.ColumnInfo(name = "pending_limit_applies_at", defaultValue = "NULL") val pendingLimitAppliesAt: Long? = null,
+
+    /**
+     * Why the challenge failed, for the loss result dialog only (UX, not money logic).
+     * "limit_exceeded" | "abandon" | "permission_violation" | "usage_violation" | "reconciliation".
+     * Null when active/completed or unknown. Written locally at loss time and/or pulled from Firestore
+     * on sync; never overwritten by sync once the row is already terminal locally.
+     */
+    @androidx.room.ColumnInfo(name = "failReason", defaultValue = "NULL") val failReason: String? = null,
 )

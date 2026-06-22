@@ -32,6 +32,7 @@ object NotificationHelper {
     private const val NOTIF_ID_PERMISSION_FAILED      = 9002
     private const val NOTIF_ID_PERMISSION_WARNING_BASE = 9010  // 9010..9013 for levels 0-3
     private const val NOTIF_ID_USAGE_VIOLATION        = 9040
+    private const val NOTIF_ID_HEARTBEAT_WARNING      = 9050
 
     /** Must be called before posting any notification — safe to call repeatedly. */
     fun createChannels(context: Context) {
@@ -258,6 +259,34 @@ object NotificationHelper {
             Timber.d("Permission failed notification posted")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping permission failed notification")
+        }
+    }
+
+    // ── Heartbeat (went-dark forfeit) notifications ───────────────────────────
+
+    /**
+     * Best-effort nudge fired by [PermissionCheckWorker] when EMUI has clearly throttled the
+     * heartbeat worker. Tells the user to open the app so their stake is not forfeited as
+     * "device went dark". Deep-links to the dashboard.
+     */
+    fun sendHeartbeatWarning(context: Context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_heartbeat_warn_title))
+            .setContentText(context.getString(R.string.notif_heartbeat_warn_body))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                context.getString(R.string.notif_heartbeat_warn_body)
+            ))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(buildDeepLinkIntent(context, NOTIF_ID_HEARTBEAT_WARNING, "dashboard"))
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_HEARTBEAT_WARNING, notification)
+            Timber.d("Heartbeat warning notification posted")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping heartbeat warning notification")
         }
     }
 

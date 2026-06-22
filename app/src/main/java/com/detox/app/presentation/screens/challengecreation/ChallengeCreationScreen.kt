@@ -1134,6 +1134,9 @@ private fun Step7Confirm(
     // mandated withdrawal-rights waiver (FAGG § 18) are only shown for HARD.
     val isHardMode = state.selectedMode == ChallengeMode.HARD
     var waiverChecked by remember { mutableStateOf(false) }
+    // Second mandatory Hard Mode consent: deleting/disabling the app during an active
+    // challenge forfeits the stake (server-side went-dark detection). Hard-blocks Start.
+    var forfeitChecked by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1243,6 +1246,12 @@ private fun Step7Confirm(
                 checked = waiverChecked,
                 onToggle = { waiverChecked = !waiverChecked },
             )
+
+            WaiverCheckboxRow(
+                checked = forfeitChecked,
+                onToggle = { forfeitChecked = !forfeitChecked },
+                label = stringResource(R.string.uninstall_forfeit_consent_text),
+            )
         }
 
         if (uiState is ChallengeCreationUiState.Error) {
@@ -1264,9 +1273,10 @@ private fun Step7Confirm(
                 onCreateChallenge()
             },
             modifier = Modifier.fillMaxWidth().height(54.dp),
-            // Legal gate: the waiver checkbox must be ticked before a Hard Mode
-            // payment can start. Soft Mode has no payment, so no waiver needed.
-            enabled = !isLoading && (!isHardMode || waiverChecked),
+            // Legal gate: BOTH the FAGG waiver and the uninstall-forfeit consent must be
+            // ticked before a Hard Mode payment can start. Soft Mode has no payment/stake,
+            // so neither consent is required.
+            enabled = !isLoading && (!isHardMode || (waiverChecked && forfeitChecked)),
             shape = BtnShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = GreenPrimary,
@@ -1401,6 +1411,7 @@ private fun FeeRow(label: String, value: String, valueColor: Color) {
 private fun WaiverCheckboxRow(
     checked: Boolean,
     onToggle: () -> Unit,
+    label: String = stringResource(R.string.withdrawal_waiver_text),
 ) {
     Row(
         modifier = Modifier
@@ -1433,7 +1444,7 @@ private fun WaiverCheckboxRow(
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(
-            text = stringResource(R.string.withdrawal_waiver_text),
+            text = label,
             fontSize = 14.sp,
             color = FeeRowLabel,
         )

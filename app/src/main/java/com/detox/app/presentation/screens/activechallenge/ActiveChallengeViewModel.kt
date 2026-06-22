@@ -269,7 +269,7 @@ class ActiveChallengeViewModel @Inject constructor(
      * it (capturePayment is idempotent, so re-running abandon is safe).
      */
     private suspend fun markFailedAndFinish(mode: String) {
-        challengeRepository.updateChallengeStatus(challengeId, ChallengeStatus.FAILED)
+        challengeRepository.updateChallengeStatus(challengeId, ChallengeStatus.FAILED, "abandon")
             .onSuccess {
                 Timber.d("Challenge $challengeId abandoned")
                 analyticsService.logChallengeAbandoned(mode)

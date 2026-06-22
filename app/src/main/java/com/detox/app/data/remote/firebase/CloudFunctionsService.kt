@@ -121,6 +121,25 @@ class CloudFunctionsService @Inject constructor(
         Result.failure(e)
     }
 
+    /**
+     * Marks a challenge FAILED server-side (in-place Admin-SDK status write — the doc and its
+     * dailyLogs are PRESERVED, never deleted). Replaces the old client doc-delete on a loss so the
+     * audit trail + Redemption refund path survive. The CF derives the uid from the auth token and
+     * is idempotent (already failed/completed → no second write). NEVER touches Stripe — the stake
+     * is always captured before this is called.
+     */
+    suspend fun markChallengeFailed(challengeId: String, failReason: String): Result<Unit> = try {
+        callFunction("markChallengeFailed", mapOf(
+            "challengeId" to challengeId,
+            "failReason" to failReason
+        ))
+        Timber.d("markChallengeFailed: %s reason=%s", challengeId, failReason)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "markChallengeFailed failed — %s", challengeId)
+        Result.failure(e)
+    }
+
     suspend fun cancelOrRefundPayment(
         paymentIntentId: String,
         challengeId: String? = null,

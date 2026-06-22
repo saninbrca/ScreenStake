@@ -3,14 +3,17 @@ package com.detox.app.data.repository
 import android.content.Context
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.DailyLogDao
+import com.detox.app.data.local.db.dao.PendingHardChallengeDao
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.DailyLogEntity
+import com.detox.app.data.local.db.entity.toChallenge
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.SyncRepository
 import com.detox.app.service.OverlayManager
@@ -30,7 +33,14 @@ class SyncRepositoryImpl @Inject constructor(
     private val challengeDao: ChallengeDao,
     private val dailyLogDao: DailyLogDao,
     private val groupChallengeRepository: GroupChallengeRepository,
+    private val pendingHardChallengeDao: PendingHardChallengeDao,
+    private val challengeRepository: ChallengeRepository,
 ) : SyncRepository {
+
+    private companion object {
+        /** Stripe manual-capture pre-auth window. Manual PIs not captured within this expire. */
+        const val MANUAL_AUTH_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
+    }
 
     override suspend fun syncUserData(): Result<Unit> {
         return try {
@@ -86,7 +96,10 @@ class SyncRepositoryImpl @Inject constructor(
                         existing == null -> {
                             // Absent locally → restore the finished challenge + its logs.
                             // Insert the challenge BEFORE its logs (Room FK on daily_logs.challengeId).
-                            challengeDao.insertChallenge(challenge.toEntity())
+                            // completionShown=1: this is a historical re-hydration (Room was cleared),
+                            // NOT a fresh loss — it must never pop the loss/win dialog. A fresh device
+                            // loss keeps its existing local row (terminal) and hits the else branch.
+                            challengeDao.insertChallenge(challenge.toEntity().copy(completionShown = 1))
                             val logs = firestoreService.fetchDailyLogs(userId, challenge.id)
                             logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
                             Timber.d(
@@ -100,8 +113,13 @@ class SyncRepositoryImpl @Inject constructor(
                             // via the DAO directly (NEVER the repo wrapper, which would delete the
                             // server doc and destroy its payoutStatus/payout record). Never REPLACE
                             // the row and never touch DailyLogEntity / live-tracking fields.
+                            // This is a server-detected loss the device never classified locally, so
+                            // also pull the server failReason (separate column — status still via
+                            // updateStatus()) so the loss dialog can show the cause. The loss pops
+                            // once (completionShown is left at its synced value, 0).
                             val serverStatus = challenge.status.name.lowercase()
                             challengeDao.updateStatus(challenge.id, serverStatus)
+                            challenge.failReason?.let { challengeDao.updateFailReason(challenge.id, it) }
                             Timber.i(
                                 "SyncRepository: reconciled active→%s for challenge %s from server settlement",
                                 serverStatus, challenge.id
@@ -116,6 +134,14 @@ class SyncRepositoryImpl @Inject constructor(
             } catch (e: Exception) {
                 Timber.w(e, "SyncRepository: finished-challenge restore failed (non-fatal)")
             }
+
+            // 2c. MONEY-CRITICAL recovery net: a Hard Mode payment may have succeeded (stake captured
+            //     for >7-day challenges) while the challenge doc was never written — e.g. the
+            //     ViewModel/Activity was recreated during the Stripe round trip and onPaymentConfirmed
+            //     aborted. PendingHardChallenge holds the full payload; re-create any doc still missing
+            //     using the SAME challengeId + PaymentIntent (idempotent merge-set — NEVER a new PI).
+            //     Runs AFTER the active/finished restore above so the Room check below is authoritative.
+            recoverPendingHardChallenges()
 
             // 3. Sync group challenge statuses from Firestore → Room so stale 'active' records
             //    (from cancelled/completed group challenges) don't block app selection.
@@ -261,6 +287,53 @@ class SyncRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "SyncRepository: sync failed")
             Result.failure(e)
+        }
+    }
+
+    /**
+     * MONEY-CRITICAL recovery net (Part B). For every durable [PendingHardChallengeEntity]:
+     *  - If the challenge doc now exists in Room → creation already succeeded → drop the record.
+     *  - Else, re-create the challenge under the SAME challengeId + PaymentIntent. This is fully
+     *    idempotent (`saveChallenge` is a merge-set under the unified cid) and NEVER creates a new
+     *    PaymentIntent — so it can never double-charge.
+     *  - Manual-capture pre-auths (`isImmediateCapture == 0`) past the [MANUAL_AUTH_WINDOW_MS] auth
+     *    window are treated as expired/canceled → dropped without re-creating (no stake to honor).
+     *
+     * Re-creating is money-safe even in the residual "PaymentSheet was canceled but the record
+     * lingered" case: it only writes a doc; every downstream money move (capture on loss, refund on
+     * win) remains gated and would no-op/leave the challenge ACTIVE on a canceled PI. Wrapped so a
+     * failure never breaks the rest of sync; a record that fails to re-create is kept for next time.
+     */
+    private suspend fun recoverPendingHardChallenges() {
+        try {
+            val pendings = pendingHardChallengeDao.getAll()
+            if (pendings.isEmpty()) return
+            val now = System.currentTimeMillis()
+            for (p in pendings) {
+                // Already created? (active/finished restore above populated Room.)
+                if (challengeDao.getChallengeById(p.challengeId) != null) {
+                    pendingHardChallengeDao.deleteByChallengeId(p.challengeId)
+                    Timber.d("SyncRepository: pending hard challenge %s already persisted — cleared record", p.challengeId)
+                    continue
+                }
+                // Manual-capture pre-auth past its window → expired/canceled, no captured stake to honor.
+                if (p.isImmediateCapture == 0 && now - p.paymentIntentCreatedAt > MANUAL_AUTH_WINDOW_MS) {
+                    pendingHardChallengeDao.deleteByChallengeId(p.challengeId)
+                    Timber.w("SyncRepository: pending hard challenge %s pre-auth expired — dropped (no doc created)", p.challengeId)
+                    continue
+                }
+                Timber.w("SyncRepository: recovering orphaned paid challenge %s (PI=%s) — re-creating doc", p.challengeId, p.paymentIntentId)
+                challengeRepository.createChallenge(p.toChallenge(now))
+                    .onSuccess {
+                        pendingHardChallengeDao.deleteByChallengeId(p.challengeId)
+                        Timber.i("SyncRepository: recovered challenge %s and cleared pending record", p.challengeId)
+                    }
+                    .onFailure { e ->
+                        Timber.e(e, "SyncRepository: recovery createChallenge failed for %s — record kept for next sync", p.challengeId)
+                    }
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "SyncRepository: pending-hard-challenge recovery failed (non-fatal)")
         }
     }
 

@@ -25,8 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
@@ -110,6 +112,21 @@ fun WebsiteBlockedOverlay(
                         fontSize = 13.sp,
                         color = Color(0xFF333333),
                         textAlign = TextAlign.Center
+                    )
+                }
+
+                // ── User's own motivation ("why") ──────────────────────────────────
+                val motivation = motivationText?.takeIf { it.isNotBlank() }
+                if (motivation != null) {
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        text = stringResource(R.string.overlay_motivation_quote, motivation),
+                        fontSize = 14.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = Color(0xFFAAAAAA),
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 

@@ -14,20 +14,27 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
+import com.detox.app.presentation.screens.dashboard.failReasonStringRes
 
 @Composable
 fun SoftFailResultScreen(
     daysHeld: Int,
     onNewChallenge: () -> Unit,
     onHome: () -> Unit,
+    viewModel: SoftFailResultViewModel = hiltViewModel(),
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -44,7 +51,26 @@ fun SoftFailResultScreen(
                 textAlign = TextAlign.Center,
             )
 
+            uiState.appDisplayName?.let { name ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.failed_dialog_challenge_label, name),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
+
+            // The reason this challenge failed (falls back to generic text when unknown).
+            Text(
+                text = stringResource(failReasonStringRes(uiState.failReason)),
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
                 text = stringResource(R.string.soft_fail_result_subtitle),

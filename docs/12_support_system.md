@@ -1,6 +1,7 @@
 # 12 — Support System
 > **Scope:** In-app support (contact form + FAQ), the `supportTickets` collection, private admin notes, the dashboard reply flow, and the Firestore rules.
 > **When to load:** Any work on `SupportScreen`, `FaqScreen`, `supportTickets`, the admin Support-Tickets tab, or support-related Firestore rules.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 

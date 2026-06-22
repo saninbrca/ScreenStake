@@ -1,6 +1,14 @@
 # 04 — Group Challenges
 > **Scope:** Group Challenge creation, minimum requirements, Firestore data structure, sync patterns, Taunt feature, winner payout flow.
 > **When to load:** Any work on Group Challenges, Friends tab, leaderboard, `GroupChallengeFirestoreService`, `GroupChallengeDao`, or payout system.
+> _Last verified: 2026-06-22 (commit e287b79)_
+
+> ⚠️ **Disabled at launch:** Group Challenges ship **OFF** for launch via the remote flag
+> `config/app.groupChallengeEnabled = false` (gates NEW group creation/entry only; the code fallback
+> stays fail-open `true`). The reason is that groups currently settle **only device-side** — there is
+> no server-scheduled settlement backstop like solo Hard Mode's reconciliation net, so an un-opened
+> participant device after `endDate` can strand winnings/stakes. Re-enable only after a server-side
+> group settlement path lands. See `docs/13` (flag) and `launch-investigation.md` item 3.
 
 ---
 
@@ -271,7 +279,7 @@ Group Challenge uses TWO parallel sync targets:
 ### Target 1 — DailyLog (identical to Solo challenges)
 users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
     consciousOpens: Int
-    timeUsedMs: Long         (if TIME_LIMIT)
+    totalMinutes: Int        (if TIME_LIMIT — minutes, NOT ms)
     budgetUsedMs: Long       (if DAILY_BUDGET)
     budgetRemainingMs: Long  (if DAILY_BUDGET)
     updatedAt: Long
@@ -280,7 +288,7 @@ users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
 ### Target 2 — Participants Array (Group-specific)
 groupChallenges/{groupId}/participants[]/
     opensToday: Int          ← mirrored from DailyLog consciousOpens
-    timeUsedMinutes: Int     ← mirrored from DailyLog timeUsedMs / 60000
+    timeUsedMinutes: Int     ← participants-array field, mirrored from DailyLog totalMinutes
 
 SYNC RULE: When DailyLog is written → also update participants array.
 Use arrayRemove + arrayUnion pattern (NEVER dot notation).
@@ -530,17 +538,23 @@ Called by the **creator** to cancel a challenge in `waiting` status.
 
 ---
 
-## 5-Day Stripe Authorization Window
+## 5-Day Authorization Window (self-imposed buffer — NOT Stripe's limit)
 
-Stripe PaymentIntents created with `capture_method: "manual"` are only authorized for **5 days**.
-After 5 days the authorization expires and capture becomes impossible.
+Stripe PaymentIntents created with `capture_method: "manual"` hold their authorization for
+**~7 days** (Stripe's real limit); after that the authorization expires and capture becomes impossible.
+ScreenStake does **not** rely on that full window for groups. `createGroupChallenge` sets a
+**conservative 5-day buffer** — `authorizationExpiresAt = now + 5 days` (`functions/src/index.ts`,
+`Date.now() + 5 * MILLIS_PER_DAY`) — which sits *before* Stripe's ~7-day expiry, leaving margin for
+capture/retry. The **5 days is our own enforced cap, not Stripe's limit.**
 
 **Rule for challenge start timing:**
-- `joinGroupChallenge` CF creates the PaymentIntent (authorization clock starts)
-- Challenge MUST be started within 5 days of the last participant joining
-- If `endDate - startDate` would push any capture beyond 5 days → creator must be warned
+- `joinGroupChallenge` CF creates the PaymentIntent (Stripe's ~7-day authorization clock starts)
+- Challenge MUST be started within our **5-day buffer** of the last participant joining
+- If `endDate - startDate` would push any capture beyond the 5-day buffer → creator must be warned
 
-✅ **Automatic enforcement:** `expireGroupChallenge` CF runs via DailyEvaluationWorker. Authorization window = 5 days. After 5 days without start → PaymentIntents cancelled automatically.
+✅ **Automatic enforcement:** `expireGroupChallenge` CF runs via DailyEvaluationWorker and enforces the
+5-day buffer (`authorizationExpiresAt`). After the buffer elapses without start → PaymentIntents
+cancelled automatically — well before Stripe's ~7-day authorization actually expires.
 
 ---
 
@@ -560,7 +574,7 @@ After 5 days the authorization expires and capture becomes impossible.
 Identical logic to Solo challenges — read from Room DailyLog always.
 
 SESSION_LIMIT:  progress = consciousOpens / limitValueSessions
-TIME_LIMIT:     progress = timeUsedMs / (limitValueMinutes * 60000)
+TIME_LIMIT:     progress = totalMinutes / limitValueMinutes
 DAILY_BUDGET:   progress = budgetUsedMs / (dailyBudgetMinutes * 60000)
 
 Display in Dashboard group card:
@@ -600,10 +614,10 @@ that matches Solo behavior. Previously `opensToday` showed 5/5 or 6/5 instead of
 
 ### TIME_LIMIT (Group)
 Same as SESSION_LIMIT flow but:
-timeUsedMs tracked via UsageTrackingService — ONLY during active app usage.
+totalMinutes tracked via UsageTrackingService — ONLY during active app usage.
 Timer pauses when overlay is shown. Timer stops when user leaves the app.
-timeUsedMinutes mirrored to participants array every 10s
-Limit reached: timeUsedMs >= limitValueMinutes * 60000 → **LimitExceededOverlay** (same as Solo)
+timeUsedMinutes (participants array) mirrored from DailyLog totalMinutes every 10s
+Limit reached: totalMinutes >= limitValueMinutes → **LimitExceededOverlay** (same as Solo)
 NO auto-fail. Manual "Aufgeben" only.
 
 **TIME_LIMIT session persistence:** Session end time stored in SharedPreferences as
@@ -611,7 +625,7 @@ NO auto-fail. Manual "Aufgeben" only.
 reset the session — the end time survives and the overlay is not re-shown if the session
 is still valid on return.
 
-**TIME_LIMIT timer fix:** Timer previously incremented `timeUsedMinutes` during overlay
+**TIME_LIMIT timer fix:** Timer previously incremented `totalMinutes` during overlay
 display and when the user was not in the app. Both cases are now correctly excluded.
 
 ### DAILY_BUDGET (Group)

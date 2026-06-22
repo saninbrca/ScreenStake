@@ -1,6 +1,7 @@
 # 03 — Hard Mode & Stripe
 > **Scope:** Hard Mode rules, Stripe payment flow (pre-auth → capture on fail → refund on success), app lockout during Hard Mode, Emergency Unlock, device binding.
 > **When to load:** Any work on Hard Mode, Stripe integration, `PaymentRepository`, Cloud Functions for payments, or the Hard Mode lockout overlay.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -301,8 +302,8 @@ Identical to Soft Mode — same Room + Firestore pattern:
 - Firestore path: users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
 
 ### TIME_LIMIT (Hard Mode)
-- timeUsedMs written to Room every 10s via UsageTrackingService
-- timeUsedMs written to Firestore every 10s (fire-and-forget, SetOptions.merge())
+- totalMinutes written to Room every 10s via UsageTrackingService
+- totalMinutes written to Firestore every 10s (fire-and-forget, SetOptions.merge())
 - On app start: restore from Firestore → Room
 
 ### DAILY_BUDGET (Hard Mode)
@@ -314,7 +315,7 @@ Identical to Soft Mode — same Room + Firestore pattern:
 ### Fail Detection (all limit types)
 DailyEvaluationWorker reads from Room DailyLog (DateUtils.todayKey()):
     consciousOpens >= limitValueSessions → FAIL
-    timeUsedMs >= limitValueMinutes * 60000 → FAIL
+    totalMinutes >= limitValueMinutes → FAIL
     budgetUsedMs >= dailyBudgetMinutes * 60000 → FAIL
 
 On FAIL — CRITICAL ORDER (never reverse):
@@ -434,15 +435,12 @@ users/{userId}/
 → Full payout rates and fee tables: see docs/09_payout_and_fees.md
 
 ### Payout Rates (App Fee)
-| Challenge type | User gets back | App keeps |
-|---------------|---------------|-----------|
-| Hard Mode Solo win | `floor(amountCents × 0.80)` | 20% |
-| Redemption Challenge win | `floor(originalAmountCents × 0.60)` | 40% |
-| Group Challenge win (losers exist) | `floor(stake × 0.80)` + prize share | 20% of own stake |
-| Group Challenge win (nobody failed) | 100% of stake | 0% |
-| Group prize pool | `totalCapturedFromLosers - floor(total × 0.10)` / winners | 10% of losers' pot |
+> **Canonical owner: `docs/09_payout_and_fees.md`.** The full rate/fee table lives there — not
+> duplicated here, to avoid drift. (The inline percentages in the flow explanations above are kept
+> for readability.)
 
-**Rule:** Always use `Math.floor` / `floor()` — never round up (avoid overpayment).
+**Money-critical rule:** always use `Math.floor` / `floor()` for refund/fee math — never round up
+(avoid overpayment).
 
 ### Hard Mode
 **Trigger:** `DailyEvaluationWorker` detects challenge `COMPLETED` (now ≥ endDate, no limitExceeded)
@@ -545,6 +543,76 @@ client writes to `capturedAt` and `usageCapturedAt` — only Cloud Function Admi
 
 ---
 
+## Device-detected loss → `markChallengeFailed` CF (doc retained)
+
+A **device-detected** Hard Mode loss (limit exceeded in `DailyEvaluationWorker`, permission timeout in
+`PermissionCheckWorker`, or **abandon**) now captures the stake first, then marks the challenge FAILED
+**without deleting the Firestore doc**. `ChallengeRepositoryImpl.updateChallengeStatus(FAILED, failReason)`
+calls the **`markChallengeFailed`** CF, which writes `status:"failed"` + the **passed** `failReason` +
+`failedAt` **in place** via the Admin SDK.
+
+- **`failReason` is the real cause now, not a constant.** Each loss path threads its own cause:
+  `"limit_exceeded"` (`DailyEvaluationWorker` capture loss + `OverlayManager` soft-fail), `"abandon"`
+  (the abandon flow), `"permission_violation"` (`PermissionCheckWorker`). The repo falls back to
+  `"client_loss"` only when a caller passes no cause (legacy). The value is also persisted to the Room
+  `failReason` column (migration 25→26) so `ChallengeFailedDialog` can show the **challenge name** + a
+  human-readable reason. Server-set causes (`usage_violation`/`reconciliation`/`device_dark`) arrive via
+  sync and never overwrite an already-terminal local row.
+
+- **Why a CF:** the client can never write the protected `status` key (Firestore rules block it). The
+  CF derives the uid from the auth token and updates the doc under that caller's own subcollection
+  (no IDOR); a missing doc → HTTP 400.
+- **Idempotent:** a doc already `failed`/`completed` returns success with NO second write.
+- **Never touches money:** the capture always happens BEFORE this call; the CF never calls Stripe and
+  never writes `payoutStatus` or bumps counters (the capture path owns those).
+- **Audit trail preserved:** the challenge doc AND its nested tamper-evident `dailyLogs` are KEPT
+  (previously the device DELETED the doc + cascade-deleted the logs). This also keeps the **Redemption**
+  refund path working — it reads the original challenge's stored stake, which now still exists.
+- **Capture-gate:** FAILED is set ONLY inside `capturePayment.onSuccess`; on a capture failure the
+  challenge stays ACTIVE (no fail, no `markChallengeFailed` call) for the next worker cycle / the server
+  reconciliation net. (The PI-less legacy branch in `PermissionCheckWorker` is the one place FAILED is
+  set without a capture — nothing to capture there.)
+
+> **CF change → `firebase deploy --only functions`.** See `docs/firestore-schema.md` Part 2 for the
+> full per-field lifecycle.
+
+---
+
+## "Device went dark = forfeit" heartbeat (SHIPS DARK)
+
+An active solo Hard Mode device that stops reporting (app uninstalled, or accessibility/overlay
+disabled so nothing tracks) used to be auto-refunded as a WIN by the reconciliation net (clean logs =
+no `limitExceeded`). It is now a **LOSS/forfeit**, detected by the ABSENCE of a periodic heartbeat
+(Android has no uninstall callback).
+
+- **Heartbeat write.** `PermissionCheckWorker.writeHeartbeatIfHardActive` merges
+  `permissionStatus/current.lastSeenAt = now` at the **top of `doWork()`** (before any early return),
+  gated on "user has ≥1 active HARD challenge". Owner-writable by design — a cheater can only avoid the
+  forfeit by keeping the real app installed and beating (= honest behaviour).
+- **Reconciliation went-dark branch (B2.5).** `runDueChallengeReconciliation` now scans ALL active
+  hard challenges (the `endDate<=now` query filter is dropped; due-ness is computed per-doc) and,
+  between the B2 unresolved-marker deferral and the B3 `lossProven` test, forfeits any whose
+  `lastSeenAt` (or `startDate` if never beat) is older than `config/app.wentDarkGraceMs`. It reuses the
+  EXISTING loss settlement (capture-first, idempotency key, counter bumps) with
+  `failReason:"device_dark"`. A proven `limitExceeded` loss keeps `failReason:"reconciliation"` and
+  takes precedence. Runs for not-yet-due challenges too, so a ≤7d manual-capture auth is captured
+  mid-challenge while still valid.
+- **GRACE & fail-safety.** `wentDarkGraceMs` is server-tunable (recommended 72h). A
+  missing/invalid/unreadable value ⇒ `Number.MAX_SAFE_INTEGER` ⇒ the predicate is never true ⇒ NEVER
+  forfeit. Combined with the existing `reconciliationEnabled=false` + `reconciliationDryRun=true` gates,
+  the feature ships fully dark and forfeits nobody until ops arms all three. See `docs/13`.
+- **Disclosure.** A mandatory **Step-7 forfeit-consent checkbox** hard-blocks Start until ticked.
+- **Best-effort nudge.** At ~grace/2 (36h) of worker suppression the device posts a "Detox meldet sich
+  nicht mehr — open the app" warning (`NotificationHelper.sendHeartbeatWarning`).
+- **KNOWN RESIDUALS (accepted).** (1) For a **5–7-day** ≤7-day challenge, a device that goes dark in
+  the back half can escape capture if GRACE outruns the remaining Stripe manual-auth window (auth
+  releases ~7d after creation) — the auth-expiry is the backstop and the effective grace is shorter for
+  1–3-day challenges. (2) `lastSeenAt` is owner-writable (residual by design — see above). Tightening
+  GRACE trades the residual against Huawei false-forfeits (EMUI throttles the worker for hours/days even
+  when installed — the dominant risk). See `docs/10 §5`.
+
+---
+
 ## Rooted Device (Hard Mode)
 
 - RootBeer check runs before Hard Mode payment initiation (in `ChallengeCreationViewModel`).
@@ -574,7 +642,7 @@ client writes to `capturedAt` and `usageCapturedAt` — only Cloud Function Admi
 Identical logic to Soft Mode — read from Room DailyLog always.
 
 SESSION_LIMIT:  progress = consciousOpens / limitValueSessions
-TIME_LIMIT:     progress = timeUsedMs / (limitValueMinutes * 60000)
+TIME_LIMIT:     progress = totalMinutes / limitValueMinutes
 DAILY_BUDGET:   progress = budgetUsedMs / (dailyBudgetMinutes * 60000)
 
 Display in Detail screen:

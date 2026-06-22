@@ -1,6 +1,7 @@
 # 10 — Security & Anti-Cheat
 > **Scope:** SQLCipher DB encryption, server-side money authority, Anti-Cheat detection, ban system, the irreducible cheat residual.
 > **When to load:** Any work on `DatabaseKeyManager`, the encrypted Room DB, `cancelOrRefundPayment`/`capturePayment` validation, `dailyLogs` rules, `detectSuspiciousUsers`, `setUserBanStatus`, or `AccountDisabledScreen`.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -131,7 +132,7 @@ A **flagging-only** system that surfaces suspicious users for **manual admin rev
 
 ### Part 2 — `detectSuspiciousUsers` Cloud Function
 `onRequest` + `requireAdmin`. **READ-ONLY — never bans, modifies, or deletes user data.** Computes an
-**additive** risk score per user from 5 signals, returns flagged users sorted by `riskScore` desc:
+**additive** risk score per user from 6 signals, returns flagged users sorted by `riskScore` desc:
 
 | Signal | Points | Condition |
 |--------|--------|-----------|
@@ -140,6 +141,7 @@ A **flagging-only** system that surfaces suspicious users for **manual admin rev
 | Rooted device | **25** | any challenge with `isRooted === true` |
 | Perfect win | **20** | completed solo Hard Mode, ≥ 3 daily logs, ALL `consciousOpens === 0` AND `totalMinutes === 0` |
 | Instant win | **15** | completed solo Hard Mode in < 1 day actual elapsed time (`payoutDate`/`endDate` − `startDate`) |
+| Reconciliation low-evidence | **6** | challenge has `reconciliationLowEvidence === true` — the server reconciliation net refunded a WIN despite **zero** nested `dailyLogs` (could not confirm a clean day). Soft signal: the money was already returned (favour-user policy), but it surfaces for review (`type: "reconciliation_low_evidence"`, index.ts:2302). |
 
 Response: `{ success, flaggedCount, flagged: [{ userId, username, email, riskScore, signals:
 [{type, description, points}], sharedWith: [userIds], reviewed: {decision, reviewedAt, note}|null }] }`.
@@ -203,3 +205,22 @@ banned user cannot self-unban within their 1h token window); only the CF (admin)
 permission path) captures the stake server-side when enforcement is disabled — independent of app
 state. See `docs/05_huawei_and_permissions.md`. Anti-cheat flagging (perfect/instant win, shared
 device/IBAN) catches the statistical fingerprint of suppression for manual review.
+
+**Went-dark heartbeat (June 2026) — closes the uninstall case of the suppress-gap.** The largest
+form of suppression — uninstalling the app entirely, after which no `dailyLogs`/permission markers
+are ever written and the old reconciliation net auto-refunded a WIN — is now a LOSS. `PermissionCheckWorker`
+merges `lastSeenAt` every cycle (gated on ≥1 active HARD challenge); `runDueChallengeReconciliation`
+forfeits any active hard challenge whose heartbeat is staler than `config/app.wentDarkGraceMs` (fail-safe
+MAX = never forfeit; ships dark behind `reconciliationEnabled`/`reconciliationDryRun` + a positive
+grace). `failReason:"device_dark"`. See `docs/00`, `docs/03`.
+**Residual A (timing):** went-dark is GRACE-delayed, so a device that goes dark in the **back half of a
+5–7 day ≤7d challenge** can still beat the ~7d Stripe manual-auth expiry and escape capture; GRACE is
+bounded below by the Huawei false-forfeit risk (EMUI throttles the heartbeat worker for hours/days even
+when the app is installed), so it cannot be made arbitrarily tight. Accepted, not closed.
+**Residual B (owner-writable `lastSeenAt`):** the heartbeat lives in the user's own
+`permissionStatus/current` sub-document, so it is owner-writable by design — there is no rule that only
+a CF may set it. A sufficiently determined cheater could forge a fresh `lastSeenAt` to look "alive". But
+to keep beating honestly they must keep the **real** app installed and running (which means real
+enforcement + real `dailyLogs`), and forging the field requires reverse-engineering the doc path rather
+than just deleting the app — so it strictly raises the bar over the old delete-and-win path. Accepted,
+not closed.

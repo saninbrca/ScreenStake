@@ -1,6 +1,7 @@
 # 02 — Core Mechanics & Soft Mode
 > **Scope:** Conscious Opens (the anti-cheat core), Soft Mode rules, all Overlay logic, Daily Evaluation, Streak tracking, Dashboard display.
 > **When to load:** Any work on overlays, AccessibilityService, DailyLog, DailyEvaluationWorker, Dashboard, or Soft Mode challenge creation.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -82,16 +83,16 @@ Check SharedPreferences: active session running? ("session_end_time_{packageName
   YES + not expired → allow app directly (no overlay)
   NO or expired →
 ↓
-OverlayManager reads timeUsedMs from Room DailyLog (DateUtils.todayKey())
+OverlayManager reads totalMinutes from Room DailyLog (DateUtils.todayKey())
 ↓
-timeUsedMs < limitMs → SessionIntentionOverlay (Stage 1)
+totalMinutes < limitValueMinutes → SessionIntentionOverlay (Stage 1)
   Same flow as SESSION_LIMIT
   After allow: UsageTrackingService starts tracking time
-    → writes timeUsedMs to Room every 10s
-    → writes timeUsedMs to Firestore every 10s (fire-and-forget)
+    → writes totalMinutes to Room every 10s
+    → writes totalMinutes to Firestore every 10s (fire-and-forget)
     → stores session_end_time_{packageName} in SharedPreferences
 ↓
-timeUsedMs >= limitMs → LimitExceededOverlay (Stage 2)
+totalMinutes >= limitValueMinutes → LimitExceededOverlay (Stage 2)
   "Nicht öffnen" only → dismiss + home
 ```
 
@@ -109,7 +110,7 @@ taps "Stark bleiben" (which clears the key and cancels the session timer).
 **Timer runs only during active app usage:**
 - Pauses while overlay is visible.
 - Stops when user navigates away from the blocked app.
-- This prevents `timeUsedMinutes` from inflating due to overlay display time.
+- This prevents `totalMinutes` from inflating due to overlay display time.
 
 ### DAILY_BUDGET
 ```
@@ -216,6 +217,18 @@ override fun onCreate() {
 #### 7. `HardModeLockoutOverlay`
 - See `03_hard_mode_and_stripe.md` for details
 
+#### Custom motivation on the decision overlays
+The user's own `challenge.customMotivation` (set at creation) is now surfaced **at the decision
+moment** on every overlay where the user is choosing whether to open / continue. `OverlayManager`
+passes `challenge.customMotivation?.takeIf { it.isNotBlank() }` as the `motivationText` parameter into:
+- `SessionIntentionOverlay` (conscious-open gate),
+- `SessionLimitReachedOverlay` (session / budget exhausted),
+- `WebsiteBlockedOverlay` (blocked website),
+- `BudgetSelectionOverlay` (budget-duration picker).
+
+Null/blank motivation simply renders nothing (no empty slot). This reinforces the user's stated reason
+exactly when they are tempted, rather than only on the dashboard.
+
 ---
 
 ## Overlay Design System (v2 — current)
@@ -242,7 +255,7 @@ Always read live from challenge object + DailyLog. Never hardcoded.
 ### Main Display
 Large number: 64sp, bold, #FFF, letter-spacing -3
 - SESSION_LIMIT: consciousOpens (used today)
-- TIME_LIMIT: timeUsedMinutes
+- TIME_LIMIT: totalMinutes (used today, in minutes)
 - DAILY_BUDGET: budgetRemainingMs / 60000 (remaining)
 
 Label below: 13sp, #444 — clear text e.g. "von 5 Öffnungen heute verbraucht"
@@ -301,7 +314,7 @@ consciousOpens++ in memory
 Write to Room: DailyLog (challengeId + date key)
     ↓
 Write to Firestore: users/{userId}/dailyLogs/{challengeId}_{date}
-    {consciousOpens: N, timeUsedMinutes: M, updatedAt: timestamp}
+    {consciousOpens: N, totalMinutes: M, updatedAt: timestamp}
     ↓
 allowPackageTemporarily(packageName) → 5s whitelist
     ↓
@@ -334,7 +347,7 @@ val key = "${challengeId}_${date}"
 - **Group challenge card:** 👥 icon, participant count, user's rank, pot amount
 - **Progress bar:**
   - `SESSION_LIMIT` → filled based on `consciousOpens / sessionLimit`
-  - `TIME_LIMIT` → filled based on `timeUsedMinutes / timeLimitMinutes`
+  - `TIME_LIMIT` → filled based on `totalMinutes / limitValueMinutes`
 - **endDate display:** Smart detection needed:
   ```kotlin
   // Old records stored duration (ms), new records store absolute timestamp
@@ -481,10 +494,11 @@ applied to Soft Mode automatically covers Hard Mode.
 | Firestore participants | ❌ | ❌ | ✅ arrayRemove+arrayUnion |
 
 ### DailyLog Firestore Structure (all types)
+> Canonical field schema lives in **`firestore-schema.md`** — this is a simplified overview.
 ```
 users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
     consciousOpens: Int      (SESSION_LIMIT)
-    timeUsedMs: Long         (TIME_LIMIT)
+    totalMinutes: Int        (TIME_LIMIT — minutes, NOT ms)
     budgetUsedMs: Long       (DAILY_BUDGET)
     budgetRemainingMs: Long  (DAILY_BUDGET)
     updatedAt: Long
@@ -497,14 +511,14 @@ Source of truth: Room DailyLog (read fresh via `DateUtils.todayKey()`)
 
 ```
 SESSION_LIMIT:  progress = consciousOpens / limitValueSessions
-TIME_LIMIT:     progress = timeUsedMs / (limitValueMinutes * 60000)
+TIME_LIMIT:     progress = totalMinutes / limitValueMinutes
 DAILY_BUDGET:   progress = budgetUsedMs / (dailyBudgetMinutes * 60000)
 ```
 
 Display (remaining):
 ```
 SESSION_LIMIT:  "${limitValueSessions - consciousOpens} opens remaining"
-TIME_LIMIT:     "${(limitMs - timeUsedMs) / 60000} min remaining"
+TIME_LIMIT:     "${limitValueMinutes - totalMinutes} min remaining"
 DAILY_BUDGET:   "${budgetRemainingMs / 60000} min remaining"
 ```
 

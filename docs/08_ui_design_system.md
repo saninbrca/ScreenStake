@@ -2,6 +2,7 @@
 > **Scope:** Colors, typography, components, overlay design, screen designs.
 > **When to load:** Any UI work — screens, overlays, components, animations.
 > **Never load for:** Business logic, Stripe, Cloud Functions, permissions.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -146,10 +147,14 @@ Selected indicator: 2dp green underline (#00C853) below selected item
 | Duration (Soft) | 3 | 90 | 7 | Tage |
 | Duration (Hard) | 7 (1 debug) | 90 | 14 | Tage |
 | Duration (Group) | 3 | 30 | 7 | Tage |
-| Buy-in (Group) | 10 | 50 | 10 | Euro |
-| Hard Mode Einsatz | 5 | 100 | 10 | Euro |
+| Buy-in (Group) | → `docs/13` | → `docs/13` | 10 | Euro |
+| Hard Mode Einsatz | → `docs/13` | → `docs/13` | 10 | Euro |
 | Session duration | 1 | 30 | 5 | Minuten |
 | BudgetSelectionOverlay | 1 | remainingMin | min(5,rem) | Minuten |
+
+> **Stake/buy-in min/max are remote-configurable — canonical values in `docs/13`** (`hardModeMinStake`/
+> `hardModeMaxStake`, `groupMinBuyIn`/`groupMaxBuyIn`). `08` owns picker **UI behaviour + step only**;
+> it does not restate those limits as independent truth.
 
 ---
 

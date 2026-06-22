@@ -1,0 +1,2 @@
+# Normalize Markdown docs to LF line endings (see docs/ consistency policy).
+*.md text eol=lf

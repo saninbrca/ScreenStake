@@ -1,6 +1,7 @@
 # 11 — Admin Dashboard
 > **Scope:** The founder admin dashboard (`admin/index.html`) — its 7 tabs, the `counters/global` stats doc, the ban system, broadcasts, and the admin auth model.
 > **When to load:** Any work on `admin/index.html`, `counters/global`, `backfillCounters`, `setUserBanStatus`, `broadcasts`, or the admin-facing side of support/anti-cheat.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 

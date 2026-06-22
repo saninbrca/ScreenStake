@@ -1,6 +1,7 @@
 # 01 — Architecture & Stack
 > **Scope:** Tech-Stack, MVVM/Clean Architecture, File Structure, Code Rules, DB Migrations, Cloud Functions Pattern.
 > **When to load:** Any new screen, ViewModel, Repository, UseCase, DB change, or Cloud Function.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -53,11 +54,13 @@ com.detox.app/
 │   │   ├── dao/
 │   │   │   ├── ChallengeDao.kt
 │   │   │   ├── DailyLogDao.kt
-│   │   │   └── GroupChallengeDao.kt
+│   │   │   ├── GroupChallengeDao.kt
+│   │   │   └── PendingHardChallengeDao.kt
 │   │   ├── entity/
 │   │   │   ├── ChallengeEntity.kt
 │   │   │   ├── DailyLogEntity.kt
-│   │   │   └── GroupChallengeEntity.kt
+│   │   │   ├── GroupChallengeEntity.kt
+│   │   │   └── PendingHardChallengeEntity.kt  ← local-only Stripe-flow recovery (see Room rules)
 │   │   ├── DatabaseKeyManager.kt     ← SQLCipher passphrase, Keystore-wrapped (see docs/10)
 │   │   └── DetoxDatabase.kt          ← Room DB (SQLCipher-encrypted), check for current version
 │   ├── remote/firebase/
@@ -169,7 +172,7 @@ com.detox.app/
 
 functions/src/index.ts   ← ALL Cloud Functions
 assets/
-├── adult_domains.txt    ← 133,713+ adult domains (OISD + StevenBlack + ut1, auto-updated monthly)
+├── adult_domains.txt    ← ~133k adult domains, script-generated (scripts/update_adult_domains.py; OISD + StevenBlack + ut1, auto-updated monthly)
 └── fonts/               ← Poppins (regular/medium/semibold/bold/extrabold)
 admin/index.html         ← Admin payout dashboard (contains Firebase credentials → .gitignore)
 ```
@@ -197,6 +200,17 @@ Repositories: [Name]RepositoryImpl.kt (impl) / [Name]Repository.kt (interface)
 > `DatabaseKeyManager` and supplied to Room through `SupportOpenHelperFactory` in `DatabaseModule`.
 > NEVER hardcode the passphrase. Migrations are unaffected (they run inside the encrypted DB).
 > Full detail: **docs/10_security_and_anticheat.md**.
+
+**Current DB version: 27** (`DetoxDatabase.kt`; latest migration `MIGRATION_26_27` — `pending_hard_challenges` table).
+`DetoxDatabase.kt` remains the authoritative source — always re-check it before any schema change.
+
+#### Room tables (local-only — never synced to Firestore)
+| Table | Entity | Purpose |
+|-------|--------|---------|
+| `challenges` | `ChallengeEntity` | Solo + group-shadow challenges (mirrors Firestore). |
+| `daily_logs` | `DailyLogEntity` | Per-day usage counters (mirrors Firestore `dailyLogs`). |
+| `group_challenges` | `GroupChallengeEntity` | Group challenge cache (mirrors Firestore). |
+| `pending_hard_challenges` | `PendingHardChallengeEntity` | **Local-only, transient.** Durable payload for a Hard Mode challenge whose Stripe `PaymentIntent` was created but whose challenge doc may not yet be persisted — money-critical recovery if the ViewModel/process is recreated mid-Stripe-flow (`ChallengeCreationViewModel` writes it; `SyncRepositoryImpl` promotes/clears it). Added in `MIGRATION_26_27`. **NEVER written to Firestore** — this row never leaves the device. |
 
 ```kotlin
 // Check DetoxDatabase.kt for CURRENT version before any change.
@@ -432,7 +446,7 @@ Path: `users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}`
   challengeId: String,
   date: Long,                  ← DateUtils.todayKey() always
   consciousOpens: Int,         ← SESSION_LIMIT
-  timeUsedMs: Long,            ← TIME_LIMIT
+  totalMinutes: Int,           ← TIME_LIMIT (minutes, NOT ms)
   budgetUsedMs: Long,          ← DAILY_BUDGET
   budgetRemainingMs: Long,     ← DAILY_BUDGET
   overlayPausedMs: Long,       ← all types
@@ -444,7 +458,7 @@ Path: `users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}`
 ### Write Rules
 - Always SetOptions.merge() — NEVER plain `.set()` on dailyLogs documents
 - consciousOpens: write immediately on tap (atomic)
-- timeUsedMs: write every 10s via UsageTrackingService (fire-and-forget)
+- totalMinutes: write every 10s via UsageTrackingService (fire-and-forget)
 - budgetUsedMs: write every 10s via UsageTrackingService (fire-and-forget)
 - Never block UI or overlay on Firestore response
 
@@ -573,14 +587,14 @@ Progress calculation (identical everywhere):
 ```kotlin
 val progress = when (challenge.limitType) {
     SESSION_LIMIT -> dailyLog.consciousOpens.toFloat() / challenge.limitValueSessions
-    TIME_LIMIT -> dailyLog.timeUsedMs.toFloat() / (challenge.limitValueMinutes * 60000f)
+    TIME_LIMIT -> dailyLog.totalMinutes.toFloat() / challenge.limitValueMinutes
     DAILY_BUDGET -> dailyLog.budgetUsedMs.toFloat() / (challenge.dailyBudgetMinutes * 60000f)
     TIME_WINDOW_ONLY -> 0f // no progress bar
 }.coerceIn(0f, 1f)
 
 val remaining = when (challenge.limitType) {
     SESSION_LIMIT -> "${challenge.limitValueSessions - dailyLog.consciousOpens} opens"
-    TIME_LIMIT -> "${((challenge.limitValueMinutes * 60000L) - dailyLog.timeUsedMs) / 60000} min"
+    TIME_LIMIT -> "${challenge.limitValueMinutes - dailyLog.totalMinutes} min"
     DAILY_BUDGET -> "${dailyLog.budgetRemainingMs / 60000} min"
     TIME_WINDOW_ONLY -> ""
 }

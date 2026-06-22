@@ -1,7 +1,8 @@
 # 00 — Changelog & Session Log
 > **Scope:** Chronological log of all fixes, features, and architectural decisions.
-> **When to load:** Always load this file first before any other docs/ file.
+> **When to load:** Load right after `docs/invariants.md`, before any other docs/ file.
 > This gives Claude Code full context on what has already been fixed and decided.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -11,9 +12,124 @@
 - Mark bugs as FIXED so they are never "re-fixed" accidentally
 - Mark architectural decisions as DECISION so they are never reversed
 
+## Companion launch docs (read when going live)
+- **[launch-readiness-audit.md](launch-readiness-audit.md)** — pre-launch readiness audit, incl. the **Stripe live-switch blocker**. Keep discoverable until launch.
+- **[launch-investigation.md](launch-investigation.md)** — launch investigation notes.
+- **[firestore-schema.md](firestore-schema.md)** — canonical Firestore + Room field reference.
+
 ---
 
 ## [Unreleased] — June 2026
+
+### 2026-06-22 — docs/ consistency audit (docs-only)
+
+Verified the docs/ set against the live repo and corrected drift. **Docs-only — no code/rules changed.**
+
+- **FIXED — Activity-recreation Stripe recovery now documented (DB v27 / `MIGRATION_26_27`).** A
+  `pending_hard_challenges` Room table (entity `PendingHardChallengeEntity`, `PendingHardChallengeDao`)
+  was added to durably hold a Hard Mode challenge's payload when its Stripe `PaymentIntent` is created
+  but the challenge doc isn't yet persisted — so a ViewModel/process recreation mid-Stripe-flow can't
+  strand money. It is **local-only / never synced to Firestore** (`ChallengeCreationViewModel` writes,
+  `SyncRepositoryImpl` promotes/clears). Now documented in `01` (File-Structure + a "Room tables
+  (local-only)" table); deliberately **not** added to `firestore-schema.md` (Firestore-authoritative).
+- **FIXED — `dailyLogs` time field name corrected across docs.** The TIME_LIMIT "time used" field is
+  `totalMinutes: Int` (minutes); the fictional `timeUsedMs`/`timeUsedMinutes` names were removed from the
+  dailyLogs scope in `01`/`02`/`03`/`04`, and TIME_LIMIT progress/remaining formulas fixed to minutes
+  math (`totalMinutes / limitValueMinutes`). The participants-array `timeUsedMinutes` (leaderboard) and
+  `budgetUsedMs` are the real fields and were left intact. Canonical owner: `firestore-schema.md`.
+- **FIXED — `04` no longer frames Stripe's manual-capture limit as 5 days.** The 5-day window is our own
+  conservative buffer (`authorizationExpiresAt = now + 5d`, enforced by `expireGroupChallenge`); Stripe's
+  real limit is ~7 days.
+- **FIXED — stale `50,000+` adult-domain count in `05`** → drift-proof `~133k (script-generated)`
+  (real count ~133,719; see `scripts/update_adult_domains.py`).
+- **Note:** verified `customMotivation` IS rendered on all four decision overlays (code confirms) — the
+  2026-06-21 entry is accurate.
+- Added per-doc `Last verified` stamps and a `.gitattributes` LF policy for `*.md`.
+
+### 2026-06-21 — Fail-reason threading, went-dark heartbeat, custom-motivation on decision overlays (docs sync)
+
+Three folded-together changes; all verified against code. **Docs-only commit syncs the docs/ + CLAUDE.md
+to the already-on-branch code.**
+
+- **Fail dialog shows a REAL cause (Room migration 25→26).** New nullable **`failReason` column** on
+  `ChallengeEntity`/`Challenge` (`MIGRATION_25_26`, DB version now **27**). `updateChallengeStatus` now
+  takes a `failReason` and threads the actual cause instead of a hardcoded `"client_loss"`:
+  `"limit_exceeded"` (`DailyEvaluationWorker`, `OverlayManager` soft-fail), `"abandon"`
+  (`ActiveChallengeViewModel`), `"permission_violation"` (`PermissionCheckWorker`); the repo falls back
+  to `"client_loss"` only when no cause is passed. `ChallengeRepositoryImpl` writes it to Room
+  (`updateFailReason`) **and** passes it to the **`markChallengeFailed` CF**, which now writes the
+  **passed** `failReason` (index.ts:315) rather than a constant. `ChallengeFailedDialog` shows the
+  **challenge name** (`failed_dialog_challenge_label`) + the mapped reason string
+  (`failReasonStringRes`: `limit_exceeded`/`abandon`/`permission`/`usage`/`reconciliation` → German,
+  else generic). Server-set causes (`usage_violation`/`reconciliation`/`device_dark`) arrive via sync
+  (`fetchFinishedChallenges` parses `failReason`, `SyncRepositoryImpl` writes it for a server loss the
+  device never classified) — sync **never** overwrites an already-terminal local row. **Single-shot:**
+  `DashboardViewModel` marks `completionShown` **on show** (not dismiss); the history re-hydration insert
+  in `SyncRepositoryImpl` forces `completionShown=1` so a restored row never re-pops the dialog.
+- **"Device went dark = forfeit" heartbeat (SHIPS DARK).** Device writes
+  `permissionStatus/current.lastSeenAt=now` in `PermissionCheckWorker.writeHeartbeatIfHardActive`
+  (~15-min, top of `doWork()` before any early return, gated on ≥1 active HARD challenge).
+  `runDueChallengeReconciliation` is broadened (the `endDate<=now` query filter is **dropped**; due-ness
+  is computed per-doc via `isDue`) and gains a **went-dark LOSS branch (B2.5)** between B2
+  (unresolved-marker deferral) and B3 (`lossProven`): a challenge whose `lastSeenAt` (or `startDate` if
+  never beat) is older than **`config/app.wentDarkGraceMs`** is settled as a LOSS with
+  `failReason:"device_dark"` (a proven `limitExceeded` loss keeps `"reconciliation"` and takes
+  precedence). **FAIL-SAFE:** a missing/non-positive/unreadable grace ⇒ `Number.MAX_SAFE_INTEGER` ⇒
+  never forfeit. Triple-gated (`reconciliationEnabled` + `!reconciliationDryRun` + positive grace) → ships
+  fully dark. A **Step-7 forfeit-consent checkbox** hard-blocks Start until ticked. Best-effort local
+  nudge at ~grace/2 (36h) of worker suppression (`NotificationHelper.sendHeartbeatWarning`).
+  **KNOWN RESIDUALS (accepted):** (1) a 5–7-day ≤7-day challenge whose device goes dark in the back half
+  can outrun the Stripe manual-auth window (auth releases ~7d after creation), so the effective grace is
+  shorter for short challenges; (2) `lastSeenAt` is owner-writable — a cheater can only dodge the forfeit
+  by keeping the real app installed and beating, which is honest behaviour. (Detail in the dedicated
+  heartbeat FEATURE entry below.)
+- **`customMotivation` now rendered on the decision overlays.** `OverlayManager` passes
+  `challenge.customMotivation?.takeIf { it.isNotBlank() }` as `motivationText` into the conscious-open
+  (`SessionIntentionOverlay`), session/budget-exhausted (`SessionLimitReachedOverlay`), website
+  (`WebsiteBlockedOverlay`), and budget-selection picker (`BudgetSelectionOverlay`) overlays, so the
+  user's own reason reinforces the decision moment.
+- **Files (code, already on branch):** `data/local/db/{DetoxDatabase,entity/ChallengeEntity}.kt`,
+  `data/local/db/dao/ChallengeDao.kt`, `domain/model/Challenge.kt`,
+  `domain/repository/ChallengeRepository.kt`, `data/repository/{ChallengeRepositoryImpl,SyncRepositoryImpl}.kt`,
+  `data/remote/firebase/{CloudFunctionsService,FirestoreService}.kt`,
+  `service/{PermissionCheckWorker,OverlayManager,NotificationHelper,DailyEvaluationWorker}.kt`,
+  `presentation/screens/dashboard/{ChallengeFailedDialog,DashboardViewModel}.kt`,
+  `presentation/screens/activechallenge/ActiveChallengeViewModel.kt`,
+  `presentation/components/{SessionIntentionOverlay,SessionLimitReachedOverlay,WebsiteBlockedOverlay,BudgetSelectionOverlay}.kt`,
+  `presentation/screens/challengecreation/ChallengeCreationScreen.kt`, `functions/src/index.ts`,
+  `res/values/strings.xml`. **Docs (this commit):** `CLAUDE.md`, `docs/firestore-schema.md`, `docs/03`,
+  `docs/05`, `docs/10`, `docs/13`, `docs/00_changelog.md`. **CF change → `firebase deploy --only functions`.**
+
+### FEATURE — "Device went dark = forfeit" heartbeat (SHIPS DARK, June 2026)
+Closes the uninstall/disable free-pass: an active solo Hard Mode challenge whose device stops
+reporting (app uninstalled or accessibility/overlay disabled, so no tracking) was previously
+auto-refunded as a WIN by the reconciliation net (clean logs = no `limitExceeded`). It is now a
+LOSS/forfeit, detected by the ABSENCE of a periodic heartbeat (Android has no uninstall callback).
+- **Heartbeat write:** `PermissionCheckWorker` (15-min cadence) merges `lastSeenAt=now` into
+  `users/{uid}/permissionStatus/current` at the top of `doWork()` (before any early return), gated
+  on "user has ≥1 active HARD challenge". Owner-writable by design — a cheater can only avoid the
+  forfeit by keeping the real app installed and beating (= honest behaviour).
+- **Reconciliation went-dark→LOSS:** `runDueChallengeReconciliation` now scans ALL active hard
+  challenges (endDate filter dropped) and, between the B2 unresolved-marker deferral and the B3
+  `lossProven` test, forfeits any whose `lastSeenAt` (or `startDate` if never beat) is older than
+  `GRACE_MS`. Reuses the EXISTING loss settlement (capture-first, idempotency key, counter bumps)
+  with `failReason:"device_dark"`. A proven `limitExceeded` loss keeps `failReason:"reconciliation"`.
+  Runs for not-yet-due challenges too, so a ≤7d manual-capture auth is captured mid-challenge while
+  still valid. WIN refund stays the fallback ONLY for due + live + clean-logs challenges.
+- **GRACE:** `config/app.wentDarkGraceMs`, server-tunable, recommended 72h. **FAIL-SAFE:**
+  missing/invalid/unreadable ⇒ `Number.MAX_SAFE_INTEGER` ⇒ predicate never true ⇒ NEVER forfeit.
+  Combined with the existing `reconciliationEnabled=false` + `reconciliationDryRun=true` gates, the
+  feature ships fully dark and forfeits nobody until ops explicitly arms all three.
+- **Best-effort nudge:** at ~GRACE/2 (36h local) of worker suppression the device posts a
+  "Detox meldet sich nicht mehr — open the app" warning (`NotificationHelper.sendHeartbeatWarning`).
+- **Disclosure:** second mandatory consent checkbox in the Step-7 confirm hard-blocks Start until
+  ticked (`uninstall_forfeit_consent_text`). AGB web-page clause added separately.
+- **KNOWN RESIDUAL (accepted):** for a **5–7 day** ≤7d challenge, a user who goes dark in the
+  back half can still escape capture if GRACE outruns the remaining Stripe manual-auth window
+  (auth releases ~7d after creation). A 72h GRACE is fully safe only for challenges ≳4 days; for
+  1–3 day challenges the auth-expiry is the backstop and the effective grace is shorter. Tightening
+  GRACE trades this against Huawei false-forfeits (the dominant risk — EMUI throttles the worker for
+  hours/days even when installed). See `docs/03` and `docs/10 §5`.
 
 ### KNOWN OPEN ISSUES / FOLLOW-UPS (as of June 2026)
 
@@ -36,8 +152,9 @@ Tracked here so they are not lost. None are fixed yet — investigate before lau
 - **Unit test suite does not compile + cannot run.** Pre-existing stale-test rot (tests reference
   removed/renamed APIs), and the local JDK/Gradle toolchain cannot run the test task. No automated test
   coverage is currently available; verification is via `:app:compileDebugKotlin` + manual device testing.
-- **`TODO(perm-worker-fail-gate)`** — `PermissionCheckWorker` currently marks a challenge FAILED even when
-  the capture call fails (it should gate FAILED on a confirmed capture, like the abandon path now does).
+- ~~**`TODO(perm-worker-fail-gate)`** — `PermissionCheckWorker` currently marks a challenge FAILED even when
+  the capture call fails.~~ **FIXED (2026-06-18)** — see the "Capture-gate + audit-trail" entry below.
+  FAILED is now set only inside `capturePayment.onSuccess`; a capture failure leaves the challenge ACTIVE.
 - **`TODO(counter-gap)`** — auto-captured (>7-day) Hard Mode losses do **not** bump the
   `failed`/`revenue` counters: Stripe captures at creation with no CF involvement, and `capturePayment`'s
   `succeeded` branch deliberately does not bump (to avoid double-counting manual captures). A dedicated
@@ -45,6 +162,47 @@ Tracked here so they are not lost. None are fixed yet — investigate before lau
   (below):** on a fresh active→failed reconcile of an upfront-captured (`succeeded`) loss it bumps
   `failed +1` / `revenue += stored amountCents` once. (Effective once `reconciliationEnabled=true`,
   `reconciliationDryRun=false`.)
+
+### 2026-06-18 — Launch-prep batch: capture-gate, loss audit-trail retention, low-evidence signal, groups off
+
+Resolves the launch-investigation items (`docs/launch-investigation.md`) below. **Docs + the noted code
+already on the branch; CF change → `firebase deploy --only functions`.**
+
+- **#9 Capture-gate — FAILED only after a successful capture (`PermissionCheckWorker`).** `failAllHardChallenges`
+  now flips a Hard Mode challenge to FAILED **only inside `capturePayment.onSuccess`**; on a capture
+  failure (409 not-capturable, Stripe 5xx, offline) it logs and **leaves the challenge ACTIVE** for the
+  next cycle / the server reconciliation+permission net. The PI-less legacy branch still marks FAILED
+  directly (nothing to capture). This mirrors the abandon/`DailyEvaluationWorker` pattern and closes the
+  old `TODO(perm-worker-fail-gate)`. (Investigation item 6.)
+- **#7 Loss audit-trail — a device-side loss NO LONGER deletes the challenge doc.** New CF
+  **`markChallengeFailed`** (`functions/src/index.ts:291`, `onRequest` + `requireAuth`) writes
+  `status:"failed"` + `failReason:"client_loss"` + `failedAt` **in place** via the Admin SDK.
+  `ChallengeRepositoryImpl.updateChallengeStatus(FAILED)` now calls it instead of `deleteChallenge`, so
+  the challenge doc **and** its nested tamper-evident `dailyLogs` are **RETAINED** (audit trail +
+  Redemption refund path intact). Auth/ownership: the doc is read under the authenticated caller's own
+  `users/{uid}/challenges` subcollection (no IDOR; missing doc → 400). Idempotent on an already-terminal
+  doc; never calls Stripe, never writes `payoutStatus`, never bumps counters (the capture path owns
+  those). Invoked **only after** the capture succeeds (per #9). Applies to Soft Mode device fails too
+  (same in-place path, no money step). `failReason`/`failedAt` therefore now appear on device losses.
+  (Investigation item 4.)
+- **#4 `reconciliationLowEvidence` is now surfaced in the Anti-Cheat dashboard.** `detectSuspiciousUsers`
+  gained a 6th signal (`type:"reconciliation_low_evidence"`, **6 pts**, `index.ts:2302`): flags any
+  challenge with `reconciliationLowEvidence === true` (the reconciliation net refunded a WIN with zero
+  nested `dailyLogs`). Previously the flag was written but never read. Soft signal — the refund already
+  happened (favour-user); it only surfaces for human review. (Investigation item 2.)
+- **#6 Group Challenges DISABLED for launch.** Ship with `config/app.groupChallengeEnabled = false`
+  (gates NEW group creation/entry only — active groups untouched). Groups currently settle device-side
+  only (no server-scheduled backstop like solo Hard Mode), so an un-opened participant device after
+  `endDate` could strand winnings/stakes. The hardcoded `AppConfig` fallback stays fail-open `true`; the
+  off-at-launch state is the explicit server config value. Re-enable after a server-side group settlement
+  path lands. (Investigation item 3, Option B.)
+- **#5 SoftFailResultScreen "Zur Startseite" button** — confirmed present, wired, and committed
+  (investigation item 5); no further change. (Cross-referenced here for completeness.)
+- **Docs updated:** `docs/firestore-schema.md` (Part 1 + Part 2 loss-path reversal: device loss now
+  retains the doc; `failReason` gains `client_loss`; `markChallengeFailed` added as a `status`/`failReason`
+  writer; low-evidence read-by), `CLAUDE.md` (new capture-gate + `markChallengeFailed` + groups-off rules),
+  `docs/03` (device-loss `markChallengeFailed` section), `docs/10` (6th anti-cheat signal), `docs/13` +
+  `docs/04` (groups-off launch default), `docs/launch-investigation.md` (resolved-status appends).
 
 ### FEATURE — Server-side reconciliation safety net (money-critical, dry-run-first)
 

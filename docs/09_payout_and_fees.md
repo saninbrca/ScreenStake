@@ -2,6 +2,7 @@
 > **Scope:** All payout logic, fee calculations, Stripe flows, IBAN setup.
 > **When to load:** Any work on payouts, ProfileScreen payout section,
 > cancelOrRefundPayment, completeGroupChallenge, Redemption Challenge payouts.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 

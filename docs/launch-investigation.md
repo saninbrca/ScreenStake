@@ -65,6 +65,11 @@ create rule to block malformed/forged payloads. Defer unless desired pre-launch.
   into the admin tab via the existing `flagged` response. No client/admin-UI change required (it
   renders generic signals already).
 
+**UPDATE 2026-06-18: RESOLVED (#4).** `detectSuspiciousUsers` now adds a 6th signal
+`type:"reconciliation_low_evidence"` (6 pts) on `c.reconciliationLowEvidence === true`
+([index.ts:2302](../functions/src/index.ts#L2302)) — rides the existing `collectionGroup("challenges")`
+scan as recommended. See `docs/10` and the changelog `2026-06-18` entry.
+
 ---
 
 ## 3. Group settlement gap — no server-side timer
@@ -105,6 +110,11 @@ create rule to block malformed/forged payloads. Defer unless desired pre-launch.
   `groupChallenges` create. Ships launch without the stranded-money risk; defer Option A post-launch.
 - Recommendation: **B for launch, A as the follow-up** before re-enabling groups.
 
+**UPDATE 2026-06-18: RESOLVED for launch (#6, Option B).** Groups ship OFF via
+`config/app.groupChallengeEnabled = false` (the code fallback stays fail-open `true`). Option A
+(server-side group settlement) remains the post-launch follow-up before re-enabling. See `docs/04`,
+`docs/13`, and the changelog `2026-06-18` entry.
+
 ---
 
 ## 4. Loss audit-trail — device deletes the doc on FAILED
@@ -142,6 +152,23 @@ re-insert. The cascade also lets `dailyLogs` keep `allow delete: if false` for c
   the delete. Net touches: challenges update rule (firestore.rules), `ChallengeRepositoryImpl.updateChallengeStatus`
   (write status instead of delete), and keep `onChallengeDeleted` only for genuine user-initiated deletes.
   This is a non-trivial money-rules change — recommend scoping as its own task, not a launch hotfix.
+
+**UPDATE 2026-06-18: RESOLVED (#7).** Losses are now RETAINED. Instead of a rules change, a new
+**`markChallengeFailed`** CF ([index.ts:291](../functions/src/index.ts#L291), `onRequest` + `requireAuth`)
+writes `status:"failed"` + `failReason:"client_loss"` + `failedAt` in place via the Admin SDK;
+`ChallengeRepositoryImpl.updateChallengeStatus(FAILED)` calls it instead of `deleteChallenge`, so the
+doc + nested `dailyLogs` survive. Idempotent, IDOR-safe (caller's own subcollection), never touches
+Stripe/`payoutStatus`. See `docs/03`, `docs/firestore-schema.md` Part 2, and the changelog `2026-06-18`
+entry.
+
+**UPDATE 2026-06-21: `failReason` now carries the real cause (supersedes the hardcoded `"client_loss"`
+above).** `updateChallengeStatus(FAILED, failReason)` threads the actual loss cause —
+`"limit_exceeded"` (`DailyEvaluationWorker` / soft-fail), `"abandon"` (abandon flow),
+`"permission_violation"` (`PermissionCheckWorker`) — and `markChallengeFailed` writes the **passed**
+value; `"client_loss"` is now only a no-cause fallback. A new Room `failReason` column (migration 25→26,
+DB v27) persists it for the loss dialog. Separately, the reconciliation net gained a went-dark forfeit
+branch (`failReason:"device_dark"`, gated on `config/app.wentDarkGraceMs`). See the changelog
+`2026-06-21` entry, `docs/03`, `docs/05`, `docs/10 §5`, `docs/13`.
 
 ---
 
@@ -185,6 +212,13 @@ re-insert. The cascade also lets `dailyLogs` keep `allow delete: if false` for c
   For PI-less challenges (`paymentIntentId == null`), the unconditional FAILED is fine (nothing to
   capture). One-function change in `PermissionCheckWorker.failAllHardChallenges`, no rules/CF change.
 
+**UPDATE 2026-06-18: RESOLVED (#9).** `failAllHardChallenges` now calls `updateChallengeStatus(FAILED)`
+only inside `capturePayment(...).onSuccess`; `.onFailure` logs and leaves the challenge ACTIVE
+([PermissionCheckWorker.kt:300-309](../app/src/main/java/com/detox/app/service/PermissionCheckWorker.kt#L300)).
+The PI-less branch still marks FAILED directly. The `TODO(perm-worker-fail-gate)` marker is gone. Note
+that — per #7 — a FAILED flip now retains the doc (markChallengeFailed), so the old "doc/logs gone"
+consequence no longer applies. See the changelog `2026-06-18` entry.
+
 ---
 
 ## 7. Unmerged branches — inventory & safe merge order
@@ -227,3 +261,9 @@ inside the current branch.
 - **Item 3 (group settlement):** recommend shipping `groupChallengeEnabled=false` for launch.
 - **Item 4 (loss retention)** and **Item 2 (low-evidence signal):** post-launch hardening.
 - **Item 7:** open the `fix/worker-limit-detection-sessions-budget → main` PR.
+
+> **UPDATE 2026-06-18:** Items **2, 4, 6 are now RESOLVED** (low-evidence signal #4, loss retention via
+> `markChallengeFailed` #7, capture-gate #9) and item **3 is RESOLVED for launch** via
+> `groupChallengeEnabled=false` (#6; Option A still the post-launch follow-up). Remaining: item 3's
+> Option A (server-side group settlement) before re-enabling groups, and item 7 (open the PR). See the
+> per-item UPDATE notes above and the changelog `2026-06-18` entry.

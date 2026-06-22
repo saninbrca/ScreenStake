@@ -1,6 +1,7 @@
 # 05 — Huawei & Permissions
 > **Scope:** All Huawei-specific constraints, 24h permission monitoring system, AccessibilityService rules, FLAG_SECURE overlay requirements, Adult Content blocking.
 > **When to load:** Any work on notifications, auth, AccessibilityService, overlay permissions, permission monitoring, adult content filtering, or anything that might behave differently on Huawei.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -221,7 +222,7 @@ Silent redirect to home screen + brief Toast only.
 // AppDetectionAccessibilityService monitors URL bar content
 // in ALL major browsers (Chrome, Firefox, Samsung Browser, etc.)
 
-// Domain list: 50,000+ domains (OISD, StevenBlack, ut1 blocklists)
+// Domain list: ~133k domains (script-generated — see scripts/update_adult_domains.py; OISD, StevenBlack, ut1 blocklists)
 // Updated monthly by AdultDomainsUpdateWorker (WorkManager) — saves to filesDir
 // Loaded at service start from filesDir (assets/ fallback), cached in HashSet<String>
 
@@ -402,6 +403,7 @@ are unchanged.
 | `permissionType` | Android | "accessibility" \| "overlay" \| "both" |
 | `deviceId` | Android | For multi-device detection |
 | `permissionRestoredAt` | Android | Set when permissions restored; clears permissionLostAt |
+| `lastSeenAt` | Android (PermissionCheckWorker heartbeat) | Liveness beat — proves the app is still installed/running (see below) |
 | `capturedAt` | Cloud Function only | Set after Stripe capture — client CANNOT write |
 | `captureReason` | Cloud Function only | "permission_violation" — client CANNOT write |
 
@@ -413,6 +415,26 @@ are unchanged.
 - Shared `runPermissionViolationCheck()` helper used by both.
 
 **Capture order:** Stripe FIRST → Firestore update SECOND (same rule as all other capture paths).
+
+---
+
+## "Device went dark" heartbeat (`lastSeenAt`)
+
+Android has no uninstall/disable callback, so an active solo Hard Mode device that simply stops running
+can't be detected by a missing permission marker alone (uninstalling also stops the worker that would
+write `permissionLostAt`). The fix is an inverted signal: prove **liveness** every cycle and treat its
+ABSENCE as a forfeit.
+
+- `PermissionCheckWorker.writeHeartbeatIfHardActive()` merges `lastSeenAt = now` into
+  `permissionStatus/current` at the **top of `doWork()`** (before any early return), **gated on "user
+  has ≥1 active HARD challenge"** so Soft-only / idle users never trigger needless writes.
+- The server `runDueChallengeReconciliation` forfeits a Hard Mode stake as a went-dark LOSS
+  (`failReason:"device_dark"`) once `lastSeenAt` (or `startDate` if never beat) is staler than
+  `config/app.wentDarkGraceMs`. **FAIL-SAFE:** a missing grace ⇒ never forfeit. Triple-gated, ships dark.
+- Best-effort local nudge: if EMUI suspended the worker for longer than ~grace/2 (36h) since the last
+  successful beat, the device warns the user to open the app (`NotificationHelper.sendHeartbeatWarning`)
+  — necessarily best-effort, since it can only fire once the throttled worker finally runs again.
+- Full money-side detail: `docs/03` (went-dark section) + `docs/10 §5`; flag: `docs/13`.
 
 ---
 

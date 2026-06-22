@@ -1,6 +1,7 @@
 # 13 — Remote Config & Feature Flags
 > **Scope:** The `config/app` Firestore document, `AppConfigRepository`, force-update / maintenance gating, feature flags, remote stake limits, the soft-update banner, and broadcasts.
 > **When to load:** Any work on `AppConfigRepository`, `config/app`, `MainActivity` startup gating, `ForceUpdateScreen`/`MaintenanceScreen`, the Hard Mode / Group feature flags, or the App Config admin tab.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 
@@ -32,6 +33,7 @@ document **`config/app`** remotely controls the app. All reads go through the ex
 | `groupMaxBuyIn` | Int | 50 | Group buy-in picker max (€) |
 | `reconciliationEnabled` | Bool | **false** | master kill-switch for the reconciliation net (server-read only) |
 | `reconciliationDryRun` | Bool | **true** | true → net logs intended actions, makes NO Stripe call / NO write |
+| `wentDarkGraceMs` | Int (millis) | **absent ⇒ never forfeit** | went-dark forfeit grace; only a positive number arms it (server-read only) |
 
 ---
 
@@ -75,6 +77,15 @@ Offline → fail-open into the app. The real destination is threaded into `Detox
   `FriendsHubScreen` + shows the unavailable note. Flag via `FriendsHubViewModel.groupChallengeEnabled`.
 
 Both gate **new creation only** — active challenges are never affected.
+
+> **Launch default:** Group Challenges ship **DISABLED at launch** — the admin sets
+> `config/app.groupChallengeEnabled = false` in production (the deliberate decision while groups lack a
+> server-side settlement backstop; see `docs/04` and `launch-investigation.md` item 3). NOTE the
+> table's "Safe default" column is the **hardcoded fail-open fallback** (`true`), used only when the
+> config is missing/unreadable — it is NOT the launch state. The off-at-launch behavior comes from the
+> explicit server config value. (Fail-open means a config-read error would fall back to `true` and
+> re-enable creation, which is acceptable: the flag gates only NEW group creation, never money on
+> active challenges.)
 
 ---
 
@@ -121,6 +132,27 @@ read **server-side** by the Cloud Function via the Admin SDK — **not** by `App
 **Rollout:** seed `reconciliationEnabled=true` + `reconciliationDryRun=true` first, verify logs in the
 Cloud Functions console, **then** set `reconciliationDryRun=false`. Edited via the ⚙️ App Config admin
 tab (`.set(payload, { merge: true })`).
+
+### Went-dark forfeit grace (`wentDarkGraceMs`)
+
+`wentDarkGraceMs` (millis) is the third server-read money-safety flag, used **only** inside
+`runDueChallengeReconciliation` to arm the "device went dark = forfeit" branch (see `docs/03`,
+`docs/10`). A solo Hard Mode challenge whose device stopped writing the
+`permissionStatus/current.lastSeenAt` heartbeat for longer than this grace is settled as a **LOSS**
+(`failReason:"device_dark"`) instead of being auto-refunded as a clean win.
+
+> **FAIL-SAFE (no-forfeit by default):** a missing, non-numeric, non-positive value **or** a
+> `config/app` read error is treated as `Number.MAX_SAFE_INTEGER`, which makes the went-dark
+> predicate (`now - lastSeen > graceMs`) permanently false ⇒ **nobody is ever forfeited**. Only an
+> explicit positive number arms it. Recommended production value: **72h = `259200000`**.
+
+Triple-gated like the rest of the net: the went-dark branch fires only when `reconciliationEnabled=true`,
+`reconciliationDryRun=false`, **and** `wentDarkGraceMs` is a positive number — so the feature ships
+fully dark. The device writes the heartbeat from `PermissionCheckWorker` (~15-min cadence, gated on an
+active Hard challenge); a best-effort local nudge fires at ~`grace/2` (36h) of worker suppression.
+**Known residual:** for a 5–7-day ≤7-day challenge a back-half went-dark can outrun the Stripe
+manual-auth window (auth releases ~7d after creation), so the effective grace is shorter for short
+challenges — the auth-expiry is the backstop. See `docs/03` / `docs/10 §5`.
 
 ---
 

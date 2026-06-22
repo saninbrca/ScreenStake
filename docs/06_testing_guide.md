@@ -1,6 +1,7 @@
 # 06 — Testing Guide
 > **Scope:** Debug panel, test accounts, Stripe test cards, manual CF testing, developer setup.
 > **When to load:** Any testing, debugging, or developer setup tasks.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 

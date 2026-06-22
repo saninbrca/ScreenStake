@@ -4,6 +4,7 @@
 > **When to load:** Any work on OnboardingScreen, AuthScreen,
 > LoginScreen, RegisterScreen, SettingsScreen (account section),
 > or permission-related flows.
+> _Last verified: 2026-06-22 (commit e287b79)_
 
 ---
 

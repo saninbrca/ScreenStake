@@ -3,6 +3,10 @@ package com.detox.app.presentation.screens.challengecreation
 import com.detox.app.BuildConfig
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -30,11 +34,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -63,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -93,7 +100,10 @@ private val WizBg         = Color(0xFFF2F2F7)
 private val CardBg        = Color(0xFFFFFFFF)
 private val CardBorder    = Color(0x0F000000)   // rgba(0,0,0,0.06)
 private val GreenPrimary  = Color(0xFF00C853)
-private val GreenLight    = Color(0xFFE8F8EF)
+private val GreenLight    = Color(0xFFE8F8EF)   // icon-circle + soft badge background
+// Single source of truth for "selected" card/row SURFACES across the wizard (mode cards,
+// limit cards, app-selection row). Kept distinct from GreenLight so a selected card never
+// blends into its own green icon circle; #00C853 stays reserved for the accent line/check.
 private val GreenSelected = Color(0xFFF0FDF4)
 private val TextPrimary   = Color(0xFF000000)
 private val TextSecondary = Color(0xFF8E8E93)
@@ -446,13 +456,23 @@ private fun ModeCard(
     enabled: Boolean = true,
     disabledNote: String? = null,
 ) {
-    val borderColor = if (isSelected) GreenPrimary else CardBorder
-    val borderWidth = if (isSelected) 2.dp else 0.5.dp
-    val bgColor = if (isSelected) GreenSelected else CardBg
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) GreenPrimary else CardBorder,
+        animationSpec = tween(150), label = "mode_border_color",
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (isSelected) 2.dp else 0.5.dp,
+        animationSpec = tween(150), label = "mode_border_width",
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (isSelected) GreenSelected else CardBg,
+        animationSpec = tween(150), label = "mode_bg",
+    )
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (enabled) Modifier.pressScaleFeedback() else Modifier)
             .clip(CardShape)
             .background(bgColor)
             .border(borderWidth, borderColor, CardShape)
@@ -530,22 +550,30 @@ private fun ModeCard(
                 }
             }
 
-            // Right indicator — hidden when the card is disabled
+            // Right indicator — hidden when the card is disabled. The check scales + fades in
+            // on selection (~150ms); the empty ring marks the unselected state.
             if (enabled) {
-                if (isSelected) {
+                Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                    val checkScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1f else 0f,
+                        animationSpec = tween(150), label = "mode_check",
+                    )
+                    if (!isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(CardBg)
+                                .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
+                        )
+                    }
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
                         tint = GreenPrimary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                } else {
-                    Box(
                         modifier = Modifier
                             .size(20.dp)
-                            .clip(CircleShape)
-                            .background(CardBg)
-                            .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
+                            .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
                     )
                 }
             }
@@ -581,7 +609,7 @@ private fun Step3LimitType(
         Spacer(modifier = Modifier.height(4.dp))
 
         LimitTypeCard(
-            icon = Icons.Default.AccessTime,
+            icon = Icons.Outlined.Schedule,
             iconTint = PurpleIcon,
             iconBg = PurpleLight,
             title = stringResource(R.string.wizard_limit_time_title),
@@ -590,7 +618,7 @@ private fun Step3LimitType(
             onClick = { onSelect(LimitType.TIME) },
         )
         LimitTypeCard(
-            icon = Icons.Default.Refresh,
+            icon = Icons.Outlined.TouchApp,
             iconTint = GreenPrimary,
             iconBg = GreenLight,
             title = stringResource(R.string.wizard_limit_sessions_title),
@@ -599,7 +627,7 @@ private fun Step3LimitType(
             onClick = { onSelect(LimitType.SESSIONS) },
         )
         LimitTypeCard(
-            icon = Icons.Default.AccessTime,
+            icon = Icons.Outlined.HourglassTop,
             iconTint = OrangeIcon,
             iconBg = OrangeLight,
             title = stringResource(R.string.wizard_limit_budget_title),
@@ -608,7 +636,7 @@ private fun Step3LimitType(
             onClick = { onSelect(LimitType.TIME_BUDGET) },
         )
         LimitTypeCard(
-            icon = Icons.Default.AccessTime,
+            icon = Icons.Outlined.CalendarToday,
             iconTint = BlueIcon,
             iconBg = BlueLight,
             title = stringResource(R.string.wizard_limit_window_title),
@@ -629,13 +657,23 @@ private fun LimitTypeCard(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (isSelected) GreenPrimary else CardBorder
-    val borderWidth = if (isSelected) 2.dp else 0.5.dp
-    val bgColor = if (isSelected) GreenSelected else CardBg
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) GreenPrimary else CardBorder,
+        animationSpec = tween(150), label = "limit_border_color",
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (isSelected) 2.dp else 0.5.dp,
+        animationSpec = tween(150), label = "limit_border_width",
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (isSelected) GreenSelected else CardBg,
+        animationSpec = tween(150), label = "limit_bg",
+    )
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .pressScaleFeedback()
             .clip(CardShape)
             .background(bgColor)
             .border(borderWidth, borderColor, CardShape)
@@ -674,20 +712,27 @@ private fun LimitTypeCard(
                     maxLines = 2,
                 )
             }
-            if (isSelected) {
+            Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                val checkScale by animateFloatAsState(
+                    targetValue = if (isSelected) 1f else 0f,
+                    animationSpec = tween(150), label = "limit_check",
+                )
+                if (!isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(CardBg)
+                            .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
+                    )
+                }
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
                     tint = GreenPrimary,
-                    modifier = Modifier.size(20.dp),
-                )
-            } else {
-                Box(
                     modifier = Modifier
                         .size(20.dp)
-                        .clip(CircleShape)
-                        .background(CardBg)
-                        .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
+                        .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
                 )
             }
         }
@@ -904,13 +949,21 @@ private fun Step5Schedule(
         ) {
             ALL_DAYS.forEach { day ->
                 val isSelected = activeDays.contains(day)
+                val dayBg by animateColorAsState(
+                    targetValue = if (isSelected) GreenPrimary else WizBg,
+                    animationSpec = tween(150), label = "day_bg",
+                )
+                val dayText by animateColorAsState(
+                    targetValue = if (isSelected) Color.White else TextSecondary,
+                    animationSpec = tween(150), label = "day_text",
+                )
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(36.dp)
                         .widthIn(min = 36.dp)
                         .clip(PillShape)
-                        .background(if (isSelected) GreenPrimary else WizBg)
+                        .background(dayBg)
                         .clickable { onToggleDay(day) },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -918,7 +971,7 @@ private fun Step5Schedule(
                         text = DAY_LABELS[day] ?: day,
                         fontSize = 12.sp,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (isSelected) Color.White else TextSecondary,
+                        color = dayText,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -1272,7 +1325,7 @@ private fun Step7Confirm(
                 HapticManager.light(context)
                 onCreateChallenge()
             },
-            modifier = Modifier.fillMaxWidth().height(54.dp),
+            modifier = Modifier.fillMaxWidth().height(54.dp).pressScaleFeedback(),
             // Legal gate: BOTH the FAGG waiver and the uninstall-forfeit consent must be
             // ticked before a Hard Mode payment can start. Soft Mode has no payment/stake,
             // so neither consent is required.
@@ -1413,6 +1466,18 @@ private fun WaiverCheckboxRow(
     onToggle: () -> Unit,
     label: String = stringResource(R.string.withdrawal_waiver_text),
 ) {
+    val boxBg by animateColorAsState(
+        targetValue = if (checked) GreenPrimary else Color.White,
+        animationSpec = tween(150), label = "waiver_bg",
+    )
+    val boxBorder by animateColorAsState(
+        targetValue = if (checked) GreenPrimary else Color(0xFFE0E0E5),
+        animationSpec = tween(150), label = "waiver_border",
+    )
+    val checkScale by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = tween(150), label = "waiver_check",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1425,22 +1490,22 @@ private fun WaiverCheckboxRow(
                 .padding(top = 1.dp)
                 .size(22.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(if (checked) GreenPrimary else Color.White)
+                .background(boxBg)
                 .border(
                     width = 1.5.dp,
-                    color = if (checked) GreenPrimary else Color(0xFFE0E0E5),
+                    color = boxBorder,
                     shape = RoundedCornerShape(6.dp),
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (checked) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier
+                    .size(16.dp)
+                    .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
+            )
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(

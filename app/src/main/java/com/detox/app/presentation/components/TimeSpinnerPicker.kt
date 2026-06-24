@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,14 +25,25 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.filter
 
 private val ITEM_HEIGHT: Dp = 56.dp
 private val COLUMN_WIDTH: Dp = 76.dp
 private const val VISIBLE_ITEMS = 3
+
+// iOS-token theming — matches the wizard's light design system (no M3 colorScheme/shapes).
+private val SpinnerSelected   = Color(0xFF00C853)
+private val SpinnerUnselected = Color(0xFFC7C7CC)
+private val SpinnerHighlight  = Color(0xFFE8F8EF)
+private val SpinnerLabel      = Color(0xFF8E8E93)
+private val SpinnerColon      = Color(0xFF000000)
+private val SpinnerShape      = RoundedCornerShape(16.dp)
+private val SpinnerStripShape = RoundedCornerShape(12.dp)
 
 /**
  * A drum-roll style time picker with scrollable hour and minute columns.
@@ -62,8 +73,9 @@ fun TimeSpinnerPicker(
         if (label.isNotBlank()) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = SpinnerLabel,
             )
         }
 
@@ -79,9 +91,9 @@ fun TimeSpinnerPicker(
 
             Text(
                 text = ":",
-                style = MaterialTheme.typography.headlineLarge,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = SpinnerColon,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
 
@@ -138,7 +150,7 @@ private fun SpinnerColumn(
         modifier = Modifier
             .width(COLUMN_WIDTH)
             .height(ITEM_HEIGHT * VISIBLE_ITEMS)
-            .clip(MaterialTheme.shapes.medium)
+            .clip(SpinnerShape)
     ) {
         // Highlight strip for the center (selected) row
         Box(
@@ -147,8 +159,8 @@ private fun SpinnerColumn(
                 .height(ITEM_HEIGHT)
                 .align(Alignment.Center)
                 .background(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = MaterialTheme.shapes.small
+                    color = SpinnerHighlight,
+                    shape = SpinnerStripShape
                 )
         )
 
@@ -170,15 +182,9 @@ private fun SpinnerColumn(
                     if (value.isNotBlank()) {
                         Text(
                             text = value,
-                            style = if (isSelected)
-                                MaterialTheme.typography.headlineMedium
-                            else
-                                MaterialTheme.typography.titleLarge,
+                            fontSize = if (isSelected) 20.sp else 15.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected)
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                            color = if (isSelected) SpinnerSelected else SpinnerUnselected,
                         )
                     }
                 }

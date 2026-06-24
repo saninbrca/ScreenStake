@@ -2,6 +2,9 @@ package com.detox.app.presentation.components
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -9,15 +12,18 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,6 +40,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -48,12 +56,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
@@ -74,6 +82,11 @@ import com.detox.app.presentation.screens.challengecreation.AppListState
 
 // ── Shared App/Website selection step ─────────────────────────────────────────
 // Used identically in Solo Wizard (Step 2) and Group Challenge Wizard (Step 1).
+
+// Single selected-surface green, shared with the wizard's GreenSelected token
+// (ChallengeCreationScreen.kt). One value for every "selected" surface across the flow;
+// #00C853 stays reserved for the accent check.
+private val SelectedSurface = Color(0xFFF0FDF4)
 
 @Composable
 internal fun AppWebsiteSelectionStep(
@@ -97,6 +110,8 @@ internal fun AppWebsiteSelectionStep(
     onBlockAdultContentChange: (Boolean) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
+        // Pill tab switcher with a sliding white indicator (no elevation — replaces the old
+        // per-tab drop shadow). Labels use clean line icons instead of emoji.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -105,29 +120,59 @@ internal fun AppWebsiteSelectionStep(
                 .background(Color(0xFFF2F2F7))
                 .padding(4.dp),
         ) {
-            Row {
-                listOf("📱 Apps", "🌐 Websites").forEachIndexed { index, label ->
-                    val isActive = activeTab == index
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(
-                                if (isActive) Modifier
-                                    .shadow(2.dp, RoundedCornerShape(50.dp))
-                                    .background(Color.White, RoundedCornerShape(50.dp))
-                                else Modifier
-                            )
-                            .clip(RoundedCornerShape(50.dp))
-                            .clickable { onTabChange(index) }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 14.sp,
-                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isActive) Color.Black else Color(0xFF8E8E93),
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(40.dp)) {
+                val tabWidth = maxWidth / 2
+                val indicatorOffset by animateDpAsState(
+                    targetValue = if (activeTab == 0) 0.dp else tabWidth,
+                    animationSpec = tween(250),
+                    label = "tab_indicator_offset",
+                )
+                // Sliding indicator
+                Box(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(tabWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(50.dp))
+                        .background(Color.White),
+                )
+                Row(modifier = Modifier.fillMaxSize()) {
+                    val tabIcons = listOf(Icons.Outlined.Apps, Icons.Outlined.Language)
+                    val tabLabels = listOf(
+                        stringResource(R.string.app_selection_tab_apps),
+                        stringResource(R.string.app_selection_tab_websites),
+                    )
+                    tabIcons.forEachIndexed { index, icon ->
+                        val isActive = activeTab == index
+                        val tabTint by animateColorAsState(
+                            targetValue = if (isActive) Color(0xFF00C853) else Color(0xFF8E8E93),
+                            animationSpec = tween(200),
+                            label = "tab_tint",
                         )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(50.dp))
+                                .clickable { onTabChange(index) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = tabTint,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = tabLabels[index],
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = tabTint,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -541,7 +586,7 @@ internal fun AppSelectionRow(
     val context = LocalContext.current
     val bgColor = when {
         isBusy -> Color(0xFFF5F5F5)
-        isSelected -> Color(0xFFF9FFF9)
+        isSelected -> SelectedSurface
         else -> Color.Transparent
     }
     Row(

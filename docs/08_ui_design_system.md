@@ -13,6 +13,7 @@ Background:        #F2F2F7
 Card background:   #FFFFFF
 Card border:       rgba(0,0,0,0.06) — 0.5px
 Divider:           #F2F2F7 — 0.5px
+Selected surface:  #F0FDF4 — single token for selected cards/rows (wizard); #00C853 = the check/line accent
 Text primary:      #000000
 Text secondary:    #8E8E93
 Text hint:         #C7C7CC
@@ -484,7 +485,7 @@ Pill-shaped (fully rounded corners), no dividers between app rows.
 
 ### App Tab
 - App icons: 48dp with rounded corners
-- Selected row: green checkmark overlay + #F9FFF9 background
+- Selected row: green checkmark overlay + #F0FDF4 background (unified selected-surface token)
 - No divider lines between rows
 
 ### App Row — "Busy" State (app already in active challenge)
@@ -496,7 +497,7 @@ Pill-shaped (fully rounded corners), no dividers between app rows.
 ### Websites Tab
 - Feature cards (Instagram Reels, YouTube Shorts, etc.): platform app icon with red 8dp badge
 - Adult Content card: "18+" red circle icon — always at top of the list
-- Pill tab switcher: animated indicator slides between "Apps" and "Websites" tabs
+- Pill tab switcher: a white indicator slides between "Apps" and "Websites" (animated offset, no elevation — replaced the old per-tab drop shadow). Tab labels use line icons (apps grid / globe), NOT emoji.
 
 ---
 

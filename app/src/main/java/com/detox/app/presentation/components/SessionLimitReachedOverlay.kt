@@ -1,217 +1,166 @@
 package com.detox.app.presentation.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
-import kotlinx.coroutines.delay
+
+// Tokens mirror SessionIntentionOverlay's "Calm Authority" palette (same hex values).
+private val Stage2Bg      = Color(0xFF0A0A0A)
+private val Stage2Accent  = Color(0xFF00C853)
+private val Stage2Sub     = Color(0xFF666666)
+private val Stage2AppName = Color(0xFF444444)
 
 /**
- * Stage 2 — Limit Reached Overlay (v2 redesign).
+ * Stage 2 — Limit Reached Overlay ("Calm Authority", direction "Done").
  *
- * Context header + large number + label are all computed in OverlayManager and passed in,
- * allowing this composable to handle SESSION_LIMIT, TIME_LIMIT, and DAILY_BUDGET exhausted.
+ * Reframes the exhausted state as completion, not punishment: a calm closing statement
+ * instead of a lock icon and a dead limit-number hero, and NO ghost button (the decision
+ * is already made). Monochrome on #0A0A0A with a single green accent (#00C853) carried by
+ * the eyebrow and the fully-filled completion line.
  *
- * No bypass available — single "Stark bleiben 💪" button only.
+ * [eyebrowText] is the per-type "Done" headline computed in OverlayManager (Soft → streak
+ * held, Hard → stake secured, Group → rank held, else generic); rendered spaced ALL-CAPS.
+ *
+ * No bypass — single "Verstanden" button. FLAG_SECURE + no-haptics + opaque background are
+ * preserved here and by the host; the view is built fresh per-show (no pre-cache).
  */
 @Composable
 fun SessionLimitReachedOverlay(
     appName: String = "",
-    contextHeader: String = "",
-    largeNumber: Int = 0,
-    largeNumberLabel: String = "",
-    /** When > 0 and ≤ 10, shows filled dot indicators instead of the progress bar. */
-    limitCount: Int = 0,
-    /** The user's own custom motivation ("why"). Null/blank = not shown. */
-    motivationText: String? = null,
+    eyebrowText: String = "",
     onNo: () -> Unit
 ) {
-    val AccentOrange = Color(0xFFFF9500)
-    val BorderDark   = Color(0xFF222222)
+    // Entrance: fade + slight upward translate of the centre block (~260ms ease-out),
+    // matching Stage 1. No count-up — the hero is a statement, not a number.
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(260, easing = LinearOutSlowInEasing),
+        label = "stage2ContentAlpha"
+    )
 
-    // Entrance animation
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-
-    // Count-up animation for large number
-    var displayedNumber by remember { mutableIntStateOf(if (largeNumber > 0) 0 else largeNumber) }
-    LaunchedEffect(Unit) {
-        if (largeNumber > 0) {
-            delay(100L)
-            val steps = largeNumber.coerceAtMost(20)
-            val stepDelay = 300L / steps
-            for (i in 1..steps) {
-                displayedNumber = largeNumber * i / steps
-                delay(stepDelay)
-            }
-            displayedNumber = largeNumber
-        }
-    }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(200)) + scaleIn(
-            animationSpec = tween(200, easing = FastOutSlowInEasing),
-            initialScale = 0.95f
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Stage2Bg)   // opaque immediately — never reveal the app behind
     ) {
-        Box(
+        // App name top-right (#444, 11sp/400)
+        if (appName.isNotEmpty()) {
+            Text(
+                text = appName,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                color = Stage2AppName,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp, end = 16.dp)
+                    .graphicsLayer { alpha = contentAlpha }
+            )
+        }
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0A0A0A))
+                .padding(horizontal = 28.dp)
+                .padding(top = 60.dp, bottom = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // App name top-right
-            if (appName.isNotEmpty()) {
-                Text(
-                    text = appName,
-                    fontSize = 11.sp,
-                    color = Color(0xFF333333),
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 16.dp, end = 16.dp)
-                )
-            }
+            // Centre block floats between two weights → vertically centred, ~40% empty.
+            Spacer(Modifier.weight(1f))
 
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 28.dp)
-                    .padding(top = 72.dp, bottom = 36.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.graphicsLayer {
+                    alpha = contentAlpha
+                    translationY = (1f - contentAlpha) * 12.dp.toPx()
+                }
             ) {
-                // ── Context header ─────────────────────────────────────────────────
-                if (contextHeader.isNotEmpty()) {
+                // ── Eyebrow — spaced ALL-CAPS, the single green accent ─────────────
+                if (eyebrowText.isNotEmpty()) {
                     Text(
-                        text = contextHeader,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF00C853),
+                        text = eyebrowText.uppercase(),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Stage2Accent,
+                        letterSpacing = 2.5.sp,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(20.dp))
                 }
 
-                // ── Large number (animated count-up) ───────────────────────────────
+                // ── Hero — calm closing statement (text, not a number) ─────────────
                 Text(
-                    text = displayedNumber.toString(),
-                    fontSize = 64.sp,
+                    text = stringResource(R.string.overlay_v2_limit_hero),
+                    fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    letterSpacing = (-3).sp,
+                    letterSpacing = (-1).sp,
+                    lineHeight = 35.sp,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // ── Label below number ─────────────────────────────────────────────
-                if (largeNumberLabel.isNotEmpty()) {
-                    Text(
-                        text = largeNumberLabel,
-                        fontSize = 13.sp,
-                        color = Color(0xFF444444),
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                Spacer(Modifier.height(20.dp))
-
-                // ── Progress indicator: all-filled dots if limitCount ≤ 10, orange bar otherwise ──
-                if (limitCount in 1..10) {
-                    OverlayDotsIndicator(used = limitCount, total = limitCount)
-                } else {
-                    OverlayProgressBar(progress = 1f, trackColor = BorderDark, fillColor = AccentOrange)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = stringResource(R.string.overlay_v2_progress_limit_reached),
-                            fontSize = 11.sp,
-                            color = Color(0xFFAAAAAA)
-                        )
-                        Text(
-                            text = "100%",
-                            fontSize = 11.sp,
-                            color = Color(0xFFAAAAAA)
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(20.dp))
-
-                // ── Limit reached clarification ────────────────────────────────────
+                // ── Sub-label (#666) ───────────────────────────────────────────────
                 Text(
-                    text = stringResource(R.string.overlay_v2_limit_reached_title),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(Modifier.height(6.dp))
-
-                Text(
-                    text = stringResource(R.string.overlay_v2_limit_reached_sub),
+                    text = stringResource(R.string.overlay_v2_limit_sub),
                     fontSize = 13.sp,
-                    color = Color(0xFF444444),
+                    fontWeight = FontWeight.Normal,
+                    color = Stage2Sub,
                     textAlign = TextAlign.Center
                 )
 
-                // ── User's own motivation ("why") ──────────────────────────────────
-                val motivation = motivationText?.takeIf { it.isNotBlank() }
-                if (motivation != null) {
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = stringResource(R.string.overlay_motivation_quote, motivation),
-                        fontSize = 14.sp,
-                        fontStyle = FontStyle.Italic,
-                        color = Color(0xFFAAAAAA),
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Spacer(Modifier.height(30.dp))
 
-                Spacer(Modifier.weight(1f))
-
-                // ── Single primary button — no ghost ───────────────────────────────
-                OverlayPrimaryButton(
-                    text = stringResource(R.string.overlay_primary_not_open),
-                    onClick = onNo
+                // ── Completion line — fully filled green (signal, not a progress bar) ──
+                Box(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(1.5.dp))
+                        .background(Stage2Accent)
                 )
             }
+
+            Spacer(Modifier.weight(1f))
+
+            // ── Single primary button — no ghost ───────────────────────────────────
+            OverlayPrimaryButton(
+                text = stringResource(R.string.overlay_primary_understood),
+                onClick = onNo,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = contentAlpha }
+            )
         }
     }
 }

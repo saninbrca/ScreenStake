@@ -1,12 +1,10 @@
 package com.detox.app.presentation.components
 
 import android.graphics.BlurMaskFilter
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -31,7 +30,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -42,8 +40,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
 import com.detox.app.presentation.util.pressScaleFeedback
-import kotlinx.coroutines.delay
 
 private val BgColor      = Color(0xFF0A0A0A)
 private val AccentGreen  = Color(0xFF00C853)
@@ -61,15 +60,23 @@ private val TextHint     = Color(0xFF555555)
 private val SurfaceDark  = Color(0xFF111111)
 private val BorderDark   = Color(0xFF222222)
 private val TrackDark    = Color(0xFF333333)
+private val ProgressTrack = Color(0xFF1E1E1E)  // "Calm Authority" thin-line track
+private val AppNameColor  = Color(0xFF444444)  // blocked app name, top-right only
 
 /**
- * Stage 1 — Intention Check Overlay (v2 redesign).
+ * Stage 1 — Intention Check Overlay ("Calm Authority" redesign).
+ *
+ * The hero is now the REMAINING opens (maxOpens − opensUsed), not the used count, and
+ * counts up on show. The screen is monochrome on #0A0A0A with a single green accent
+ * (#00C853) carried by the spaced ALL-CAPS context header, the hero progress fill, and
+ * the primary button. ~40% of the screen stays empty; actions are pinned to the bottom.
  *
  * Context header is computed in OverlayManager and passed as a pre-formatted string
- * (Streak / €Amount / Group rank depending on challenge type).
+ * (Streak / €Amount / Group rank depending on challenge type); the old emoji prefix is
+ * stripped here (see [cleanHeader]).
  *
- * consciousOpens ONLY increments after the ghost button tap + 5s countdown.
- * "Stark bleiben 💪" and back button go home without incrementing.
+ * consciousOpens ONLY increments after the ghost button tap + countdown. The primary
+ * button and back button go home without incrementing.
  */
 @Composable
 fun SessionIntentionOverlay(
@@ -85,69 +92,76 @@ fun SessionIntentionOverlay(
 ) {
     var showCountdown by remember { mutableStateOf(false) }
     val remaining = (maxOpens - opensUsed).coerceAtLeast(0)
-    val progress  = if (maxOpens > 0) opensUsed.toFloat() / maxOpens else 0f
 
-    // Entrance animation
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
+    // Strip the old 🔥/💰/👥 emoji prefix and uppercase, in-place. Done here (not in
+    // strings.xml) because the redesign is scoped to this overlay — the shared header
+    // strings keep their emoji for the other overlays that still read them.
+    val header = remember(contextHeader) { cleanHeader(contextHeader) }
 
-    // Count-up animation for large number
-    var displayedOpens by remember { mutableIntStateOf(if (opensUsed > 0) 0 else opensUsed) }
-    LaunchedEffect(Unit) {
-        if (opensUsed > 0) {
-            delay(100L)
-            val steps = opensUsed.coerceAtMost(20)
-            val stepDelay = 300L / steps
-            for (i in 1..steps) {
-                displayedOpens = opensUsed * i / steps
-                delay(stepDelay)
-            }
-            displayedOpens = opensUsed
-        }
-    }
+    // Entrance: fade + slight upward translate of the centre block (~260ms ease-out),
+    // and an integer count-up of the hero 0 → remaining (~600ms ease-out).
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(200)) + scaleIn(
-            animationSpec = tween(200, easing = FastOutSlowInEasing),
-            initialScale = 0.95f
-        )
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(260, easing = LinearOutSlowInEasing),
+        label = "overlayContentAlpha"
+    )
+    val displayedRemaining by animateIntAsState(
+        targetValue = if (shown) remaining else 0,
+        animationSpec = tween(600, easing = LinearOutSlowInEasing),
+        label = "overlayHeroCountUp"
+    )
+    // Progress fill = REMAINING fraction, tracked to the count-up so the green line grows
+    // in sync with the hero on show (and is shorter the more opens have been spent).
+    val progressFraction = if (maxOpens > 0) displayedRemaining.toFloat() / maxOpens else 0f
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BgColor)   // opaque immediately — never reveal the app behind
     ) {
-        Box(
+        // App name top-right (#444, 11sp/400)
+        Text(
+            text = appName,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Normal,
+            color = AppNameColor,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 16.dp)
+                .graphicsLayer { alpha = contentAlpha }
+        )
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(BgColor)
+                .padding(horizontal = 28.dp)
+                .padding(top = 60.dp, bottom = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // App name top-right
-            Text(
-                text = appName,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF333333),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 16.dp, end = 16.dp)
-            )
+            // Centre block floats between two weights → vertically centred, ~40% empty.
+            Spacer(Modifier.weight(1f))
 
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 28.dp)
-                    .padding(top = 60.dp, bottom = 36.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.graphicsLayer {
+                    alpha = contentAlpha
+                    translationY = (1f - contentAlpha) * 12.dp.toPx()
+                }
             ) {
-                Spacer(Modifier.height(16.dp))
-
-                // ── Context header ─────────────────────────────────────────────────
+                // ── Context header — spaced ALL-CAPS, the single green accent ───────
                 Text(
-                    text = contextHeader,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    text = header,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
                     color = AccentGreen,
+                    letterSpacing = 2.5.sp,
                     textAlign = TextAlign.Center
                 )
 
-                // ── User's own motivation ("why") — primary placement at the decision moment ──
+                // ── User's own motivation ("why") — primary placement at decision ──
                 val motivation = motivationText?.takeIf { it.isNotBlank() }
                 if (motivation != null) {
                     Spacer(Modifier.height(14.dp))
@@ -164,55 +178,43 @@ fun SessionIntentionOverlay(
 
                 Spacer(Modifier.height(32.dp))
 
-                // ── Large number (animated count-up) ───────────────────────────────
+                // ── Hero: REMAINING count, 64sp tabular, animated count-up ─────────
                 Text(
-                    text = displayedOpens.toString(),
+                    text = displayedRemaining.toString(),
                     fontSize = 64.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    letterSpacing = (-3).sp,
-                    textAlign = TextAlign.Center
+                    letterSpacing = (-2).sp,
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontFeatureSettings = "tnum")  // tabular figures
                 )
 
                 Spacer(Modifier.height(12.dp))
 
-                // ── Label below number ─────────────────────────────────────────────
+                // ── Sub-label — "übrig" framing (#666) ─────────────────────────────
                 Text(
-                    text = stringResource(R.string.overlay_v2_label_sessions, maxOpens),
+                    text = stringResource(R.string.overlay_v2_label_sessions_remaining),
                     fontSize = 13.sp,
-                    color = Color(0xFF444444),
+                    fontWeight = FontWeight.Normal,
+                    color = TextSecond,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(30.dp))
 
-                // ── Progress indicator: dots if limit ≤ 10, bar otherwise ──────────
-                if (maxOpens <= 10) {
-                    OverlayDotsIndicator(used = opensUsed, total = maxOpens)
-                } else {
-                    OverlayProgressBar(progress = progress.coerceIn(0f, 1f), trackColor = TrackDark, fillColor = AccentGreen)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = stringResource(R.string.overlay_v2_progress_sessions_remaining, remaining),
-                            fontSize = 11.sp,
-                            color = Color(0xFFAAAAAA)
-                        )
-                        Text(
-                            text = "${(progress * 100).toInt()}%",
-                            fontSize = 11.sp,
-                            color = Color(0xFFAAAAAA)
-                        )
-                    }
-                }
+                // ── Progress line — fill = REMAINING, 3dp × 120dp centred ──────────
+                RemainingProgressLine(fraction = progressFraction)
+            }
 
-                Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
 
-                // ── Primary button ─────────────────────────────────────────────────
+            // ── Actions pinned bottom ──────────────────────────────────────────────
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = contentAlpha }
+            ) {
                 OverlayPrimaryButton(
                     text = stringResource(R.string.overlay_primary_not_open),
                     onClick = onNo
@@ -220,12 +222,14 @@ fun SessionIntentionOverlay(
 
                 Spacer(Modifier.height(12.dp))
 
-                // ── Ghost button — barely visible, 10sp, 32dp ─────────────────────
+                // Ghost button — barely visible (white @ 28%), 10sp, 32dp
                 CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                     TextButton(
                         onClick = { showCountdown = true },
                         modifier = Modifier.height(32.dp),
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = Color.White.copy(alpha = 0.28f)
+                        )
                     ) {
                         Text(
                             text = stringResource(R.string.overlay_ghost_open),
@@ -235,15 +239,46 @@ fun SessionIntentionOverlay(
                     }
                 }
             }
-
-            if (showCountdown) {
-                CountdownScreen(
-                    packageName = packageName,
-                    onComplete = onYes,
-                    onCancel = onNo
-                )
-            }
         }
+
+        if (showCountdown) {
+            CountdownScreen(
+                packageName = packageName,
+                appName = appName,
+                onComplete = onYes,
+                onCancel = onNo
+            )
+        }
+    }
+}
+
+/**
+ * Strips a leading decorative glyph (the old 🔥 / 💰 / 👥 emoji prefix) and uppercases
+ * the header for the spaced-caps "Calm Authority" treatment. Currency (€) and the rank
+ * "#" are preserved as header content; only the leading emoji + whitespace is dropped.
+ */
+private fun cleanHeader(raw: String): String =
+    raw.dropWhile { !it.isLetterOrDigit() && it != '€' && it != '#' }
+        .trim()
+        .uppercase()
+
+/** Thin progress line — green fill = the fraction of the allowance still REMAINING. */
+@Composable
+private fun RemainingProgressLine(fraction: Float) {
+    Box(
+        modifier = Modifier
+            .width(120.dp)
+            .height(3.dp)
+            .clip(RoundedCornerShape(1.5.dp))
+            .background(ProgressTrack)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(1.5.dp))
+                .background(AccentGreen)
+        )
     }
 }
 
@@ -318,7 +353,7 @@ internal fun OverlayPrimaryButton(
         Text(
             text = text,
             fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.SemiBold
         )
     }
 }

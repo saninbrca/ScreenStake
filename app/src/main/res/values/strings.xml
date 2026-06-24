@@ -497,6 +497,11 @@
     <string name="countdown_bottom_text">Öffnet automatisch in…</string>
     <string name="countdown_cancel_button">Abbrechen ✋</string>
 
+    <!-- CountdownScreen "Calm Authority" redesign (ring) -->
+    <string name="countdown_calm_eyebrow">ÖFFNET IN</string>
+    <string name="countdown_calm_sub">Atme kurz durch.</string>
+    <string name="countdown_calm_cancel">Abbrechen</string>
+
     <!-- Budget Selection Overlay (TIME_BUDGET Stage 1) -->
     <string name="budget_overlay_title">Opening %1$s</string>
     <string name="budget_overlay_remaining">%1$d min remaining today</string>
@@ -1059,6 +1064,15 @@
     <string name="overlay_budget_how_long">Wie lange möchtest du schauen?</string>
     <string name="overlay_budget_start_session">%1$d min starten</string>
 
+    <!-- "Calm Authority" budget overlay — scarcity eyebrow, picker unit, live consequence line.
+         The before/after fragments are quoted to preserve their surrounding spaces (Android
+         strips unquoted leading/trailing whitespace); the amount sits in #888 for slight emphasis. -->
+    <string name="overlay_budget_eyebrow">NOCH %1$d MIN HEUTE</string>
+    <string name="overlay_budget_unit_minutes">Minuten</string>
+    <string name="overlay_budget_consequence_before">"danach noch "</string>
+    <string name="overlay_budget_consequence_amount">%1$d min</string>
+    <string name="overlay_budget_consequence_after">" übrig"</string>
+
     <!-- Dark overlay redesign — TimeWindowOverlay -->
     <string name="overlay_time_window_title">Noch nicht so weit</string>
     <string name="overlay_time_window_subtitle">Dein Zeitfenster beginnt um %1$s Uhr</string>
@@ -1067,6 +1081,13 @@
     <string name="overlay_time_window_opens_label">Öffnet</string>
     <string name="overlay_time_window_closes_label">Schließt</string>
     <string name="overlay_time_window_ok">Verstanden 👍</string>
+
+    <!-- TimeWindowOverlay "Calm Authority" redesign (countdown) -->
+    <string name="overlay_tw_calm_eyebrow">VERFÜGBAR IN</string>
+    <string name="overlay_tw_calm_unit_hours">STUNDEN</string>
+    <string name="overlay_tw_calm_unit_minutes">MINUTEN</string>
+    <string name="overlay_tw_calm_reopen">ab %1$s wieder frei</string>
+    <string name="overlay_tw_calm_button">Verstanden</string>
 
     <!-- Dark overlay redesign — WebsiteBlockedOverlay -->
     <string name="overlay_website_new_title">Website geblockt</string>
@@ -1151,6 +1172,8 @@
 
     <!-- Overlay redesign v2 — large number labels -->
     <string name="overlay_v2_label_sessions">von %1$d Öffnungen heute verbraucht</string>
+    <!-- "Calm Authority" redesign: hero shows REMAINING opens, so the sub-label is "übrig"-framed -->
+    <string name="overlay_v2_label_sessions_remaining">Öffnungen übrig</string>
     <string name="overlay_v2_label_time">von %1$d Minuten heute verbraucht</string>
     <string name="overlay_v2_label_budget">von %1$d Minuten heute verfügbar</string>
 
@@ -1163,6 +1186,15 @@
     <!-- Overlay redesign v2 — limit reached texts (CHANGE 6) -->
     <string name="overlay_v2_limit_reached_title">Tageslimit erreicht 🔒</string>
     <string name="overlay_v2_limit_reached_sub">Morgen bekommst du neue Öffnungen.</string>
+
+    <!-- "Calm Authority" Stage 2 ("Done"): hero closing statement + sub + per-type eyebrow -->
+    <string name="overlay_v2_limit_hero">Genug für heute</string>
+    <string name="overlay_v2_limit_sub">Morgen bekommst du neue Öffnungen.</string>
+    <string name="overlay_v2_done_eyebrow_streak">Streak gehalten</string>
+    <string name="overlay_v2_done_eyebrow_stake">Einsatz gesichert</string>
+    <string name="overlay_v2_done_eyebrow_rank">Platz gehalten</string>
+    <string name="overlay_v2_done_eyebrow_generic">Geschafft</string>
+    <string name="overlay_primary_understood">Verstanden</string>
 
     <!-- Wraps the user's own custom motivation ("why") on the decision overlays. %1$s = user text. -->
     <string name="overlay_motivation_quote">„%1$s“</string>

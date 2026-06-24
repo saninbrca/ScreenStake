@@ -544,24 +544,11 @@ class OverlayManager @Inject constructor(
         val challenge = status.challenge
         val confirmedOpens = consciousOpensToday.getOrDefault((challenge.appPackageName ?: ""), 0)
         val maxOpens = challenge.limitValueSessions ?: 0
-        val streak = getStreak(challenge)
         Timber.d(
             "OverlayManager: Stage 2 shown for ${challenge.appDisplayName} " +
                     "— $confirmedOpens/$maxOpens conscious opens, " +
                     "mode=${challenge.mode}"
         )
-
-        val contextHeader = buildContextHeader(challenge, streak)
-        val (largeNumber, largeNumberLabel) = when (challenge.limitType) {
-            LimitType.TIME -> Pair(
-                status.todayMinutes,
-                context.getString(R.string.overlay_v2_label_time, challenge.limitValueMinutes)
-            )
-            else -> Pair(
-                confirmedOpens,
-                context.getString(R.string.overlay_v2_label_sessions, maxOpens)
-            )
-        }
 
         val composeView = createSessionComposeView(
             onBack = {
@@ -576,11 +563,7 @@ class OverlayManager @Inject constructor(
             DetoxTheme {
                 SessionLimitReachedOverlay(
                     appName = resolveMultiAppDisplayName(challenge),
-                    contextHeader = contextHeader,
-                    largeNumber = largeNumber,
-                    largeNumberLabel = largeNumberLabel,
-                    limitCount = maxOpens,
-                    motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
+                    eyebrowText = buildCompletionEyebrow(challenge),
                     onNo = {
                         Timber.d(
                             "OverlayManager: Stage 2 'Nicht öffnen' tapped " +
@@ -833,9 +816,9 @@ class OverlayManager @Inject constructor(
         if (remainingMs <= 0L) {
             showBudgetExhaustedOverlay(status, scope)
         } else {
-            val streak = getStreak(challenge)
-            val contextHeader = buildContextHeader(challenge, streak)
-            showBudgetSelectionOverlay(status, remainingMinutes, contextHeader, scope)
+            // Redesigned BudgetSelectionOverlay anchors on the remaining budget itself, not the
+            // streak/€/rank context header — so no contextHeader is computed for this path.
+            showBudgetSelectionOverlay(status, remainingMinutes, scope)
         }
     }
 
@@ -843,14 +826,13 @@ class OverlayManager @Inject constructor(
     private fun showBudgetSelectionOverlay(
         status: DailyLimitStatus,
         remainingMinutes: Int,
-        contextHeader: String,
         scope: CoroutineScope
     ) {
         val challenge = status.challenge
         val packageName = (challenge.appPackageName ?: "")
         Timber.d(
             "OverlayManager: showing BudgetSelectionOverlay for ${challenge.appDisplayName} " +
-                    "(remaining=${remainingMinutes}min, header=$contextHeader)"
+                    "(remaining=${remainingMinutes}min)"
         )
 
         val composeView = createSessionComposeView(
@@ -866,9 +848,7 @@ class OverlayManager @Inject constructor(
                 BudgetSelectionOverlay(
                     packageName = packageName,
                     appName = resolveMultiAppDisplayName(challenge),
-                    contextHeader = contextHeader,
                     remainingMinutes = remainingMinutes,
-                    budgetTotalMinutes = challenge.dailyBudgetMinutes ?: remainingMinutes,
                     motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
                     onStart = { selectedMinutes ->
                         Timber.d(
@@ -909,16 +889,10 @@ class OverlayManager @Inject constructor(
                     "(mode=${challenge.mode}, groupId=$groupChallengeId)"
         )
 
-        val budgetExhaustedLabel  = context.getString(
-            R.string.overlay_v2_label_budget, challenge.dailyBudgetMinutes ?: 0
-        )
-
         if (groupChallengeId != null) {
-            // Group Challenge: never auto-fail. Show SessionLimitReachedOverlay with rank header.
+            // Group Challenge: never auto-fail. Show SessionLimitReachedOverlay with rank eyebrow.
             // Stripe only captured on manual "Aufgeben" in Detail screen.
-            val streak = getStreak(challenge)
-            val contextHeader = buildContextHeader(challenge, streak)
-            Timber.d("Fix3: Group DAILY_BUDGET exhausted — contextHeader=$contextHeader (groupId=$groupChallengeId)")
+            Timber.d("Fix3: Group DAILY_BUDGET exhausted (groupId=$groupChallengeId)")
             val composeView = createSessionComposeView(
                 onBack = {
                     dismissOverlay()
@@ -928,10 +902,7 @@ class OverlayManager @Inject constructor(
                 DetoxTheme {
                     SessionLimitReachedOverlay(
                         appName = resolveMultiAppDisplayName(challenge),
-                        contextHeader = contextHeader,
-                        largeNumber = 0,
-                        largeNumberLabel = budgetExhaustedLabel,
-                        motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
+                        eyebrowText = buildCompletionEyebrow(challenge),
                         onNo = {
                             dismissOverlay()
                             goHome()
@@ -943,8 +914,6 @@ class OverlayManager @Inject constructor(
             return
         }
 
-        val budgetExhaustedHeader = context.getString(R.string.overlay_v2_header_budget, 0)
-
         val composeView = createSessionComposeView(
             onBack = {
                 dismissOverlay()
@@ -954,10 +923,7 @@ class OverlayManager @Inject constructor(
             DetoxTheme {
                 SessionLimitReachedOverlay(
                     appName = resolveMultiAppDisplayName(challenge),
-                    contextHeader = budgetExhaustedHeader,
-                    largeNumber = 0,
-                    largeNumberLabel = budgetExhaustedLabel,
-                    motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
+                    eyebrowText = buildCompletionEyebrow(challenge),
                     onNo = {
                         dismissOverlay()
                         goHome()
@@ -977,7 +943,6 @@ class OverlayManager @Inject constructor(
     private fun showTimeWindowOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
         val challenge = status.challenge
         val openTime  = challenge.scheduleStartTime ?: "00:00"
-        val closeTime = challenge.scheduleEndTime   ?: "23:59"
 
         val minutesUntilOpen = computeMinutesUntilOpen(openTime)
 
@@ -991,7 +956,6 @@ class OverlayManager @Inject constructor(
                 TimeWindowOverlay(
                     appName          = challenge.appDisplayName,
                     openTime         = openTime,
-                    closeTime        = closeTime,
                     minutesUntilOpen = minutesUntilOpen,
                     onDismiss        = {
                         dismissOverlay("time_window_ok")
@@ -1639,6 +1603,17 @@ class OverlayManager @Inject constructor(
             }
             else -> context.getString(R.string.overlay_intention_streak_line, streak)
         }
+    }
+
+    /**
+     * Per-type "Done" eyebrow for the Stage-2 (SessionLimitReachedOverlay) "Calm Authority"
+     * redesign — reframes the exhausted state as completion. Mirrors [buildContextHeader]'s
+     * type branching but needs no async (type is read directly off the challenge).
+     */
+    private fun buildCompletionEyebrow(challenge: Challenge): String = when {
+        challenge.groupChallengeId != null -> context.getString(R.string.overlay_v2_done_eyebrow_rank)
+        challenge.mode == ChallengeMode.HARD -> context.getString(R.string.overlay_v2_done_eyebrow_stake)
+        else -> context.getString(R.string.overlay_v2_done_eyebrow_streak)
     }
 
     /**

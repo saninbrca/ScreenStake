@@ -55,10 +55,12 @@ Group WAIT:   #F2F2F7 bg, #8E8E93 text
 | Label | 13sp | 500 | #8E8E93 |
 | Caption | 12sp | 400 | #8E8E93 |
 | Hint | 11sp | 400 | #8E8E93 |
-| Overlay large number | 64sp | 700 | #FFF |
-| Overlay context header | 13sp | 600 | #00C853 |
-| Overlay label | 13sp | 400 | #444 |
-| Overlay ghost button | 10sp | 400 | #FFFFFF |
+| Overlay large number | 64sp | 700 | #FFF (tabular figures, -2 tracking) |
+| Overlay context header | 13sp | 600 | #00C853 (Stage 2 + budget/time overlays) |
+| Overlay label | 13sp | 400 | #444 (Stage 2 + budget/time overlays) |
+| Overlay ghost button | 10sp | 400 | #FFFFFF @ 28% |
+| **Intention header** (Calm Authority, SessionIntentionOverlay) | 11sp | 500 | #00C853, ALL CAPS, 2.5sp tracking, emoji stripped |
+| **Intention sub-label** (Calm Authority, SessionIntentionOverlay) | 13sp | 400 | #666 ("übrig" framing) |
 | Detail stat value | 24sp | 700 | #000 |
 | Detail big number | 36sp | 700 | #000 |
 | Section title | 13sp | 600 | #8E8E93 uppercase |
@@ -75,7 +77,7 @@ Full width
 
 ### Primary Button (dark overlays)
 Height: 52dp, border-radius 14dp
-Background: #00C853, text #000000, 16sp bold
+Background: #00C853, text #000000, 16sp/600 (SemiBold)
 Full width
 
 ### Secondary Button (light screens)
@@ -162,7 +164,7 @@ Selected indicator: 2dp green underline (#00C853) below selected item
 
 ### Layout (top to bottom, all overlays)
 1. Status bar: dark icons (isAppearanceLightStatusBars = false)
-   App name top-right: 11sp, #333
+   App name top-right: 11sp, #444
 2. Context header (13sp, bold, #00C853)
 3. Large number 64sp OR status text
 4. Label below number (13sp, #444)
@@ -184,38 +186,103 @@ TIME_WINDOW_ONLY:    "📅 Verfügbar ab HH:MM"     #00C853
 
 Always read LIVE from challenge + DailyLog. Never hardcoded.
 
-### SessionIntentionOverlay (Stage 1)
-Large number: consciousOpens / timeUsedMin / budgetRemaining
-Label: "von X Öffnungen heute verbraucht" etc.
-Primary: "Nicht öffnen"
-Ghost: "trotzdem öffnen" (10sp, #FFFFFF, barely visible)
+**SessionIntentionOverlay (Calm Authority redesign):** strips the leading emoji and renders
+the header in spaced ALL-CAPS (11sp / 500 / 2.5sp tracking, #00C853 — the lone accent),
+e.g. "X TAGE STREAK", "€X AUF DEM SPIEL", "PLATZ #X VON Y". Done in the composable
+(`cleanHeader`), NOT in strings.xml — the shared header strings keep their emoji for the
+Stage 2 / budget / time overlays that still read them.
+
+### SessionIntentionOverlay (Stage 1 — Calm Authority)
+Large number: **REMAINING** opens (maxOpens − consciousOpens), 64sp tabular, count-up 0→value on show.
+Sub-label: "Öffnungen übrig" (13sp, #666 — "übrig" framing).
+Progress line: 3dp × ~120dp, centred, track #1E1E1E; green fill = REMAINING fraction,
+width animates in sync with the count-up (green shrinks as opens are spent). No dots/percent row.
+Motion: native Compose — content fade + slight upward translate (~260ms ease-out); no haptics.
+Primary: "Nicht öffnen" (52dp, #00C853, #000 text).
+Ghost: "trotzdem öffnen" (10sp, #FFFFFF @ 28%, barely visible).
 
 ### SessionLimitReachedOverlay (Stage 2)
-Large number: limit value (full)
-Progress: 100%, label "Heutiges Limit erreicht"
-Text: "Tageslimit erreicht 🔒" (15sp, bold, #FFF)
-Sub: "Morgen bekommst du neue Öffnungen." (13sp, #444)
-Primary: "Stark bleiben 💪"
-NO ghost button
+Trigger: appears on the next open attempt AFTER the final granted session has expired —
+not the instant remaining hits 0. The last conscious open still starts its session (the
+user paid for N opens, so the Nth open is honored); the gate in OverlayManager is
+`confirmedOpens >= maxOpens` and only triggers on a subsequent open once the active-session
+window is over (re-shown in-place if the app is still foreground at expiry).
+
+**Calm Authority — direction "Done":** reframes the exhausted state as completion, not
+punishment. No lock icon, no limit-number hero, no emoji. Monochrome on #0A0A0A, single
+green accent (#00C853). Same fade + upward-translate entrance as Stage 1; no count-up.
+- Eyebrow: per-type, spaced ALL-CAPS, 11sp/500/2.5sp tracking, #00C853 — "STREAK GEHALTEN"
+  (Soft) · "EINSATZ GESICHERT" (Hard) · "PLATZ GEHALTEN" (Group) · "GESCHAFFT" (generic).
+  Built in OverlayManager (`buildCompletionEyebrow`), same type branching as the headers.
+- Hero: closing statement, NOT a number — "Genug für heute" (30sp/700/#FFF, -1 tracking,
+  line-height ~1.15, may wrap to 2 lines).
+- Sub-label: "Morgen bekommst du neue Öffnungen." (13sp/400/#666).
+- Completion line: 3dp × 120dp, centred, FULLY filled #00C853 (signal, not a progress bar).
+- Primary: "Verstanden" (52dp, #00C853, #000 text). **NO ghost button** — decision is made.
+- New strings (old "Tageslimit erreicht"/"Stark bleiben" left intact for any other reader):
+  `overlay_v2_limit_hero`, `overlay_v2_limit_sub`, `overlay_v2_done_eyebrow_*`,
+  `overlay_primary_understood`. The shared budget-exhausted callers use the same look.
 
 ### BudgetSelectionOverlay
-Large number: remaining minutes
-Label: "von X Minuten heute verfügbar"
-DetoxHorizontalPicker (isDark=true): 1 to remainingMin
-Chips replaced by picker — label "Minuten wählen" (11sp, #333)
-Primary: "X min starten" (updates with selection)
-Ghost: "stark bleiben 💪" (this overlay inverts ghost/primary)
+"Calm Authority", stance **"visible friction"** — the user is choosing time to SPEND, so the
+friction is VISIBILITY, not punishment. Single green accent (#00C853) only — **no red/orange**
+"low budget" alarm (that would break the A-family). No emoji. Entrance = fade + 12dp translate-up
+(~260ms), matching SessionIntentionOverlay / SessionLimitReachedOverlay.
 
-### TimeWindowOverlay
-No large number
-Status text: "Noch nicht verfügbar" (15sp, bold, #FFF)
-Sub: "Dein Zeitfenster beginnt um HH:MM" (13sp, #444)
-Dark inset (#111, 14dp radius, 14dp 20dp padding):
-  "Verfügbar in" (11sp, #444)
-  HH:MM countdown (32sp, bold, #FFF, letter-spacing -1)
-  "Stunden" (11sp, #444)
-Time row: open/close times with divider
-Primary: "Verstanden 👍"
+Layout (top → bottom, vertically centred, generous space):
+- App name top-right (11sp, #444).
+- Eyebrow (scarcity anchor): "NOCH X MIN HEUTE" — X = remaining daily budget. 11sp/500, ALL-CAPS,
+  letter-spacing 2.5, #00C853 (`overlay_budget_eyebrow`).
+- Optional motivation quote (italic, #AAAAAA) — the user's own "why", as on the decision overlays.
+- `DetoxHorizontalPicker(darkMode = true, enableHaptics = false)` restyled to A: selected value
+  48sp/700/#FFF tabular (letter-spacing -2), immediate neighbours #555, outer neighbours #2E2E2E,
+  a small #00C853 indicator dot **above** the selected value (not the light variant's underline).
+  Range 1..remainingMin, **default low** = min(5, rem). Bounded by remaining → can't overspend.
+- Unit label "Minuten" (12sp, #666) under the picker (`overlay_budget_unit_minutes`).
+- Live consequence line: "danach noch Y min übrig", Y = remaining − selected, **updates as the
+  picker turns**; the "Y min" portion sits in #888 (same hue family). 13sp, #666
+  (`overlay_budget_consequence_before` / `_amount` / `_after`).
+- Primary: "X min starten" (updates with selection; `overlay_budget_start_session`).
+- Ghost: "stark bleiben" — **visible & legible** (#999, 13sp), restraint is the good choice here
+  and honestly offered, but never louder than the primary (`stay_strong_button`). This overlay
+  inverts ghost/primary priority.
+
+The dark `DetoxHorizontalPicker` variant is **exclusive to this overlay**; all in-app callers use
+the light variant. `contextHeader` is no longer passed (the eyebrow anchors on remaining budget).
+
+### TimeWindowOverlay — "Calm Authority" (countdown)
+Info-only (app outside its time window). Calm "not yet, here's when" — not a wall.
+No emoji, no ghost button, single green accent.
+App name top-right (11sp/400, #444).
+Centred block, fade + translate-up entrance (~260ms ease-out) like the siblings —
+but NO count-up (the hero is a time, not a count).
+  Eyebrow: "VERFÜGBAR IN" (11sp/500, letter-spacing 2.5, ALL CAPS, #00C853)
+  Countdown hero in inset card (bg #111, 1px border #1E1E1E, 16dp radius, 26dp×16dp padding):
+    hero (48sp/700, #FFF, tabular figures, letter-spacing -2)
+    unit label (11sp/500, #666, letter-spacing 2)
+    Format mirrors the wait: ≥60 min → "H:MM" + "STUNDEN"; <60 min → bare minutes + "MINUTEN".
+  Below inset: "ab HH:MM wieder frei" (13sp, #666) — the durable fact, survives after
+  the relative countdown goes stale.
+Primary only: "Verstanden". NO ghost button, NO bypass.
+`minutesUntilOpen` computed once at show-time in OverlayManager — no live tick.
+
+### CountdownScreen — "Calm Authority" (ring)
+The 5s cooldown beat AFTER the user commits ("Ja, öffnen" / "X min starten"), before the
+app is released. Framed as a felt pause to let the impulse cool — not a bare counter.
+No emoji, single green accent. Rendered inside SessionIntention/Budget overlays.
+App name top-right (11sp/400, #444).
+Centred block, fade + translate-up entrance (~260ms ease-out) like the siblings.
+  Eyebrow: "ÖFFNET IN" (11sp/500, letter-spacing 2.5, ALL CAPS, #00C853)
+  Draining ring: ~150dp, 5dp stroke, round cap, track #1E1E1E, progress #00C853.
+    The green arc starts full at 5s and drains to empty at 0 (starts at top, -90°).
+  Number centred in ring: remaining whole seconds (72sp/700, #FFF, tabular figures), 5→1.
+  Sub-label under ring: "Atme kurz durch." (13sp, #666).
+Cancel at bottom: "Abbrechen" (14sp, #999) — visible & legible, NOT the 28% ghost; backing
+  out here is the good choice, honestly offered but quieter than the ring. Wired to the
+  EXISTING cancel path (`onCancel` → caller's home/back route); app is NOT opened.
+Single continuous timer (`withFrameNanos` elapsed) drives BOTH: number = ceil(remaining
+  seconds), ring sweep = continuous remaining fraction → ring drains smoothly, no per-second
+  stutter. 5s duration and completion (`onComplete`) unchanged.
 
 ### Critical Overlay Rules
 FLAG_SECURE: MANDATORY on all overlays
@@ -231,7 +298,9 @@ Progress labels below bar: 11sp, #AAAAAA (left = context text, right = percentag
 Haptic feedback is used ONLY in:
 - Wizard "Weiter" / "Next" buttons → `HapticManager.light()`
 - App selection row taps → `HapticManager.light()`
-- `DetoxHorizontalPicker` number change → `HapticFeedbackType.LongPress`
+- `DetoxHorizontalPicker` number change → `HapticManager.light()` — **in-app pickers only**.
+  Overlays pass `enableHaptics = false` (overlays never add haptic feedback); the BudgetSelectionOverlay
+  picker is therefore silent.
 **NEVER in any overlay** — not on button taps, not on dismiss, not on show.
 
 ### Group Challenge Overlay (dark fullscreen — same as Solo)

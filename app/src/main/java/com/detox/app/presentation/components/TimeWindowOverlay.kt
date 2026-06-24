@@ -1,21 +1,17 @@
 package com.detox.app.presentation.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,195 +23,167 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
-import kotlinx.coroutines.delay
+
+private val BgColor      = Color(0xFF0A0A0A)
+private val AccentGreen  = Color(0xFF00C853)
+private val TextSecond   = Color(0xFF666666)
+private val SurfaceDark  = Color(0xFF111111)
+private val InsetBorder  = Color(0xFF1E1E1E)
+private val AppNameColor  = Color(0xFF444444)
 
 /**
- * Shown when user opens an app outside its configured TIME_WINDOW_ONLY schedule (v2 redesign).
+ * TimeWindowOverlay — "Calm Authority" redesign (countdown).
  *
- * Context header: "📅 Verfügbar ab HH:MM" computed from openTime.
- * Status text replaces the large number (no usage count for TIME_WINDOW).
- * Dark inset countdown card (CHANGE 7).
- * Single "Stark bleiben 💪" button — no bypass.
+ * Shown when the user opens an app OUTSIDE its allowed TIME_WINDOW_ONLY schedule. It is
+ * info-only: nothing to decide, the app simply isn't available yet. Rather than a wall,
+ * the screen gives the forward-looking countdown ("VERFÜGBAR IN 2:14") AND the durable
+ * fact ("ab HH:MM wieder frei") so the message still reads after the relative time goes
+ * stale. Monochrome on #0A0A0A with the single green accent on the eyebrow; no emoji,
+ * no ghost button.
+ *
+ * The hero is a TIME, not a count — it fades/translates in like its siblings but does NOT
+ * count up digit-by-digit. [minutesUntilOpen] is computed once at show-time in
+ * OverlayManager; no live per-second tick (the overlay is dismissed in seconds and the
+ * absolute "ab HH:MM" carries the durable info).
+ *
+ * Format mirrors the wait: ≥60 min → "H:MM" + "STUNDEN"; <60 min → bare minutes +
+ * "MINUTEN". The unit label always agrees with the format shown.
  */
 @Composable
 fun TimeWindowOverlay(
     appName: String,
     openTime: String,
-    closeTime: String,
     minutesUntilOpen: Int,
     onDismiss: () -> Unit
 ) {
-    val SurfaceDark = Color(0xFF111111)
-    val BorderDark  = Color(0xFF222222)
-
-    // Live countdown ticking down every minute
-    var remaining by remember { mutableStateOf(minutesUntilOpen) }
-    LaunchedEffect(minutesUntilOpen) {
-        remaining = minutesUntilOpen
-        while (remaining > 0) {
-            delay(60_000L)
-            remaining = (remaining - 1).coerceAtLeast(0)
-        }
+    val remaining = minutesUntilOpen.coerceAtLeast(0)
+    val showAsHours = remaining >= 60
+    val heroText = if (showAsHours) {
+        "%d:%02d".format(remaining / 60, remaining % 60)
+    } else {
+        remaining.toString()
     }
+    val unitText = stringResource(
+        if (showAsHours) R.string.overlay_tw_calm_unit_hours
+        else R.string.overlay_tw_calm_unit_minutes
+    )
 
-    val hours   = remaining / 60
-    val minutes = remaining % 60
-    val countdownText = "%02d:%02d".format(hours, minutes)
+    // Entrance: fade + slight upward translate of the centre block (~260ms ease-out),
+    // matching the sibling overlays. No count-up — the hero is a time, not a count.
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(260, easing = LinearOutSlowInEasing),
+        label = "timeWindowContentAlpha"
+    )
 
-    // Entrance animation
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(200)) + scaleIn(
-            animationSpec = tween(200, easing = FastOutSlowInEasing),
-            initialScale = 0.95f
-        )
-    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A0A))
+            .background(BgColor)   // opaque immediately — never reveal the app behind
     ) {
-        // App name top-right
+        // App name top-right (#444, 11sp/400)
         Text(
             text = appName,
             fontSize = 11.sp,
-            color = Color(0xFF333333),
+            fontWeight = FontWeight.Normal,
+            color = AppNameColor,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 16.dp, end = 16.dp)
+                .graphicsLayer { alpha = contentAlpha }
         )
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 28.dp)
-                .padding(top = 72.dp, bottom = 36.dp),
+                .padding(top = 60.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Context header (CHANGE 1) ──────────────────────────────────────
-            Text(
-                text = stringResource(R.string.overlay_v2_header_time_window, openTime),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF00C853),
-                textAlign = TextAlign.Center
-            )
+            // Centre block floats between two weights → vertically centred, ~40% empty.
+            Spacer(Modifier.weight(1f))
 
-            Spacer(Modifier.height(20.dp))
-
-            // ── Status text (CHANGE 7) — replaces large number for TIME_WINDOW ─
-            Text(
-                text = stringResource(R.string.overlay_v2_time_window_status),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // ── Sub text ───────────────────────────────────────────────────────
-            Text(
-                text = stringResource(R.string.overlay_v2_time_window_sub, openTime),
-                fontSize = 13.sp,
-                color = Color(0xFF444444),
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            // ── Dark inset countdown card (CHANGE 7) ───────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(SurfaceDark, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = stringResource(R.string.overlay_time_window_available_in),
-                        fontSize = 11.sp,
-                        color = Color(0xFF444444)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = countdownText,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        letterSpacing = (-1).sp
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.overlay_time_window_hours_unit),
-                        fontSize = 11.sp,
-                        color = Color(0xFF444444)
-                    )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.graphicsLayer {
+                    alpha = contentAlpha
+                    translationY = (1f - contentAlpha) * 12.dp.toPx()
                 }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // ── Open / close time row (CHANGE 7) ──────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = openTime,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = stringResource(R.string.overlay_time_window_opens_label),
-                        fontSize = 10.sp,
-                        color = Color(0xFF444444)
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(32.dp)
-                        .background(Color(0xFF222222))
+                // ── Eyebrow — spaced ALL-CAPS, the single green accent ──────────────
+                Text(
+                    text = stringResource(R.string.overlay_tw_calm_eyebrow),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = AccentGreen,
+                    letterSpacing = 2.5.sp,
+                    textAlign = TextAlign.Center
                 )
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(24.dp))
+
+                // ── Countdown hero in a subtle inset card ───────────────────────────
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .background(SurfaceDark, RoundedCornerShape(16.dp))
+                        .border(1.dp, InsetBorder, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 26.dp, vertical = 16.dp)
+                ) {
                     Text(
-                        text = closeTime,
-                        fontSize = 18.sp,
+                        text = heroText,
+                        fontSize = 48.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        letterSpacing = (-2).sp,
+                        textAlign = TextAlign.Center,
+                        style = TextStyle(fontFeatureSettings = "tnum")  // tabular figures
                     )
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        text = stringResource(R.string.overlay_time_window_closes_label),
-                        fontSize = 10.sp,
-                        color = Color(0xFF444444)
+                        text = unitText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextSecond,
+                        letterSpacing = 2.sp
                     )
                 }
+
+                Spacer(Modifier.height(16.dp))
+
+                // ── Absolute reopen time — the durable fact (#666) ──────────────────
+                Text(
+                    text = stringResource(R.string.overlay_tw_calm_reopen, openTime),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = TextSecond,
+                    textAlign = TextAlign.Center
+                )
             }
 
             Spacer(Modifier.weight(1f))
 
-            // ── Primary button ─────────────────────────────────────────────────
-            OverlayPrimaryButton(
-                text = stringResource(R.string.overlay_primary_not_open),
-                onClick = onDismiss
-            )
+            // ── Primary button only — no ghost, no bypass ──────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = contentAlpha }
+            ) {
+                OverlayPrimaryButton(
+                    text = stringResource(R.string.overlay_tw_calm_button),
+                    onClick = onDismiss
+                )
+            }
         }
     }
-    } // AnimatedVisibility
 }

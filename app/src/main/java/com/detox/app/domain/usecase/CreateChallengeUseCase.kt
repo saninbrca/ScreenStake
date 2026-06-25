@@ -67,7 +67,9 @@ class CreateChallengeUseCase @Inject constructor(
         if (limitType == LimitType.TIME_BUDGET && (dailyBudgetMinutes == null || dailyBudgetMinutes <= 0)) {
             return Result.failure(IllegalArgumentException("Daily budget must be greater than 0"))
         }
-        if (durationDays !in 1..365) {
+        // NO_END_DATE_DAYS is the canonical open-ended sentinel (drives a far-future endDate);
+        // recognise it here so the open-ended Soft path validates instead of failing the 1..365 gate.
+        if (durationDays != DateUtils.NO_END_DATE_DAYS && durationDays !in 1..365) {
             return Result.failure(IllegalArgumentException("Duration must be between 1 and 365 days"))
         }
         if (limitType == LimitType.SESSIONS && (limitValueSessions == null || limitValueSessions <= 0)) {

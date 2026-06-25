@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,12 +23,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,7 +37,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.HourglassTop
@@ -73,6 +74,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -122,7 +124,6 @@ private val DividerColor  = Color(0xFFF2F2F7)
 
 private val CardShape   = RoundedCornerShape(16.dp)
 private val BtnShape    = RoundedCornerShape(14.dp)
-private val PillShape   = RoundedCornerShape(999.dp)
 
 // ── Screen entry point ────────────────────────────────────────────────────────
 
@@ -215,9 +216,17 @@ fun ChallengeCreationScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
+            // TIME_WINDOW skips internal step 4, so it has 6 effective steps. Renumber the
+            // displayed counter contiguously (internal 5/6/7 → shown 4/5/6) so no number is
+            // visibly skipped; the denominator becomes 6 once TIME_WINDOW is chosen on step 3.
+            val isTimeWindow = state.limitType == LimitType.TIME_WINDOW
+            val displayedTotal = if (isTimeWindow) TOTAL_STEPS - 1 else TOTAL_STEPS
+            val displayedStep = if (isTimeWindow && state.currentStep >= 5)
+                state.currentStep - 1 else state.currentStep
+
             WizardHeader(
-                currentStep = state.currentStep,
-                totalSteps = TOTAL_STEPS,
+                currentStep = displayedStep,
+                totalSteps = displayedTotal,
                 onBack = {
                     if (state.currentStep == 1) showDiscardDialog = true
                     else viewModel.goBack()
@@ -228,8 +237,12 @@ fun ChallengeCreationScreen(
                 targetState = state.currentStep,
                 transitionSpec = {
                     val direction = if (targetState > initialState) 1 else -1
-                    (slideInHorizontally { it * direction } + fadeIn()) togetherWith
-                            (slideOutHorizontally { -it * direction } + fadeOut())
+                    // ~300ms ease-out, synced with the WizardHeader progress-bar animation so the
+                    // bar fill and the step content move together.
+                    (slideInHorizontally(animationSpec = tween(300, easing = LinearOutSlowInEasing)) { it * direction } +
+                            fadeIn(animationSpec = tween(300, easing = LinearOutSlowInEasing))) togetherWith
+                            (slideOutHorizontally(animationSpec = tween(300, easing = LinearOutSlowInEasing)) { -it * direction } +
+                                    fadeOut(animationSpec = tween(300, easing = LinearOutSlowInEasing)))
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -344,7 +357,14 @@ private fun WizardHeader(
     totalSteps: Int,
     onBack: () -> Unit,
 ) {
+    // Progress fraction is unchanged (currentStep/totalSteps); only the RENDERED value is animated
+    // so the bar fills smoothly between steps instead of jumping (~300ms ease-out).
     val progress = currentStep.toFloat() / totalSteps.toFloat()
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 300, easing = LinearOutSlowInEasing),
+        label = "wizard_progress",
+    )
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -371,7 +391,7 @@ private fun WizardHeader(
             Spacer(modifier = Modifier.width(48.dp))
         }
         LinearProgressIndicator(
-            progress = { progress },
+            progress = { animatedProgress },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(2.dp),
@@ -771,6 +791,7 @@ private fun Step4LimitValues(
                     selectedValue = state.limitValueMinutes.coerceIn(5, 120),
                     onValueChange = onUpdateLimitMinutes,
                     unit = stringResource(R.string.wizard_set_limit_minutes_unit),
+                    surfaceColor = WizBg,
                 )
             }
 
@@ -781,6 +802,7 @@ private fun Step4LimitValues(
                     selectedValue = state.limitValueSessions.coerceAtMost(20),
                     onValueChange = onUpdateLimitSessions,
                     unit = stringResource(R.string.wizard_set_limit_opens_unit),
+                    surfaceColor = WizBg,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
@@ -795,6 +817,7 @@ private fun Step4LimitValues(
                     selectedValue = state.sessionDurationMinutes.coerceAtMost(30),
                     onValueChange = onUpdateSessionDuration,
                     unit = stringResource(R.string.wizard_set_limit_session_unit),
+                    surfaceColor = WizBg,
                 )
             }
 
@@ -805,23 +828,14 @@ private fun Step4LimitValues(
                     selectedValue = state.dailyBudgetMinutes.coerceIn(5, 120),
                     onValueChange = onUpdateDailyBudget,
                     unit = stringResource(R.string.wizard_set_limit_budget_unit),
+                    surfaceColor = WizBg,
                 )
             }
 
-            LimitType.TIME_WINDOW -> {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Das Zeitfenster legst du im nächsten Schritt fest.",
-                    fontSize = 14.sp,
-                    color = TextSecondary,
-                )
-                Text(
-                    text = "Die App ist nur innerhalb deines Zeitfensters zugänglich.",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = GreenPrimary,
-                )
-            }
+            // Unreachable in normal flow: goNext/goBack skip internal step 4 for TIME_WINDOW
+            // (3 ↔ 5), since the window is configured on the schedule step. Kept only to keep
+            // this `when` exhaustive — renders nothing if ever reached.
+            LimitType.TIME_WINDOW -> Unit
 
             null -> {
                 Text(
@@ -846,6 +860,35 @@ private fun parseTime(time: String): Pair<Int, Int> =
     if (time.length != 5) 0 to 0
     else runCatching { time.split(":").let { it[0].toInt() to it[1].toInt() } }.getOrDefault(0 to 0)
 
+// One column ("Von" / "Bis") of the split schedule time card. Tapping either column opens
+// the same time bottom sheet; only the visual is split. Time uses tabular figures.
+@Composable
+private fun ScheduleTimeColumn(
+    label: String,
+    time: String,
+    isSet: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = TextSecondary,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = time,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isSet) TextPrimary else TextHint,
+            style = TextStyle(fontFeatureSettings = "tnum"),
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Step5Schedule(
@@ -869,12 +912,10 @@ private fun Step5Schedule(
         if (startH * 60 + startM >= endH * 60 + endM) "Endzeit muss nach Startzeit liegen" else null
     } else null
 
-    val timeDisplay = when {
-        scheduleStart.length == 5 && scheduleEnd.length == 5 -> "$scheduleStart – $scheduleEnd"
-        scheduleStart.length == 5 -> "$scheduleStart – ??:??"
-        scheduleEnd.length == 5   -> "??:?? – $scheduleEnd"
-        else -> stringResource(R.string.wizard_schedule_placeholder)
-    }
+    val startSet = scheduleStart.length == 5
+    val endSet = scheduleEnd.length == 5
+    val startText = if (startSet) scheduleStart else "--:--"
+    val endText = if (endSet) scheduleEnd else "--:--"
 
     val hasSchedule = scheduleStart.isNotBlank() || scheduleEnd.isNotBlank() || activeDays.isNotEmpty()
 
@@ -908,81 +949,92 @@ private fun Step5Schedule(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Time input row
-        Box(
+        // Time input row — split Von / Bis card. Each column opens the SAME bottom sheet.
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(PillShape)
+                .height(IntrinsicSize.Min)
+                .clip(CardShape)
                 .background(CardBg)
-                .border(0.5.dp, CardBorder, PillShape)
-                .clickable { showTimePicker = true }
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .border(0.5.dp, CardBorder, CardShape),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = timeDisplay,
-                    fontSize = 15.sp,
-                    color = if (scheduleStart.length == 5 || scheduleEnd.length == 5)
-                        TextPrimary else TextHint,
-                )
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = null,
-                    tint = TextSecondary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            ScheduleTimeColumn(
+                label = "Von",
+                time = startText,
+                isSet = startSet,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { showTimePicker = true },
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(0.5.dp)
+                    .background(CardBorder),
+            )
+            ScheduleTimeColumn(
+                label = "Bis",
+                time = endText,
+                isSet = endSet,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { showTimePicker = true },
+            )
         }
 
         if (timeError != null) {
             Text(text = timeError, fontSize = 12.sp, color = Color(0xFFFF3B30))
         }
 
-        // Weekday pills
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // Weekday circles inside a card, with the "no selection = every day" hint below them.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .background(CardBg)
+                .border(0.5.dp, CardBorder, CardShape)
+                .padding(horizontal = 16.dp, vertical = 16.dp),
         ) {
-            ALL_DAYS.forEach { day ->
-                val isSelected = activeDays.contains(day)
-                val dayBg by animateColorAsState(
-                    targetValue = if (isSelected) GreenPrimary else WizBg,
-                    animationSpec = tween(150), label = "day_bg",
-                )
-                val dayText by animateColorAsState(
-                    targetValue = if (isSelected) Color.White else TextSecondary,
-                    animationSpec = tween(150), label = "day_text",
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp)
-                        .widthIn(min = 36.dp)
-                        .clip(PillShape)
-                        .background(dayBg)
-                        .clickable { onToggleDay(day) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = DAY_LABELS[day] ?: day,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = dayText,
-                        textAlign = TextAlign.Center,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                ALL_DAYS.forEach { day ->
+                    val isSelected = activeDays.contains(day)
+                    val dayBg by animateColorAsState(
+                        targetValue = if (isSelected) GreenPrimary else WizBg,
+                        animationSpec = tween(150), label = "day_bg",
                     )
+                    val dayText by animateColorAsState(
+                        targetValue = if (isSelected) Color.White else TextSecondary,
+                        animationSpec = tween(150), label = "day_text",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(dayBg)
+                            .clickable { onToggleDay(day) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = DAY_LABELS[day] ?: day,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = dayText,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.wizard_schedule_days_hint),
+                fontSize = 12.sp,
+                color = TextSecondary,
+            )
         }
-
-        Text(
-            text = stringResource(R.string.wizard_schedule_days_hint),
-            fontSize = 12.sp,
-            color = TextSecondary,
-        )
 
         if (hasSchedule) {
             TextButton(onClick = onClearSchedule) {
@@ -1010,6 +1062,8 @@ private fun Step5Schedule(
         ModalBottomSheet(
             onDismissRequest = { showTimePicker = false },
             sheetState = sheetState,
+            // M3 default is ~28dp top corners; pin to the wizard's 16dp card radius.
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
         ) {
             Column(
                 modifier = Modifier
@@ -1112,6 +1166,7 @@ private fun Step6Duration(
                 selectedValue = state.amountEuros.coerceIn(safeStakeMin, safeStakeMax),
                 onValueChange = onUpdateAmount,
                 unit = "Euro Einsatz",
+                surfaceColor = WizBg,
             )
             Text(
                 text = "Wenn du das Limit überschreitest, werden €${state.amountEuros} sofort eingezogen.",
@@ -1165,6 +1220,7 @@ private fun Step6Duration(
                 selectedValue = state.durationDays.coerceIn(minDays, 90),
                 onValueChange = onUpdateDuration,
                 unit = "Tage",
+                surfaceColor = WizBg,
             )
         }
     }

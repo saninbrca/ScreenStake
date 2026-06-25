@@ -5,6 +5,15 @@ import java.util.Calendar
 object DateUtils {
     const val MILLIS_PER_DAY = 86_400_000L
 
+    /**
+     * Sentinel duration (≈100 years) representing an open-ended Soft Mode challenge ("Kein
+     * Enddatum"). It drives a far-future [endOfDayMillis] so the challenge never reaches its
+     * endDate (DailyEvaluationWorker therefore never completes it). Single source of truth —
+     * referenced by both the creation ViewModel and CreateChallengeUseCase's duration validation,
+     * so the validator can recognise it instead of rejecting it as out-of-range.
+     */
+    const val NO_END_DATE_DAYS = 36500
+
     fun todayKey(): Long {
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 0)

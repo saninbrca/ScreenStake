@@ -28,7 +28,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import com.detox.app.util.HapticManager
@@ -37,15 +39,37 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import kotlin.math.abs
 
 private val IndicatorClr = Color(0xFF00C853)
 private val ArrowClr     = Color(0xFFCCCCCC)
 
-private val ItemWidthDp = 44.dp
+private val ItemWidthDp = 68.dp
 private val FadeWidthDp = 40.dp
+
+// ── Light-mode smooth interpolation (Wave 2 restyle) ─────────────────────────────
+// The light picker scales size + colour by FRACTIONAL distance from centre (not integer
+// buckets) so items grow/shrink smoothly as they pass the centre. Dark mode is untouched
+// and keeps its integer `when(dist)` buckets.
+private val LightSelClr  = Color(0xFF000000)
+private val LightAdj1Clr = Color(0xFFAAAAAA)
+private val LightAdj2Clr = Color(0xFFCCCCCC)
+private val LightFarClr  = Color(0xFFE0E0E0)
+
+private fun lerpF(a: Float, b: Float, t: Float): Float = a + (b - a) * t.coerceIn(0f, 1f)
+
+private fun lightFontSize(f: Float): Float = when {
+    f <= 1f -> lerpF(40f, 22f, f)
+    f <= 2f -> lerpF(22f, 16f, f - 1f)
+    else    -> lerpF(16f, 14f, (f - 2f).coerceAtMost(1f))
+}
+
+private fun lightColor(f: Float): Color = when {
+    f <= 1f -> lerp(LightSelClr, LightAdj1Clr, f.coerceIn(0f, 1f))
+    f <= 2f -> lerp(LightAdj1Clr, LightAdj2Clr, (f - 1f).coerceIn(0f, 1f))
+    else    -> lerp(LightAdj2Clr, LightFarClr, (f - 2f).coerceIn(0f, 1f))
+}
 
 /**
  * Horizontal scrollable number picker with snap behavior.
@@ -63,6 +87,9 @@ private val FadeWidthDp = 40.dp
  *                  This variant is used only by [BudgetSelectionOverlay].
  * @param enableHaptics  When false, the step-change haptic is suppressed. Overlays pass false
  *                  (overlays never add haptic feedback); in-app pickers keep the default true.
+ * @param surfaceColor  LIGHT-mode background the picker band + edge fades blend into. Defaults to
+ *                  white; callers on a non-white surface (e.g. the wizard's #F2F2F7) pass that colour
+ *                  so the picker has no visible box. Ignored in dark mode (always #0A0A0A).
  */
 @Composable
 fun DetoxHorizontalPicker(
@@ -72,8 +99,9 @@ fun DetoxHorizontalPicker(
     unit: String,
     darkMode: Boolean = false,
     enableHaptics: Boolean = true,
+    surfaceColor: Color = Color.White,
 ) {
-    val pickerBg     = if (darkMode) Color(0xFF0A0A0A) else Color.White
+    val pickerBg     = if (darkMode) Color(0xFF0A0A0A) else surfaceColor
     val selectedClr  = if (darkMode) Color(0xFFFFFFFF) else Color(0xFF000000)
     val adjacent1Clr = if (darkMode) Color(0xFF555555) else Color(0xFFAAAAAA)
     val adjacent2Clr = if (darkMode) Color(0xFF2E2E2E) else Color(0xFFCCCCCC)
@@ -84,6 +112,20 @@ fun DetoxHorizontalPicker(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val snapFling = rememberSnapFlingBehavior(listState)
+    val density = LocalDensity.current
+
+    // Fractional-distance inputs for the smooth light-mode scaling (B4). Dark mode ignores these.
+    val viewportCenterPx by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            (info.viewportStartOffset + info.viewportEndOffset) / 2f
+        }
+    }
+    val itemCentersPx by remember {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.associate { it.index to (it.offset + it.size / 2f) }
+        }
+    }
 
     val selectedIndex = remember(values, selectedValue) {
         values.indexOf(selectedValue).takeIf { it >= 0 } ?: 0
@@ -129,6 +171,7 @@ fun DetoxHorizontalPicker(
         ) {
             // Dark (overlay) items are wider to seat the 50sp hero value + multi-digit budgets.
             val itemWidth = if (darkMode) 88.dp else ItemWidthDp
+            val itemWidthPx = with(density) { itemWidth.toPx() }
             val sidePadding = (maxWidth - itemWidth) / 2
 
             LazyRow(
@@ -140,6 +183,10 @@ fun DetoxHorizontalPicker(
             ) {
                 items(values.size) { idx ->
                     val dist = abs(idx - centeredIndex)
+                    // Smooth fractional distance from centre for the light branch (B4); dark uses `dist`.
+                    val itemCenterPx = itemCentersPx[idx]
+                    val fdist = if (itemCenterPx != null) abs(itemCenterPx - viewportCenterPx) / itemWidthPx
+                                else dist.toFloat()
                     val fontSize = if (darkMode) {
                         when (dist) {
                             0    -> 48.sp   // hero selected value
@@ -195,25 +242,31 @@ fun DetoxHorizontalPicker(
                                 style = TextStyle(fontFeatureSettings = "tnum"),  // tabular figures
                             )
                         } else {
-                            Text(
-                                text = values[idx].toString(),
-                                fontSize = fontSize,
-                                fontWeight = fontWeight,
-                                color = textColor,
-                                textAlign = TextAlign.Center,
-                            )
-                            Spacer(Modifier.height(3.dp))
+                            // Light restyle: green indicator dot ABOVE the selected value (mirrors the
+                            // dark overlay), with size + colour interpolated smoothly by fractional offset.
+                            val near = fdist < 0.5f
                             if (dist == 0) {
                                 Box(
                                     modifier = Modifier
-                                        .width(18.dp)
-                                        .height(2.dp)
-                                        .background(IndicatorClr, RoundedCornerShape(1.dp)),
+                                        .size(6.dp)
+                                        .background(IndicatorClr, CircleShape),
                                 )
                             } else {
-                                // Reserve space so text doesn't shift on selection change.
-                                Spacer(Modifier.height(2.dp))
+                                // Reserve dot space so the value baseline never shifts.
+                                Spacer(Modifier.height(6.dp))
                             }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = values[idx].toString(),
+                                fontSize = lightFontSize(fdist).sp,
+                                fontWeight = if (near) FontWeight.Bold else FontWeight.Normal,
+                                color = lightColor(fdist),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                softWrap = false,
+                                letterSpacing = if (near) (-1).sp else 0.sp,
+                                style = TextStyle(fontFeatureSettings = "tnum"),  // tabular figures
+                            )
                         }
                     }
                 }
@@ -241,25 +294,29 @@ fun DetoxHorizontalPicker(
                     ),
             )
 
-            // Left arrow hint
-            Text(
-                text = "←",
-                color = arrowClr,
-                fontSize = 14.sp,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 6.dp),
-            )
+            // Arrow hints — DARK overlay only. The light picker drops the ←/→ glyphs entirely
+            // (B1); its affordance is the green centre dot + smooth scaling instead.
+            if (darkMode) {
+                // Left arrow hint
+                Text(
+                    text = "←",
+                    color = arrowClr,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 6.dp),
+                )
 
-            // Right arrow hint
-            Text(
-                text = "→",
-                color = arrowClr,
-                fontSize = 14.sp,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 6.dp),
-            )
+                // Right arrow hint
+                Text(
+                    text = "→",
+                    color = arrowClr,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 6.dp),
+                )
+            }
         }
 
         if (unit.isNotEmpty()) {

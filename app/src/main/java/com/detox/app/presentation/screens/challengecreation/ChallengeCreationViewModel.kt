@@ -22,6 +22,7 @@ import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.domain.usecase.ProcessPaymentUseCase
 import com.detox.app.service.RootDetectionManager
 import com.detox.app.service.UsageTrackingService
+import com.detox.app.util.DateUtils
 import androidx.lifecycle.SavedStateHandle
 import io.sentry.Sentry
 import com.google.firebase.auth.FirebaseAuth
@@ -52,7 +53,6 @@ val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
     "com.linkedin.android"       to listOf("linkedin.com"),
 )
 
-const val NO_END_DATE_DAYS = 36500
 const val TOTAL_STEPS = 7
 
 // ── App list sub-state ────────────────────────────────────────────────────────
@@ -367,7 +367,7 @@ class ChallengeCreationViewModel @Inject constructor(
         _state.update { s ->
             s.copy(
                 noEndDate = enabled,
-                durationDays = if (enabled) NO_END_DATE_DAYS else 7,
+                durationDays = if (enabled) DateUtils.NO_END_DATE_DAYS else 7,
                 durationError = null,
             )
         }
@@ -381,8 +381,19 @@ class ChallengeCreationViewModel @Inject constructor(
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
-    fun goBack() = _state.update { s -> s.copy(currentStep = (s.currentStep - 1).coerceAtLeast(1)) }
-    fun goNext() = _state.update { s -> s.copy(currentStep = (s.currentStep + 1).coerceAtMost(TOTAL_STEPS)) }
+    // TIME_WINDOW has no Step-4 limit value (the window is set on the schedule step), so we skip
+    // index 4 entirely for that type: 3 → 5 forward, 5 → 3 back. Internal indices stay 1..7 as
+    // content identifiers; the displayed "Schritt X von Y" counter is renumbered in the screen.
+    fun goBack() = _state.update { s ->
+        val prev = if (s.limitType == LimitType.TIME_WINDOW && s.currentStep == 5) 3
+                   else (s.currentStep - 1).coerceAtLeast(1)
+        s.copy(currentStep = prev)
+    }
+    fun goNext() = _state.update { s ->
+        val next = if (s.limitType == LimitType.TIME_WINDOW && s.currentStep == 3) 5
+                   else (s.currentStep + 1).coerceAtMost(TOTAL_STEPS)
+        s.copy(currentStep = next)
+    }
 
     fun canGoNext(): Boolean {
         val s = _state.value
@@ -511,7 +522,7 @@ class ChallengeCreationViewModel @Inject constructor(
                 limitType = s.limitType ?: LimitType.TIME,
                 limitValueMinutes = limitMinutes,
                 limitValueSessions = limitSessions,
-                durationDays = if (s.noEndDate) NO_END_DATE_DAYS else s.durationDays,
+                durationDays = if (s.noEndDate) DateUtils.NO_END_DATE_DAYS else s.durationDays,
                 customMotivation = s.motivationText.ifBlank { null },
                 mode = ChallengeMode.SOFT,
                 appPackageNames = appPackages,

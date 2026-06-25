@@ -104,6 +104,44 @@ Button remains same size, disabled (prevents double tap)
 
 ---
 
+## Wizard header & step transitions
+
+Location: `ChallengeCreationScreen.kt` → `WizardHeader` + the step `AnimatedContent`.
+- **Progress bar:** "Schritt X von 7" with a `LinearProgressIndicator` (2dp, #00C853 on #E0E0E5).
+  The fraction is `currentStep / totalSteps` (unchanged); the **rendered** value is animated via
+  `animateFloatAsState(tween(300, LinearOutSlowInEasing))` so the fill glides between steps instead of
+  jumping. (TIME_WINDOW renumbers to 6 effective steps — computation untouched.)
+- **Step content transition:** `AnimatedContent` slide (direction by step delta) + fade, both pinned to
+  `tween(300, LinearOutSlowInEasing)` so the bar fill and the content move together. No change to step
+  order/count/navigation — animation only.
+
+---
+
+## Wizard Step 5 — Schedule layout
+
+Location: `ChallengeCreationScreen.kt` → `Step5Schedule` (+ `ScheduleTimeColumn` helper).
+Keeps the "OPTIONAL" eyebrow, "Nutzungsplan" title/subtitle, "Zeitplan löschen" red link, and
+"Schritt überspringen" link. Display/layout only — all state + handlers (`toggleActiveDay`,
+`updateScheduleStart`/`updateScheduleEnd`, the time bottom sheet) are unchanged.
+
+- **Time field (Wave 2):** a single white card (16dp radius, 0.5dp #0F000000 border, no elevation)
+  split into two tappable columns by a 0.5dp vertical divider. Left = "Von" (11sp #8E8E93) + time
+  (22sp/600, tabular, #000 when set / #C7C7CC placeholder `--:--`); right = "Bis", same style. **Both
+  columns open the same time bottom sheet** (the combined "HH:MM – HH:MM" pill is gone). The red error
+  row ("Endzeit muss nach Startzeit liegen") still renders below the card when invalid.
+- **Time bottom sheet ("Zeitfenster festlegen"):** the `ModalBottomSheet` shape is set **explicitly**
+  to 16dp top corners (`RoundedCornerShape(topStart=16, topEnd=16, bottomStart=0, bottomEnd=0)`) —
+  the M3 default of ~28dp is overridden so the sheet matches the wizard card radius. Inside: two
+  `TimeSpinnerPicker`s (Von/Bis), the selected-row highlight strip is #E8F8EF at 12dp, and the "Fertig"
+  button uses the 14dp `BtnShape`.
+- **Weekday selector (Wave 2):** 7 **circles** (~28dp, `Arrangement.SpaceBetween`) labelled
+  Mo/Di/Mi/Do/Fr/Sa/So, inside a white card (same card style) with the "Keine Auswahl = jeden Tag."
+  hint (12sp #8E8E93) below them in the same card. Selected = #00C853 fill / white / SemiBold;
+  unselected = #F2F2F7 fill / #8E8E93 / Medium. ~150ms color transition retained. (Replaces the old
+  weight-stretched stadium pills.)
+
+---
+
 ## DetoxHorizontalPicker Component
 
 Location: presentation/components/DetoxHorizontalPicker.kt
@@ -113,26 +151,36 @@ DetoxHorizontalPicker(
     values: List<Int>,
     selectedValue: Int,
     onValueChange: (Int) -> Unit,
-    isDark: Boolean = false  // true for overlays, false for wizard
+    unit: String,
+    darkMode: Boolean = false,      // true = BudgetSelectionOverlay only; false = wizard/light
+    enableHaptics: Boolean = true,  // overlays pass false
+    surfaceColor: Color = Color.White,  // LIGHT band/fade colour — pass the host surface to hide the box
 )
 ```
 
 ### Visual
-Selected item: 28sp bold
-  isDark=false: #000000
-  isDark=true: #FFFFFF
-±1 items: 20sp
-  isDark=false: #AAAAAA / isDark=true: #444444
-±2 items: 16sp
-  isDark=false: #CCCCCC / isDark=true: #333333
-±3+ items: 14sp
-  isDark=false: #E0E0E0 / isDark=true: #222222
+Two branches, selected by the `darkMode` param (default false = wizard/light).
 
-Fade edges: gradient 40dp left+right
-  isDark=false: #FFFFFF → transparent
-  isDark=true: #0A0A0A → transparent
+**Light (`darkMode=false` — all wizard, group-create, and active-challenge pickers):**
+- Selected value: ~40sp / 700, #000000, tabular figures, letter-spacing -1.
+- Neighbours dim with distance: ±1 #AAAAAA, ±2 #CCCCCC, ±3+ #E0E0E0.
+- Size + colour are **interpolated by fractional scroll offset** — items scale smoothly as they pass
+  centre, NOT bucketed per integer distance (Wave 2).
+- Indicator: small #00C853 **dot ABOVE** the selected value (the old 2dp green underline is gone).
+- **No ←/→ glyph arrows** (removed Wave 2) — the fade edges + centre dot are the only affordance.
+- Item width 68dp (seats a 3-digit value at 40sp).
+- **No background box:** the light picker has NO highlight/box behind the value — just the number +
+  green dot. The picker band + edge fades paint `surfaceColor` (default white), so the picker is
+  invisible against its host surface. **Callers on a non-white surface MUST pass it** or the white band
+  shows as a hard-cornered box: the wizard Step 4/6 pickers pass `surfaceColor = WizBg` (#F2F2F7) since
+  they sit directly on the grey wizard `Surface`. GroupChallengeCreate + ActiveChallenge keep the white
+  default (their pickers sit inside white cards / a white bottom sheet). Dark overlay ignores it (#0A0A0A).
 
-Selected indicator: 2dp green underline (#00C853) below selected item
+**Dark (`darkMode=true` — `BudgetSelectionOverlay` ONLY, unchanged):**
+- Selected 48sp white, tabular, letter-spacing -2; neighbours #555555 / #2E2E2E / #2E2E2E; green dot
+  above; item width 88dp; subtle ←/→ arrows (#3A3A3A) retained.
+
+Fade edges: gradient 40dp left+right (light #FFFFFF → transparent, dark #0A0A0A → transparent).
 
 ### Behavior
 - LazyRow + snapFlingBehavior

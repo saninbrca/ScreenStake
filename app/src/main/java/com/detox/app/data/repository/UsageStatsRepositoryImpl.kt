@@ -28,6 +28,30 @@ class UsageStatsRepositoryImpl @Inject constructor(
     companion object {
         private const val MIN_DAILY_MINUTES = 0L
         private const val MIN_DAILY_OPENS = 0
+
+        /**
+         * Look-back window for [getCurrentForegroundPackage]. Generous on purpose: since we take the
+         * most-recently-used app (max lastTimeUsed), a longer window can NEVER return a stale result
+         * (any app foregrounded later wins) — it only ensures the current top app, possibly idle
+         * in-app for minutes before a session-timer expiry, still appears.
+         */
+        private const val FOREGROUND_LOOKBACK_MS = 10L * 60 * 1000 // 10 minutes
+    }
+
+    /**
+     * FOREGROUND CHECK ONLY (invariant #15): reads the current top app to decide show-now vs defer;
+     * never used to count conscious opens. Ignores IME/transient windows, which don't register as
+     * foreground activities in UsageStats. Returns null when permission is missing or no recent data.
+     */
+    override suspend fun getCurrentForegroundPackage(): String? = withContext(Dispatchers.IO) {
+        if (!hasUsageStatsPermission()) return@withContext null
+        val now = System.currentTimeMillis()
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_BEST, now - FOREGROUND_LOOKBACK_MS, now
+        )
+        stats?.filter { it.lastTimeUsed > 0L }
+            ?.maxByOrNull { it.lastTimeUsed }
+            ?.packageName
     }
 
     override suspend fun getAppUsageStats(days: Int): List<AppUsageInfo> =

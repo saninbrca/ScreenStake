@@ -24,8 +24,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
@@ -39,7 +41,6 @@ import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,12 +56,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -149,14 +152,7 @@ fun DashboardScreen(
         ) { innerPadding ->
             when (val state = uiState) {
                 is DashboardUiState.Loading -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    }
+                    DashboardSkeleton(innerPadding = innerPadding)
                 }
 
                 is DashboardUiState.Empty -> {
@@ -322,6 +318,102 @@ private fun DashboardHeader(activeCount: Int) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * First-load placeholder shown only while [DashboardUiState.Loading]. Mirrors the eventual
+ * Success layout (header + a few [ChallengeCard]-shaped rows) so the screen doesn't jump when the
+ * real data arrives, with a soft alpha pulse to read as "loading". Purely visual — no data access.
+ */
+@Composable
+private fun DashboardSkeleton(
+    innerPadding: PaddingValues,
+    modifier: Modifier = Modifier
+) {
+    val transition = rememberInfiniteTransition(label = "skeletonPulse")
+    val alpha by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.55f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "skeletonAlpha"
+    )
+    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.18f)
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = innerPadding.calculateTopPadding() + 24.dp
+            ),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Header placeholders (title + active-count line)
+        SkeletonBlock(width = 180.dp, height = 34.dp, color = placeholderColor)
+        SkeletonBlock(width = 130.dp, height = 16.dp, color = placeholderColor)
+        Spacer(modifier = Modifier.height(4.dp))
+        repeat(3) { SkeletonCard(color = placeholderColor) }
+    }
+}
+
+@Composable
+private fun SkeletonBlock(
+    width: Dp,
+    height: Dp,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .width(width)
+            .height(height)
+            .clip(RoundedCornerShape(6.dp))
+            .background(color)
+    )
+}
+
+/** A single placeholder card matching [ChallengeCard]'s shape (icon + two text lines + progress bar). */
+@Composable
+private fun SkeletonCard(color: Color) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    SkeletonBlock(width = 150.dp, height = 16.dp, color = color)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    SkeletonBlock(width = 90.dp, height = 12.dp, color = color)
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color)
+            )
+        }
     }
 }
 

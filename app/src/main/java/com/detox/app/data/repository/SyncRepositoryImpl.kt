@@ -58,14 +58,19 @@ class SyncRepositoryImpl @Inject constructor(
             Timber.d("SyncRepository: fetched ${challenges.size} active challenges")
             challenges.forEach { challenge ->
                 val existing = challengeDao.getChallengeById(challenge.id)
-                if (existing != null && existing.status != "active") {
-                    Timber.w(
+                when {
+                    // Brand-new challenge: no row to delete → INSERT can't trigger an FK cascade.
+                    existing == null -> challengeDao.insertChallenge(challenge.toEntity())
+                    // Ghost guard (unchanged): a locally-failed row may still read "active" in Firestore.
+                    existing.status != "active" -> Timber.w(
                         "SyncRepository: skipping ghost challenge %s — local status=%s, Firestore=active",
                         challenge.id, existing.status
                     )
-                    return@forEach
+                    // Existing active row: UPDATE in place (by PK). NEVER insertChallenge here — its
+                    // INSERT-OR-REPLACE deletes-then-inserts, and the DELETE CASCADE-wipes this
+                    // challenge's daily_logs, blanking all Dashboard cards for the rest of the sync.
+                    else -> challengeDao.updateChallenge(challenge.toEntity())
                 }
-                challengeDao.insertChallenge(challenge.toEntity())
             }
 
             // 2. Fetch and upsert daily logs for each challenge
@@ -75,7 +80,20 @@ class SyncRepositoryImpl @Inject constructor(
                     "SyncRepository: fetched ${logs.size} daily logs for " +
                             "challenge=${challenge.id}"
                 )
-                logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
+                logs.forEach { log ->
+                    val entity = log.toEntity()
+                    // consciousOpens is monotonic-up within a (challengeId, date): conscious opens
+                    // are pushed only to the FLAT collection (restored in step 4), so the NESTED
+                    // doc read here usually carries 0 for today. insertDailyLog is a full-row
+                    // REPLACE, so a blind write would clobber a correct local count → carry the
+                    // higher consciousOpens forward instead. (Scoped to consciousOpens only; other
+                    // fields still REPLACE from the nested doc — see deferred follow-up #2.)
+                    val existing = dailyLogDao.getLogForDate(entity.challengeId, entity.date)
+                    val merged = if (existing != null)
+                        entity.copy(consciousOpens = maxOf(entity.consciousOpens, existing.consciousOpens))
+                    else entity
+                    dailyLogDao.insertDailyLog(merged)
+                }
             }
 
             // 2b. Restore FINISHED (completed/failed) challenges + their daily logs.
@@ -222,7 +240,10 @@ class SyncRepositoryImpl @Inject constructor(
                 if (existing != null) {
                     dailyLogDao.insertDailyLog(
                         existing.copy(
-                            consciousOpens = opens ?: existing.consciousOpens,
+                            // Never let a stale/lower Firestore value lower a correct local count
+                            // (opens are monotonic-up within a date). opens==null (TIME_BUDGET
+                            // entries) → maxOf(0, existing) preserves existing, as before.
+                            consciousOpens = maxOf(opens ?: 0, existing.consciousOpens),
                             budgetUsedMs = budgetUsedMs ?: existing.budgetUsedMs,
                             budgetRemainingMs = budgetRemainingMs ?: existing.budgetRemainingMs
                         )
@@ -365,6 +386,15 @@ class SyncRepositoryImpl @Inject constructor(
         activeDays = activeDays.joinToString(",").ifEmpty { null },
         partialBlockSections = partialBlockSections.joinToString(",") { it.id },
         isPartialBlockOnly = if (isPartialBlockOnly) 1 else 0,
+        // SESSIONS per-session countdown length. Now round-trips through Firestore (toMap write +
+        // fetchActiveChallenges/fetchFinishedChallenges read), so sync no longer flattens it to 5.
+        sessionDurationMinutes = sessionDurationMinutes,
+        // Scheduled limit reduction — Firestore round-trip is complete (written via toMap/
+        // updateChallengePendingLimit, read in fetchActiveChallenges); the mapper just dropped them,
+        // so every sync wiped a pending reduction from Room before DailyEvaluationWorker could apply
+        // it at midnight. Map them through so the user's scheduled reduction survives sync.
+        pendingLimitValue = pendingLimitValue,
+        pendingLimitAppliesAt = pendingLimitAppliesAt,
     )
 
     private fun DailyLog.toEntity() = DailyLogEntity(

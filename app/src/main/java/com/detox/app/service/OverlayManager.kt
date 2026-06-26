@@ -504,26 +504,49 @@ class OverlayManager @Inject constructor(
                             }
                         }
 
-                        challenge.appPackageName?.let {
-                            AppDetectionAccessibilityService.allowTemporarily(it)
-                        }
-                        dismissOverlay()
+                        // Persist the conscious open to Room and AWAIT it BEFORE dismissing the
+                        // overlay, so Room == in-memory before the user can return to the Dashboard
+                        // (which reads Room) — closes the stale 0 → 1 read race at the source.
+                        // scope is Dispatchers.Main, but upsertConsciousOpens suspends on Room's
+                        // executor, so this does NOT block the UI thread. This is the ONLY added
+                        // await on the dismiss path — the group Firestore push above stays
+                        // fire-and-forget, and the Firestore opens push inside upsertConsciousOpens
+                        // is likewise fire-and-forget (unchanged from today).
+                        scope.launch {
+                            dailyLogRepository.upsertConsciousOpens(challenge.id, todayKey(), newCount)
+                                .onFailure { e ->
+                                    // Never trap the user: on a write failure, still open the app.
+                                    // The in-memory count stays incremented and Room self-heals on
+                                    // the next open (upsert writes the absolute count, not a delta).
+                                    Timber.e(
+                                        e,
+                                        "OverlayManager: failed to persist consciousOpens for ${challenge.id} " +
+                                                "— opening anyway, count self-heals next open"
+                                    )
+                                }
 
-                        // Always start the session timer — Stage 2 is shown on the NEXT open
-                        // attempt once handleSessionLimitApp sees consciousOpens >= maxOpens.
-                        // This way reaching the limit (e.g. open 5 of 5) still lets the user
-                        // complete that session; Stage 2 appears only when they try to open again.
-                        Timber.d(
-                            "OverlayManager: consciousOpens=$newCount limit=$maxOpens " +
-                                    "→ stage=${if (newCount >= maxOpens) "next_open_is_stage2" else "timer_started"} " +
-                                    "for ${challenge.appDisplayName}"
-                        )
-                        startSessionTimer(
-                            packageName = (challenge.appPackageName ?: ""),
-                            durationMinutes = challenge.sessionDurationMinutes,
-                            challengeId = challenge.id,
-                            scope = scope
-                        )
+                            // Runs on success AND failure — execution continues past onFailure.
+                            challenge.appPackageName?.let {
+                                AppDetectionAccessibilityService.allowTemporarily(it)
+                            }
+                            dismissOverlay()
+
+                            // Always start the session timer — Stage 2 is shown on the NEXT open
+                            // attempt once handleSessionLimitApp sees consciousOpens >= maxOpens.
+                            // This way reaching the limit (e.g. open 5 of 5) still lets the user
+                            // complete that session; Stage 2 appears only when they try to open again.
+                            Timber.d(
+                                "OverlayManager: consciousOpens=$newCount limit=$maxOpens " +
+                                        "→ stage=${if (newCount >= maxOpens) "next_open_is_stage2" else "timer_started"} " +
+                                        "for ${challenge.appDisplayName}"
+                            )
+                            startSessionTimer(
+                                packageName = (challenge.appPackageName ?: ""),
+                                durationMinutes = challenge.sessionDurationMinutes,
+                                challengeId = challenge.id,
+                                scope = scope
+                            )
+                        }
                     },
                     onNo = {
                         Timber.d(
@@ -598,21 +621,10 @@ class OverlayManager @Inject constructor(
         val effectiveDuration = maxOf(1, durationMinutes)
         Timber.d("Session timer started: ${effectiveDuration}min for $packageName")
 
-        // Persist consciousOpens here — after dismissOverlay() has already fired its own
-        // coroutine — so both writes are never racing on a missing row at the same time.
-        val countToSave = consciousOpensToday.getOrDefault(packageName, 0)
-        if (countToSave > 0) {
-            scope.launch {
-                val today = todayKey()
-                dailyLogRepository.upsertConsciousOpens(challengeId, today, countToSave)
-                    .onSuccess {
-                        Timber.d("DailyLog: consciousOpens incremented for $challengeId = $countToSave")
-                    }
-                    .onFailure { e ->
-                        Timber.e(e, "OverlayManager: failed to persist consciousOpens for $challengeId")
-                    }
-            }
-        }
+        // NOTE: consciousOpens is now persisted (awaited) in the Stage 1 "Ja, öffnen" handler
+        // BEFORE dismissOverlay(), so the count is written exactly once and lands before the
+        // Dashboard can read it. (The TIME_LIMIT "Open anyway" caller never set
+        // consciousOpensToday, so the old guarded persist here was already a no-op for it.)
 
         cancelSessionTimer()
         sessionTimerPackage = packageName
@@ -642,7 +654,11 @@ class OverlayManager @Inject constructor(
                 return@launch
             }
 
-            val currentForeground = TrackedAppEventBus.currentForegroundPackage.value
+            // Authoritative top-app query (ignores IME/transient windows that pollute the cached
+            // foreground value). FOREGROUND CHECK ONLY — never counts opens (invariant #15).
+            // Fall back to the cached value on a query miss so behaviour is never worse than today.
+            val currentForeground = usageStatsRepository.getCurrentForegroundPackage()
+                ?: TrackedAppEventBus.currentForegroundPackage.value
             if (currentForeground == packageName) {
                 Timber.d(
                     "OverlayManager: $packageName still in foreground on timer expiry " +
@@ -710,7 +726,11 @@ class OverlayManager @Inject constructor(
                         sessionTimerPackage = null
                         sessionPrefs.edit().remove(key).apply()
 
-                        val currentForeground = TrackedAppEventBus.currentForegroundPackage.value
+                        // Authoritative top-app query (ignores IME/transient windows). FOREGROUND
+                        // CHECK ONLY — never counts opens (invariant #15). Cached-value fallback on a
+                        // query miss → never worse than today.
+                        val currentForeground = usageStatsRepository.getCurrentForegroundPackage()
+                            ?: TrackedAppEventBus.currentForegroundPackage.value
                         if (currentForeground == packageName && currentOverlayView == null) {
                             val result = checkDailyLimitUseCase(packageName)
                             if (result.isSuccess) handleSessionLimitApp(result.getOrThrow(), scope)

@@ -20,10 +20,12 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -36,6 +38,15 @@ private const val UPDATE_BANNER_SNOOZE_MS = 3L * 24 * 60 * 60 * 1000 // 3 days
 
 private const val BROADCAST_PREFS = "detox_broadcast"
 private const val KEY_BROADCAST_LAST_SEEN = "last_seen_broadcast_id"
+
+/**
+ * Trailing-edge debounce for the Dashboard's Room observer. A sync write-burst (syncUserData
+ * REPLACE/upsert of many today rows) fires many rapid emissions; debouncing collapses them into a
+ * single refreshStats() after the burst settles, so the UI no longer renders intermediate zeroed
+ * frames ("all cards blank then refill"). Long enough to swallow a tight write burst, short enough
+ * to be imperceptible for a genuine single update. Display-only — does not change reads/writes.
+ */
+private const val DASHBOARD_REFRESH_DEBOUNCE_MS = 250L
 
 data class SuccessDialogState(
     val challenge: Challenge,
@@ -103,6 +114,13 @@ class DashboardViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    // True once the authoritative first load (loadStats, after syncJob.join + refreshStats) has
+    // established the initial Ui state. Until then the Room DailyLog observer must NOT publish a
+    // state — a mid-sync emission (challenge row written, opens row not yet) would otherwise paint
+    // a partial/zero-valued Success before the real numbers arrive. loadStats owns the first state.
+    // Only touched from viewModelScope (Main dispatcher), so no synchronization is needed.
+    private var initialLoadComplete = false
 
     /** Non-null while the success dialog should be shown (Soft or Hard Mode). Null = hidden. */
     private val _successDialogChallengeId = MutableStateFlow<String?>(null)
@@ -203,7 +221,12 @@ class DashboardViewModel @Inject constructor(
 
     fun loadStats() {
         viewModelScope.launch {
-            _uiState.value = DashboardUiState.Loading
+            // Only show Loading for the very first load. On a RESUME (already showing Success) keep
+            // the existing cards on screen and let refreshStats() update them in place — no spinner
+            // flash and no re-run of the card entrance animation on every reopen.
+            if (_uiState.value !is DashboardUiState.Success) {
+                _uiState.value = DashboardUiState.Loading
+            }
             // DELAY FIX: surface a device-detected Hard Mode loss immediately from Room — the worker
             // already wrote status=failed locally, so we don't block this dialog on the sync round-trip.
             checkUnshownFailedHard()
@@ -211,6 +234,8 @@ class DashboardViewModel @Inject constructor(
             // If it already completed this is a no-op.
             syncJob.join()
             refreshStats()
+            // First authoritative state is now set: the Room observer may update it from here on.
+            initialLoadComplete = true
             // Check if there is a completed challenge (Hard or Soft) to show the success dialog
             if (_successDialogState.value == null) {
                 val sp = appContext.getSharedPreferences("detox_win_popup", Context.MODE_PRIVATE)
@@ -282,12 +307,23 @@ class DashboardViewModel @Inject constructor(
      * without showing a Loading spinner — the existing data stays visible while it updates.
      * [drop(1)] skips the initial emission because [loadStats] already handles the first load.
      */
+    @OptIn(FlowPreview::class) // debounce(Long) is still @FlowPreview in coroutines 1.7.3
     private fun observeDailyLogChanges() {
         val today = DateUtils.todayKey()
         viewModelScope.launch {
             dailyLogRepository.observeLogsForDate(today)
                 .drop(1)
+                // Collapse a sync write-burst into ONE trailing recompute (after 250ms of quiet)
+                // so the cards don't flicker through intermediate zeroed frames. Trailing-edge:
+                // the latest emission always wins, so the final state is never dropped.
+                .debounce(DASHBOARD_REFRESH_DEBOUNCE_MS)
                 .collect { logs ->
+                    // Don't let the observer publish the FIRST state — loadStats (post syncJob.join)
+                    // owns it. Before that, a mid-sync emission could paint a partial/zero card.
+                    if (!initialLoadComplete) {
+                        Timber.d("Dashboard: DailyLog changed before initial load — skipping (loadStats owns first state)")
+                        return@collect
+                    }
                     Timber.d("Dashboard: DailyLog changed (${logs.size} rows for today) — refreshing stats")
                     logs.forEach { log ->
                         Timber.d("Reading DailyLog for ${log.challengeId} date=$today: opens=${log.consciousOpens}")

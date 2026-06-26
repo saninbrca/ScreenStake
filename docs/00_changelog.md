@@ -21,6 +21,219 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-06-25 — Session-timer expiry now uses an authoritative foreground query (anti-cheat)
+
+A SESSIONS session timer that expired while the user was actively in the tracked app could **defer the
+re-prompt overlay** — the user kept using the app past the session window without a fresh "Ja, öffnen"
+(so the continued usage never incremented `consciousOpens`, undercounting against the limit). The
+overlay only appeared minutes later on the next app-open.
+
+- **Root cause:** the expiry handler trusted `TrackedAppEventBus.currentForegroundPackage` — a cached
+  value the accessibility service sets on **every** `TYPE_WINDOW_STATE_CHANGED`, including IMEs
+  (SwiftKey) and transient windows. With the keyboard up, the cached value was the IME, not the tracked
+  app, so `currentForeground == packageName` was false → defer, even though the app was genuinely on top.
+  The defer branch has no re-check; it waits for the next app-open event.
+- **FIXED — authoritative UsageStats query (Option A):** new
+  `UsageStatsRepository.getCurrentForegroundPackage()` returns the current top app via
+  `queryUsageStats(INTERVAL_BEST, now-10min, now).maxByOrNull { lastTimeUsed }` — IMEs/transient windows
+  don't register as foreground activities in UsageStats, so they no longer mask the tracked app. Both
+  expiry checks (live timer expiry + `restorePersistedSessionTimers`) now use it, **falling back to the
+  cached value on a query miss** (no permission / EMUI throttle) so behaviour is never worse than today.
+  10-min look-back is safe because `maxByOrNull lastTimeUsed` always returns the most recent → never
+  stale.
+- **Invariant #15 preserved:** this is a **foreground read only** (show-now vs defer) — it never counts
+  opens; `consciousOpens` still increments solely on the user's "Ja, öffnen" tap. Stated in the method
+  KDoc + both call sites so it can't drift.
+- **No regression:** the re-shown overlay is the unchanged `handleSessionLimitApp` path (still
+  `FLAG_SECURE`, Stage-1, opens-on-tap). No change to open-counting, win/loss, capture, or Stripe —
+  only *which* foreground value the expiry trusts. `PACKAGE_USAGE_STATS` is already required/granted
+  (onboarding-gated; used by `PermissionCheckWorker`), and the query is permission-guarded.
+- **Follow-up (NOT bundled):** optional post-defer re-check (query again after a few seconds to catch a
+  user who's in-app but the first query missed). Held until logs show it's still needed.
+
+### 2026-06-25 — ROOT CAUSE: sync FK-CASCADE wiped all daily_logs mid-sync (the real all-cards-0 fix)
+
+Logcat pinned the true root cause behind the whole flash series: on every sync, today's `daily_logs`
+rows went **null for all challenges for ~2 s** (`"DailyLog for <id>: null"` ×6, then `"Sync: about to
+write 6 DailyLogs to Room"` rewrote them). Not a lowered value, not a single field — the rows were
+**deleted**. This supersedes the max()/debounce theories (those couldn't help: rows absent, not
+lowered; window > 250 ms).
+
+- **Mechanism:** `daily_logs` has an FK to `challenges.id` with `onDelete = CASCADE`
+  (`DailyLogEntity`). `ChallengeDao.insertChallenge` is `@Insert(onConflict = REPLACE)`, and SQLite
+  `INSERT OR REPLACE` = **DELETE-then-INSERT** → the DELETE cascade-wipes that challenge's daily logs.
+  `syncUserData` **step 1** called `insertChallenge` for every active challenge at the **start** of
+  sync, so all challenges' daily logs (today + history) were deleted up front. They were only restored
+  at the **end** (step 2 nested per-challenge over ~2 s of sequential network fetches; today's row only
+  via step 4's flat `fetchTodayDailyLogs`). The live observer rendered the empty window → all cards 0.
+- **FIXED — step 1 now updates in place (`SyncRepositoryImpl`):** brand-new row → `insertChallenge`
+  (nothing to delete); locally-non-active → skip (ghost guard, unchanged); existing active row →
+  `challengeDao.updateChallenge(...)` (`@Update`, UPDATE by PK, **no DELETE → no cascade**). Audit
+  confirmed `@Update` and REPLACE write byte-identical column sets, so **nothing is newly clobbered**;
+  the only change is the cascade no longer fires.
+- **Eliminates** the empty window entirely (daily_logs never deleted mid-sync) **and** the
+  history-loss-on-network-failure risk (a failed fetch can no longer leave Room's daily-log history
+  wiped). Fixes the all-cards-0 at the source, independent of limit type.
+- **Kept as defensive nets (not reverted):** the `consciousOpens` sync `max()` guard and the Dashboard
+  `debounce(250)` — now redundant-but-defensive, no longer load-bearing.
+
+#### Surfaced by the audit — two pre-existing `toEntity()` drops (one fixed below, one re-scoped)
+`SyncRepositoryImpl.toEntity()` (Firestore `Challenge` → `ChallengeEntity`) omitted several columns.
+For active challenges REPLACE already reset them every sync (and `@Update` does the same — no new
+regression). Round-trip verification split the two flagged fields:
+
+1. **FIXED — `pendingLimitValue` / `pendingLimitAppliesAt` mapped through `toEntity()`.** Firestore
+   round-trip is **complete** (written via `toMap` [:787-788] + `updateChallengePendingLimit`
+   [:742-743]; read in `fetchActiveChallenges` [:404-405]) — only the mapper dropped them, so every
+   sync wiped a scheduled reduction from Room before `DailyEvaluationWorker` could apply it at midnight.
+   Two-line mapper fix; safe and idempotent (`pendingLimitValue` is an absolute target, apply+clear are
+   written to Firestore together; forward-looking, never retroactive). Restores the user's own scheduled
+   reduction the sync bug was silently cancelling. No win/loss/status/Stripe change.
+2. **FIXED — `sessionDurationMinutes` round-trip built (Option A, no backfill).** The field was broken
+   on BOTH sides — never written to the solo `Challenge.toMap()` and never read in
+   `fetchActiveChallenges`/`fetchFinishedChallenges` — so the synced `Challenge` always carried the model
+   default `5`, and every sync flattened Room's true value. A `toEntity()` one-liner alone was a no-op;
+   the real fix is the **3-part round-trip** (four 1-line additions, key string `"sessionDurationMinutes"`
+   byte-identical, `?: 5` default everywhere):
+   - **WRITE:** added to solo `Challenge.toMap()` ([FirestoreService.kt:765]). Creation already writes
+     via this same `toMap()` (`createChallenge` → `saveChallenge`), so new challenges now persist it to
+     Firestore as well as Room.
+   - **READ ×2:** added to `fetchActiveChallenges` and `fetchFinishedChallenges` (the latter so the
+     completed-challenge "time saved" stat is correct on history re-hydration).
+   - **MAP:** added `sessionDurationMinutes = sessionDurationMinutes` to `SyncRepositoryImpl.toEntity()`
+     (shared by the active sync + finished restore).
+   - **No backfill** (pre-launch decision — test challenges deleted; new ones carry the true value
+     forward). Money-safe: `sessionDurationMinutes` drives only the session-countdown re-prompt interval
+     and a "time saved" display stat (`OverlayManager:545/1113`, `ChallengeSuccessDialog:97/104`) — never
+     win/loss or limit-reached, which keys on `consciousOpens >= limitValueSessions`. No
+     win/loss/status/Stripe change.
+   - **Group challenges unaffected:** the group path already round-trips this field independently
+     (`GroupChallengeFirestoreService` write [:345] / read [:433]); group mirror rows aren't processed by
+     `syncUserData` step 1.
+
+### 2026-06-25 — Session-end "all cards blank then refill" flash fixed (observer debounce)
+
+Returning to the Dashboard after a session ended showed **all** cards' counts + bars briefly drop to
+0, then refill. Distinct from the single-field sync races below — this is a full-list rebuild rendered
+mid-burst.
+
+- **Root cause (full rebuild):** `observeDailyLogChanges` observes `observeLogsForDate(today)` (ALL of
+  today's rows) and calls `refreshStats()` on every emission; `refreshStats` → `getDailyStatsUseCase`
+  **recomputes the entire challenge list**. So any single today-row write rebuilds every card. The
+  trigger is the `MainActivity` resume-sync (`maybeResumeSync`, `RESUME_SYNC_THROTTLE_MS = 5 min` ≈ a
+  typical session length, so returning after a session reliably crosses it), which issues a **burst**
+  of Room writes (`syncUserData` REPLACE/upsert). The live observer fired once per write → N full
+  recomputes, each rendering an intermediate (partially-zeroed) frame. Confirmed cosmetic: it recovers
+  ("füllt sich entsprechend"), never stays 0 — i.e. not a persistent stale clobber.
+- **FIXED — Lever 2 (display-only, `DashboardViewModel`):** added a trailing-edge
+  `.debounce(DASHBOARD_REFRESH_DEBOUNCE_MS = 250L)` between `.drop(1)` and `.collect` in
+  `observeDailyLogChanges`, so a write-burst collapses into **one** `refreshStats()` after 250 ms of
+  quiet. Trailing-edge = the latest emission always wins (final state never dropped); `refreshStats`
+  re-reads Room fresh regardless of payload. First render on open is still immediate via `loadStats`
+  (not the observer), so opening isn't delayed; 250 ms is imperceptible for a genuine single update but
+  swallows the burst. `debounce(Long)` is `@FlowPreview` in coroutines 1.7.3 → scoped
+  `@OptIn(FlowPreview::class)` on the method. **No change to reads/writes, sync, or win/loss.**
+- **STILL OPEN — Lever 1 (separate, money-adjacent follow-up):** generalize the sync preserve-guard to
+  today's other live-tracking fields (`budgetUsedMs` / `totalMinutes` / `overlayPausedMs`), the same
+  pattern as the `consciousOpens` `max()` below. Debounce now hides the transient zeroing **visually**,
+  so this is a correctness-nicety (covers the rare case where a zeroed value persists across a network
+  gap > 250 ms, which debounce can't mask) — **not** urgent, and intentionally not bundled with Lever 2.
+
+### 2026-06-25 — Away-return "0 → 1" conscious-open flash fixed (sync max() guard)
+
+Third and final conscious-open flash case: after being away from the app for ~5+ min and returning,
+the count briefly showed 0 then 1. Distinct trigger from the two fixes below.
+
+- **Trigger:** `MainActivity.onResume()` → `maybeResumeSync()` runs a full `syncUserData()` once the
+  `RESUME_SYNC_THROTTLE_MS` (**5 min**) window has passed — so returning after ~10 min away fires a
+  resume-sync (returning quickly is throttled, hence the "away-return only" symptom). On a live VM the
+  Dashboard's Room observer is active (`initialLoadComplete` already true), so it renders intermediate
+  sync writes.
+- **Root cause:** `syncUserData` writes today's `consciousOpens` into Room from **two** sources, in
+  order: step 2 reads the **NESTED** subcollection (`fetchDailyLogs` → full-row REPLACE) which carries
+  0 for today (opens are pushed only to FLAT), clobbering the local count 1 → 0; step 4 reads the
+  **FLAT** collection (`fetchTodayDailyLogs`) and restores it 0 → 1. The active observer renders both
+  → visible 0 → 1. (Sibling danger: if the fire-and-forget flat push had failed, step 4's
+  `existing.copy(consciousOpens = opens ?: …)` would pull a stale 0 and clobber **persistently**.)
+- **FIXED — `max()` guard at both sync write sites (`SyncRepositoryImpl`), scoped to `consciousOpens`:**
+  - Step 2 (~L78): `insertDailyLog(log.toEntity())` now reads the existing Room row first and carries
+    `maxOf(nested, existing)` into the REPLACE, so it can't dip below the local count.
+  - Step 4 (~L225): `consciousOpens = maxOf(opens ?: 0, existing.consciousOpens)` (was `opens ?: existing`).
+  - Closes BOTH the cosmetic step-2→step-4 flash and the dangerous persistent stale-0 clobber in one
+    change (whenever Room still holds the local truth).
+- **Why it's safe (money):** `consciousOpens` is monotonic-up within a `(challengeId, date)` (midnight =
+  new date key = fresh row; no client/worker/CF intra-day decrement — `functions/src/index.ts` only
+  *reads* it). `max()` only ever keeps the value equal-or-higher, never lowers. `DailyEvaluationWorker`
+  fails SESSIONS on `consciousOpens > maxSessions` (strict `>`), but the overlay caps opens at N, so the
+  true count never exceeds `maxSessions` → `max()` can never tip a challenge into a wrongful FAILED.
+  Aligned with invariant #10 (never-decrease tamper-evidence). Win/loss reads Room directly; display-only
+  use case unaffected.
+- **DEFERRED follow-ups (NOT bundled — track separately):**
+  1. **Reliable flat conscious-opens push (await/retry).** `updateDailyLogConsciousOpens` is
+     fire-and-forget and swallows errors; the one case `max()` can't cover is **reinstall / Room
+     cleared**, where there's no local value to protect and a failed push means Firestore is the only
+     (stale/absent) source → count lost on restore.
+  2. **Step 2 full-row REPLACE still clobbers other today-fields.** Same class of bug for
+     `budgetUsedMs` / `budgetRemainingMs` / `overlayPausedMs` etc. — the nested-doc REPLACE in step 2
+     overwrites them too. Only `consciousOpens` was guarded here; the others deserve the same treatment.
+
+### 2026-06-25 — Dashboard residual "0 → 1" conscious-open flash fixed (flush timing)
+
+Follow-up to the state-sequencing fix below. The intermittent `0 → 1` that remained was a **real
+data-layer write/read race**, not a state-emission issue: the Dashboard's authoritative Room read
+(`getConsciousOpens`) could win against the **asynchronous** persistence of a just-made conscious open.
+
+- **Root cause:** on "Ja, öffnen" the count was incremented in-memory immediately, but the Room write
+  was deferred to `startSessionTimer` as a **fire-and-forget** `scope.launch { upsertConsciousOpens }`.
+  If the user returned to the Dashboard before that write committed, `loadStats`'s `refreshStats` read
+  a stale Room value (0), and the Room-observer corrected it to 1 once the write landed. Both are real
+  Room reads — the transient 0 is DATA, not ordering.
+- **Considered + rejected — read-side `max(Room, bus)`:** the in-memory bus
+  (`TrackedAppEventBus.groupSessionInfos`) is populated **only for GROUP** challenges
+  (`UsageTrackingService.startGroupSessionLimitTracking`); `incrementGroupSessionOpens` early-returns
+  for absent keys, so for SOLO the bus is **empty, not stale** → `max(Room, 0) == Room` (no effect).
+  Making it work would require a write-path change + midnight clearing (the bus is never cleared at
+  midnight) + overcount risk — larger and riskier than the fix below.
+- **FIXED — Edit 1 (`OverlayManager` Stage 1 `onYes`):** `upsertConsciousOpens` is now **awaited
+  before `dismissOverlay()`/`allowTemporarily`**, so Room == in-memory before the user can navigate
+  back to the Dashboard. `scope` is `Dispatchers.Main`, but the Room `suspend` DAO call dispatches to
+  Room's executor → the UI thread is not blocked (dismiss delayed only by a tiny upsert). Invariant
+  #15 preserved (still increments only on "Ja, öffnen", same value — only flush timing moved earlier).
+- **FIXED — Edit 2 (`startSessionTimer`):** removed the old fire-and-forget persist block. The count is
+  now written **exactly once** (in `onYes`). Safe because the other caller (TIME_LIMIT "Open anyway",
+  ~L1102) never set `consciousOpensToday`, so its `countToSave > 0` guard was already a no-op there.
+- **Failure handling:** if the write fails it's logged (not silent) and the open **still proceeds**
+  (allow + dismiss + timer run regardless) — never traps the user. In-memory stays incremented; Room
+  self-heals on the next open (`upsertConsciousOpens` writes the absolute count, not a delta). Same
+  failure profile as before. **Win/loss eval untouched** — `GetDailyStatsUseCase` is Dashboard-only;
+  `DailyEvaluationWorker` reads Room directly.
+- **Deferred (separate task):** the `SyncRepositoryImpl` step-4 stale-Firestore overwrite that can drive
+  a persistent `1 → 0` (`existing.copy(consciousOpens = opens ?: …)`) — noted, not bundled here.
+
+### 2026-06-25 — Dashboard "flash of zero" fixed (UI state-sequencing only)
+
+Killed the brief 0 / empty-bar flash on the Dashboard before real usage numbers load. **State
+sequencing only — Room/UsageStats reads, `getDailyStatsUseCase`, `syncJob`/`syncUserDataUseCase`, and
+`syncJob.join()` are unchanged. No money/data path touched.**
+
+- **Root cause:** the Dashboard already had a sealed `DashboardUiState` (Loading/Success/Empty/Error)
+  with a spinner, but two `refreshStats()` triggers weren't coordinated. (1) `loadStats()` reset
+  `_uiState = Loading` on **every** `repeatOnLifecycle(RESUMED)`, so each reopen flashed spinner →
+  empty → re-animated cards. (2) `observeDailyLogChanges()` could call `refreshStats()` **mid-sync**
+  (challenge row written, opens row not yet) and publish a partial/zero `Success` before the
+  authoritative load finished — the literal "0 → real value" jump.
+- **FIXED — Fix 1 (no spinner on resume):** `loadStats()` now only enters Loading when not already
+  `Success` (`if (_uiState.value !is Success)`). On resume the existing cards stay visible and update
+  in place; the card entrance animation now plays on cold start only.
+- **FIXED — Fix 2 (no mid-sync zero Success):** new `initialLoadComplete` flag, set true right after
+  `loadStats`'s post-`syncJob.join()` `refreshStats()`. The Room observer skips emissions until then,
+  so it can only **update** an existing state, never create the first one. Flag is `viewModelScope`
+  (Main) only → no synchronization needed. Empty/Error interaction is safe: the flag only blocks
+  pre-load emissions, and any post-load observer refresh reads authoritative (sync-complete) data, so
+  it can recover Error/Empty→Success but can never repaint a zero card.
+- **Fix 3 (polish):** first-load spinner replaced with a card-shaped skeleton (`DashboardSkeleton`)
+  matching the eventual header + `ChallengeCard` layout, so the screen no longer jumps on first paint.
+
 ### 2026-06-22 — docs/ consistency audit (docs-only)
 
 Verified the docs/ set against the live repo and corrected drift. **Docs-only — no code/rules changed.**

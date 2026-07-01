@@ -30,7 +30,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -40,10 +39,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
+import com.detox.app.presentation.components.AppIconImage
 import com.detox.app.presentation.components.AppUsageCard
 
 @Composable
@@ -210,7 +208,6 @@ private fun SelectableAppRow(
     conflictChallengeName: String?,
     onToggle: () -> Unit
 ) {
-    val context = LocalContext.current
     val enabled = conflictChallengeName == null
 
     Column(
@@ -224,17 +221,11 @@ private fun SelectableAppRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            app.icon?.let { drawable ->
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(drawable)
-                        .size(144)
-                        .build(),
-                    contentDescription = app.appName,
-                    modifier = Modifier.size(48.dp),
-                    contentScale = ContentScale.Fit
-                )
-            } ?: Box(modifier = Modifier.size(48.dp))
+            AppIconImage(
+                packageName = app.packageName,
+                appName = app.appName,
+                modifier = Modifier.size(48.dp),
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 

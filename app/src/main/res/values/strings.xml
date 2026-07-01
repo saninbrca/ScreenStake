@@ -104,6 +104,9 @@
     <string name="challenge_card_session_limit">Max %1$d opens/day, %2$d min each</string>
     <string name="challenge_card_days_remaining">%1$d days left</string>
     <string name="challenge_card_no_end_date">Kein Enddatum</string>
+    <!-- Open-ended card badge: compact streak (flame already signals "streak"; full wording on detail screen) -->
+    <string name="challenge_card_streak_format">🔥 %1$d Tage</string>
+    <string name="challenge_card_streak_day_one">🔥 Tag 1</string>
     <string name="challenge_card_ends_today">Endet heute</string>
     <string name="challenge_card_tomorrow">Morgen</string>
     <string name="challenge_card_days_left">Noch %1$d Tage</string>
@@ -1391,8 +1394,12 @@
     <string name="wizard_review_no_end_date">Kein Enddatum</string>
     <string name="wizard_review_days_format">%1$d Tage</string>
     <string name="wizard_review_start_btn">Challenge starten</string>
-    <string name="wizard_review_motivation_label">Deine Motivation (optional)</string>
+    <string name="challenge_create_needs_usage_access">Nutzungszugriff ist erforderlich, um eine Challenge zu starten. Bitte aktiviere ihn in den Einstellungen und versuche es erneut.</string>
+    <string name="wizard_review_motivation_label">Deine Motivation</string>
+    <string name="wizard_review_motivation_optional">optional</string>
     <string name="wizard_review_motivation_hint">Warum machst du das?</string>
+    <string name="wizard_review_motivation_helper">Diese Worte siehst du jedes Mal, wenn du die App öffnen willst.</string>
+    <string name="wizard_review_motivation_counter">%1$d / 200</string>
     <string name="wizard_review_mode_soft">Soft Mode</string>
     <string name="wizard_review_mode_hard">Hard Mode</string>
     <string name="wizard_review_mode_group">Group Challenge</string>

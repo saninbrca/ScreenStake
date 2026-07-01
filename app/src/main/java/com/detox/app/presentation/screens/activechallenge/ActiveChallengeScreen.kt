@@ -393,11 +393,17 @@ private fun ActiveChallengeContent(
             else -> challenge.startDate + challenge.endDate * DateUtils.MILLIS_PER_DAY
         }
     }
-    val endDateStr = remember(endDateMs) {
-        if (endDateMs > 0L) dateFmt.format(Date(endDateMs)) else null
+    // Open-ended ("Kein Enddatum") sentinel → null out the end-date + day-count so the existing
+    // "∞" (days-left) and active_challenge_no_end_date (ends row) fallbacks render instead of a
+    // far-future date / ~36500-day count. Display-only; endDate itself is unchanged.
+    val isOpenEnded = remember(challenge.startDate, endDateMs) {
+        DateUtils.isOpenEnded(challenge.startDate, endDateMs)
     }
-    val daysLeft = remember(endDateMs, now) {
-        if (endDateMs > 0L) maxOf(0, ((endDateMs - now) / DateUtils.MILLIS_PER_DAY).toInt()) else null
+    val endDateStr = remember(endDateMs, isOpenEnded) {
+        if (endDateMs > 0L && !isOpenEnded) dateFmt.format(Date(endDateMs)) else null
+    }
+    val daysLeft = remember(endDateMs, now, isOpenEnded) {
+        if (endDateMs > 0L && !isOpenEnded) maxOf(0, ((endDateMs - now) / DateUtils.MILLIS_PER_DAY).toInt()) else null
     }
     Timber.d("DetailScreen: endDateMs=$endDateMs daysLeft=$daysLeft")
 

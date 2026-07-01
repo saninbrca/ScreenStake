@@ -4,11 +4,17 @@ import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
+import android.provider.Settings
+import android.provider.Telephony
+import android.telecom.TelecomManager
+import android.view.inputmethod.InputMethodManager
 import com.detox.app.domain.model.AppDailyUsage
 import com.detox.app.domain.model.AppUsageInfo
+import com.detox.app.domain.model.InstalledAppInfo
 import com.detox.app.domain.repository.UsageStatsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -91,12 +97,101 @@ class UsageStatsRepositoryImpl @Inject constructor(
                 AppUsageInfo(
                     packageName = packageName,
                     appName = appInfo.loadLabel(packageManager).toString(),
-                    icon = try { appInfo.loadIcon(packageManager) } catch (e: Exception) { null },
                     avgDailyMinutes = avgDailyMinutes,
                     avgDailyOpens = avgDailyOpens,
                     isTrackable = isTrackable
                 )
             }.sortedByDescending { it.avgDailyMinutes }
+        }
+
+    override suspend fun getLaunchableApps(): List<InstalledAppInfo> =
+        withContext(Dispatchers.IO) {
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            packageManager.queryIntentActivities(intent, 0)
+                .mapNotNull { resolveInfo ->
+                    val pkg = resolveInfo.activityInfo?.packageName ?: return@mapNotNull null
+                    val label = runCatching { resolveInfo.loadLabel(packageManager).toString() }
+                        .getOrNull()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: pkg
+                    InstalledAppInfo(packageName = pkg, appName = label)
+                }
+                // One entry per package even if it exposes multiple launcher activities.
+                .distinctBy { it.packageName }
+        }
+
+    override suspend fun getNeverBlockablePackages(): Set<String> =
+        withContext(Dispatchers.IO) {
+            val result = mutableSetOf<String>()
+
+            // This app itself.
+            result += context.packageName
+
+            // Home / launcher app(s).
+            runCatching {
+                val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                packageManager.queryIntentActivities(home, 0).forEach {
+                    it.activityInfo?.packageName?.let(result::add)
+                }
+            }
+
+            // Default dialer (+ whatever resolves ACTION_DIAL).
+            runCatching {
+                (context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager)
+                    ?.defaultDialerPackage?.let(result::add)
+            }
+            runCatching {
+                packageManager.resolveActivity(Intent(Intent.ACTION_DIAL), 0)
+                    ?.activityInfo?.packageName?.let(result::add)
+            }
+
+            // Default SMS app.
+            runCatching {
+                Telephony.Sms.getDefaultSmsPackage(context)?.let(result::add)
+            }
+
+            // Active input method(s) — blocking the keyboard would lock the user out of typing.
+            runCatching {
+                (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                    ?.enabledInputMethodList
+                    ?.forEach { it.packageName?.let(result::add) }
+            }
+            runCatching {
+                Settings.Secure.getString(
+                    context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD
+                )?.substringBefore('/')?.takeIf { it.isNotBlank() }?.let(result::add)
+            }
+
+            // Settings app.
+            runCatching {
+                packageManager.resolveActivity(Intent(Settings.ACTION_SETTINGS), 0)
+                    ?.activityInfo?.packageName?.let(result::add)
+            }
+
+            result
+        }
+
+    override suspend fun getUsageByPackage(days: Int): Map<String, Pair<Long, Int>> =
+        withContext(Dispatchers.IO) {
+            val endTime = System.currentTimeMillis()
+            val startTime = Calendar.getInstance().apply {
+                timeInMillis = endTime
+                add(Calendar.DAY_OF_YEAR, -days)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            val safeDays = days.coerceAtLeast(1)
+            val timeByPackage = getUsageTimeByPackage(startTime, endTime)
+            val opensByPackage = getOpenCountByPackage(startTime, endTime)
+
+            (timeByPackage.keys + opensByPackage.keys).associateWith { pkg ->
+                val avgMinutes = (timeByPackage[pkg] ?: 0L) / safeDays
+                val avgOpens = (opensByPackage[pkg] ?: 0) / safeDays
+                avgMinutes to avgOpens
+            }
         }
 
     private fun getUsageTimeByPackage(startTime: Long, endTime: Long): Map<String, Long> {

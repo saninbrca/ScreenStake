@@ -1,16 +1,17 @@
 package com.detox.app.domain.usecase
 
-import android.content.Context
-import android.content.pm.PackageManager
+import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.ProofOfAddictionResult
 import com.detox.app.domain.repository.UsageStatsRepository
-import dagger.hilt.android.qualifiers.ApplicationContext
+import java.text.Collator
 import javax.inject.Inject
 
 /**
- * Package prefixes that belong to system utilities — never shown in app selection.
- * We keep this intentionally narrow so that browsers, messengers, and social apps are
- * not accidentally excluded.
+ * Static backstop deny-list of package prefixes — system utilities never worth blocking.
+ * Kept intentionally narrow so browsers, messengers, and social apps are never accidentally
+ * excluded. The PRIMARY safety guard against blocking critical apps is the dynamic, OEM-agnostic
+ * set from [UsageStatsRepository.getNeverBlockablePackages] (home/dialer/SMS/IME/settings/self);
+ * this prefix list only catches obvious non-user-facing system packages the dynamic pass may miss.
  */
 private val EXCLUDED_PACKAGE_PREFIXES = listOf(
     "com.detox.app",                    // this app itself
@@ -43,29 +44,64 @@ private val EXCLUDED_PACKAGE_PREFIXES = listOf(
     "com.android.mms",                  // SMS (stock)
     "com.android.messaging",
     "com.android.dialer",
-    "com.android.contacts",
     "com.android.music",
     "com.android.gallery",
     "com.android.email",
     "com.android.packageinstaller",
     "android",
     "com.google.android.packageinstaller",
+    // OEM system utilities / device managers (launchable but never sensible block targets).
+    "com.google.android.setupwizard",
+    "com.android.provision",
+    "com.huawei.systemmanager",         // Huawei Optimizer / Phone Manager
+    "com.miui.securitycenter",          // MIUI Security
+    "com.coloros.safecenter",           // ColorOS / Oppo / Realme
+    "com.samsung.android.lool",         // Samsung Device Care
 )
 
+/**
+ * Source of truth for the app picker. Enumerates EVERY user-launchable app (opened or not),
+ * removes packages that must never be blockable, joins in usage history for ranking, and returns a
+ * two-tier ordering: most-used apps first, then never-used apps alphabetically.
+ *
+ * Free of Android framework access — all PackageManager / role resolution lives in
+ * [UsageStatsRepository], keeping this use case unit-testable and the list decoupled from
+ * PACKAGE_USAGE_STATS (it populates even when usage access is off; usage just reads as zero).
+ */
 class GetAddictiveAppsUseCase @Inject constructor(
     private val usageStatsRepository: UsageStatsRepository,
-    @ApplicationContext private val context: Context
 ) {
     suspend operator fun invoke(): Result<ProofOfAddictionResult> {
         return try {
-            val pm = context.packageManager
-            val allApps = usageStatsRepository.getAppUsageStats(days = 14)
-                .filter { shouldInclude(it.packageName, pm) }
-            val (trackable, nonTrackable) = allApps.partition { it.isTrackable }
+            val launchable = usageStatsRepository.getLaunchableApps()
+            val neverBlockable = usageStatsRepository.getNeverBlockablePackages()
+            val usageByPackage = usageStatsRepository.getUsageByPackage(days = 14)
+
+            val apps = launchable
+                .filter { shouldInclude(it.packageName, neverBlockable) }
+                .map { info ->
+                    val (avgMinutes, avgOpens) = usageByPackage[info.packageName] ?: (0L to 0)
+                    AppUsageInfo(
+                        packageName = info.packageName,
+                        appName = info.appName,
+                        avgDailyMinutes = avgMinutes,
+                        avgDailyOpens = avgOpens,
+                        isTrackable = true,
+                    )
+                }
+
+            // Strictly alphabetical (A–Z) by display name, case-insensitive and locale-aware. Fast
+            // lookup is handled by the picker's search bar, so apps are listed predictably rather
+            // than usage-ranked. PRIMARY strength ignores case and accents, so German umlauts order
+            // naturally (e.g. "Ä" near "A"). The usage join above is kept — it feeds the per-row
+            // usage summary and the wizard limit prefill — it just no longer drives ordering.
+            val collator = Collator.getInstance().apply { strength = Collator.PRIMARY }
+            val ordered = apps.sortedWith { a, b -> collator.compare(a.appName, b.appName) }
+
             Result.success(
                 ProofOfAddictionResult(
-                    trackableApps = trackable,
-                    nonTrackableApps = nonTrackable
+                    trackableApps = ordered,
+                    nonTrackableApps = emptyList(),
                 )
             )
         } catch (e: Exception) {
@@ -74,25 +110,13 @@ class GetAddictiveAppsUseCase @Inject constructor(
     }
 
     /**
-     * Returns true if [packageName] should appear in the app-selection list.
-     * Rules:
-     * 1. Must not start with any of the excluded system-utility prefixes.
-     * 2. Must have a launcher icon (i.e. getLaunchIntentForPackage != null).
-     * 3. Must be installed.
+     * True if [packageName] may appear in the picker. Excludes the dynamically-resolved critical
+     * apps first (launcher/dialer/SMS/IME/settings/self) — the hard guarantee that a user can never
+     * trap their device — then the static system-utility prefixes.
      */
-    private fun shouldInclude(packageName: String, pm: PackageManager): Boolean {
-        // Rule 1: exclude system utilities
+    private fun shouldInclude(packageName: String, neverBlockable: Set<String>): Boolean {
+        if (packageName in neverBlockable) return false
         if (EXCLUDED_PACKAGE_PREFIXES.any { packageName.startsWith(it) }) return false
-
-        // Rule 2: must be user-launchable (has a home-screen icon)
-        if (pm.getLaunchIntentForPackage(packageName) == null) return false
-
-        // Rule 3: must be installed
-        return try {
-            pm.getApplicationInfo(packageName, 0)
-            true
-        } catch (_: PackageManager.NameNotFoundException) {
-            false
-        }
+        return true
     }
 }

@@ -29,11 +29,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -52,10 +57,19 @@ import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.util.pressScaleFeedback
 import com.detox.app.ui.theme.DetoxWarning
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 private val TextSecondary = Color(0xFF8E8E93)
 private val FallbackBg = Color(0xFFF2F2F7)
 private val FaviconFallbackBg = Color(0xFFAEAEB2)
+
+// Process-level caches keyed by package name. App icon/label lookups are otherwise re-run every
+// time a card is recomposed after scrolling back into view (LazyColumn disposes off-screen items,
+// dropping their `remember` caches). Presentation-only — no effect on DailyStats or challenge data.
+private val iconCache = ConcurrentHashMap<String, ImageBitmap>()
+private val labelCache = ConcurrentHashMap<String, String>()
 
 // ── Website challenge helpers ─────────────────────────────────────────────────
 
@@ -198,7 +212,11 @@ fun ChallengeCard(
                         Spacer(modifier = Modifier.width(4.dp))
                         ModeBadge(dailyStats = dailyStats)
                         Spacer(modifier = Modifier.width(4.dp))
-                        DaysLeftBadge(daysRemaining = dailyStats.daysRemaining)
+                        DaysLeftBadge(
+                            daysRemaining = dailyStats.daysRemaining,
+                            isOpenEnded = dailyStats.isOpenEnded,
+                            streak = dailyStats.streak
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -418,11 +436,13 @@ private fun AppNameLabel(
         n <= 3 -> {
             val labels = remember(packageNames) {
                 packageNames.joinToString(", ") { pkg ->
-                    try {
-                        val info = context.packageManager.getApplicationInfo(pkg, 0)
-                        context.packageManager.getApplicationLabel(info).toString()
-                    } catch (e: Exception) {
-                        pkg.substringAfterLast('.')
+                    labelCache.getOrPut(pkg) {
+                        try {
+                            val info = context.packageManager.getApplicationInfo(pkg, 0)
+                            context.packageManager.getApplicationLabel(info).toString()
+                        } catch (e: Exception) {
+                            pkg.substringAfterLast('.')
+                        }
                     }
                 }
             }
@@ -467,10 +487,15 @@ private fun ModeBadge(dailyStats: DailyStats) {
 }
 
 @Composable
-private fun DaysLeftBadge(daysRemaining: Int) {
-    if (daysRemaining == Int.MAX_VALUE) return
+private fun DaysLeftBadge(daysRemaining: Int, isOpenEnded: Boolean = false, streak: Int = 0) {
+    if (daysRemaining == Int.MAX_VALUE && !isOpenEnded) return
 
     val (label, badgeColor) = when {
+        // Open-ended: "days remaining" is meaningless → show the consecutive-success streak instead.
+        // Compact card format ("🔥 N Tage"); the flame signals "streak", full wording is on the detail
+        // screen. streak == 0 means day 1 of the (possibly just-restarted) streak → "🔥 Tag 1".
+        isOpenEnded && streak <= 0 -> stringResource(R.string.challenge_card_streak_day_one) to MaterialTheme.colorScheme.primary
+        isOpenEnded -> stringResource(R.string.challenge_card_streak_format, streak) to MaterialTheme.colorScheme.primary
         daysRemaining <= 0 -> stringResource(R.string.challenge_card_ends_today) to Color(0xFFE65100)
         daysRemaining == 1 -> stringResource(R.string.challenge_card_tomorrow) to MaterialTheme.colorScheme.primary
         else -> stringResource(R.string.challenge_card_days_left, daysRemaining) to MaterialTheme.colorScheme.primary
@@ -484,7 +509,8 @@ private fun DaysLeftBadge(daysRemaining: Int) {
             text = label,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White
+            color = Color.White,
+            maxLines = 1
         )
     }
 }
@@ -493,27 +519,40 @@ private fun DaysLeftBadge(daysRemaining: Int) {
 @Composable
 internal fun AppIconImage(packageName: String?, appName: String, modifier: Modifier) {
     val context = LocalContext.current
-    val bitmap = remember(packageName) {
-        if (packageName == null) return@remember null
-        try {
-            val drawable = context.packageManager.getApplicationIcon(packageName)
-            val bmp = Bitmap.createBitmap(
-                drawable.intrinsicWidth.coerceAtLeast(1),
-                drawable.intrinsicHeight.coerceAtLeast(1),
-                Bitmap.Config.ARGB_8888
-            )
-            val canvas = Canvas(bmp)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            bmp.asImageBitmap()
-        } catch (e: Exception) {
-            null
+    // Seed synchronously from the process cache so a card scrolling back into view is an O(1) hit
+    // (no re-decode, no flicker). On a miss the grey-letter placeholder shows until the off-thread
+    // decode below publishes the bitmap.
+    var bitmap by remember(packageName) {
+        mutableStateOf(packageName?.let { iconCache[it] })
+    }
+    LaunchedEffect(packageName) {
+        if (packageName == null || bitmap != null) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.Default) {
+            try {
+                val drawable = context.packageManager.getApplicationIcon(packageName)
+                val bmp = Bitmap.createBitmap(
+                    drawable.intrinsicWidth.coerceAtLeast(1),
+                    drawable.intrinsicHeight.coerceAtLeast(1),
+                    Bitmap.Config.ARGB_8888
+                )
+                val canvas = Canvas(bmp)
+                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                drawable.draw(canvas)
+                bmp.asImageBitmap()
+            } catch (e: Exception) {
+                null
+            }
+        }
+        if (decoded != null) {
+            iconCache[packageName] = decoded
+            bitmap = decoded
         }
     }
 
-    if (bitmap != null) {
+    val current = bitmap
+    if (current != null) {
         Image(
-            bitmap = bitmap,
+            bitmap = current,
             contentDescription = appName,
             modifier = modifier.clip(CircleShape),
             contentScale = ContentScale.Fit

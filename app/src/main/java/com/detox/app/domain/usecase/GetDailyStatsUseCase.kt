@@ -23,6 +23,7 @@ class GetDailyStatsUseCase @Inject constructor(
     private val dailyLogRepository: DailyLogRepository,
     private val groupChallengeRepository: GroupChallengeRepository,
     private val firebaseAuth: FirebaseAuth,
+    private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
 ) {
     suspend operator fun invoke(): Result<List<DailyStats>> {
         return try {
@@ -64,6 +65,13 @@ class GetDailyStatsUseCase @Inject constructor(
                     else -> 0
                 }
                 Timber.d("Challenge ${challenge.id} endDate=$effectiveEndDateMs remaining=$daysRemaining days")
+                // Open-ended ("Kein Enddatum") sentinel — display-only flag so the card shows a label
+                // instead of the ~36500-day count. Never affects completion/win-loss (endDate unchanged).
+                val isOpenEnded = DateUtils.isOpenEnded(challenge.startDate, effectiveEndDateMs)
+                // Streak is shown on the card badge for open-ended challenges only — compute it solely
+                // in that case so dated cards pay zero added DB cost. Same use case the detail screen
+                // uses, so the two surfaces always agree. Display-only; never affects win/loss.
+                val streak = if (isOpenEnded) getChallengeStreakUseCase(challenge, now) else 0
 
                 // Skip group challenges where the current user already failed
                 if (groupChallenge != null && currentUid != null) {
@@ -132,6 +140,8 @@ class GetDailyStatsUseCase @Inject constructor(
                         limitExceeded = limitExceeded,
                         customMotivation = challenge.customMotivation,
                         daysRemaining = daysRemaining,
+                        isOpenEnded = isOpenEnded,
+                        streak = streak,
                         moneyLostCents = moneyLostCents,
                         dailyBudgetMinutes = totalBudget,
                         budgetRemainingMinutes = budgetRemaining,
@@ -201,6 +211,8 @@ class GetDailyStatsUseCase @Inject constructor(
                     limitExceeded = limitExceeded,
                     customMotivation = challenge.customMotivation,
                     daysRemaining = daysRemaining,
+                    isOpenEnded = isOpenEnded,
+                    streak = streak,
                     moneyLostCents = moneyLostCents,
                     blockedDomains = challenge.blockedDomains,
                     partialBlockDomains = challenge.partialBlockDomains,

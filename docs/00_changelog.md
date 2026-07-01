@@ -21,6 +21,55 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-06-25 — Open-ended challenge card shows STREAK instead of days-remaining (display-only)
+
+Follow-up to the open-ended display fix below. For open-ended ("Kein Enddatum") challenges, "days
+remaining" is meaningless, so the card badge now shows the consecutive-success **streak** (semantic A —
+breaks when the daily limit is exceeded). Dated challenges keep "Noch N Tage / Morgen / Endet heute".
+
+- **No new streak logic — reuses `GetChallengeStreakUseCase`.** For the sentinel (`endDate` far-future
+  `> 0`) that use case already returns the consecutive-success streak (its `else` branch via
+  `getStreakForChallenge`: consecutive past days with `limitExceeded == false`, today excluded). The
+  card now calls the **same** use case the detail screen uses, so the two surfaces always show the same
+  number.
+- **Plumbing:** `GetDailyStatsUseCase` injects `GetChallengeStreakUseCase`; `DailyStats` gains
+  `streak: Int = 0`; `ChallengeCard.DaysLeftBadge` renders it in the `isOpenEnded` branch.
+- **Cost-gated:** streak is computed **only when `isOpenEnded`** (`if (isOpenEnded)
+  getChallengeStreakUseCase(...) else 0`), so dated cards pay **zero** added DB cost — keeps the
+  per-card path cheap and untouched by the streak query. Open-ended challenges are Soft-solo and rare.
+- **Wording (card = compact, detail = full):** new `challenge_card_streak_format = "🔥 %1$d Tage"`
+  (flame signals "streak"; the full "🔥 N Tage Streak" stays on the detail screen). `streak == 0` →
+  new `challenge_card_streak_day_one = "🔥 Tag 1"` (reads correctly for a brand-new challenge AND a
+  post-break restart — day 1 of the current streak). Badge text gets defensive `maxLines = 1`.
+- **Display-only:** no change to streak computation, `limitExceeded`, `DailyEvaluationWorker`, win/loss,
+  or Stripe — the card just reads the existing streak value for open-ended challenges.
+
+### 2026-06-25 — Open-ended challenges no longer show "~34890 days remaining" (display-only)
+
+A no-end-date ("Kein Enddatum") challenge uses the `NO_END_DATE_DAYS = 36500` sentinel, stored as a
+far-future `endDate` timestamp (`endOfDayMillis(now, 36500)`). `durationDays` isn't persisted, and no
+downstream code distinguished the sentinel from a finite end date, so the Dashboard card and the detail
+screen rendered the raw day count (~34890) instead of "no end date". The existing "no end" UI paths
+only fired on `endDate <= 0`, which never happens for the sentinel.
+
+- **FIXED — canonical open-ended check (`DateUtils.isOpenEnded(startMs, endMs)`):** span-based —
+  `(endMs - startMs)/MILLIS_PER_DAY >= NO_END_DATE_DAYS - 1`. Derived from the sentinel, **not** an
+  arbitrary "large number": real durations are capped at 1..365 days (`CreateChallengeUseCase`), so only
+  the ~36500-day sentinel can reach the bound (a genuine 300-day challenge can't be misclassified).
+  Span comparison (not exact-millis `==` on a recomputed `endOfDayMillis`) keeps it robust to
+  timezone/DST drift. Single source of truth, used by both display sites.
+- **Stat:** `DailyStats` gains `isOpenEnded: Boolean = false`; `GetDailyStatsUseCase` sets it from the
+  resolved `effectiveEndDateMs` (so it works for both timestamp and legacy days-form storage). Groups
+  use the group's finite endDate → `false` (and no-end-date is Soft-solo only).
+- **Dashboard card:** `ChallengeCard.DaysLeftBadge` shows the existing `challenge_card_no_end_date`
+  ("Kein Enddatum") string when `isOpenEnded`, instead of the day count.
+- **Detail screen:** `ActiveChallengeScreen` nulls out `daysLeft` and `endDateStr` when open-ended, so
+  the existing `"∞"` (days-left) and `active_challenge_no_end_date` (ends row) fallbacks render. No new
+  strings — both "Kein Enddatum" resources already existed.
+- **Display-only:** `endDate`, completion math (`DailyEvaluationWorker` `now >= endDate` → still never
+  completes the sentinel, as designed), win/loss, capture, and Stripe are all untouched. Only the
+  human-readable "remaining" label changes.
+
 ### 2026-06-25 — Session-timer expiry now uses an authoritative foreground query (anti-cheat)
 
 A SESSIONS session timer that expired while the user was actively in the tracked app could **defer the

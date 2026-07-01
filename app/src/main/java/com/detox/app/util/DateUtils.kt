@@ -14,6 +14,16 @@ object DateUtils {
      */
     const val NO_END_DATE_DAYS = 36500
 
+    /**
+     * True when a challenge's resolved end-date [endMs] is the open-ended sentinel (created from
+     * [NO_END_DATE_DAYS]). Real challenges are capped at 1..365 days (CreateChallengeUseCase), so only
+     * the ~36500-day sentinel can reach this bound — a genuine long challenge can never be
+     * misclassified. Span-based (not exact-millis ==) to stay robust against timezone/DST drift between
+     * creation and display. Display-only: never affects completion math or money logic.
+     */
+    fun isOpenEnded(startMs: Long, endMs: Long): Boolean =
+        startMs > 0L && endMs > 0L && (endMs - startMs) / MILLIS_PER_DAY >= NO_END_DATE_DAYS - 1
+
     fun todayKey(): Long {
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 0)

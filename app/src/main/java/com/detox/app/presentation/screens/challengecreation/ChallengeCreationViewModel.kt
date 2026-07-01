@@ -1,6 +1,8 @@
 package com.detox.app.presentation.screens.challengecreation
 
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.BuildConfig
@@ -174,10 +176,9 @@ class ChallengeCreationViewModel @Inject constructor(
     // ── App loading ───────────────────────────────────────────────────────────
 
     fun loadApps() {
-        if (!usageStatsRepository.hasUsageStatsPermission()) {
-            _appListState.value = AppListState(isLoading = false, noPermission = true)
-            return
-        }
+        // List source is PackageManager (launchable apps), so it populates regardless of
+        // PACKAGE_USAGE_STATS — the user browses freely. Usage access is required to START a
+        // challenge and is enforced in [createChallenge], never here.
         viewModelScope.launch {
             _appListState.update { it.copy(isLoading = true, error = null, noPermission = false) }
             val conflicts = mutableMapOf<String, String>()
@@ -436,6 +437,21 @@ class ChallengeCreationViewModel @Inject constructor(
 
     fun createChallenge() {
         firebaseAuthService.logAuthState("ChallengeCreationViewModel.createChallenge")
+        // Hard gate: never create a challenge (and for Hard Mode never authorize a Stripe payment)
+        // while usage access is off — tracking/enforcement would be blind. Abort BEFORE the root
+        // check, save, or payment, and route the user to usage-access settings.
+        if (!usageStatsRepository.hasUsageStatsPermission()) {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            _uiState.value = ChallengeCreationUiState.Error(
+                context.getString(R.string.challenge_create_needs_usage_access)
+            )
+            return
+        }
         if (_state.value.selectedMode == ChallengeMode.HARD) {
             var rootWarningShown = false
             RootDetectionManager.checkAndWarn(context) {

@@ -1,11 +1,12 @@
 package com.detox.app.domain.usecase
 
-import com.detox.app.domain.model.AppUsageInfo
+import com.detox.app.domain.model.InstalledAppInfo
 import com.detox.app.domain.repository.UsageStatsRepository
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -21,43 +22,83 @@ class GetAddictiveAppsUseCaseTest {
         useCase = GetAddictiveAppsUseCase(usageStatsRepository)
     }
 
-    @Test
-    fun `trackable apps have high usage time`() = runTest {
-        val apps = listOf(
-            createAppUsageInfo("com.tiktok", avgMinutes = 60, avgOpens = 5, trackable = true),
-            createAppUsageInfo("com.lowuse", avgMinutes = 10, avgOpens = 2, trackable = false)
-        )
-        coEvery { usageStatsRepository.getAppUsageStats(14) } returns apps
-
-        val result = useCase()
-
-        assertTrue(result.isSuccess)
-        val data = result.getOrThrow()
-        assertEquals(1, data.trackableApps.size)
-        assertEquals("com.tiktok", data.trackableApps[0].packageName)
-        assertEquals(1, data.nonTrackableApps.size)
-        assertEquals("com.lowuse", data.nonTrackableApps[0].packageName)
+    private fun stub(
+        launchable: List<InstalledAppInfo>,
+        neverBlockable: Set<String> = emptySet(),
+        usage: Map<String, Pair<Long, Int>> = emptyMap(),
+    ) {
+        coEvery { usageStatsRepository.getLaunchableApps() } returns launchable
+        coEvery { usageStatsRepository.getNeverBlockablePackages() } returns neverBlockable
+        coEvery { usageStatsRepository.getUsageByPackage(14) } returns usage
     }
 
     @Test
-    fun `trackable apps have high open count`() = runTest {
-        val apps = listOf(
-            createAppUsageInfo("com.instagram", avgMinutes = 30, avgOpens = 25, trackable = true),
-            createAppUsageInfo("com.lowuse", avgMinutes = 10, avgOpens = 5, trackable = false)
+    fun `apps are sorted alphabetically by name, case-insensitive, regardless of usage`() = runTest {
+        stub(
+            launchable = listOf(
+                InstalledAppInfo("com.cherry", "Cherry"),
+                InstalledAppInfo("com.apple", "apple"),
+                InstalledAppInfo("com.banana", "Banana"),
+                InstalledAppInfo("com.apricot", "apricot"),
+            ),
+            // Highest usage by far — must NOT influence ordering; it sorts last by name.
+            usage = mapOf("com.cherry" to (999L to 99)),
         )
-        coEvery { usageStatsRepository.getAppUsageStats(14) } returns apps
 
         val result = useCase()
 
         assertTrue(result.isSuccess)
-        val data = result.getOrThrow()
-        assertEquals(1, data.trackableApps.size)
-        assertEquals("com.instagram", data.trackableApps[0].packageName)
+        val apps = result.getOrThrow().trackableApps.map { it.packageName }
+        // Pure A–Z by display name, case-insensitive: apple, apricot, Banana, Cherry.
+        assertEquals(listOf("com.apple", "com.apricot", "com.banana", "com.cherry"), apps)
+    }
+
+    @Test
+    fun `never-blockable and excluded-prefix packages are filtered out`() = runTest {
+        stub(
+            launchable = listOf(
+                InstalledAppInfo("com.tiktok", "TikTok"),
+                InstalledAppInfo("com.huawei.android.launcher", "Launcher"), // dynamic deny
+                InstalledAppInfo("com.android.settings", "Settings"),        // static prefix
+                InstalledAppInfo("com.detox.app", "ScreenStake"),            // self (prefix)
+            ),
+            neverBlockable = setOf("com.huawei.android.launcher"),
+        )
+
+        val result = useCase()
+
+        val apps = result.getOrThrow().trackableApps.map { it.packageName }
+        assertEquals(listOf("com.tiktok"), apps)
+        assertFalse("com.huawei.android.launcher" in apps)
+        assertFalse("com.android.settings" in apps)
+        assertFalse("com.detox.app" in apps)
+    }
+
+    @Test
+    fun `list populates even with no usage data (usage access off)`() = runTest {
+        stub(
+            launchable = listOf(
+                InstalledAppInfo("com.beta", "Beta"),
+                InstalledAppInfo("com.alpha", "Alpha"),
+            ),
+            usage = emptyMap(),
+        )
+
+        val result = useCase()
+
+        assertTrue(result.isSuccess)
+        // All never-used → pure alphabetical by label.
+        assertEquals(
+            listOf("com.alpha", "com.beta"),
+            result.getOrThrow().trackableApps.map { it.packageName },
+        )
     }
 
     @Test
     fun `returns failure on repository exception`() = runTest {
-        coEvery { usageStatsRepository.getAppUsageStats(14) } throws RuntimeException("No permission")
+        coEvery { usageStatsRepository.getLaunchableApps() } throws RuntimeException("boom")
+        coEvery { usageStatsRepository.getNeverBlockablePackages() } returns emptySet()
+        coEvery { usageStatsRepository.getUsageByPackage(14) } returns emptyMap()
 
         val result = useCase()
 
@@ -65,8 +106,8 @@ class GetAddictiveAppsUseCaseTest {
     }
 
     @Test
-    fun `empty list returns empty result`() = runTest {
-        coEvery { usageStatsRepository.getAppUsageStats(14) } returns emptyList()
+    fun `empty launchable list returns empty result`() = runTest {
+        stub(launchable = emptyList())
 
         val result = useCase()
 
@@ -75,18 +116,4 @@ class GetAddictiveAppsUseCaseTest {
         assertTrue(data.trackableApps.isEmpty())
         assertTrue(data.nonTrackableApps.isEmpty())
     }
-
-    private fun createAppUsageInfo(
-        packageName: String,
-        avgMinutes: Long,
-        avgOpens: Int,
-        trackable: Boolean
-    ) = AppUsageInfo(
-        packageName = packageName,
-        appName = packageName.substringAfterLast('.'),
-        icon = null,
-        avgDailyMinutes = avgMinutes,
-        avgDailyOpens = avgOpens,
-        isTrackable = trackable
-    )
 }

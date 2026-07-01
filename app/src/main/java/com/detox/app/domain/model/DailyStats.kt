@@ -12,6 +12,10 @@ data class DailyStats(
     val limitExceeded: Boolean,
     val customMotivation: String?,
     val daysRemaining: Int,
+    /** True for the open-ended ("Kein Enddatum") sentinel — UI shows a label instead of a day count. */
+    val isOpenEnded: Boolean = false,
+    /** Consecutive-success streak — shown on the card badge for open-ended challenges only (0 otherwise). */
+    val streak: Int = 0,
     val moneyLostCents: Int = 0,
     /** Total daily budget (TIME_BUDGET challenges only; null for TIME / SESSIONS). */
     val dailyBudgetMinutes: Int? = null,

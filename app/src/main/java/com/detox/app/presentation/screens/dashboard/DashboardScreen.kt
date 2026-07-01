@@ -3,15 +3,12 @@ package com.detox.app.presentation.screens.dashboard
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,7 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Close
@@ -58,7 +55,6 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -77,7 +73,6 @@ import com.detox.app.presentation.components.ChallengeCard
 import com.detox.app.presentation.util.pressScaleFeedback
 import androidx.compose.ui.platform.LocalContext
 import com.detox.app.util.DateUtils
-import kotlinx.coroutines.delay
 
 @Composable
 fun DashboardScreen(
@@ -234,30 +229,14 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
-                        itemsIndexed(
+                        items(
                             items = state.activeChallenges,
-                            key = { _, it -> it.challengeId }
-                        ) { index, stats ->
-                            val density = LocalDensity.current
-                            val offsetPx = with(density) { 30.dp.roundToPx() }
-                            var cardVisible by remember { mutableStateOf(false) }
-                            LaunchedEffect(Unit) {
-                                delay(index * 80L)
-                                cardVisible = true
-                            }
-                            AnimatedVisibility(
-                                visible = cardVisible,
-                                enter = fadeIn(tween(350, easing = FastOutSlowInEasing)) +
-                                    slideInVertically(
-                                        initialOffsetY = { offsetPx },
-                                        animationSpec = tween(350, easing = FastOutSlowInEasing)
-                                    )
-                            ) {
-                                ChallengeCard(
-                                    dailyStats = stats,
-                                    onClick = { onChallengeClick(stats.challengeId) }
-                                )
-                            }
+                            key = { it.challengeId }
+                        ) { stats ->
+                            ChallengeCard(
+                                dailyStats = stats,
+                                onClick = { onChallengeClick(stats.challengeId) }
+                            )
                         }
                     }
                 }

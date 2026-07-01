@@ -17,12 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.ui.theme.DetoxGrayedOut
@@ -35,7 +31,6 @@ fun AppUsageCard(
     modifier: Modifier = Modifier
 ) {
     val alpha = if (appUsageInfo.isTrackable) 1f else 0.5f
-    val context = LocalContext.current
 
     Card(
         onClick = onClick,
@@ -55,17 +50,11 @@ fun AppUsageCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            appUsageInfo.icon?.let { drawable ->
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(drawable)
-                        .size(144)
-                        .build(),
-                    contentDescription = appUsageInfo.appName,
-                    modifier = Modifier.size(48.dp),
-                    contentScale = ContentScale.Fit
-                )
-            }
+            AppIconImage(
+                packageName = appUsageInfo.packageName,
+                appName = appUsageInfo.appName,
+                modifier = Modifier.size(48.dp),
+            )
 
             Spacer(modifier = Modifier.width(16.dp))
 

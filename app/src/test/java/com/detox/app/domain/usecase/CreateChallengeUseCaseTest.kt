@@ -1,15 +1,16 @@
 package com.detox.app.domain.usecase
 
+import android.content.Context
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.GroupChallengeRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -17,12 +18,20 @@ import org.junit.Test
 class CreateChallengeUseCaseTest {
 
     private lateinit var challengeRepository: ChallengeRepository
+    private lateinit var groupChallengeRepository: GroupChallengeRepository
+    private lateinit var context: Context
     private lateinit var useCase: CreateChallengeUseCase
 
     @Before
     fun setUp() {
         challengeRepository = mockk()
-        useCase = CreateChallengeUseCase(challengeRepository)
+        groupChallengeRepository = mockk()
+        // Relaxed: prod reads SharedPreferences under BuildConfig.DEBUG; default getBoolean=false
+        // keeps the standard (days, not minutes) duration path.
+        context = mockk(relaxed = true)
+        // No conflicting group challenge by default.
+        coEvery { groupChallengeRepository.getActiveGroupChallengeForApp(any()) } returns null
+        useCase = CreateChallengeUseCase(challengeRepository, groupChallengeRepository, context)
     }
 
     @Test
@@ -41,7 +50,7 @@ class CreateChallengeUseCaseTest {
         )
 
         assertTrue(result.isSuccess)
-        assertTrue(result.getOrNull()!!.isNotEmpty())
+        assertTrue(result.getOrNull()!!.challengeId.isNotEmpty())
         coVerify { challengeRepository.createChallenge(any()) }
     }
 
@@ -82,6 +91,7 @@ class CreateChallengeUseCaseTest {
         val existingChallenge = Challenge(
             id = "existing",
             appPackageName = "com.tiktok",
+            appPackageNames = listOf("com.tiktok"),
             appDisplayName = "TikTok",
             mode = ChallengeMode.SOFT,
             limitType = LimitType.TIME,
@@ -91,7 +101,6 @@ class CreateChallengeUseCaseTest {
             endDate = 0L,
             amountCents = null,
             stripePaymentIntentId = null,
-            emergencyCode = null,
             customMotivation = null,
             status = ChallengeStatus.ACTIVE,
             createdAt = 0L

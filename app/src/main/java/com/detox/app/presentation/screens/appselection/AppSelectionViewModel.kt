@@ -40,11 +40,9 @@ class AppSelectionViewModel @Inject constructor(
     val selectedPackages: StateFlow<Set<String>> = _selectedPackages.asStateFlow()
 
     fun loadApps() {
-        if (!usageStatsRepository.hasUsageStatsPermission()) {
-            _uiState.value = AppSelectionUiState.NoPermission
-            return
-        }
-
+        // The list comes from PackageManager (launchable apps), so it populates without
+        // PACKAGE_USAGE_STATS. Usage access only enriches sorting; it is enforced at challenge
+        // creation, not here — the user can browse the full app list either way.
         viewModelScope.launch {
             _uiState.value = AppSelectionUiState.Loading
 

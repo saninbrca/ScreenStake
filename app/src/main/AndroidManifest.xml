@@ -26,6 +26,19 @@
     <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+        Package visibility (Android 11+ / targetSdk 36): the app picker enumerates every
+        user-launchable app via queryIntentActivities(MAIN/LAUNCHER). Without this <queries>
+        declaration that query is filtered to a near-empty list. Scoped to launchable apps only —
+        intentionally NOT QUERY_ALL_PACKAGES (sensitive, needs a Play declaration).
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".DetoxApplication"
         android:allowBackup="true"

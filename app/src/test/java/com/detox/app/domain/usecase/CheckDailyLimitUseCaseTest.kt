@@ -6,6 +6,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -20,13 +21,17 @@ class CheckDailyLimitUseCaseTest {
 
     private lateinit var challengeRepository: ChallengeRepository
     private lateinit var usageStatsRepository: UsageStatsRepository
+    private lateinit var dailyLogRepository: DailyLogRepository
     private lateinit var useCase: CheckDailyLimitUseCase
 
     @Before
     fun setUp() {
         challengeRepository = mockk()
         usageStatsRepository = mockk()
-        useCase = CheckDailyLimitUseCase(challengeRepository, usageStatsRepository)
+        dailyLogRepository = mockk()
+        // No overlay-paused time by default — limit math runs against raw usage.
+        coEvery { dailyLogRepository.getOverlayPausedMs(any(), any()) } returns Result.success(0L)
+        useCase = CheckDailyLimitUseCase(challengeRepository, usageStatsRepository, dailyLogRepository)
     }
 
     @Test
@@ -74,6 +79,9 @@ class CheckDailyLimitUseCaseTest {
             createChallenge(LimitType.SESSIONS, 5, 5)
         )
         coEvery { usageStatsRepository.getTodayUsageForApp("com.tiktok") } returns AppDailyUsage(20, 5)
+        // SESSIONS limit gates on conscious opens (Room), not raw UsageStats opens —
+        // 5 conscious opens against a 5-session cap must trip the limit.
+        coEvery { dailyLogRepository.getConsciousOpens(any(), any()) } returns Result.success(5)
 
         val result = useCase("com.tiktok")
 
@@ -89,6 +97,7 @@ class CheckDailyLimitUseCaseTest {
     ) = Challenge(
         id = "test-id",
         appPackageName = "com.tiktok",
+        appPackageNames = listOf("com.tiktok"),
         appDisplayName = "TikTok",
         mode = ChallengeMode.SOFT,
         limitType = limitType,
@@ -98,7 +107,6 @@ class CheckDailyLimitUseCaseTest {
         endDate = Long.MAX_VALUE,
         amountCents = null,
         stripePaymentIntentId = null,
-        emergencyCode = null,
         customMotivation = null,
         status = ChallengeStatus.ACTIVE,
         createdAt = 0L

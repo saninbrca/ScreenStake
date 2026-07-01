@@ -16,6 +16,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -40,6 +43,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.AlertDialog
@@ -52,7 +56,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -70,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -1306,33 +1310,10 @@ private fun Step7Confirm(
         }
 
         // Motivation field
-        Text(
-            text = stringResource(R.string.wizard_review_motivation_label),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
+        MotivationField(
+            value = state.motivationText,
+            onValueChange = onUpdateMotivation,
         )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(CardShape)
-                .background(CardBg)
-                .border(0.5.dp, CardBorder, CardShape),
-        ) {
-            OutlinedTextField(
-                value = state.motivationText,
-                onValueChange = { if (it.length <= 200) onUpdateMotivation(it) },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = {
-                    Text(
-                        text = stringResource(R.string.wizard_review_motivation_hint),
-                        color = TextHint,
-                    )
-                },
-                minLines = 2,
-                maxLines = 4,
-            )
-        }
 
         // ── Fee breakdown + withdrawal-rights waiver (Hard Mode only) ──────────
         if (isHardMode) {
@@ -1408,6 +1389,111 @@ private fun Step7Confirm(
                 )
             }
         }
+    }
+}
+
+/**
+ * Motivation input on the confirmation step. A single flat-card field (16dp corners, hairline
+ * border that turns green on focus) matching the wizard's "Calm Authority" cards — replaces the
+ * old OutlinedTextField-in-a-Box (double border / 4dp-vs-16dp mismatch / M3 blue focus). Stays a
+ * live input bound to motivationText: same 200-char cap, 2–4 line multiline, and placeholder.
+ */
+@Composable
+private fun MotivationField(
+    value: String,
+    onValueChange: (String) -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val borderColor by animateColorAsState(
+        targetValue = if (isFocused) GreenPrimary else CardBorder,
+        animationSpec = tween(150), label = "motivation_border_color",
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (isFocused) 1.5.dp else 0.5.dp,
+        animationSpec = tween(150), label = "motivation_border_width",
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Label row: green icon-circle + "Deine Motivation" + "optional"
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(GreenLight),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Lightbulb,
+                    contentDescription = null,
+                    tint = GreenPrimary,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Text(
+                text = stringResource(R.string.wizard_review_motivation_label),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+            )
+            Text(
+                text = stringResource(R.string.wizard_review_motivation_optional),
+                fontSize = 12.sp,
+                color = TextSecondary,
+            )
+        }
+
+        // Single-border card field, green-on-focus
+        BasicTextField(
+            value = value,
+            onValueChange = { if (it.length <= 200) onValueChange(it) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .background(CardBg)
+                .border(borderWidth, borderColor, CardShape)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            textStyle = TextStyle(fontSize = 14.sp, color = TextPrimary),
+            cursorBrush = SolidColor(GreenPrimary),
+            minLines = 2,
+            maxLines = 4,
+            interactionSource = interactionSource,
+            decorationBox = { innerTextField ->
+                Column {
+                    Box {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.wizard_review_motivation_hint),
+                                fontSize = 14.sp,
+                                color = TextHint,
+                            )
+                        }
+                        innerTextField()
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.wizard_review_motivation_counter, value.length),
+                        fontSize = 11.sp,
+                        color = TextHint,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+        )
+
+        // Helper line below the field — these words are surfaced on the decision overlays.
+        Text(
+            text = stringResource(R.string.wizard_review_motivation_helper),
+            fontSize = 12.sp,
+            color = TextSecondary,
+            lineHeight = 16.sp,
+        )
     }
 }
 

@@ -63,10 +63,18 @@ android {
             )
             buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_test_51TGc6D2WIP9KOc5VfDH5lPiXMIWGZP4tKFLgmYhAKr4xssAGImfyUJBX20gzbLJDRK8EWnh9mpntZ4xUMAKDo7KM00r22YWuSO\"")
             buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"71504894920-kqf65vcehl823st306g1ppats413u8l1.apps.googleusercontent.com\"")
+            // Soft-mode-only Play release: hard legal floor that makes every real-money surface
+            // (Hard Mode create, Group buy-in, payout/IBAN, Redemption) unreachable regardless of
+            // the fail-open server flags. Flip to true (+ ship an update) to re-enable money; the
+            // server flags (hardModeEnabled/groupChallengeEnabled) then resume fine-grained control.
+            buildConfigField("boolean", "MONEY_FEATURES_ENABLED", "false")
         }
         debug {
             buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_test_51TGc6D2WIP9KOc5VfDH5lPiXMIWGZP4tKFLgmYhAKr4xssAGImfyUJBX20gzbLJDRK8EWnh9mpntZ4xUMAKDo7KM00r22YWuSO\"")
             buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"71504894920-kqf65vcehl823st306g1ppats413u8l1.apps.googleusercontent.com\"")
+            // Debug keeps money features ON so Hard Mode stays fully testable locally with Stripe
+            // test keys. Only the release build enforces the soft-only floor.
+            buildConfigField("boolean", "MONEY_FEATURES_ENABLED", "true")
         }
     }
     compileOptions {

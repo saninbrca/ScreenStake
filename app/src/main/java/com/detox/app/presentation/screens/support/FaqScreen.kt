@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
+import com.detox.app.util.FeatureFlags
 
 private val BgColor = Color(0xFFF2F2F7)
 private val CardColor = Color.White
@@ -48,16 +49,21 @@ private val ChevronColor = Color(0xFFC7C7CC)
 
 @Composable
 fun FaqScreen(onBack: () -> Unit) {
-    val faqs = listOf(
-        R.string.faq_q1 to R.string.faq_a1,
-        R.string.faq_q2 to R.string.faq_a2,
-        R.string.faq_q3 to R.string.faq_a3,
-        R.string.faq_q4 to R.string.faq_a4,
-        R.string.faq_q5 to R.string.faq_a5,
-        R.string.faq_q6 to R.string.faq_a6,
-        R.string.faq_q7 to R.string.faq_a7,
-        R.string.faq_q8 to R.string.faq_a8
-    )
+    // Money/Hard-Mode FAQ content is gated behind the build-level money floor. In the soft
+    // build the money-only questions (Hard Mode, payout, Group) are dropped and the answers
+    // that merely mention fees fall back to soft-mode variants with no money language.
+    // Gate only — flipping BuildConfig.MONEY_FEATURES_ENABLED restores the full list.
+    val moneyEnabled = FeatureFlags.moneyEnabled
+    val faqs = buildList {
+        if (moneyEnabled) add(R.string.faq_q1 to R.string.faq_a1)
+        add(R.string.faq_q2 to if (moneyEnabled) R.string.faq_a2 else R.string.faq_a2_soft)
+        if (moneyEnabled) add(R.string.faq_q3 to R.string.faq_a3)
+        add(R.string.faq_q4 to R.string.faq_a4)
+        if (moneyEnabled) add(R.string.faq_q5 to R.string.faq_a5)
+        add(R.string.faq_q6 to if (moneyEnabled) R.string.faq_a6 else R.string.faq_a6_soft)
+        add(R.string.faq_q7 to if (moneyEnabled) R.string.faq_a7 else R.string.faq_a7_soft)
+        add(R.string.faq_q8 to R.string.faq_a8)
+    }
 
     Scaffold(containerColor = BgColor) { innerPadding ->
         Column(

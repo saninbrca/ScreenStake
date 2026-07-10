@@ -82,7 +82,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
+import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.ui.theme.PoppinsFamily
+import com.detox.app.util.FeatureFlags
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -182,19 +184,8 @@ fun WelcomeOnboardingScreen(
                         overlayGranted = overlayGranted,
                         accessibilityGranted = accessibilityGranted,
                         usageStatsGranted = usageStatsGranted,
-                        onActivate = {
-                            context.startActivity(
-                                Intent(
-                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    Uri.parse("package:${context.packageName}")
-                                )
-                            )
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                            context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                            if (Build.MANUFACTURER.lowercase() == "huawei") {
-                                showHuaweiDialog = true
-                            }
-                        },
+                        onNext = { coroutineScope.launch { pagerState.animateScrollToPage(4) } },
+                        onShowHuawei = { showHuaweiDialog = true },
                         currentPage = 3
                     )
                     4 -> StartPage(
@@ -261,8 +252,8 @@ private fun WelcomePage(
         // "De" + "tox" in green
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = TextPrimary)) { append("De") }
-                withStyle(SpanStyle(color = GreenPrimary)) { append("tox") }
+                withStyle(SpanStyle(color = TextPrimary)) { append("Stop") }
+                withStyle(SpanStyle(color = GreenPrimary)) { append("Dooming") }
             },
             style = TextStyle(
                 fontFamily = PoppinsFamily,
@@ -509,7 +500,11 @@ private fun ModesPage(
         )
 
         Text(
-            text = stringResource(R.string.welcome_p2_subtitle),
+            text = if (FeatureFlags.moneyEnabled) {
+                stringResource(R.string.welcome_p2_subtitle)
+            } else {
+                stringResource(R.string.welcome_p2_subtitle_soft)
+            },
             style = TextStyle(
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.Normal,
@@ -529,26 +524,30 @@ private fun ModesPage(
             badgeBg = GreenLight,
             badgeColor = GreenBadgeText
         )
-        ModeCard(
-            iconBg = OrangeLight,
-            icon = Icons.Default.Whatshot,
-            iconTint = OrangeAccent,
-            title = stringResource(R.string.welcome_p2_hard_title),
-            subtitle = stringResource(R.string.welcome_p2_hard_sub),
-            badge = stringResource(R.string.welcome_p2_hard_badge),
-            badgeBg = OrangeLight,
-            badgeColor = OrangeBadgeText
-        )
-        ModeCard(
-            iconBg = PurpleLight,
-            icon = Icons.Default.Group,
-            iconTint = PurpleAccent,
-            title = stringResource(R.string.welcome_p2_group_title),
-            subtitle = stringResource(R.string.welcome_p2_group_sub),
-            badge = stringResource(R.string.welcome_p2_group_badge),
-            badgeBg = PurpleLight,
-            badgeColor = PurpleAccent
-        )
+        // Money surfaces (Hard Mode + Group) gated behind the build-level money floor.
+        // Gate only — flipping BuildConfig.MONEY_FEATURES_ENABLED restores this page exactly.
+        if (FeatureFlags.moneyEnabled) {
+            ModeCard(
+                iconBg = OrangeLight,
+                icon = Icons.Default.Whatshot,
+                iconTint = OrangeAccent,
+                title = stringResource(R.string.welcome_p2_hard_title),
+                subtitle = stringResource(R.string.welcome_p2_hard_sub),
+                badge = stringResource(R.string.welcome_p2_hard_badge),
+                badgeBg = OrangeLight,
+                badgeColor = OrangeBadgeText
+            )
+            ModeCard(
+                iconBg = PurpleLight,
+                icon = Icons.Default.Group,
+                iconTint = PurpleAccent,
+                title = stringResource(R.string.welcome_p2_group_title),
+                subtitle = stringResource(R.string.welcome_p2_group_sub),
+                badge = stringResource(R.string.welcome_p2_group_badge),
+                badgeBg = PurpleLight,
+                badgeColor = PurpleAccent
+            )
+        }
 
         PageDots(currentPage = currentPage)
         PrimaryButton(text = stringResource(R.string.welcome_p2_btn_next), onClick = onNext)
@@ -639,10 +638,38 @@ private fun PermissionsPage(
     overlayGranted: Boolean,
     accessibilityGranted: Boolean,
     usageStatsGranted: Boolean,
-    onActivate: () -> Unit,
+    onNext: () -> Unit,
+    onShowHuawei: () -> Unit,
     currentPage: Int,
 ) {
     val context = LocalContext.current
+
+    // Prominent disclosure gate for the AccessibilityService (Play policy): the settings intent
+    // fires ONLY after the affirmative tap. Shown every time the enable flow is initiated.
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    if (showAccessibilityDisclosure) {
+        AccessibilityDisclosureDialog(
+            onAccept = {
+                showAccessibilityDisclosure = false
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+            onDismiss = { showAccessibilityDisclosure = false },
+        )
+    }
+
+    val allPermissionsGranted = overlayGranted && accessibilityGranted && usageStatsGranted
+
+    // Huawei battery-optimization reminder: surfaced once, the moment all three special
+    // permissions are granted (before the user leaves this page). Kept separate from the
+    // per-permission flow so it never collides with the accessibility disclosure dialog.
+    val isHuawei = Build.MANUFACTURER.lowercase() == "huawei"
+    var huaweiReminderShown by remember { mutableStateOf(false) }
+    LaunchedEffect(allPermissionsGranted) {
+        if (allPermissionsGranted && isHuawei && !huaweiReminderShown) {
+            huaweiReminderShown = true
+            onShowHuawei()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -705,9 +732,7 @@ private fun PermissionsPage(
                     title = stringResource(R.string.welcome_p3_accessibility_title),
                     desc = stringResource(R.string.welcome_p3_accessibility_desc),
                     isGranted = accessibilityGranted,
-                    onClick = {
-                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    }
+                    onClick = { showAccessibilityDisclosure = true }
                 )
                 HorizontalDivider(color = CardBorder, thickness = 1.dp)
                 PermissionRow(
@@ -763,8 +788,31 @@ private fun PermissionsPage(
         ) {
             PageDots(currentPage = currentPage)
             PrimaryButton(
-                text = stringResource(R.string.welcome_p3_btn_activate),
-                onClick = onActivate
+                text = if (allPermissionsGranted) {
+                    stringResource(R.string.welcome_p1_btn_next)
+                } else {
+                    stringResource(R.string.welcome_p3_btn_activate)
+                },
+                onClick = {
+                    if (allPermissionsGranted) {
+                        onNext()
+                    } else {
+                        // Open only the FIRST missing permission's flow. Accessibility ALWAYS
+                        // routes through the disclosure dialog — never a direct settings intent.
+                        when {
+                            !overlayGranted -> context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                            )
+                            !accessibilityGranted -> showAccessibilityDisclosure = true
+                            !usageStatsGranted -> context.startActivity(
+                                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                            )
+                        }
+                    }
+                }
             )
         }
     }

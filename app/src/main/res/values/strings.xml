@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">Detox</string>
+    <string name="app_name">StopDooming</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_title">Welcome to Detox</string>
+    <string name="onboarding_title">Welcome to StopDooming</string>
     <string name="onboarding_subtitle">Take control of your screen time. We need a few permissions to help you.</string>
     <string name="onboarding_step_progress">Step %1$d of %2$d</string>
     <string name="onboarding_next">Continue</string>
@@ -13,19 +13,28 @@
     <string name="permission_grant_button">Grant Permission</string>
 
     <string name="permission_usage_title">Usage Data Access</string>
-    <string name="permission_usage_description">Detox needs to read your app usage to verify which apps you spend the most time on. This is the core of our Proof of Addiction system.</string>
+    <string name="permission_usage_description">StopDooming needs to read your app usage to verify which apps you spend the most time on. This is the core of our Proof of Addiction system.</string>
 
     <string name="permission_overlay_title">Display Over Other Apps</string>
-    <string name="permission_overlay_description">Detox shows a gentle reminder screen before you open tracked apps, helping you pause and decide if you really need to open them.</string>
+    <string name="permission_overlay_description">StopDooming shows a gentle reminder screen before you open tracked apps, helping you pause and decide if you really need to open them.</string>
 
-    <string name="permission_accessibility_title">Accessibility Service</string>
-    <string name="permission_accessibility_description">Detox uses the accessibility service to detect when you switch to a tracked app, so it can show the reminder screen at the right moment.</string>
+    <string name="permission_accessibility_title">Bedienungshilfe-Dienst</string>
+    <string name="permission_accessibility_description">Erkennt, welche App im Vordergrund ist, und gleicht bei Browsern die geöffnete Webadresse mit deinen Sperrlisten ab — damit der Erinnerungs- bzw. Sperrbildschirm rechtzeitig erscheint. Adressen werden sofort verworfen, nichts wird gespeichert.</string>
+
+    <!-- Accessibility prominent disclosure (shown before enabling the service) -->
+    <string name="accessibility_disclosure_title">Bevor du fortfährst — was der Bedienungshilfe-Dienst tut</string>
+    <string name="accessibility_disclosure_intro">StopDooming nutzt Androids Bedienungshilfe-Dienst („Accessibility Service"), um seine Kernfunktion bereitzustellen: dir zu helfen, deine Bildschirmzeit zu kontrollieren. Der Dienst greift auf folgende Informationen zu:</string>
+    <string name="accessibility_disclosure_point_apps">Welche App gerade im Vordergrund ist (nur der App-Name/Paketname) — damit StopDooming den Erinnerungs-Bildschirm anzeigen kann, wenn du eine überwachte App öffnest.</string>
+    <string name="accessibility_disclosure_point_url">Bei Browsern zusätzlich die aktuell geöffnete Webadresse — nur um sie mit den Sperrlisten abzugleichen, die du selbst eingerichtet hast (z. B. blockierte Websites oder Erwachsenen-Inhalte). Nur so kann StopDooming eine gesperrte Seite blockieren.</string>
+    <string name="accessibility_disclosure_privacy">Deine Daten bleiben auf deinem Gerät. Besuchte Webadressen werden ausschließlich im Moment des Abgleichs verarbeitet und sofort verworfen — sie werden nicht gespeichert, nicht protokolliert und nicht übertragen. StopDooming sammelt keinen Browserverlauf, liest keine Eingaben, Passwörter oder Formularinhalte und verkauft keine Nutzerdaten.</string>
+    <string name="accessibility_disclosure_accept">Zustimmen &amp; aktivieren</string>
+    <string name="accessibility_disclosure_cancel">Abbrechen</string>
 
     <string name="permission_notifications_title">Notifications</string>
-    <string name="permission_notifications_description">Detox sends you daily progress reports and gentle reminders to help you stay on track with your challenges.</string>
+    <string name="permission_notifications_description">StopDooming sends you daily progress reports and gentle reminders to help you stay on track with your challenges.</string>
 
     <!-- Accessibility Service -->
-    <string name="accessibility_service_description">Detox uses this service to detect when tracked apps are opened, so it can show a reminder screen to help you manage your screen time.</string>
+    <string name="accessibility_service_description">StopDooming nutzt diesen Dienst, um zu erkennen, welche App du gerade geöffnet hast, und um bei Browsern die aktuelle Webadresse mit deinen eigenen Sperrlisten abzugleichen. So kann ein Erinnerungs- oder Sperrbildschirm im richtigen Moment angezeigt werden. Webadressen werden nur im Moment des Abgleichs verarbeitet und nicht gespeichert oder übertragen.</string>
 
     <!-- App Selection -->
     <string name="app_selection_title">Select Apps</string>
@@ -132,7 +141,7 @@
 
     <!-- Notification -->
     <string name="notification_channel_name">Usage Tracking</string>
-    <string name="notification_tracking_title">Detox is active</string>
+    <string name="notification_tracking_title">StopDooming is active</string>
     <string name="notification_tracking_text">Monitoring your tracked apps</string>
 
     <string name="notif_channel_daily_report_name">Daily Report</string>
@@ -346,7 +355,7 @@
     <string name="shop_item_joker_name">Joker Card</string>
     <string name="shop_item_joker_desc">Get +15 minutes extra today without losing points</string>
     <string name="shop_item_icon_name">Custom App Icon</string>
-    <string name="shop_item_icon_desc">Change the Detox app icon on your home screen</string>
+    <string name="shop_item_icon_desc">Change the StopDooming app icon on your home screen</string>
     <string name="shop_item_badge_name">Premium Profile Badge</string>
     <string name="shop_item_badge_desc">Show off a special badge on your profile</string>
 
@@ -557,7 +566,7 @@
     <string name="group_create_summary_bonus">Winner Bonus</string>
     <string name="group_create_share_button">Create &amp; Share Code</string>
     <string name="group_create_done_button">Done — Go to Friends</string>
-    <string name="group_create_share_text">Join my Detox challenge! Code: %1$s — App: %2$s, %3$d days, min €%4$d</string>
+    <string name="group_create_share_text">Join my StopDooming challenge! Code: %1$s — App: %2$s, %3$d days, min €%4$d</string>
     <string name="group_create_share_chooser">Share Challenge Code</string>
 
     <!-- Group Challenge — Join flow -->
@@ -591,7 +600,7 @@
 
     <!-- Shared dialog buttons -->
     <string name="dialog_ok">OK</string>
-    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_cancel">Abbrechen</string>
 
     <!-- Hard Mode completion notification (includes refund amount) -->
     <string name="notif_hard_mode_completed_title">Challenge gewonnen! 💚</string>
@@ -656,25 +665,25 @@
 
     <!-- VPN rationale dialog (shown before the system VPN permission dialog) -->
     <string name="vpn_rationale_title">Enable Website Blocking</string>
-    <string name="vpn_rationale_message">Detox needs VPN permission to block websites. Your data never leaves your device — the VPN only filters DNS requests locally.</string>
+    <string name="vpn_rationale_message">StopDooming needs VPN permission to block websites. Your data never leaves your device — the VPN only filters DNS requests locally.</string>
     <string name="vpn_rationale_confirm">Continue</string>
     <string name="vpn_rationale_cancel">Cancel</string>
 
     <!-- VPN permission (onboarding step) -->
     <string name="permission_vpn_title">Block websites completely</string>
-    <string name="permission_vpn_description">Detox uses a local VPN to block distracting and adult websites. Your data never leaves your device — this VPN only filters DNS requests.</string>
+    <string name="permission_vpn_description">StopDooming uses a local VPN to block distracting and adult websites. Your data never leaves your device — this VPN only filters DNS requests.</string>
     <string name="permission_vpn_enable_button">Enable Website Protection</string>
     <string name="permission_vpn_denied_warning">Website blocking will not work without this permission</string>
     <string name="permission_vpn_try_again">Try again</string>
 
     <!-- Huawei battery optimization step -->
     <string name="permission_huawei_battery_title">Keep VPN Running</string>
-    <string name="permission_huawei_battery_description">To prevent your device from stopping website blocking, please disable battery optimization for Detox. Look for "App launch" or "Protected apps" in Power settings.</string>
+    <string name="permission_huawei_battery_description">To prevent your device from stopping website blocking, please disable battery optimization for StopDooming. Look for "App launch" or "Protected apps" in Power settings.</string>
     <string name="permission_huawei_battery_button">Adjust Power Settings</string>
 
     <!-- VPN foreground notification -->
     <string name="notif_channel_vpn_name">Website Blocking VPN</string>
-    <string name="notif_vpn_title">Detox VPN active — websites protected</string>
+    <string name="notif_vpn_title">StopDooming VPN active — websites protected</string>
     <string name="notif_vpn_text">Local VPN active — your data stays on this device</string>
     <string name="notif_vpn_paused_title">Website blocking paused</string>
     <string name="notif_vpn_paused_text">Tap to restart website protection</string>
@@ -831,7 +840,7 @@
     <string name="notif_perm_warn_23h_body">Aktiviere die Berechtigung jetzt — sonst verlierst du deinen Einsatz.</string>
 
     <!-- Heartbeat (went-dark forfeit) throttle nudge -->
-    <string name="notif_heartbeat_warn_title">⚠️ Detox meldet sich nicht mehr</string>
+    <string name="notif_heartbeat_warn_title">⚠️ StopDooming meldet sich nicht mehr</string>
     <string name="notif_heartbeat_warn_body">Öffne die App, damit deine Challenge weiterläuft — sonst gilt sie als abgebrochen und dein Einsatz kann verloren gehen.</string>
 
     <string name="notif_accessibility_lost_title">⚠️ Accessibility Service deaktiviert!</string>
@@ -839,7 +848,7 @@
     <string name="notif_accessibility_fix_action">Jetzt beheben →</string>
     <string name="notif_accessibility_restored_title">✅ Accessibility Service aktiv</string>
     <string name="notif_accessibility_restored_body">Deine Challenge kann Apps wieder sperren.</string>
-    <string name="notif_accessibility_huawei_hint">Huawei: Einstellungen → Apps → Detox → Autostart → Aktivieren</string>
+    <string name="notif_accessibility_huawei_hint">Huawei: Einstellungen → Apps → StopDooming → Autostart → Aktivieren</string>
 
     <!-- Settings — App Info section -->
     <string name="settings_section_app_info">APP INFO</string>
@@ -859,12 +868,12 @@
 
     <!-- Remote control — Force update -->
     <string name="force_update_title">Update erforderlich</string>
-    <string name="force_update_message">Eine neue Version von ScreenStake ist verfügbar. Bitte aktualisiere die App um fortzufahren.</string>
+    <string name="force_update_message">Eine neue Version von StopDooming ist verfügbar. Bitte aktualisiere die App um fortzufahren.</string>
     <string name="force_update_button">Jetzt aktualisieren</string>
 
     <!-- Remote control — Maintenance -->
     <string name="maintenance_title">Wartungsarbeiten</string>
-    <string name="maintenance_message_default">ScreenStake wird gerade gewartet. Wir sind in Kürze wieder für dich da.</string>
+    <string name="maintenance_message_default">StopDooming wird gerade gewartet. Wir sind in Kürze wieder für dich da.</string>
     <string name="maintenance_retry">Erneut versuchen</string>
 
     <!-- Remote control — Feature flags -->
@@ -916,9 +925,13 @@
     <string name="faq_q6">Wie lösche ich mein Konto?</string>
     <string name="faq_a6">Gehe in den Einstellungen ganz nach unten und tippe auf „Konto löschen“. Dabei werden alle deine Daten unwiderruflich entfernt. Laufende Hard-Mode-Challenges solltest du vorher abschließen.</string>
     <string name="faq_q7">Warum sehe ich Werbung?</string>
-    <string name="faq_a7">Du siehst keine Werbung. Detox ist komplett werbefrei und finanziert sich ausschließlich über die Gebühren der Hard-Mode-Challenges. Solltest du dennoch Werbung sehen, kontaktiere bitte den Support.</string>
+    <string name="faq_a7">Du siehst keine Werbung. StopDooming ist komplett werbefrei und finanziert sich ausschließlich über die Gebühren der Hard-Mode-Challenges. Solltest du dennoch Werbung sehen, kontaktiere bitte den Support.</string>
     <string name="faq_q8">Die App blockiert nicht richtig</string>
-    <string name="faq_a8">Prüfe zuerst, ob alle Berechtigungen (Overlay und Bedienungshilfen) aktiviert sind. Auf Huawei-Geräten musst du Detox zusätzlich von der Akku-Optimierung ausnehmen und den Autostart erlauben: Einstellungen → Apps → Detox → Akku → Autostart aktivieren.</string>
+    <string name="faq_a8">Prüfe zuerst, ob alle Berechtigungen (Overlay und Bedienungshilfen) aktiviert sind. Auf Huawei-Geräten musst du StopDooming zusätzlich von der Akku-Optimierung ausnehmen und den Autostart erlauben: Einstellungen → Apps → StopDooming → Akku → Autostart aktivieren.</string>
+    <!-- Soft-mode FAQ variants (used when money features are disabled) — no fee/Hard-Mode language. -->
+    <string name="faq_a2_soft">Wenn du die Overlay- oder Bedienungshilfen-Berechtigung deaktivierst, kann die App Apps nicht mehr zuverlässig blockieren. Lass die Berechtigungen bis zum Ende deiner Challenge aktiviert, damit alles wie gewünscht funktioniert.</string>
+    <string name="faq_a6_soft">Gehe in den Einstellungen ganz nach unten und tippe auf „Konto löschen“. Dabei werden alle deine Daten unwiderruflich entfernt.</string>
+    <string name="faq_a7_soft">Du siehst keine Werbung. StopDooming ist komplett werbefrei. Solltest du dennoch Werbung sehen, kontaktiere bitte den Support.</string>
 
     <!-- Welcome Onboarding — Page 0: Willkommen -->
     <string name="welcome_p0_stat_value">4.2h</string>
@@ -932,14 +945,14 @@
     <string name="welcome_p0_stat3_value">63 Tage</string>
     <string name="welcome_p0_stat3_desc">Lebenszeit pro Jahr am Handy verschwendet</string>
     <string name="welcome_p0_card2_title">Nimm dein Leben zurück 💪</string>
-    <string name="welcome_p0_card2_sub">Detox hilft dir, bewusster mit deiner Zeit umzugehen.</string>
+    <string name="welcome_p0_card2_sub">StopDooming hilft dir, bewusster mit deiner Zeit umzugehen.</string>
     <string name="welcome_p0_btn_start">Jetzt starten</string>
     <string name="welcome_p0_btn_skip">Überspringen</string>
 
     <!-- Welcome Onboarding — Page 1: Konzept -->
-    <string name="welcome_p1_title_pre">Jedes Öffnen ist eine </string>
+    <string name="welcome_p1_title_pre">"Jedes Öffnen ist eine "</string>
     <string name="welcome_p1_title_highlight">Entscheidung</string>
-    <string name="welcome_p1_subtitle">Kein gedankenloses Scrollen mehr. Detox macht jede App-Öffnung bewusst.</string>
+    <string name="welcome_p1_subtitle">Kein gedankenloses Scrollen mehr. StopDooming macht jede App-Öffnung bewusst.</string>
     <string name="welcome_p1_step1_title">App öffnen → Overlay erscheint</string>
     <string name="welcome_p1_step1_desc">Bevor die App startet, siehst du einen kurzen Stopp-Moment.</string>
     <string name="welcome_p1_step2_title">Stark bleiben oder bewusst öffnen</string>
@@ -951,9 +964,10 @@
     <string name="welcome_p1_btn_next">Weiter</string>
 
     <!-- Welcome Onboarding — Page 2: Modi -->
-    <string name="welcome_p2_title_pre">Wähle deinen </string>
+    <string name="welcome_p2_title_pre">"Wähle deinen "</string>
     <string name="welcome_p2_title_highlight">Modus</string>
     <string name="welcome_p2_subtitle">Drei Wege, weniger Zeit am Handy zu verbringen.</string>
+    <string name="welcome_p2_subtitle_soft">So funktioniert dein Weg zu weniger Bildschirmzeit.</string>
     <string name="welcome_p2_soft_title">Soft Mode</string>
     <string name="welcome_p2_soft_sub">Kostenlos. Streak-basiert.</string>
     <string name="welcome_p2_soft_badge">Gratis</string>
@@ -967,23 +981,23 @@
 
     <!-- Welcome Onboarding — Page 3: Berechtigungen -->
     <string name="welcome_p3_title">Fast geschafft — Berechtigungen</string>
-    <string name="welcome_p3_subtitle">Ohne diese Berechtigungen kann Detox keine Apps blockieren.</string>
+    <string name="welcome_p3_subtitle">Ohne diese Berechtigungen kann StopDooming keine Apps blockieren.</string>
     <string name="welcome_p3_overlay_title">Overlay-Berechtigung</string>
     <string name="welcome_p3_overlay_desc">Zeigt Blocking-Display über Apps</string>
     <string name="welcome_p3_accessibility_title">Accessibility Service</string>
     <string name="welcome_p3_accessibility_desc">Erkennt welche App offen ist</string>
     <string name="welcome_p3_usage_title">Nutzungsstatistiken</string>
     <string name="welcome_p3_usage_desc">Misst deine Bildschirmzeit</string>
-    <string name="welcome_p3_privacy_text">Deine Daten bleiben auf deinem Gerät. Detox verkauft keine Nutzerdaten.</string>
+    <string name="welcome_p3_privacy_text">Deine Daten bleiben auf deinem Gerät. StopDooming verkauft keine Nutzerdaten.</string>
     <string name="welcome_p3_btn_activate">Berechtigungen aktivieren</string>
     <string name="welcome_p3_huawei_title">Wichtig für Huawei</string>
-    <string name="welcome_p3_huawei_message">Bitte deaktiviere die Akku-Optimierung für Detox damit die App im Hintergrund läuft: Einstellungen → Apps → Detox → Akku → Keine Einschränkungen</string>
+    <string name="welcome_p3_huawei_message">Bitte deaktiviere die Akku-Optimierung für StopDooming damit die App im Hintergrund läuft: Einstellungen → Apps → StopDooming → Akku → Keine Einschränkungen</string>
     <string name="welcome_p3_huawei_btn">Zu den Einstellungen</string>
 
     <!-- Welcome Onboarding — Page 4: Los geht's -->
     <string name="welcome_p4_title_pre">Bereit</string>
     <string name="welcome_p4_title_dot">.</string>
-    <string name="welcome_p4_subtitle">Erstelle deine erste Challenge und starte dein digitales Detox.</string>
+    <string name="welcome_p4_subtitle">Erstelle deine erste Challenge und starte deinen digitalen Neustart.</string>
     <string name="welcome_p4_rec_label">EMPFOHLEN ZUM START</string>
     <string name="welcome_p4_rec_1">Soft Mode — 7 Tage Challenge</string>
     <string name="welcome_p4_rec_2">Max. 2 bewusste Öffnungen pro Tag</string>

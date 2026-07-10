@@ -9,6 +9,7 @@ import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.util.FeatureFlags
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,14 +41,20 @@ class FriendsHubViewModel @Inject constructor(
 
     private val userId get() = firebaseAuthService.currentUserId()
 
-    /** Remote kill-switch for NEW Group Challenge creation. Active challenges are unaffected. */
+    /**
+     * Gate for NEW Group Challenge creation AND joining (both stake a buy-in). Combines the
+     * build-level money floor with the remote `groupChallengeEnabled` kill-switch — both the
+     * "Erstellen" and "Beitreten" buttons observe this. Active challenges are unaffected.
+     */
     val groupChallengeEnabled: StateFlow<Boolean> =
         appConfigRepository.config
-            .map { it.groupChallengeEnabled }
+            .map { FeatureFlags.groupChallengeEnabled(it.groupChallengeEnabled) }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = appConfigRepository.config.value.groupChallengeEnabled
+                initialValue = FeatureFlags.groupChallengeEnabled(
+                    appConfigRepository.config.value.groupChallengeEnabled
+                )
             )
 
     // Per-groupId Firestore snapshot observers for WAITING challenges.

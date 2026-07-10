@@ -32,6 +32,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
 import com.detox.app.data.local.db.entity.ChallengeEntity
+import com.detox.app.util.FeatureFlags
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.PhoneAndroid
@@ -201,7 +202,7 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
-                        if (redemptionChallenges.isNotEmpty()) {
+                        if (FeatureFlags.moneyEnabled && redemptionChallenges.isNotEmpty()) {
                             item(key = "redemption_banner") {
                                 RedemptionBanner(
                                     challenges = redemptionChallenges,

@@ -76,6 +76,7 @@ import com.detox.app.presentation.screens.support.FaqScreen
 import com.detox.app.presentation.screens.support.SupportScreen
 import com.detox.app.presentation.screens.softfail.SoftFailResultScreen
 import com.detox.app.presentation.screens.statistics.StatisticsScreen
+import com.detox.app.util.FeatureFlags
 import timber.log.Timber
 
 private sealed class BottomNavTab(
@@ -110,7 +111,16 @@ private sealed class BottomNavTab(
     )
 
     companion object {
-        val all = listOf(Dashboard, Friends, Profile)
+        // Friends/Group tab is a real-money surface (buy-ins), so it is hidden for the
+        // soft-mode-only release via the build-level money floor. The Friends route + group
+        // screens stay registered but unreachable (also route-guarded below). Flipping
+        // MONEY_FEATURES_ENABLED back on restores the tab. Selection is route/identity-based,
+        // so shortening this list never off-by-ones any index logic.
+        val all: List<BottomNavTab> = buildList {
+            add(Dashboard)
+            if (FeatureFlags.moneyEnabled) add(Friends)
+            add(Profile)
+        }
     }
 }
 
@@ -393,29 +403,40 @@ fun MainScreen(
             }
 
             // ── Group Challenge — Create wizard ───────────────────────────────────
+            // Money-floor route guards: even though the Friends tab is hidden, a stale deep link
+            // (notification / TrackedAppEventBus) could still target a group route. When money
+            // features are gated off we render nothing and pop back so no buy-in surface can open.
             composable("group_create") {
-                GroupChallengeCreateScreen(
-                    onBack = { navController.popBackStack() },
-                    onCreated = { groupId ->
-                        navController.navigate("group_detail/$groupId") {
-                            popUpTo("group_create") { inclusive = true }
-                            launchSingleTop = true
+                if (FeatureFlags.moneyEnabled) {
+                    GroupChallengeCreateScreen(
+                        onBack = { navController.popBackStack() },
+                        onCreated = { groupId ->
+                            navController.navigate("group_detail/$groupId") {
+                                popUpTo("group_create") { inclusive = true }
+                                launchSingleTop = true
+                            }
                         }
-                    }
-                )
+                    )
+                } else {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                }
             }
 
             // ── Group Challenge — Join ────────────────────────────────────────────
             composable("group_join") {
-                GroupChallengeJoinScreen(
-                    onBack = { navController.popBackStack() },
-                    onJoined = { groupId ->
-                        navController.navigate("group_detail/$groupId") {
-                            popUpTo("group_join") { inclusive = true }
-                            launchSingleTop = true
+                if (FeatureFlags.moneyEnabled) {
+                    GroupChallengeJoinScreen(
+                        onBack = { navController.popBackStack() },
+                        onJoined = { groupId ->
+                            navController.navigate("group_detail/$groupId") {
+                                popUpTo("group_join") { inclusive = true }
+                                launchSingleTop = true
+                            }
                         }
-                    }
-                )
+                    )
+                } else {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                }
             }
 
             // ── Group Challenge — Detail / Leaderboard ───────────────────────────
@@ -423,6 +444,10 @@ fun MainScreen(
                 route = "group_detail/{groupId}",
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
+                if (!FeatureFlags.moneyEnabled) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                    return@composable
+                }
                 GroupChallengeDetailScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToProfile = {
@@ -455,6 +480,10 @@ fun MainScreen(
                 route = "group_challenge_results/{groupId}",
                 arguments = listOf(navArgument("groupId") { type = NavType.StringType })
             ) {
+                if (!FeatureFlags.moneyEnabled) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                    return@composable
+                }
                 GroupChallengeResultsScreen(
                     onWeiter = { navController.popBackStack() }
                 )

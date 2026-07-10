@@ -71,12 +71,46 @@ Offline → fail-open into the app. The real destination is threaded into `Detox
 ## Feature flags (NEW creation only — active challenges untouched)
 
 - **Hard Mode** (`hardModeEnabled = false`): greys the Hard Mode card in wizard Step 1
-  (`ChallengeCreationScreen`) with "Vorübergehend nicht verfügbar"; `selectMode` also guards. Flag via
-  `ChallengeCreationViewModel.appConfig`.
-- **Group Challenge** (`groupChallengeEnabled = false`): disables the "Erstellen" button in
-  `FriendsHubScreen` + shows the unavailable note. Flag via `FriendsHubViewModel.groupChallengeEnabled`.
+  (`ChallengeCreationScreen`) with "Vorübergehend nicht verfügbar"; `selectMode` **and** `createChallenge`
+  also guard. Flag via `ChallengeCreationViewModel.appConfig`.
+- **Group Challenge** (`groupChallengeEnabled = false`): disables **both** the "Erstellen" and the
+  "Beitreten" buttons in `FriendsHubScreen` + shows the unavailable note. Flag via
+  `FriendsHubViewModel.groupChallengeEnabled`. (Historic gap: the Join button used to be ungated — a
+  buy-in surface that ignored the flag; fixed 2026-07-07.)
 
 Both gate **new creation only** — active challenges are never affected.
+
+---
+
+## Build-level money floor — `BuildConfig.MONEY_FEATURES_ENABLED`
+
+> **Why it exists:** the server flags above are **fail-open** (a config-read error → fallback `true` →
+> money surfaces reappear). For a legally-motivated *soft-mode-only* Play release that is unacceptable —
+> an offline/first-run/misconfigured device must NEVER expose a real-money surface. So a **compile-time
+> floor** is layered underneath the server flags.
+
+- **Where:** `app/build.gradle.kts` `buildConfigField("boolean", "MONEY_FEATURES_ENABLED", …)` — split by
+  build type: **debug = `true`** (Hard Mode stays testable with Stripe test keys), **release = `false`**
+  (the soft-only legal floor).
+- **Helper:** `com.detox.app.util.FeatureFlags` —
+  `moneyEnabled = BuildConfig.MONEY_FEATURES_ENABLED`, plus
+  `hardModeEnabled(serverFlag) = moneyEnabled && serverFlag` and
+  `groupChallengeEnabled(serverFlag) = moneyEnabled && serverFlag`.
+- **Invariant:** the gate expression is **ALWAYS** `MONEY_FEATURES_ENABLED && <serverFlag>`. Flipping the
+  build constant back to `true` (and shipping an update) restores the **exact** prior server-flag
+  behavior with zero other edits — the server flags resume fine-grained runtime control.
+- **Gated entry points (release-hidden, code kept + re-enableable):**
+  - Wizard Hard Mode card + `selectMode`/`createChallenge` (no PaymentSheet can start).
+  - Friends/Group tab (removed from `BottomNavTab.all` when `!moneyEnabled`) **and** the
+    `group_create` / `group_join` / `group_detail` / `group_challenge_results` routes (guarded — a stale
+    deep link pops straight back).
+  - Profile **Guthaben** card + payout confirm dialog + `requestPayout()`.
+  - Settings **Auszahlungskonto** section + IBAN `ModalBottomSheet`.
+  - Dashboard **Redemption** banner + `RedemptionNotificationWorker` (returns `success` without posting).
+- **NOT gated (money-authority / settlement — never touched):** Stripe capture/refund,
+  `capturePayment`/`cancelOrRefundPayment`, server-side validation, reconciliation, the
+  went-dark / permission / daily-eval workers, and account-deletion device-binding. These act only on
+  **active** Hard challenges, of which a fresh soft-only install has none.
 
 > **Launch default:** Group Challenges ship **DISABLED at launch** — the admin sets
 > `config/app.groupChallengeEnabled = false` in production (the deliberate decision while groups lack a

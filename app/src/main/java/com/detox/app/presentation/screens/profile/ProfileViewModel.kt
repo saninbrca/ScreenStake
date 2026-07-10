@@ -20,6 +20,7 @@ import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.service.NotificationHelper
 import com.detox.app.service.PermissionCheckWorker
 import com.detox.app.util.DateUtils
+import com.detox.app.util.FeatureFlags
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -268,6 +269,9 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun requestPayout() {
+        // Money-floor guard: never file a payout request when money features are gated off,
+        // even if a stale UI event slips through. Server flags resume control when re-enabled.
+        if (!FeatureFlags.moneyEnabled) return
         val uid = firebaseAuth.currentUser?.uid ?: return
         val balance = _pendingBalance.value ?: return
         val ibanInfo = _ibanData.value ?: return

@@ -120,6 +120,7 @@ fun FriendsHubScreen(
                             }
                             OutlinedButton(
                                 onClick = onJoinGroupChallenge,
+                                enabled = groupChallengeEnabled,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(Icons.Default.GroupAdd, contentDescription = null)

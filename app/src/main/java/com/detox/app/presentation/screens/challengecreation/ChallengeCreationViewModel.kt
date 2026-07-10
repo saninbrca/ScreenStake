@@ -25,6 +25,7 @@ import com.detox.app.domain.usecase.ProcessPaymentUseCase
 import com.detox.app.service.RootDetectionManager
 import com.detox.app.service.UsageTrackingService
 import com.detox.app.util.DateUtils
+import com.detox.app.util.FeatureFlags
 import androidx.lifecycle.SavedStateHandle
 import io.sentry.Sentry
 import com.google.firebase.auth.FirebaseAuth
@@ -210,10 +211,10 @@ class ChallengeCreationViewModel @Inject constructor(
     // ── Step 1: Mode ──────────────────────────────────────────────────────────
 
     fun selectMode(mode: ChallengeMode) {
-        // Remote kill-switch: Hard Mode creation can be disabled server-side (e.g. Stripe
-        // issue). Active challenges are unaffected — this only blocks NEW Hard Mode creation.
-        if (mode == ChallengeMode.HARD && !appConfig.value.hardModeEnabled) {
-            Timber.w("Hard Mode creation blocked — hardModeEnabled flag is off")
+        // Money gate: the build-level floor (soft-only release) AND the remote hardModeEnabled
+        // kill-switch. Active challenges are unaffected — this only blocks NEW Hard Mode creation.
+        if (mode == ChallengeMode.HARD && !FeatureFlags.hardModeEnabled(appConfig.value.hardModeEnabled)) {
+            Timber.w("Hard Mode creation blocked — money features gated off (build floor / hardModeEnabled)")
             return
         }
         _state.update { s ->
@@ -453,6 +454,14 @@ class ChallengeCreationViewModel @Inject constructor(
             return
         }
         if (_state.value.selectedMode == ChallengeMode.HARD) {
+            // Defense-in-depth: never authorize a Stripe payment for Hard Mode when money features
+            // are gated off (build floor / remote kill-switch). Step 1 already blocks selecting HARD,
+            // so in a gated build selectedMode can't be HARD here — this guarantees no PaymentSheet.
+            if (!FeatureFlags.hardModeEnabled(appConfig.value.hardModeEnabled)) {
+                Timber.w("createChallenge: Hard Mode blocked — money features gated off; aborting before payment")
+                _uiState.value = ChallengeCreationUiState.Idle
+                return
+            }
             var rootWarningShown = false
             RootDetectionManager.checkAndWarn(context) {
                 logRootedDeviceToFirestore()

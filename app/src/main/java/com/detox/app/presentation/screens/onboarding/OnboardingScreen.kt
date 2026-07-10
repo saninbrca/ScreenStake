@@ -37,6 +37,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +52,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
+import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 
 @Composable
 fun OnboardingScreen(
@@ -73,6 +77,19 @@ fun OnboardingScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) {
         viewModel.refreshPermissions()
+    }
+
+    // Prominent disclosure gate for the AccessibilityService (Play policy): the settings intent
+    // fires ONLY after the affirmative tap. Shown every time the enable flow is initiated.
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    if (showAccessibilityDisclosure) {
+        AccessibilityDisclosureDialog(
+            onAccept = {
+                showAccessibilityDisclosure = false
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+            onDismiss = { showAccessibilityDisclosure = false },
+        )
     }
 
     Surface(
@@ -169,9 +186,7 @@ fun OnboardingScreen(
                         title = stringResource(R.string.permission_accessibility_title),
                         description = stringResource(R.string.permission_accessibility_description),
                         isGranted = state.accessibilityGranted,
-                        onRequest = {
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        },
+                        onRequest = { showAccessibilityDisclosure = true },
                         onNext = { viewModel.advanceStep() }
                     )
 

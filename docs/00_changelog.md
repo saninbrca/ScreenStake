@@ -21,6 +21,76 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-08 — Accessibility prominent disclosure + EN→DE strings (Play compliance)
+
+**WHAT.** New shared `AccessibilityDisclosureDialog` (`presentation/components/`) shown BEFORE
+`startActivity(ACTION_ACCESSIBILITY_SETTINGS)` on both enable entry points — `OnboardingScreen`
+Step 2 and `WelcomeOnboardingScreen.PermissionsPage`. The settings intent fires ONLY on the
+affirmative "Zustimmen & aktivieren" tap; "Abbrechen"/dismiss does nothing (no navigation). Shown on
+every enable attempt (no one-time flag), so the disclosure always precedes the grant. Both paths
+previously called `startActivity` inline with only a one-liner — now routed through the one shared
+dialog (no duplicated copy). Overlay-permission flow untouched (separate handler).
+
+**WHY.** Google Play requires a prominent disclosure before enabling an AccessibilityService that
+reads sensitive data. Ours reads foreground package names AND, for browsers, the current URL (to
+match the user's own domain/adult blocklists). This was a Play-review blocker — compliance-driven,
+UI + strings only (no service/XML/money changes).
+
+**ALSO.** Translated EN→DE: `accessibility_service_description`, `permission_accessibility_title`,
+`permission_accessibility_description`, plus 7 new `accessibility_disclosure_*` strings. All copy in
+`res/values/strings.xml`. ⚠️ The disclosure copy (data accessed + on-device/not-stored claims) MUST
+stay in sync with the published Datenschutzerklärung.
+
+**CROSS-REF.** Complements the earlier Tier-1 accessibility cleanup (removed `canRequestFilterKeyEvents`
++ unused event types): together the accessibility footprint now matches what the service actually
+uses and what the user is told it does.
+
+### 2026-07-08 — Soft-only: stop collecting ANDROID_ID in `PermissionCheckWorker`
+
+Data-safety fix for the soft-mode-only release. `PermissionCheckWorker` mirrored the device's
+`ANDROID_ID` into `users/{uid}/permissionStatus/current.deviceId` on both permission-lost paths
+(overlay-lost and accessibility-lost) with **no money/Hard gate** — so a soft-only build was
+collecting a device identifier it never uses.
+
+- Both writes now route through a shared `buildPermissionLostUpdate(lostAt, permissionType)` helper
+  that includes `deviceId` **only when `FeatureFlags.moneyEnabled`**. The `permissionLostAt` /
+  `permissionType` timestamp markers are unchanged (harmless, no PII; server acts on them only for
+  Hard challenges). Hard/debug builds write exactly as before — no went-dark / capture regression.
+- **Verified no consumer** of `permissionStatus/current.deviceId`: `checkPermissionViolations` and
+  `runDueChallengeReconciliation` read only the timestamp markers / `lastSeenAt` (never `deviceId`);
+  anti-cheat `detectSuspiciousUsers` reads `deviceId` from the **challenge/participant doc**, not
+  permissionStatus; admin + indexes don't reference it. The in-app permission banner is fully local
+  (MainActivity `Settings.canDrawOverlays` + `hasActiveChallenge`), so it is unaffected.
+- Untouched: the `lastSeenAt` heartbeat (already Hard-gated, separate write), the worker schedule /
+  network constraints, and `checkPermissionViolations` / reconciliation CFs.
+
+### 2026-07-07 — DECISION: soft-mode-only Play launch — build-level money floor (`MONEY_FEATURES_ENABLED`)
+
+Ship the first Play Store release as **Soft-Mode-only** (zero real money): Hard Mode, Group Challenges,
+Redemption, and every Stripe/payout surface must be **completely unreachable**, while the code stays
+intact and re-enableable via a later update. Gating, not deleting.
+
+- **New build-level kill switch** `BuildConfig.MONEY_FEATURES_ENABLED` (`app/build.gradle.kts`), split by
+  build type: **debug = `true`**, **release = `false`**. Layered **on top of** the fail-open server flags
+  (`hardModeEnabled` / `groupChallengeEnabled`) via `com.detox.app.util.FeatureFlags`. The gate is ALWAYS
+  `MONEY_FEATURES_ENABLED && <serverFlag>`, so flipping the constant to `true` restores prior behavior
+  with zero other edits. Rationale: server flags alone are fail-open (config-read error → `true` → money
+  reappears) — unacceptable for a legal/Play-policy guarantee. See `docs/13`.
+- **Gated entry points:** wizard Hard card + `selectMode`/`createChallenge`; Friends tab removed from
+  `BottomNavTab.all` + `group_create`/`group_join`/`group_detail`/`group_challenge_results` route guards;
+  Profile Guthaben card + payout dialog + `requestPayout()`; Settings Auszahlungskonto + IBAN sheet;
+  Dashboard Redemption banner + `RedemptionNotificationWorker`.
+- **FINDING — ungated Group Join (fixed).** `groupChallengeEnabled=false` previously disabled only the
+  "Erstellen" button; the **"Beitreten" (Join) button was completely ungated** — a live buy-in surface
+  that ignored the flag. The flag is now folded into `FriendsHubViewModel.groupChallengeEnabled` (so both
+  buttons inherit it) and the Join button carries `enabled = groupChallengeEnabled`.
+- **FINDING — missing build gate (fixed).** Money surfaces were server-flag-only, so an offline/first-run
+  config-read failure would fail open and expose Hard Mode. The build floor closes this window.
+- **Untouched (money-authority/settlement):** Stripe capture/refund, `capturePayment` /
+  `cancelOrRefundPayment`, server validation, reconciliation, went-dark/permission/daily-eval workers,
+  account-deletion device-binding — all act only on active Hard challenges (none on a fresh soft-only
+  install).
+
 ### 2026-06-25 — Open-ended challenge card shows STREAK instead of days-remaining (display-only)
 
 Follow-up to the open-ended display fix below. For open-ended ("Kein Enddatum") challenges, "days

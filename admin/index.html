@@ -643,6 +643,13 @@
             <input type="checkbox" id="cfg-groupChallengeEnabled">
             <span>Gruppen-Challenge aktiviert</span>
           </label>
+          <div style="font-size:0.75rem;color:var(--muted);background:rgba(255,149,0,0.08);border-left:3px solid #FF9500;padding:8px 10px;margin:2px 0 6px;border-radius:4px;line-height:1.4">
+            ⚠️ <strong>Inaktiv im aktuellen Soft-Only-Release.</strong> Der Release-Build setzt
+            <code>BuildConfig.MONEY_FEATURES_ENABLED = false</code>. Dieser Build-Floor überschreibt beide
+            Schalter — Hard Mode &amp; Gruppen-Challenge bleiben unerreichbar, egal was hier eingestellt ist.
+            Die Schalter greifen erst wieder, sobald ein Build mit dem Flag = <code>true</code> ausgeliefert
+            wird (dann steuern sie wie gewohnt). Bis dahin nur Vorbereitung.
+          </div>
           <label class="cfg-field">
             <span>Update URL (Play Store / AppGallery)</span>
             <input type="text" id="cfg-updateUrl" placeholder="https://play.google.com/store/apps/details?id=com.detox.app">

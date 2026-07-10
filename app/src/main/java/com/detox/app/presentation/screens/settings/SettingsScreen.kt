@@ -98,6 +98,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.presentation.screens.profile.IbanSaveState
+import com.detox.app.util.FeatureFlags
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -172,7 +173,9 @@ fun SettingsScreen(
     }
 
     // ── IBAN Bottom Sheet ──────────────────────────────────────────────────────
-    if (showIbanSheet) {
+    // Money-floor gated: the payout account (IBAN) is a real-money surface, so the sheet can
+    // never open in the soft-only release even if showIbanSheet were somehow set.
+    if (showIbanSheet && FeatureFlags.moneyEnabled) {
         var sheetIban by remember { mutableStateOf(ibanData?.iban ?: "") }
         var sheetName by remember { mutableStateOf(ibanData?.name ?: "") }
         val ibanValid = sheetIban.replace(" ", "").uppercase().matches(Regex("AT[0-9]{18}"))
@@ -408,28 +411,32 @@ fun SettingsScreen(
             }
 
             // ── 3. AUSZAHLUNGSKONTO ────────────────────────────────────────────
-            IosSection(stringResource(R.string.settings_section_payout_account), entranceDelayMs = 120) {
-                if (ibanData == null) {
-                    IosRow(
-                        iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
-                        label = stringResource(R.string.settings_payout_add_iban),
-                        subtitle = stringResource(R.string.settings_payout_add_iban_subtitle),
-                        showChevron = true,
-                        onClick = { showIbanSheet = true }
-                    )
-                } else {
-                    IosRow(
-                        iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
-                        label = "AT•••• ${ibanData!!.iban.takeLast(4)}",
-                        trailingContent = {
-                            Text(
-                                text = stringResource(R.string.settings_payout_edit_label),
-                                fontSize = 14.sp,
-                                color = GreenColor
-                            )
-                        },
-                        onClick = { showIbanSheet = true }
-                    )
+            // Money-floor gated: the payout account section is hidden entirely for the soft-only
+            // release. Sections are independent Cards, so omitting one leaves the rest intact.
+            if (FeatureFlags.moneyEnabled) {
+                IosSection(stringResource(R.string.settings_section_payout_account), entranceDelayMs = 120) {
+                    if (ibanData == null) {
+                        IosRow(
+                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
+                            label = stringResource(R.string.settings_payout_add_iban),
+                            subtitle = stringResource(R.string.settings_payout_add_iban_subtitle),
+                            showChevron = true,
+                            onClick = { showIbanSheet = true }
+                        )
+                    } else {
+                        IosRow(
+                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
+                            label = "AT•••• ${ibanData!!.iban.takeLast(4)}",
+                            trailingContent = {
+                                Text(
+                                    text = stringResource(R.string.settings_payout_edit_label),
+                                    fontSize = 14.sp,
+                                    color = GreenColor
+                                )
+                            },
+                            onClick = { showIbanSheet = true }
+                        )
+                    }
                 }
             }
 

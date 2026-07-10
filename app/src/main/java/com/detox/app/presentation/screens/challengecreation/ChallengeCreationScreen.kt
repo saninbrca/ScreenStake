@@ -95,6 +95,7 @@ import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.TimeSpinnerPicker
 import com.detox.app.presentation.util.pressScaleFeedback
+import com.detox.app.util.FeatureFlags
 import com.detox.app.util.HapticManager
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
@@ -257,7 +258,8 @@ fun ChallengeCreationScreen(
                     1 -> Step1ModeSelection(
                         selectedMode = state.selectedMode,
                         onSelectMode = viewModel::selectMode,
-                        hardModeEnabled = appConfig.hardModeEnabled,
+                        // Build-level money floor AND the remote hardModeEnabled kill-switch.
+                        hardModeEnabled = FeatureFlags.hardModeEnabled(appConfig.hardModeEnabled),
                     )
                     2 -> AppWebsiteSelectionStep(
                         appListState = appListState,

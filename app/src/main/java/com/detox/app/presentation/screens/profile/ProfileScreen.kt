@@ -82,6 +82,7 @@ import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.service.TrackedAppEventBus
 import com.detox.app.util.DateUtils
+import com.detox.app.util.FeatureFlags
 import io.sentry.Sentry
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -148,7 +149,7 @@ fun ProfileScreen(
         }
     }
 
-    if (showPayoutConfirmDialog) {
+    if (showPayoutConfirmDialog && FeatureFlags.moneyEnabled) {
         val balance = pendingBalance
         val iban = ibanData?.iban
         if (balance != null && iban != null) {
@@ -286,15 +287,19 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // ── 💰 Guthaben card ──────────────────────────────────────────────
-            pendingBalance?.let { balance ->
-                GuthabenCard(
-                    balance = balance,
-                    ibanData = ibanData,
-                    onAddIban = onOpenSettings,
-                    onRequestPayout = { showPayoutConfirmDialog = true },
-                    payoutRequestState = payoutRequestState
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+            // Money-floor gated: hidden in the soft-only release (the payout/balance surface is a
+            // real-money feature). Empty state is already supported (card is conditional on balance).
+            if (FeatureFlags.moneyEnabled) {
+                pendingBalance?.let { balance ->
+                    GuthabenCard(
+                        balance = balance,
+                        ibanData = ibanData,
+                        onAddIban = onOpenSettings,
+                        onRequestPayout = { showPayoutConfirmDialog = true },
+                        payoutRequestState = payoutRequestState
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
             }
 
             // ── Settings Card ─────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.util.FeatureFlags
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -128,18 +129,11 @@ class PermissionCheckWorker @AssistedInject constructor(
                 !Settings.canDrawOverlays(applicationContext) -> "overlay"
                 else -> "accessibility"
             }
-            val deviceId = Settings.Secure.getString(
-                applicationContext.contentResolver, Settings.Secure.ANDROID_ID
-            )
             FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
                 FirebaseFirestore.getInstance()
                     .collection("users").document(uid)
                     .collection("permissionStatus").document("current")
-                    .set(mapOf(
-                        "permissionLostAt" to now,
-                        "permissionType" to missingPermission,
-                        "deviceId" to deviceId
-                    ), SetOptions.merge())
+                    .set(buildPermissionLostUpdate(now, missingPermission), SetOptions.merge())
             }
             now
         }
@@ -232,6 +226,30 @@ class PermissionCheckWorker @AssistedInject constructor(
             applicationContext.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         )?.contains(applicationContext.packageName) == true
+
+    /**
+     * Builds the permission-lost mirror written to `permissionStatus/current`. The anti-cheat
+     * `deviceId` (ANDROID_ID) is a Hard-Mode multi-account signal for the server-side
+     * `checkPermissionViolations` capture; it has NO consumer in a soft-only build (no money to
+     * protect, and the capture CF only acts on `mode=="hard"`). So it is included ONLY when money
+     * features are enabled — a soft-only release never collects the device identifier here. The
+     * `permissionLostAt`/`permissionType` markers are always written: they are harmless timestamps
+     * and the server acts on them solely for Hard challenges. Restoring money (flip the build flag)
+     * resumes the exact prior write.
+     */
+    private fun buildPermissionLostUpdate(lostAt: Long, permissionType: String): Map<String, Any?> =
+        buildMap {
+            put("permissionLostAt", lostAt)
+            put("permissionType", permissionType)
+            if (FeatureFlags.moneyEnabled) {
+                put(
+                    "deviceId",
+                    Settings.Secure.getString(
+                        applicationContext.contentResolver, Settings.Secure.ANDROID_ID
+                    )
+                )
+            }
+        }
 
     private suspend fun checkAndReportUsageViolation() {
         // Only relevant when accessibility is disabled — it's the backup detection path.
@@ -397,14 +415,7 @@ class PermissionCheckWorker @AssistedInject constructor(
                         .collection("users").document(uid)
                         .collection("permissionStatus").document("current")
                         .set(
-                            mapOf(
-                                "permissionLostAt" to System.currentTimeMillis(),
-                                "permissionType" to "accessibility",
-                                "deviceId" to Settings.Secure.getString(
-                                    applicationContext.contentResolver,
-                                    Settings.Secure.ANDROID_ID
-                                )
-                            ),
+                            buildPermissionLostUpdate(System.currentTimeMillis(), "accessibility"),
                             SetOptions.merge()
                         )
                 }

@@ -62,6 +62,13 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * INVARIANT — overlays are design-fixed, always-dark "Calm Authority" surfaces.
+ * Every overlay shown here is wrapped in `DetoxTheme(darkTheme = true)` and must
+ * render pixel-identically in every theme mode (SYSTEM/LIGHT/DARK) and on every
+ * device. Overlay composables must NOT read `MaterialTheme.colorScheme` and must
+ * give every M3 component explicit colors — no pixel may derive from a ColorScheme.
+ */
 @Singleton
 class OverlayManager @Inject constructor(
     @ApplicationContext private val context: Context,

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -221,7 +222,10 @@ fun BudgetSelectionOverlay(
                 CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                     TextButton(
                         onClick = onGoBack,
-                        modifier = Modifier.height(32.dp)
+                        modifier = Modifier.height(32.dp),
+                        // Explicit so nothing here (including the press ripple) derives
+                        // from a ColorScheme — overlays are theme-independent by design.
+                        colors = ButtonDefaults.textButtonColors(contentColor = GhostColor)
                     ) {
                         Text(
                             text = stringResource(R.string.stay_strong_button),

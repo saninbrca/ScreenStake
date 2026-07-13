@@ -5,6 +5,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -94,11 +95,14 @@ fun GroupChallengeFailOverlay(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Explicit Calm Authority colors — overlays never read the ColorScheme,
+                // so they render identically in every theme mode.
                 Button(
                     onClick = onLeaderboard,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = Color(0xFF00C853),
+                        contentColor = Color.White
                     )
                 ) {
                     Text(
@@ -112,7 +116,8 @@ fun GroupChallengeFailOverlay(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
-                    )
+                    ),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f))
                 ) {
                     Text(text = stringResource(R.string.group_fail_overlay_home))
                 }

@@ -61,6 +61,13 @@ data class DetoxSemanticColors(
     /** Recessed fill inside a card: text-field containers, inset panels. */
     val insetSurface: Color,
     /**
+     * Frame of the custom result dialogs: the grouped backdrop the result cards sit
+     * on. A miniature of the app shell, so dark keeps the shell's card hierarchy
+     * (#0F0F0F frame under #1A1A1A cards); the dialog scrim separates it from the
+     * screen behind. NOT an M3 dialog surface — the result dialogs are hand-built.
+     */
+    val dialogSurface: Color,
+    /**
      * Fallback avatar/monogram circle (app icon or favicon unavailable). Unlike
      * tile* backgrounds it stays MUTED in dark mode — the opposite behavior of
      * tiles, which brighten. Known consumers: HistoryDetail's DetailAppIcon,
@@ -105,6 +112,7 @@ val DetoxSemanticLight = DetoxSemanticColors(
     screenBackground = Color(0xFFF2F2F7),
     cardBackground = Color(0xFFFFFFFF),
     insetSurface = Color(0xFFF2F2F7),
+    dialogSurface = Color(0xFFF2F2F7),
     avatarFallbackBg = Color(0xFFAEAEB2),
     avatarFallbackFg = Color(0xFFFFFFFF),
     cardBorder = Color(0x0F000000),
@@ -140,6 +148,7 @@ val DetoxSemanticDark = DetoxSemanticColors(
     screenBackground = Color(0xFF0F0F0F),
     cardBackground = Color(0xFF1A1A1A),
     insetSurface = Color(0xFF111111),
+    dialogSurface = Color(0xFF0F0F0F),
     avatarFallbackBg = Color(0xFF48484A),
     avatarFallbackFg = Color(0xFFFFFFFF),
     cardBorder = Color(0x14FFFFFF),

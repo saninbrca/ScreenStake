@@ -27,8 +27,11 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -55,20 +58,13 @@ import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.LimitType
+import com.detox.app.ui.theme.DetoxCelebrationColors
 import com.detox.app.ui.theme.PoppinsFamily
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.DateUtils
 import kotlinx.coroutines.delay
 import kotlin.math.floor
 import kotlin.random.Random
-
-// Shared colors (DialogBg, AccentGreen, TextSecondary, CardBg, BadgeBorder) now live in
-// ResultDialogComponents.kt and are reused by both the win and loss dialogs.
-private val ConfettiColors = listOf(
-    Color(0xFFFF9500),
-    Color(0xFF00C853),
-    Color(0xFF7B61FF),
-    Color(0xFFFF3B30)
-)
 
 private data class Particle(
     val xFraction: Float,
@@ -162,7 +158,7 @@ fun ChallengeSuccessDialog(
                 speedFraction = 0.08f + Random.nextFloat() * 0.12f,
                 rotation0 = Random.nextFloat() * 360f,
                 rotationSpeed = (Random.nextFloat() - 0.5f) * 200f,
-                color = ConfettiColors.random(),
+                color = DetoxCelebrationColors.Confetti.random(),
                 widthPx = 8f + Random.nextFloat() * 10f,
                 heightPx = 4f + Random.nextFloat() * 6f
             )
@@ -212,13 +208,13 @@ fun ChallengeSuccessDialog(
                             modifier = Modifier
                                 .size(72.dp)
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(AccentGreen),
+                                .background(detoxColors.success),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Check,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = detoxColors.tileGlyph,
                                 modifier = Modifier.size(40.dp)
                             )
                         }
@@ -230,14 +226,14 @@ fun ChallengeSuccessDialog(
                                 fontFamily = PoppinsFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 22.sp,
-                                color = Color.Black
+                                color = detoxColors.label
                             )
                             Text(
                                 text = stringResource(R.string.success_dialog_title_dot),
                                 fontFamily = PoppinsFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 22.sp,
-                                color = AccentGreen
+                                color = detoxColors.success
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -246,7 +242,7 @@ fun ChallengeSuccessDialog(
                             text = stringResource(R.string.success_dialog_subtitle, challenge.durationDays),
                             fontFamily = PoppinsFamily,
                             fontSize = 14.sp,
-                            color = TextSecondary,
+                            color = detoxColors.subtext,
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(12.dp))
@@ -254,8 +250,8 @@ fun ChallengeSuccessDialog(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50.dp))
-                                .background(CardBg)
-                                .border(1.dp, BadgeBorder, RoundedCornerShape(50.dp))
+                                .background(detoxColors.cardBackground)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50.dp))
                                 .padding(horizontal = 16.dp, vertical = 6.dp)
                         ) {
                             Text(
@@ -263,7 +259,7 @@ fun ChallengeSuccessDialog(
                                 fontFamily = PoppinsFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
-                                color = AccentGreen
+                                color = detoxColors.success
                             )
                         }
                     }
@@ -284,7 +280,7 @@ fun ChallengeSuccessDialog(
                                 fontFamily = PoppinsFamily,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = TextSecondary,
+                                color = detoxColors.subtext,
                                 letterSpacing = 0.8.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -293,14 +289,14 @@ fun ChallengeSuccessDialog(
                                 fontFamily = PoppinsFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 36.sp,
-                                color = AccentGreen
+                                color = detoxColors.success
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = stringResource(R.string.success_dialog_money_fee, "€%.2f".format(feeEuros).replace('.', ',')),
                                 fontFamily = PoppinsFamily,
                                 fontSize = 12.sp,
-                                color = TextSecondary
+                                color = detoxColors.subtext
                             )
                         } else {
                             // Soft Mode: time saved card
@@ -309,7 +305,7 @@ fun ChallengeSuccessDialog(
                                 fontFamily = PoppinsFamily,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = TextSecondary,
+                                color = detoxColors.subtext,
                                 letterSpacing = 0.8.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -318,14 +314,14 @@ fun ChallengeSuccessDialog(
                                 fontFamily = PoppinsFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 36.sp,
-                                color = AccentGreen
+                                color = detoxColors.success
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = stringResource(R.string.success_dialog_time_subtext),
                                 fontFamily = PoppinsFamily,
                                 fontSize = 12.sp,
-                                color = TextSecondary,
+                                color = detoxColors.subtext,
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -333,7 +329,7 @@ fun ChallengeSuccessDialog(
                         HorizontalDivider(
                             modifier = Modifier.padding(top = 12.dp),
                             thickness = 0.5.dp,
-                            color = DialogBg
+                            color = detoxColors.divider
                         )
 
                         // Phase 3: 3-column stats
@@ -350,17 +346,17 @@ fun ChallengeSuccessDialog(
                                 StatColumn(
                                     value = daysAnim.value.toInt().toString(),
                                     label = stringResource(R.string.success_dialog_stat_days),
-                                    valueColor = Color.Black
+                                    valueColor = detoxColors.label
                                 )
                                 StatColumn(
                                     value = opensAnim.value.toInt().toString(),
                                     label = stringResource(R.string.success_dialog_stat_opens),
-                                    valueColor = Color.Black
+                                    valueColor = detoxColors.label
                                 )
                                 StatColumn(
                                     value = "${reductionAnim.value.toInt()}%",
                                     label = stringResource(R.string.success_dialog_stat_reduction),
-                                    valueColor = AccentGreen
+                                    valueColor = detoxColors.success
                                 )
                             }
                         }
@@ -378,29 +374,35 @@ fun ChallengeSuccessDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(54.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(AccentGreen)
-                                .clickable { onStartNewChallenge() },
-                            contentAlignment = Alignment.Center
+                        // Ripple derives from LocalContentColor — resolve it to the
+                        // button's own content color, not the frame's.
+                        CompositionLocalProvider(
+                            LocalContentColor provides MaterialTheme.colorScheme.onPrimary
                         ) {
-                            Text(
-                                text = stringResource(R.string.success_dialog_cta_new),
-                                fontFamily = PoppinsFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .clickable { onStartNewChallenge() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.success_dialog_cta_new),
+                                    fontFamily = PoppinsFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = stringResource(R.string.success_dialog_cta_back),
                             fontFamily = PoppinsFamily,
                             fontSize = 14.sp,
-                            color = TextSecondary,
+                            color = detoxColors.subtext,
                             modifier = Modifier.clickable { onDismiss() }
                         )
                     }

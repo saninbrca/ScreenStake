@@ -20,8 +20,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,6 +43,7 @@ import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.DailyLog
 import com.detox.app.ui.theme.PoppinsFamily
+import com.detox.app.ui.theme.detoxColors
 import kotlinx.coroutines.delay
 
 /**
@@ -107,13 +110,13 @@ fun ChallengeFailedDialog(
                     modifier = Modifier
                         .size(72.dp)
                         .clip(RoundedCornerShape(20.dp))
-                        .background(AccentRed),
+                        .background(detoxColors.danger),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = detoxColors.tileGlyph,
                         modifier = Modifier.size(40.dp)
                     )
                 }
@@ -125,14 +128,14 @@ fun ChallengeFailedDialog(
                         fontFamily = PoppinsFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
-                        color = Color.Black
+                        color = detoxColors.label
                     )
                     Text(
                         text = stringResource(R.string.success_dialog_title_dot),
                         fontFamily = PoppinsFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
-                        color = AccentRed
+                        color = detoxColors.danger
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -142,7 +145,7 @@ fun ChallengeFailedDialog(
                     fontFamily = PoppinsFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = Color.Black,
+                    color = detoxColors.label,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -151,7 +154,7 @@ fun ChallengeFailedDialog(
                     text = stringResource(failReasonStringRes(challenge.failReason)),
                     fontFamily = PoppinsFamily,
                     fontSize = 14.sp,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     textAlign = TextAlign.Center
                 )
             }
@@ -170,7 +173,7 @@ fun ChallengeFailedDialog(
                     fontFamily = PoppinsFamily,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     letterSpacing = 0.8.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -179,13 +182,13 @@ fun ChallengeFailedDialog(
                     fontFamily = PoppinsFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 36.sp,
-                    color = AccentRed
+                    color = detoxColors.danger
                 )
 
                 HorizontalDivider(
                     modifier = Modifier.padding(top = 12.dp),
                     thickness = 0.5.dp,
-                    color = DialogBg
+                    color = detoxColors.divider
                 )
 
                 // Phase 3: 3-column stats
@@ -202,17 +205,17 @@ fun ChallengeFailedDialog(
                         StatColumn(
                             value = daysHeld.toString(),
                             label = stringResource(R.string.success_dialog_stat_days),
-                            valueColor = Color.Black
+                            valueColor = detoxColors.label
                         )
                         StatColumn(
                             value = totalConsciousOpens.toString(),
                             label = stringResource(R.string.success_dialog_stat_opens),
-                            valueColor = Color.Black
+                            valueColor = detoxColors.label
                         )
                         StatColumn(
                             value = lostEurosStat,
                             label = stringResource(R.string.failed_dialog_stat_lost),
-                            valueColor = AccentRed
+                            valueColor = detoxColors.danger
                         )
                     }
                 }
@@ -230,7 +233,7 @@ fun ChallengeFailedDialog(
                     text = stringResource(R.string.failed_dialog_comeback),
                     fontFamily = PoppinsFamily,
                     fontSize = 12.sp,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     textAlign = TextAlign.Center
                 )
             }
@@ -247,29 +250,35 @@ fun ChallengeFailedDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(AccentGreen)
-                        .clickable { onStartNewChallenge() },
-                    contentAlignment = Alignment.Center
+                // Ripple derives from LocalContentColor — resolve it to the button's
+                // own content color, not the frame's.
+                CompositionLocalProvider(
+                    LocalContentColor provides MaterialTheme.colorScheme.onPrimary
                 ) {
-                    Text(
-                        text = stringResource(R.string.success_dialog_cta_new),
-                        fontFamily = PoppinsFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = Color.White
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clickable { onStartNewChallenge() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.success_dialog_cta_new),
+                            fontFamily = PoppinsFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = stringResource(R.string.success_dialog_cta_back),
                     fontFamily = PoppinsFamily,
                     fontSize = 14.sp,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     modifier = Modifier.clickable { onDismiss() }
                 )
             }

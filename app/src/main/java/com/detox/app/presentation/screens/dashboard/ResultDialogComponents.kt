@@ -16,8 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,14 +31,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.detox.app.ui.theme.PoppinsFamily
+import com.detox.app.ui.theme.detoxColors
 
-// Shared palette for the win/loss result dialogs (docs/08 design system).
-internal val DialogBg = Color(0xFFF2F2F7)
-internal val CardBg = Color.White
-internal val AccentGreen = Color(0xFF00C853)
-internal val AccentRed = Color(0xFFFF3B30)
-internal val TextSecondary = Color(0xFF8E8E93)
-internal val BadgeBorder = Color(0xFFE0E0E5)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals in the
+// result dialogs (docs/08 design system).
 
 /**
  * Shared scaffold for the result dialogs ([ChallengeSuccessDialog] win / [ChallengeFailedDialog]
@@ -56,40 +54,45 @@ internal fun ResultDialogScaffold(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(DialogBg)
-        ) {
-            background()
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                content = content
-            )
-
-            // X close button
+        // Press ripples derive from LocalContentColor, whose static default is Black —
+        // invisible on the dark frame/cards. Resolve it to the frame's content color so
+        // every clickable inside gets visible feedback in both modes.
+        CompositionLocalProvider(LocalContentColor provides detoxColors.label) {
             Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(CardBg)
-                    .clickable { onDismiss() },
-                contentAlignment = Alignment.Center
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(detoxColors.dialogSurface)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = null,
-                    tint = TextSecondary,
-                    modifier = Modifier.size(20.dp)
+                background()
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    content = content
                 )
+
+                // X close button
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(detoxColors.cardBackground)
+                        .clickable { onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = null,
+                        tint = detoxColors.subtext,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
@@ -105,7 +108,7 @@ internal fun ResultCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(CardBg)
+            .background(detoxColors.cardBackground)
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         content = content
@@ -134,7 +137,7 @@ internal fun StatColumn(
             text = label,
             fontFamily = PoppinsFamily,
             fontSize = 11.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             textAlign = TextAlign.Center,
             maxLines = 2,
             modifier = Modifier.width(80.dp)

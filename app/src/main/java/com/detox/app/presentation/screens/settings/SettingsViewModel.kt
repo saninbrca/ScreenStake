@@ -57,7 +57,7 @@ data class SettingsState(
     val accessibilityGranted: Boolean = false,
     val overlayGranted: Boolean = false,
     val usageStatsGranted: Boolean = false,
-    val darkModeEnabled: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val isLoading: Boolean = false,
     val showDeleteConfirmDialog: Boolean = false,
     val showLogoutConfirmDialog: Boolean = false,
@@ -112,7 +112,7 @@ class SettingsViewModel @Inject constructor(
                 groupParticipantFailedEnabled = notifPrefs.getBoolean(KEY_GROUP_PARTICIPANT_FAILED, true),
                 challengeUpdatesEnabled = prefs.getBoolean(KEY_CHALLENGE_UPDATES, true),
                 friendAlertsEnabled = prefs.getBoolean(KEY_FRIEND_ALERTS, true),
-                darkModeEnabled = ThemeMode.fromPrefs(prefs) == ThemeMode.DARK
+                themeMode = ThemeMode.fromPrefs(prefs)
             )
         }
         refreshPermissions()
@@ -342,13 +342,11 @@ class SettingsViewModel @Inject constructor(
         _state.update { it.copy(friendAlertsEnabled = enabled) }
     }
 
-    fun setDarkModeEnabled(enabled: Boolean) {
-        Timber.d("Dark mode toggled: $enabled")
-        // The switch UI can only express LIGHT/DARK; SYSTEM remains the state of users
-        // who never touched it, until the tri-state selector ships with the screen
-        // migration. This only WRITES the mode — MainActivity's prefs listener applies it.
-        (if (enabled) ThemeMode.DARK else ThemeMode.LIGHT).saveTo(prefs)
-        _state.update { it.copy(darkModeEnabled = enabled) }
+    fun setThemeMode(mode: ThemeMode) {
+        Timber.d("Theme mode selected: %s", mode)
+        // Only WRITES the mode — MainActivity's prefs listener applies it to the theme.
+        mode.saveTo(prefs)
+        _state.update { it.copy(themeMode = mode) }
     }
 
     // ── Debug ──────────────────────────────────────────────────────────────────

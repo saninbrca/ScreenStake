@@ -57,13 +57,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -83,6 +83,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -98,24 +99,15 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.presentation.screens.profile.IbanSaveState
+import com.detox.app.ui.theme.ThemeMode
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.FeatureFlags
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// ── Color constants ────────────────────────────────────────────────────────────
-private val BgColor = Color(0xFFF2F2F7)
-private val CardColor = Color.White
-private val CardBorder = Color(0x0F000000)
-private val DividerColor = Color(0xFFF2F2F7)
-private val LabelColor = Color(0xFF000000)
-private val SubtextColor = Color(0xFF8E8E93)
-private val ChevronColor = Color(0xFFC7C7CC)
-private val DestructiveColor = Color(0xFFFF3B30)
-private val GreenColor = Color(0xFF00C853)
-private val OrangeColor = Color(0xFFFF9500)
-private val PurpleColor = Color(0xFF5856D6)
-private val GroupPurple = Color(0xFF7B61FF)
-private val GreyIconBg = Color(0xFF8E8E93)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals in
+// this file (see ui/theme). Structural surfaces use M3 roles; meaning-carrying
+// colors use the semantic holder.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -191,7 +183,7 @@ fun SettingsScreen(
                     text = stringResource(R.string.settings_payout_iban_sheet_title),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = LabelColor
+                    color = detoxColors.label
                 )
                 OutlinedTextField(
                     value = sheetName,
@@ -221,8 +213,8 @@ fun SettingsScreen(
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GreenColor,
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     enabled = ibanValid && sheetName.isNotBlank() &&
                             ibanSaveState !is IbanSaveState.Loading
@@ -231,7 +223,7 @@ fun SettingsScreen(
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
                     } else {
                         Text(
@@ -253,7 +245,7 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.logOut() },
-                    colors = ButtonDefaults.textButtonColors(contentColor = DestructiveColor)
+                    colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.danger)
                 ) { Text(stringResource(R.string.settings_logout_confirm_yes)) }
             },
             dismissButton = {
@@ -277,7 +269,7 @@ fun SettingsScreen(
                     Text(
                         text = stringResource(R.string.settings_delete_reauth_message),
                         fontSize = 13.sp,
-                        color = SubtextColor
+                        color = detoxColors.subtext
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -292,7 +284,7 @@ fun SettingsScreen(
                     )
                     state.deleteReauthError?.let {
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = it, fontSize = 12.sp, color = DestructiveColor)
+                        Text(text = it, fontSize = 12.sp, color = detoxColors.danger)
                     }
                 }
             },
@@ -300,7 +292,7 @@ fun SettingsScreen(
                 TextButton(
                     onClick = { viewModel.deleteAccount(deletePassword) },
                     enabled = deletePassword.isNotBlank() && !state.deleteReauthLoading,
-                    colors = ButtonDefaults.textButtonColors(contentColor = DestructiveColor)
+                    colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.danger)
                 ) { Text(stringResource(R.string.settings_delete_reauth_continue)) }
             },
             dismissButton = {
@@ -319,7 +311,7 @@ fun SettingsScreen(
                         text = stringResource(R.string.settings_title),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = LabelColor
+                        color = detoxColors.label
                     )
                 },
                 navigationIcon = {
@@ -327,15 +319,15 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.nav_back),
-                            tint = GreenColor
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = BgColor)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = detoxColors.screenBackground)
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = BgColor
+        containerColor = detoxColors.screenBackground
     ) { innerPadding ->
 
         if (state.isLoading) {
@@ -344,7 +336,7 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .padding(innerPadding),
                 contentAlignment = Alignment.Center
-            ) { CircularProgressIndicator(color = GreenColor) }
+            ) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
             return@Scaffold
         }
 
@@ -360,9 +352,9 @@ fun SettingsScreen(
             IosSection(stringResource(R.string.settings_section_account), entranceDelayMs = 0) {
                 // Email (non-tappable)
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Person, GreyIconBg) },
+                    iconContent = { IosIconBox(Icons.Filled.Person, detoxColors.subtext) },
                     label = state.email.ifBlank { "—" },
-                    labelColor = SubtextColor,
+                    labelColor = detoxColors.subtext,
                     labelSize = 14
                 )
                 IosRowDivider()
@@ -375,7 +367,7 @@ fun SettingsScreen(
                     else -> stringResource(R.string.settings_change_password_subtitle)
                 }
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Lock, GreyIconBg) },
+                    iconContent = { IosIconBox(Icons.Filled.Lock, detoxColors.subtext) },
                     label = stringResource(R.string.settings_change_password),
                     subtitle = pwSubtitle,
                     showChevron = pwCooldown == 0,
@@ -384,17 +376,17 @@ fun SettingsScreen(
                 IosRowDivider()
                 // Abmelden
                 IosRow(
-                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.ExitToApp, DestructiveColor) },
+                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.ExitToApp, detoxColors.danger) },
                     label = stringResource(R.string.settings_logout),
-                    labelColor = DestructiveColor,
+                    labelColor = detoxColors.danger,
                     onClick = { viewModel.showLogoutConfirmDialog() }
                 )
                 IosRowDivider()
                 // Konto löschen
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Delete, DestructiveColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Delete, detoxColors.danger) },
                     label = stringResource(R.string.settings_delete_account),
-                    labelColor = DestructiveColor,
+                    labelColor = detoxColors.danger,
                     subtitle = stringResource(R.string.settings_delete_account_subtitle),
                     onClick = { viewModel.showDeleteConfirmDialog() }
                 )
@@ -403,7 +395,7 @@ fun SettingsScreen(
             // ── 2. AKTIVITÄT ───────────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_activity), entranceDelayMs = 60) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.History, GreenColor) },
+                    iconContent = { IosIconBox(Icons.Filled.History, detoxColors.accent) },
                     label = stringResource(R.string.settings_history_row_title),
                     showChevron = true,
                     onClick = onNavigateToHistory
@@ -417,7 +409,7 @@ fun SettingsScreen(
                 IosSection(stringResource(R.string.settings_section_payout_account), entranceDelayMs = 120) {
                     if (ibanData == null) {
                         IosRow(
-                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
+                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, detoxColors.accent) },
                             label = stringResource(R.string.settings_payout_add_iban),
                             subtitle = stringResource(R.string.settings_payout_add_iban_subtitle),
                             showChevron = true,
@@ -425,13 +417,13 @@ fun SettingsScreen(
                         )
                     } else {
                         IosRow(
-                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, GreenColor) },
+                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, detoxColors.accent) },
                             label = "AT•••• ${ibanData!!.iban.takeLast(4)}",
                             trailingContent = {
                                 Text(
                                     text = stringResource(R.string.settings_payout_edit_label),
                                     fontSize = 14.sp,
-                                    color = GreenColor
+                                    color = detoxColors.accent
                                 )
                             },
                             onClick = { showIbanSheet = true }
@@ -442,25 +434,20 @@ fun SettingsScreen(
 
             // ── 4. ERSCHEINUNGSBILD ────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_appearance), entranceDelayMs = 180) {
-                IosSwitchRow(
-                    iconContent = { IosIconBox(Icons.Filled.DarkMode, PurpleColor) },
-                    label = stringResource(R.string.settings_dark_mode),
-                    extraLabel = {
-                        Text(
-                            text = stringResource(R.string.settings_dark_mode_experimental),
-                            fontSize = 12.sp,
-                            color = OrangeColor
-                        )
-                    },
-                    checked = state.darkModeEnabled,
-                    onCheckedChange = { viewModel.setDarkModeEnabled(it) }
+                IosRow(
+                    iconContent = { IosIconBox(Icons.Filled.DarkMode, detoxColors.badgePurpleFg) },
+                    label = stringResource(R.string.settings_dark_mode)
+                )
+                IosThemeModeSelector(
+                    selected = state.themeMode,
+                    onSelect = { viewModel.setThemeMode(it) }
                 )
             }
 
             // ── 5. BENACHRICHTIGUNGEN ──────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_notifications), entranceDelayMs = 240) {
                 IosSwitchRow(
-                    iconContent = { IosIconBox(Icons.Filled.Check, GreenColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Check, detoxColors.accent) },
                     label = stringResource(R.string.settings_challenge_updates),
                     subtitle = stringResource(R.string.settings_challenge_updates_subtitle),
                     checked = state.challengeUpdatesEnabled,
@@ -472,7 +459,7 @@ fun SettingsScreen(
                 if (FeatureFlags.moneyEnabled) {
                     IosRowDivider()
                     IosSwitchRow(
-                        iconContent = { IosIconBox(Icons.Filled.Group, GroupPurple) },
+                        iconContent = { IosIconBox(Icons.Filled.Group, detoxColors.groupAccent) },
                         label = stringResource(R.string.settings_group_participant_failed),
                         subtitle = stringResource(R.string.settings_group_participant_failed_subtitle),
                         checked = state.groupParticipantFailedEnabled,
@@ -525,7 +512,7 @@ fun SettingsScreen(
             // ── 7. DATENSCHUTZ ─────────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_privacy), entranceDelayMs = 360) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Policy, PurpleColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.badgePurpleFg) },
                     label = stringResource(R.string.settings_privacy_policy),
                     showChevron = true,
                     onClick = {
@@ -536,7 +523,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Policy, PurpleColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.badgePurpleFg) },
                     label = stringResource(R.string.settings_terms_of_service),
                     showChevron = true,
                     onClick = {
@@ -547,7 +534,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Policy, PurpleColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.badgePurpleFg) },
                     label = stringResource(R.string.settings_impressum),
                     showChevron = true,
                     onClick = {
@@ -558,7 +545,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Share, GreenColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Share, detoxColors.accent) },
                     label = stringResource(R.string.settings_export_data),
                     subtitle = stringResource(R.string.settings_export_data_subtitle),
                     showChevron = true,
@@ -578,9 +565,9 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Delete, DestructiveColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Delete, detoxColors.danger) },
                     label = stringResource(R.string.settings_delete_all_data),
-                    labelColor = DestructiveColor,
+                    labelColor = detoxColors.danger,
                     subtitle = stringResource(R.string.settings_delete_all_data_subtitle),
                     onClick = { viewModel.showDeleteConfirmDialog() }
                 )
@@ -589,7 +576,7 @@ fun SettingsScreen(
             // ── 8. HILFE & SUPPORT ─────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_help), entranceDelayMs = 420) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.SupportAgent, GreenColor) },
+                    iconContent = { IosIconBox(Icons.Filled.SupportAgent, detoxColors.accent) },
                     label = stringResource(R.string.settings_contact_support),
                     subtitle = stringResource(R.string.settings_contact_support_subtitle),
                     showChevron = true,
@@ -597,7 +584,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.HelpOutline, PurpleColor) },
+                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.HelpOutline, detoxColors.badgePurpleFg) },
                     label = stringResource(R.string.settings_faq),
                     showChevron = true,
                     onClick = onNavigateToFaq
@@ -607,19 +594,19 @@ fun SettingsScreen(
             // ── 9. APP INFO ────────────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_app_info), entranceDelayMs = 480) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Info, GreyIconBg) },
+                    iconContent = { IosIconBox(Icons.Filled.Info, detoxColors.subtext) },
                     label = stringResource(R.string.settings_version),
                     trailingContent = {
                         Text(
                             text = state.appVersion,
                             fontSize = 14.sp,
-                            color = SubtextColor
+                            color = detoxColors.subtext
                         )
                     }
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Star, OrangeColor) },
+                    iconContent = { IosIconBox(Icons.Filled.Star, detoxColors.warningStrong) },
                     label = stringResource(R.string.settings_rate_app),
                     showChevron = true,
                     onClick = {
@@ -647,7 +634,7 @@ fun SettingsScreen(
                 IosSection(stringResource(R.string.settings_section_debug)) {
                     val evalQueuedMsg = stringResource(R.string.profile_evaluation_queued)
                     IosRow(
-                        iconContent = { IosIconBox(Icons.Filled.PlayArrow, GreyIconBg) },
+                        iconContent = { IosIconBox(Icons.Filled.PlayArrow, detoxColors.subtext) },
                         label = stringResource(R.string.profile_run_evaluation),
                         onClick = {
                             viewModel.runEvaluationNow()
@@ -686,7 +673,7 @@ private fun IosSection(
                 text = header,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Normal,
-                color = SubtextColor,
+                color = detoxColors.subtext,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
             )
             Card(
@@ -694,11 +681,58 @@ private fun IosSection(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CardColor),
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, CardBorder),
+                colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, detoxColors.cardBorder),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(content = content)
+            }
+        }
+    }
+}
+
+/**
+ * iOS-style segmented control for the theme mode. Only WRITES the selection via
+ * [onSelect]; applying it to the UI is MainActivity's prefs listener + DetoxTheme.
+ */
+@Composable
+private fun IosThemeModeSelector(selected: ThemeMode, onSelect: (ThemeMode) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 60.dp, end = 16.dp, bottom = 12.dp)
+            .background(detoxColors.screenBackground, RoundedCornerShape(8.dp))
+            .padding(2.dp)
+    ) {
+        ThemeMode.entries.forEach { mode ->
+            val isSelected = mode == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .then(
+                        if (isSelected) {
+                            Modifier.background(detoxColors.cardBackground, RoundedCornerShape(6.dp))
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clickable { onSelect(mode) }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(
+                        when (mode) {
+                            ThemeMode.SYSTEM -> R.string.settings_theme_system
+                            ThemeMode.LIGHT -> R.string.settings_theme_light
+                            ThemeMode.DARK -> R.string.settings_theme_dark
+                        }
+                    ),
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (isSelected) detoxColors.label else detoxColors.subtext
+                )
             }
         }
     }
@@ -709,7 +743,7 @@ private fun IosRowDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(start = 64.dp),
         thickness = 0.5.dp,
-        color = DividerColor
+        color = detoxColors.divider
     )
 }
 
@@ -724,7 +758,9 @@ private fun IosIconBox(icon: ImageVector, backgroundColor: Color) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color.White,
+            // surface = white in light / #1A1A1A in dark: the tile colors brighten to
+            // pastels in dark mode, where a dark glyph keeps contrast a white one loses.
+            tint = MaterialTheme.colorScheme.surface,
             modifier = Modifier.size(18.dp)
         )
     }
@@ -734,7 +770,7 @@ private fun IosIconBox(icon: ImageVector, backgroundColor: Color) {
 private fun IosRow(
     iconContent: @Composable () -> Unit,
     label: String,
-    labelColor: Color = LabelColor,
+    labelColor: Color = detoxColors.label,
     labelSize: Int = 16,
     subtitle: String? = null,
     trailingContent: (@Composable () -> Unit)? = null,
@@ -762,7 +798,7 @@ private fun IosRow(
                 Text(
                     text = subtitle,
                     fontSize = 14.sp,
-                    color = SubtextColor
+                    color = detoxColors.subtext
                 )
             }
         }
@@ -775,7 +811,7 @@ private fun IosRow(
             Icon(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
-                tint = ChevronColor,
+                tint = detoxColors.hint,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -805,22 +841,20 @@ private fun IosSwitchRow(
                 text = label,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Normal,
-                color = LabelColor
+                color = detoxColors.label
             )
             if (!subtitle.isNullOrBlank()) {
-                Text(text = subtitle, fontSize = 14.sp, color = SubtextColor)
+                Text(text = subtitle, fontSize = 14.sp, color = detoxColors.subtext)
             }
             if (extraLabel != null) {
                 extraLabel()
             }
         }
+        // M3 defaults (checkedTrack = primary, checkedThumb = onPrimary) match the old
+        // explicit green/white in light mode and adapt correctly in dark.
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = GreenColor,
-                checkedThumbColor = Color.White
-            )
+            onCheckedChange = onCheckedChange
         )
     }
 }
@@ -834,7 +868,7 @@ private fun IosPermissionRow(
     activateLabel: String,
     onActivate: () -> Unit
 ) {
-    val iconBg = if (granted) GreenColor else DestructiveColor
+    val iconBg = if (granted) detoxColors.success else detoxColors.danger
     val statusIcon = if (granted) Icons.Filled.Check else Icons.Filled.Close
 
     Row(
@@ -847,14 +881,14 @@ private fun IosPermissionRow(
         IosIconBox(icon = statusIcon, backgroundColor = iconBg)
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Normal, color = LabelColor)
-            Text(text = subtitle, fontSize = 14.sp, color = SubtextColor)
+            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Normal, color = detoxColors.label)
+            Text(text = subtitle, fontSize = 14.sp, color = detoxColors.subtext)
         }
         if (!granted) {
             Spacer(modifier = Modifier.width(8.dp))
             TextButton(
                 onClick = onActivate,
-                colors = ButtonDefaults.textButtonColors(contentColor = GreenColor)
+                colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.accent)
             ) {
                 Text(text = activateLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }

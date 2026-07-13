@@ -12,10 +12,11 @@ import androidx.compose.ui.graphics.Color
  * file-private `Color(0x…)` literals.
  *
  * The set mirrors what actually recurs across the screens' private palette headers:
- * the accent/success/warning/danger family, the four badge background/foreground
- * pairs, the icon-tile system (tile* backgrounds + tileGlyph), the group accent,
- * selected-card surface, and the iOS-gray family (grouped screen background, card
- * background/border, divider, label, subtext, chevron/hint).
+ * the accent/success/warning/danger family, the soft tinted containers (one soft*Bg
+ * per hue with soft*Text badge text and soft*Icon vivid glyphs), the icon-tile
+ * system (tile* backgrounds + tileGlyph), the group accent, selected-card surface,
+ * and the iOS-gray family (grouped screen background, card background/border,
+ * divider, label, subtext, chevron/hint).
  *
  * Design-fixed alarm colors that are deliberately identical in both modes live in
  * [DetoxAlertColors] instead.
@@ -31,14 +32,22 @@ data class DetoxSemanticColors(
     val danger: Color,
     /** The one color of the "group" concept (icon tiles, group badges/labels). */
     val groupAccent: Color,
-    val badgeGreenBg: Color,
-    val badgeGreenFg: Color,
-    val badgeOrangeBg: Color,
-    val badgeOrangeFg: Color,
-    val badgePurpleBg: Color,
-    val badgePurpleFg: Color,
-    val badgeBlueBg: Color,
-    val badgeBlueFg: Color,
+    // Soft tinted containers — ONE background per hue with TWO foreground roles:
+    // soft*Text (readable badge/label text) and soft*Icon (vivid decorative glyph,
+    // the icon-circle treatment). Never split the background into per-consumer
+    // families: identical-value twins drift the first time someone tunes one.
+    // Blue has no Text slot because no blue badge text exists yet.
+    val softGreenBg: Color,
+    val softGreenText: Color,
+    val softGreenIcon: Color,
+    val softOrangeBg: Color,
+    val softOrangeText: Color,
+    val softOrangeIcon: Color,
+    val softPurpleBg: Color,
+    val softPurpleText: Color,
+    val softPurpleIcon: Color,
+    val softBlueBg: Color,
+    val softBlueIcon: Color,
     // Icon-tile system (Settings/Auth/Maintenance/FAQ/Support rows): a saturated
     // tile background with [tileGlyph] drawn on top. Tiles whose color CARRIES
     // meaning keep their semantic slot instead (accent, success, danger,
@@ -93,14 +102,17 @@ val DetoxSemanticLight = DetoxSemanticColors(
     warningStrong = Color(0xFFFF9500),
     danger = Color(0xFFFF3B30),
     groupAccent = Color(0xFF7B61FF),
-    badgeGreenBg = Color(0xFFE8F8EF),
-    badgeGreenFg = Color(0xFF1E7A3C),
-    badgeOrangeBg = Color(0xFFFFF0E8),
-    badgeOrangeFg = Color(0xFFC05A00),
-    badgePurpleBg = Color(0xFFEEF0FF),
-    badgePurpleFg = Color(0xFF5856D6),
-    badgeBlueBg = Color(0xFFE8F0FF),
-    badgeBlueFg = Color(0xFF2979FF),
+    softGreenBg = Color(0xFFE8F8EF),
+    softGreenText = Color(0xFF1E7A3C),
+    softGreenIcon = Color(0xFF00C853),
+    softOrangeBg = Color(0xFFFFF0E8),
+    softOrangeText = Color(0xFFC05A00),
+    softOrangeIcon = Color(0xFFFF6B35),
+    softPurpleBg = Color(0xFFEEF0FF),
+    softPurpleText = Color(0xFF5856D6),
+    softPurpleIcon = Color(0xFF7B61FF),
+    softBlueBg = Color(0xFFE8F0FF),
+    softBlueIcon = Color(0xFF2979FF),
     tileGreen = Color(0xFF00C853),
     tileOrange = Color(0xFFFF9500),
     tilePurple = Color(0xFF5856D6),
@@ -129,14 +141,17 @@ val DetoxSemanticDark = DetoxSemanticColors(
     warningStrong = Color(0xFFFF9F0A),
     danger = Color(0xFFFF6B6B),
     groupAccent = Color(0xFF9F8BFF),
-    badgeGreenBg = Color(0xFF003318),
-    badgeGreenFg = Color(0xFFD8FFE8),
-    badgeOrangeBg = Color(0xFF3A2114),
-    badgeOrangeFg = Color(0xFFFFAB8A),
-    badgePurpleBg = Color(0xFF272348),
-    badgePurpleFg = Color(0xFFB8B5FF),
-    badgeBlueBg = Color(0xFF152A45),
-    badgeBlueFg = Color(0xFF8AB4FF),
+    softGreenBg = Color(0xFF003318),
+    softGreenText = Color(0xFFD8FFE8),
+    softGreenIcon = Color(0xFF00E676),
+    softOrangeBg = Color(0xFF3A2114),
+    softOrangeText = Color(0xFFFFAB8A),
+    softOrangeIcon = Color(0xFFFFAB8A),
+    softPurpleBg = Color(0xFF272348),
+    softPurpleText = Color(0xFFB8B5FF),
+    softPurpleIcon = Color(0xFF9F8BFF),
+    softBlueBg = Color(0xFF152A45),
+    softBlueIcon = Color(0xFF8AB4FF),
     tileGreen = Color(0xFF00E676),
     tileOrange = Color(0xFFFF9F0A),
     tilePurple = Color(0xFFB8B5FF),

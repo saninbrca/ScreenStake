@@ -177,18 +177,18 @@ private fun TypeBadge(isGroup: Boolean, isHard: Boolean) {
     val label: String
     when {
         isGroup -> {
-            bg = detoxColors.badgePurpleBg
-            textColor = detoxColors.badgePurpleFg
+            bg = detoxColors.softPurpleBg
+            textColor = detoxColors.softPurpleText
             label = stringResource(R.string.history_detail_mode_group)
         }
         isHard -> {
-            bg = detoxColors.badgeOrangeBg
-            textColor = detoxColors.badgeOrangeFg
+            bg = detoxColors.softOrangeBg
+            textColor = detoxColors.softOrangeText
             label = stringResource(R.string.verlauf_mode_hard)
         }
         else -> {
-            bg = detoxColors.badgeGreenBg
-            textColor = detoxColors.badgeGreenFg
+            bg = detoxColors.softGreenBg
+            textColor = detoxColors.softGreenText
             label = stringResource(R.string.verlauf_mode_soft)
         }
     }

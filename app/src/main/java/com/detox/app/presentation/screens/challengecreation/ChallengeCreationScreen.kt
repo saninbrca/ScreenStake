@@ -448,21 +448,28 @@ private fun Step1ModeSelection(
             onClick = { onSelectMode(ChallengeMode.SOFT) },
         )
 
-        ModeCard(
-            icon = null,
-            iconTint = OrangeIcon,
-            iconBg = OrangeLight,
-            euroIcon = true,
-            title = "Hard Mode",
-            description = stringResource(R.string.wizard_mode_hard_desc),
-            badge = stringResource(R.string.wizard_mode_hard_badge),
-            badgeBg = OrangeLight,
-            badgeText = OrangeBadgeText,
-            isSelected = selectedMode == ChallengeMode.HARD,
-            onClick = { onSelectMode(ChallengeMode.HARD) },
-            enabled = hardModeEnabled,
-            disabledNote = stringResource(R.string.feature_temporarily_unavailable),
-        )
+        // Money-floor gated: in the soft-only release the Hard Mode card is HIDDEN entirely (a
+        // permanently-dead surface, so no grey-out / no money framing). When money features are on
+        // (debug, or a future money build) the card renders and `enabled = hardModeEnabled` still
+        // greys it out for a temporary server-side kill-switch — hardModeEnabled already folds in
+        // the build floor via FeatureFlags.hardModeEnabled(...).
+        if (FeatureFlags.moneyEnabled) {
+            ModeCard(
+                icon = null,
+                iconTint = OrangeIcon,
+                iconBg = OrangeLight,
+                euroIcon = true,
+                title = "Hard Mode",
+                description = stringResource(R.string.wizard_mode_hard_desc),
+                badge = stringResource(R.string.wizard_mode_hard_badge),
+                badgeBg = OrangeLight,
+                badgeText = OrangeBadgeText,
+                isSelected = selectedMode == ChallengeMode.HARD,
+                onClick = { onSelectMode(ChallengeMode.HARD) },
+                enabled = hardModeEnabled,
+                disabledNote = stringResource(R.string.feature_temporarily_unavailable),
+            )
+        }
     }
 }
 

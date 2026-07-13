@@ -466,14 +466,19 @@ fun SettingsScreen(
                     checked = state.challengeUpdatesEnabled,
                     onCheckedChange = { viewModel.setChallengeUpdatesEnabled(it) }
                 )
-                IosRowDivider()
-                IosSwitchRow(
-                    iconContent = { IosIconBox(Icons.Filled.Group, GroupPurple) },
-                    label = stringResource(R.string.settings_group_participant_failed),
-                    subtitle = stringResource(R.string.settings_group_participant_failed_subtitle),
-                    checked = state.groupParticipantFailedEnabled,
-                    onCheckedChange = { viewModel.setGroupParticipantFailedEnabled(it) }
-                )
+                // Money-floor gated: the group participant-failed notification is a Group-only
+                // (buy-in) surface — hidden in the soft-only release. The general challenge-updates
+                // row above stays, so the section is never empty.
+                if (FeatureFlags.moneyEnabled) {
+                    IosRowDivider()
+                    IosSwitchRow(
+                        iconContent = { IosIconBox(Icons.Filled.Group, GroupPurple) },
+                        label = stringResource(R.string.settings_group_participant_failed),
+                        subtitle = stringResource(R.string.settings_group_participant_failed_subtitle),
+                        checked = state.groupParticipantFailedEnabled,
+                        onCheckedChange = { viewModel.setGroupParticipantFailedEnabled(it) }
+                    )
+                }
             }
 
             // ── 6. BERECHTIGUNGEN ──────────────────────────────────────────────

@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
+import com.detox.app.util.FeatureFlags
 
 private val BgColor = Color(0xFFF2F2F7)
 private val CardColor = Color.White
@@ -162,7 +163,11 @@ private fun SupportForm(
                         expanded = dropdownExpanded,
                         onDismissRequest = { dropdownExpanded = false }
                     ) {
-                        SupportCategory.entries.forEach { category ->
+                        // Money-floor gated: "Auszahlung" (PAYOUT) is a payout-only support topic —
+                        // dropped from the picker in the soft-only release so no dead category shows.
+                        SupportCategory.entries
+                            .filter { it != SupportCategory.PAYOUT || FeatureFlags.moneyEnabled }
+                            .forEach { category ->
                             DropdownMenuItem(
                                 text = { Text(categoryLabels[category] ?: "") },
                                 onClick = {

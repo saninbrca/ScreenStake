@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.detox.app.R
+import com.detox.app.util.FeatureFlags
 import timber.log.Timber
 
 /**
@@ -61,15 +62,23 @@ object NotificationHelper {
             }
         )
 
-        nm.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_GROUP_EVENTS,
-                "Group Challenges",
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "Updates from your group challenges — failures, completions, and cancellations"
-            }
-        )
+        // Money-floor gated: the Group Challenges channel is only ever used by group (buy-in)
+        // notifications, which can't fire in the soft-only release. Skipping its registration keeps
+        // a dead "Group Challenges" entry out of the system notification settings. The senders that
+        // target this channel are never reached when money is gated off; flipping the build flag
+        // (next launch calls createChannels again) recreates it. MILESTONES/REMINDERS are shared
+        // with soft features, so they are always registered.
+        if (FeatureFlags.moneyEnabled) {
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_GROUP_EVENTS,
+                    "Group Challenges",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "Updates from your group challenges — failures, completions, and cancellations"
+                }
+            )
+        }
     }
 
     /**

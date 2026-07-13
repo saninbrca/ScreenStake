@@ -32,20 +32,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.FeatureFlags
 
-private val BgColor = Color(0xFFF2F2F7)
-private val CardColor = Color.White
-private val LabelColor = Color(0xFF000000)
-private val SubtextColor = Color(0xFF8E8E93)
-private val ChevronColor = Color(0xFFC7C7CC)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 @Composable
 fun FaqScreen(onBack: () -> Unit) {
@@ -65,7 +61,7 @@ fun FaqScreen(onBack: () -> Unit) {
         add(R.string.faq_q8 to R.string.faq_a8)
     }
 
-    Scaffold(containerColor = BgColor) { innerPadding ->
+    Scaffold(containerColor = detoxColors.screenBackground) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -82,14 +78,14 @@ fun FaqScreen(onBack: () -> Unit) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.back),
-                        tint = LabelColor
+                        tint = detoxColors.label
                     )
                 }
                 Text(
                     text = stringResource(R.string.faq_title),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = LabelColor
+                    color = detoxColors.label
                 )
             }
 
@@ -126,8 +122,8 @@ private fun FaqCard(question: String, answer: String) {
             .fillMaxWidth()
             .clickable { expanded = !expanded },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardColor),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0x0F000000)),
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, detoxColors.cardBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -136,13 +132,13 @@ private fun FaqCard(question: String, answer: String) {
                     text = question,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = LabelColor,
+                    color = detoxColors.label,
                     modifier = Modifier.weight(1f)
                 )
                 Icon(
                     imageVector = Icons.Filled.ExpandMore,
                     contentDescription = null,
-                    tint = ChevronColor,
+                    tint = detoxColors.hint,
                     modifier = Modifier
                         .size(24.dp)
                         .graphicsLayer { rotationZ = rotation }
@@ -152,7 +148,7 @@ private fun FaqCard(question: String, answer: String) {
                 Text(
                     text = answer,
                     fontSize = 14.sp,
-                    color = SubtextColor,
+                    color = detoxColors.subtext,
                     modifier = Modifier.padding(top = 10.dp)
                 )
             }

@@ -30,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,28 +55,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.data.local.db.entity.ChallengeEntity
+import com.detox.app.ui.theme.detoxColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.floor
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-
-private val ScreenBg       = Color(0xFFF2F2F7)
-private val CardBg         = Color(0xFFFFFFFF)
-private val CardBorder     = Color(0x0F000000)
-private val InsetBg        = Color(0xFFF2F2F7)
-private val GreenPrimary   = Color(0xFF00C853)
-private val RedPrimary     = Color(0xFFFF3B30)
-private val TextPrimary    = Color(0xFF000000)
-private val TextSecondary  = Color(0xFF8E8E93)
-private val GreenBadgeBg   = Color(0xFFE8F8EF)
-private val GreenBadgeTxt  = Color(0xFF1E7A3C)
-private val OrangeBadgeBg  = Color(0xFFFFF0E8)
-private val OrangeBadgeTxt = Color(0xFFC05A00)
-private val PurpleBadgeBg  = Color(0xFFEEF0FF)
-private val PurpleBadgeTxt = Color(0xFF5856D6)
-private val FallbackBg     = Color(0xFFAEAEB2)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -96,7 +82,7 @@ fun HistoryDetailScreen(
                         text = stringResource(R.string.history_screen_title),
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
+                        color = detoxColors.label,
                     )
                 },
                 navigationIcon = {
@@ -107,10 +93,10 @@ fun HistoryDetailScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ScreenBg),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = detoxColors.screenBackground),
             )
         },
-        containerColor = ScreenBg,
+        containerColor = detoxColors.screenBackground,
     ) { innerPadding ->
         when (val state = uiState) {
             is HistoryDetailViewModel.UiState.Loading -> {
@@ -120,7 +106,7 @@ fun HistoryDetailScreen(
                         .padding(innerPadding),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator(color = GreenPrimary)
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             }
 
@@ -133,7 +119,7 @@ fun HistoryDetailScreen(
                 ) {
                     Text(
                         text = stringResource(R.string.history_detail_not_found),
-                        color = TextSecondary,
+                        color = detoxColors.subtext,
                     )
                 }
             }
@@ -206,7 +192,7 @@ private fun DetailContent(
                         text = entity.appDisplayName,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
+                        color = detoxColors.label,
                     )
                 }
             } else {
@@ -226,12 +212,12 @@ private fun DetailContent(
                             text = appName,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium,
-                            color = TextPrimary,
+                            color = detoxColors.label,
                         )
                     }
                     if (index < packageNames.lastIndex) {
                         Spacer(Modifier.height(8.dp))
-                        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF2F2F7))
+                        HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
                         Spacer(Modifier.height(8.dp))
                     }
                 }
@@ -246,7 +232,7 @@ private fun DetailContent(
                     durationDays,
                 ),
                 fontSize = 12.sp,
-                color = TextSecondary,
+                color = detoxColors.subtext,
             )
         }
 
@@ -286,8 +272,8 @@ private fun DetailCard(content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBg),
-        border = BorderStroke(0.5.dp, CardBorder),
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+        border = BorderStroke(0.5.dp, detoxColors.cardBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -305,18 +291,18 @@ private fun ModeBadge(isHard: Boolean, isGroup: Boolean) {
     val label: String
     when {
         isGroup -> {
-            bg = PurpleBadgeBg
-            textColor = PurpleBadgeTxt
+            bg = detoxColors.badgePurpleBg
+            textColor = detoxColors.badgePurpleFg
             label = stringResource(R.string.history_detail_mode_group)
         }
         isHard -> {
-            bg = OrangeBadgeBg
-            textColor = OrangeBadgeTxt
+            bg = detoxColors.badgeOrangeBg
+            textColor = detoxColors.badgeOrangeFg
             label = stringResource(R.string.verlauf_mode_hard)
         }
         else -> {
-            bg = GreenBadgeBg
-            textColor = GreenBadgeTxt
+            bg = detoxColors.badgeGreenBg
+            textColor = detoxColors.badgeGreenFg
             label = stringResource(R.string.verlauf_mode_soft)
         }
     }
@@ -333,7 +319,7 @@ private fun ModeBadge(isHard: Boolean, isGroup: Boolean) {
 
 @Composable
 private fun StatusLabel(isCompleted: Boolean) {
-    val color = if (isCompleted) GreenPrimary else RedPrimary
+    val color = if (isCompleted) detoxColors.success else detoxColors.danger
     val label = if (isCompleted)
         stringResource(R.string.verlauf_status_completed)
     else
@@ -348,20 +334,20 @@ private fun StatsInsetSection(stats: HistoryStats) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(InsetBg, RoundedCornerShape(12.dp))
+            .background(detoxColors.insetSurface, RoundedCornerShape(12.dp))
             .padding(12.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             StatColumn(
                 value = "${stats.bestStreak}",
                 label = stringResource(R.string.verlauf_stats_streak_label),
-                valueColor = TextPrimary,
+                valueColor = detoxColors.label,
                 modifier = Modifier.weight(1f),
             )
             StatColumn(
                 value = "${stats.totalConsciousOpens}",
                 label = stringResource(R.string.verlauf_stats_opens_label),
-                valueColor = TextPrimary,
+                valueColor = detoxColors.label,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -380,7 +366,7 @@ private fun StatColumn(
         Text(
             text = label,
             fontSize = 12.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             textAlign = TextAlign.Center,
         )
     }
@@ -396,12 +382,12 @@ private fun HardMoneySection(isCompleted: Boolean, amountCents: Int) {
             text = stringResource(R.string.verlauf_hard_refund, refund),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            color = GreenPrimary,
+            color = detoxColors.success,
         )
         Text(
             text = stringResource(R.string.verlauf_hard_refund_fee),
             fontSize = 12.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
         )
     } else {
         val captured = amountCents / 100.0
@@ -409,12 +395,12 @@ private fun HardMoneySection(isCompleted: Boolean, amountCents: Int) {
             text = stringResource(R.string.verlauf_hard_captured, captured),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            color = RedPrimary,
+            color = detoxColors.danger,
         )
         Text(
             text = stringResource(R.string.verlauf_hard_captured_reason),
             fontSize = 12.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
         )
     }
 }
@@ -437,11 +423,11 @@ private fun InfoList(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         InfoRow(label = stringResource(R.string.history_detail_info_limit), value = limitText)
-        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF2F2F7))
+        HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
         InfoRow(label = stringResource(R.string.history_detail_info_started), value = startStr)
-        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF2F2F7))
+        HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
         InfoRow(label = stringResource(R.string.history_detail_info_ended), value = endStr)
-        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF2F2F7))
+        HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
         InfoRow(
             label = stringResource(R.string.history_detail_info_duration),
             value = stringResource(R.string.history_duration_days, durationDays),
@@ -458,8 +444,8 @@ private fun InfoRow(label: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, fontSize = 14.sp, color = TextSecondary)
-        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+        Text(text = label, fontSize = 14.sp, color = detoxColors.subtext)
+        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = detoxColors.label)
     }
 }
 
@@ -506,13 +492,13 @@ private fun DetailAppIcon(packageName: String?, appName: String, modifier: Modif
         )
     } else {
         val initial = appName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-        Surface(modifier = modifier, shape = CircleShape, color = FallbackBg) {
+        Surface(modifier = modifier, shape = CircleShape, color = detoxColors.avatarFallbackBg) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     text = initial,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = detoxColors.avatarFallbackFg,
                 )
             }
         }

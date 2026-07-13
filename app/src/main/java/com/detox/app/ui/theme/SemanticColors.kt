@@ -60,6 +60,18 @@ data class DetoxSemanticColors(
     val cardBackground: Color,
     /** Recessed fill inside a card: text-field containers, inset panels. */
     val insetSurface: Color,
+    /**
+     * Fallback avatar/monogram circle (app icon or favicon unavailable). Unlike
+     * tile* backgrounds it stays MUTED in dark mode — the opposite behavior of
+     * tiles, which brighten. Known consumers: HistoryDetail's DetailAppIcon,
+     * ChallengeCard's favicon fallback.
+     */
+    val avatarFallbackBg: Color,
+    /**
+     * Monogram letter on [avatarFallbackBg]; stays light in BOTH modes because the
+     * background stays muted (reusing tileGlyph here would be ~2:1 contrast in dark).
+     */
+    val avatarFallbackFg: Color,
     val cardBorder: Color,
     val divider: Color,
     val label: Color,
@@ -93,6 +105,8 @@ val DetoxSemanticLight = DetoxSemanticColors(
     screenBackground = Color(0xFFF2F2F7),
     cardBackground = Color(0xFFFFFFFF),
     insetSurface = Color(0xFFF2F2F7),
+    avatarFallbackBg = Color(0xFFAEAEB2),
+    avatarFallbackFg = Color(0xFFFFFFFF),
     cardBorder = Color(0x0F000000),
     divider = Color(0xFFF2F2F7),
     label = Color(0xFF000000),
@@ -126,6 +140,8 @@ val DetoxSemanticDark = DetoxSemanticColors(
     screenBackground = Color(0xFF0F0F0F),
     cardBackground = Color(0xFF1A1A1A),
     insetSurface = Color(0xFF111111),
+    avatarFallbackBg = Color(0xFF48484A),
+    avatarFallbackFg = Color(0xFFFFFFFF),
     cardBorder = Color(0x14FFFFFF),
     divider = Color(0xFF222222),
     label = Color(0xFFFFFFFF),

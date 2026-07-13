@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.ScreenSTake" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- windowBackground doubles as the pre-Compose splash color (values-night overrides
+         it). Known limitation: the splash follows the SYSTEM setting only — a user-picked
+         in-app LIGHT/DARK cannot reach the window theme before Compose starts. -->
+    <style name="Theme.ScreenSTake" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/detox_window_background</item>
+    </style>
 
 
 </resources>

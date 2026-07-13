@@ -55,7 +55,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,7 +66,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -77,7 +75,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -116,16 +113,9 @@ fun WelcomeOnboardingScreen(
     onNavigateToLogin: () -> Unit,
 ) {
     val context = LocalContext.current
-    val view = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 5 })
-
-    // Light status bar (dark icons) throughout onboarding
-    SideEffect {
-        val window = (view.context as Activity).window
-        WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
-    }
 
     // Page 3 permission states — refreshed on every RESUME
     var overlayGranted by remember { mutableStateOf(false) }

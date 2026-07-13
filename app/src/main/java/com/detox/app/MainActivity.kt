@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -40,10 +41,11 @@ import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.usecase.SyncUserDataUseCase
 import com.detox.app.presentation.navigation.DetoxNavGraph
 import com.detox.app.presentation.navigation.Screen
-import com.detox.app.presentation.screens.settings.KEY_DARK_MODE
 import com.detox.app.service.TrackedAppEventBus
 import com.detox.app.service.UsageTrackingService
 import com.detox.app.ui.theme.DetoxTheme
+import com.detox.app.ui.theme.LocalDetoxDarkTheme
+import com.detox.app.ui.theme.ThemeMode
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
@@ -83,7 +85,7 @@ class MainActivity : ComponentActivity() {
     // The destination the app would normally start on, preserved so the Maintenance
     // screen can forward the user there once maintenance is cleared.
     private var maintenanceClearedDestination by mutableStateOf(Screen.Main.route)
-    private var isDarkMode by mutableStateOf(false)
+    private var themeMode by mutableStateOf(ThemeMode.SYSTEM)
     private var hasActiveChallenge by mutableStateOf(false)
     private var overlayMissing by mutableStateOf(false)
     private var showPermissionBlock by mutableStateOf(false)
@@ -91,9 +93,10 @@ class MainActivity : ComponentActivity() {
     private var accessibilityMissing by mutableStateOf(false)
 
     private lateinit var prefs: SharedPreferences
+    // Keeps the theme toggle live: Settings writes the pref, this recomposes setContent.
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == KEY_DARK_MODE) {
-            isDarkMode = prefs.getBoolean(KEY_DARK_MODE, false)
+        if (key == ThemeMode.KEY_THEME_MODE || key == ThemeMode.KEY_LEGACY_DARK_MODE) {
+            themeMode = ThemeMode.fromPrefs(prefs)
         }
     }
 
@@ -102,7 +105,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        isDarkMode = prefs.getBoolean(KEY_DARK_MODE, false)
+        themeMode = ThemeMode.fromPrefs(prefs)
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         lifecycleScope.launch {
@@ -154,7 +157,22 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            DetoxTheme(darkTheme = isDarkMode) {
+            DetoxTheme(themeMode = themeMode) {
+                // System-bar icon appearance follows the RESOLVED theme (LocalDetoxDarkTheme),
+                // never the raw system setting — a user-picked LIGHT/DARK must win.
+                val resolvedDarkTheme = LocalDetoxDarkTheme.current
+                LaunchedEffect(resolvedDarkTheme) {
+                    val barStyle = if (resolvedDarkTheme) {
+                        SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(
+                            android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT
+                        )
+                    }
+                    enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
+                }
+
                 val snackbarHostState = remember { SnackbarHostState() }
 
                 LaunchedEffect(snackbarMessage) {

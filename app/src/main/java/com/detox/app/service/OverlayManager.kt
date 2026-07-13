@@ -474,7 +474,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 SessionIntentionOverlay(
                     packageName = (challenge.appPackageName ?: ""),
                     appName = resolveMultiAppDisplayName(challenge),
@@ -583,7 +583,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 SessionLimitReachedOverlay(
                     appName = resolveMultiAppDisplayName(challenge),
                     eyebrowText = buildCompletionEyebrow(challenge),
@@ -864,7 +864,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 BudgetSelectionOverlay(
                     packageName = packageName,
                     appName = resolveMultiAppDisplayName(challenge),
@@ -919,7 +919,7 @@ class OverlayManager @Inject constructor(
                     goHome()
                 }
             ) {
-                DetoxTheme {
+                DetoxTheme(darkTheme = true) {
                     SessionLimitReachedOverlay(
                         appName = resolveMultiAppDisplayName(challenge),
                         eyebrowText = buildCompletionEyebrow(challenge),
@@ -940,7 +940,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 SessionLimitReachedOverlay(
                     appName = resolveMultiAppDisplayName(challenge),
                     eyebrowText = buildCompletionEyebrow(challenge),
@@ -972,7 +972,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 TimeWindowOverlay(
                     appName          = challenge.appDisplayName,
                     openTime         = openTime,
@@ -1049,7 +1049,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 com.detox.app.presentation.components.WebsiteBlockedOverlay(
                     domain = domain,
                     challengeName = blockingChallenge?.appDisplayName,
@@ -1095,7 +1095,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 BlockingScreenOverlay(
                     appName = resolveMultiAppDisplayName(challenge),
                     contextHeader = contextHeader,
@@ -1150,7 +1150,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 LimitExceededOverlay(
                     appName = resolveMultiAppDisplayName(challenge),
                     challengeMode = challenge.mode,
@@ -1260,7 +1260,7 @@ class OverlayManager @Inject constructor(
                 goHome()
             }
         ) {
-            DetoxTheme {
+            DetoxTheme(darkTheme = true) {
                 HardModeLockoutOverlay(
                     appName = info.appName,
                     amountCents = info.amountCents,
@@ -1390,7 +1390,7 @@ class OverlayManager @Inject constructor(
         mainHandler.post {
             dismissTauntOverlay()
             val composeView = createComposeView {
-                DetoxTheme {
+                DetoxTheme(darkTheme = true) {
                     TauntOverlay(
                         message = message,
                         onDismiss = { mainHandler.post { dismissTauntOverlay() } },

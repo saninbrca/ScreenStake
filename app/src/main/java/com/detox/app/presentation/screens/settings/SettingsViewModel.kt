@@ -19,6 +19,7 @@ import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.presentation.screens.profile.IbanData
 import com.detox.app.presentation.screens.profile.IbanSaveState
+import com.detox.app.ui.theme.ThemeMode
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,10 +38,10 @@ import timber.log.Timber
 import javax.inject.Inject
 
 // ── SharedPreferences keys ─────────────────────────────────────────────────────
+// Theme mode keys live in ui.theme.ThemeMode (tri-state + legacy Boolean migration).
 private const val PREFS_NAME = "detox_settings"
 private const val KEY_CHALLENGE_UPDATES = "challenge_updates_enabled"
 private const val KEY_FRIEND_ALERTS = "friend_alerts_enabled"
-const val KEY_DARK_MODE = "dark_mode_enabled"
 
 // ── Notification toggle prefs (separate file, read by NotificationHelper) ───────
 private const val NOTIF_PREFS_NAME = "detox_notifications"
@@ -111,7 +112,7 @@ class SettingsViewModel @Inject constructor(
                 groupParticipantFailedEnabled = notifPrefs.getBoolean(KEY_GROUP_PARTICIPANT_FAILED, true),
                 challengeUpdatesEnabled = prefs.getBoolean(KEY_CHALLENGE_UPDATES, true),
                 friendAlertsEnabled = prefs.getBoolean(KEY_FRIEND_ALERTS, true),
-                darkModeEnabled = prefs.getBoolean(KEY_DARK_MODE, false)
+                darkModeEnabled = ThemeMode.fromPrefs(prefs) == ThemeMode.DARK
             )
         }
         refreshPermissions()
@@ -343,7 +344,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setDarkModeEnabled(enabled: Boolean) {
         Timber.d("Dark mode toggled: $enabled")
-        prefs.edit().putBoolean(KEY_DARK_MODE, enabled).apply()
+        // The switch UI can only express LIGHT/DARK; SYSTEM remains the state of users
+        // who never touched it, until the tri-state selector ships with the screen
+        // migration. This only WRITES the mode — MainActivity's prefs listener applies it.
+        (if (enabled) ThemeMode.DARK else ThemeMode.LIGHT).saveTo(prefs)
         _state.update { it.copy(darkModeEnabled = enabled) }
     }
 

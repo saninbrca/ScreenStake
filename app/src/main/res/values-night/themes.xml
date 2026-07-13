@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dark parent so any framework-drawn surface (window, fallback text colors)
+         is dark before Compose takes over — kills the white cold-start flash. -->
+    <style name="Theme.ScreenSTake" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/detox_window_background</item>
+    </style>
+
+</resources>

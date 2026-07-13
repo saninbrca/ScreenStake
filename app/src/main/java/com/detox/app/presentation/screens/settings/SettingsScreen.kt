@@ -395,7 +395,7 @@ fun SettingsScreen(
             // ── 2. AKTIVITÄT ───────────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_activity), entranceDelayMs = 60) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.History, detoxColors.accent) },
+                    iconContent = { IosIconBox(Icons.Filled.History, detoxColors.tileGreen) },
                     label = stringResource(R.string.settings_history_row_title),
                     showChevron = true,
                     onClick = onNavigateToHistory
@@ -409,7 +409,7 @@ fun SettingsScreen(
                 IosSection(stringResource(R.string.settings_section_payout_account), entranceDelayMs = 120) {
                     if (ibanData == null) {
                         IosRow(
-                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, detoxColors.accent) },
+                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, detoxColors.tileGreen) },
                             label = stringResource(R.string.settings_payout_add_iban),
                             subtitle = stringResource(R.string.settings_payout_add_iban_subtitle),
                             showChevron = true,
@@ -417,7 +417,7 @@ fun SettingsScreen(
                         )
                     } else {
                         IosRow(
-                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, detoxColors.accent) },
+                            iconContent = { IosIconBox(Icons.Filled.AccountBalance, detoxColors.tileGreen) },
                             label = "AT•••• ${ibanData!!.iban.takeLast(4)}",
                             trailingContent = {
                                 Text(
@@ -447,7 +447,7 @@ fun SettingsScreen(
             // ── 5. BENACHRICHTIGUNGEN ──────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_notifications), entranceDelayMs = 240) {
                 IosSwitchRow(
-                    iconContent = { IosIconBox(Icons.Filled.Check, detoxColors.accent) },
+                    iconContent = { IosIconBox(Icons.Filled.Check, detoxColors.tileGreen) },
                     label = stringResource(R.string.settings_challenge_updates),
                     subtitle = stringResource(R.string.settings_challenge_updates_subtitle),
                     checked = state.challengeUpdatesEnabled,
@@ -545,7 +545,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Share, detoxColors.accent) },
+                    iconContent = { IosIconBox(Icons.Filled.Share, detoxColors.tileGreen) },
                     label = stringResource(R.string.settings_export_data),
                     subtitle = stringResource(R.string.settings_export_data_subtitle),
                     showChevron = true,
@@ -576,7 +576,7 @@ fun SettingsScreen(
             // ── 8. HILFE & SUPPORT ─────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_help), entranceDelayMs = 420) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.SupportAgent, detoxColors.accent) },
+                    iconContent = { IosIconBox(Icons.Filled.SupportAgent, detoxColors.tileGreen) },
                     label = stringResource(R.string.settings_contact_support),
                     subtitle = stringResource(R.string.settings_contact_support_subtitle),
                     showChevron = true,

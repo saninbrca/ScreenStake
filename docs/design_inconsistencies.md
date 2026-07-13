@@ -14,3 +14,14 @@ Format: what contradicts what, where, and which slots are involved.
 2. **Two grays for the same "affordance icon" role.** Settings/FAQ chevrons use
    `detoxColors.hint` (#C7C7CC); SupportScreen's dropdown arrow uses
    `detoxColors.subtext` (#8E8E93). Both are "muted icon pointing at an action".
+
+3. **History list vs. detail use different screen backgrounds.** HistoryScreen sits
+   on `colorScheme.background` (white in light) with border-less white cards — cards
+   are distinguishable only by corner radius/spacing; HistoryDetailScreen sits on
+   `detoxColors.screenBackground` (#F2F2F7) with 0.5dp-bordered white cards. Same
+   feature, two shell treatments.
+
+4. **Top-bar title/back-arrow color varies again in History.** HistoryScreen leaves
+   both on the TopAppBar default (`onSurface`, #1A1A1A light); HistoryDetail sets the
+   title to `detoxColors.label` (#000000) but leaves the arrow on the default.
+   Extends inconsistency 1 (Settings: green arrow; Support/FAQ: label-black arrow).

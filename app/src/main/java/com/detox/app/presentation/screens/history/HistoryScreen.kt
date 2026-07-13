@@ -42,21 +42,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val CardBg         = Color(0xFFFFFFFF)
-private val TextPrimary    = Color(0xFF000000)
-private val TextSecondary  = Color(0xFF8E8E93)
-private val GreenText      = Color(0xFF00C853)
-private val RedText        = Color(0xFFFF3B30)
-private val GreenBadgeBg   = Color(0xFFE8F8EF)
-private val GreenBadgeTxt  = Color(0xFF1E7A3C)
-private val OrangeBadgeBg  = Color(0xFFFFF0E8)
-private val OrangeBadgeTxt = Color(0xFFC05A00)
-private val PurpleBadgeBg  = Color(0xFFEEF0FF)
-private val PurpleBadgeTxt = Color(0xFF5856D6)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,7 +135,7 @@ private fun HistoryRow(entry: SoloChallengeHistory, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBg)
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground)
     ) {
         Row(
             modifier = Modifier
@@ -158,13 +149,13 @@ private fun HistoryRow(entry: SoloChallengeHistory, onClick: () -> Unit) {
                     text = entity.appDisplayName,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = detoxColors.label
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = dateFormat.format(Date(entity.endDate)),
                     fontSize = 12.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -186,18 +177,18 @@ private fun TypeBadge(isGroup: Boolean, isHard: Boolean) {
     val label: String
     when {
         isGroup -> {
-            bg = PurpleBadgeBg
-            textColor = PurpleBadgeTxt
+            bg = detoxColors.badgePurpleBg
+            textColor = detoxColors.badgePurpleFg
             label = stringResource(R.string.history_detail_mode_group)
         }
         isHard -> {
-            bg = OrangeBadgeBg
-            textColor = OrangeBadgeTxt
+            bg = detoxColors.badgeOrangeBg
+            textColor = detoxColors.badgeOrangeFg
             label = stringResource(R.string.verlauf_mode_hard)
         }
         else -> {
-            bg = GreenBadgeBg
-            textColor = GreenBadgeTxt
+            bg = detoxColors.badgeGreenBg
+            textColor = detoxColors.badgeGreenFg
             label = stringResource(R.string.verlauf_mode_soft)
         }
     }
@@ -212,7 +203,7 @@ private fun TypeBadge(isGroup: Boolean, isHard: Boolean) {
 
 @Composable
 private fun StatusText(isCompleted: Boolean) {
-    val color = if (isCompleted) GreenText else RedText
+    val color = if (isCompleted) detoxColors.success else detoxColors.danger
     val label = if (isCompleted)
         stringResource(R.string.verlauf_status_completed)
     else

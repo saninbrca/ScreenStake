@@ -48,16 +48,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.MaterialTheme
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.FeatureFlags
 
-private val BgColor = Color(0xFFF2F2F7)
-private val CardColor = Color.White
-private val LabelColor = Color(0xFF000000)
-private val SubtextColor = Color(0xFF8E8E93)
-private val GreenColor = Color(0xFF00C853)
-private val ErrorColor = Color(0xFFFF3B30)
-private val FieldBg = Color(0xFFF2F2F7)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
+// (Color.Transparent below is absence of color, not a color choice.)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +64,7 @@ fun SupportScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    Scaffold(containerColor = BgColor) { innerPadding ->
+    Scaffold(containerColor = detoxColors.screenBackground) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -84,14 +81,14 @@ fun SupportScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.back),
-                        tint = LabelColor
+                        tint = detoxColors.label
                     )
                 }
                 Text(
                     text = stringResource(R.string.support_title),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = LabelColor
+                    color = detoxColors.label
                 )
             }
 
@@ -129,8 +126,8 @@ private fun SupportForm(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = CardColor),
-            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0x0F000000)),
+            colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, detoxColors.cardBorder),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -149,7 +146,7 @@ private fun SupportForm(
                             Icon(
                                 imageVector = Icons.Filled.KeyboardArrowDown,
                                 contentDescription = null,
-                                tint = SubtextColor
+                                tint = detoxColors.subtext
                             )
                         },
                         isError = state.showValidationErrors && !state.categoryValid,
@@ -190,7 +187,7 @@ private fun SupportForm(
                     value = state.subject,
                     onValueChange = viewModel::onSubjectChanged,
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.support_subject_placeholder), color = SubtextColor) },
+                    placeholder = { Text(stringResource(R.string.support_subject_placeholder), color = detoxColors.subtext) },
                     isError = state.showValidationErrors && !state.subjectValid,
                     colors = fieldColors(),
                     shape = RoundedCornerShape(12.dp),
@@ -207,7 +204,7 @@ private fun SupportForm(
                 OutlinedTextField(
                     value = state.message,
                     onValueChange = viewModel::onMessageChanged,
-                    placeholder = { Text(stringResource(R.string.support_message_placeholder), color = SubtextColor) },
+                    placeholder = { Text(stringResource(R.string.support_message_placeholder), color = detoxColors.subtext) },
                     isError = state.showValidationErrors && !state.messageValid,
                     colors = fieldColors(),
                     shape = RoundedCornerShape(12.dp),
@@ -235,14 +232,14 @@ private fun SupportForm(
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GreenColor,
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     if (state.isSubmitting) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(22.dp),
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onPrimary,
                             strokeWidth = 2.dp
                         )
                     } else {
@@ -260,7 +257,7 @@ private fun SupportForm(
         Text(
             text = stringResource(R.string.support_response_time),
             fontSize = 13.sp,
-            color = SubtextColor,
+            color = detoxColors.subtext,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
     }
@@ -278,7 +275,7 @@ private fun SupportConfirmation(onBack: () -> Unit) {
         Icon(
             imageVector = Icons.Filled.CheckCircle,
             contentDescription = null,
-            tint = GreenColor,
+            tint = detoxColors.success,
             modifier = Modifier.size(72.dp)
         )
         Spacer(Modifier.height(20.dp))
@@ -286,14 +283,14 @@ private fun SupportConfirmation(onBack: () -> Unit) {
             text = stringResource(R.string.support_success_title),
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
-            color = LabelColor,
+            color = detoxColors.label,
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.support_response_time),
             fontSize = 14.sp,
-            color = SubtextColor,
+            color = detoxColors.subtext,
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(32.dp))
@@ -304,8 +301,8 @@ private fun SupportConfirmation(onBack: () -> Unit) {
                 .height(54.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = GreenColor,
-                contentColor = Color.White
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             )
         ) {
             Text(
@@ -323,7 +320,7 @@ private fun FieldLabel(text: String) {
         text = text,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
-        color = SubtextColor,
+        color = detoxColors.subtext,
         modifier = Modifier.padding(bottom = 6.dp)
     )
 }
@@ -333,7 +330,7 @@ private fun ErrorText(text: String) {
     Text(
         text = text,
         fontSize = 12.sp,
-        color = ErrorColor,
+        color = MaterialTheme.colorScheme.error,
         modifier = Modifier.padding(top = 4.dp, start = 4.dp)
     )
 }
@@ -341,13 +338,13 @@ private fun ErrorText(text: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun fieldColors() = TextFieldDefaults.colors(
-    focusedContainerColor = FieldBg,
-    unfocusedContainerColor = FieldBg,
-    errorContainerColor = FieldBg,
+    focusedContainerColor = detoxColors.insetSurface,
+    unfocusedContainerColor = detoxColors.insetSurface,
+    errorContainerColor = detoxColors.insetSurface,
     focusedIndicatorColor = Color.Transparent,
     unfocusedIndicatorColor = Color.Transparent,
     disabledIndicatorColor = Color.Transparent,
-    errorIndicatorColor = ErrorColor,
-    focusedTextColor = LabelColor,
-    unfocusedTextColor = LabelColor
+    errorIndicatorColor = MaterialTheme.colorScheme.error,
+    focusedTextColor = detoxColors.label,
+    unfocusedTextColor = detoxColors.label
 )

@@ -352,7 +352,7 @@ fun SettingsScreen(
             IosSection(stringResource(R.string.settings_section_account), entranceDelayMs = 0) {
                 // Email (non-tappable)
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Person, detoxColors.subtext) },
+                    iconContent = { IosIconBox(Icons.Filled.Person, detoxColors.tileNeutral) },
                     label = state.email.ifBlank { "—" },
                     labelColor = detoxColors.subtext,
                     labelSize = 14
@@ -367,7 +367,7 @@ fun SettingsScreen(
                     else -> stringResource(R.string.settings_change_password_subtitle)
                 }
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Lock, detoxColors.subtext) },
+                    iconContent = { IosIconBox(Icons.Filled.Lock, detoxColors.tileNeutral) },
                     label = stringResource(R.string.settings_change_password),
                     subtitle = pwSubtitle,
                     showChevron = pwCooldown == 0,
@@ -435,7 +435,7 @@ fun SettingsScreen(
             // ── 4. ERSCHEINUNGSBILD ────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_appearance), entranceDelayMs = 180) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.DarkMode, detoxColors.badgePurpleFg) },
+                    iconContent = { IosIconBox(Icons.Filled.DarkMode, detoxColors.tilePurple) },
                     label = stringResource(R.string.settings_dark_mode)
                 )
                 IosThemeModeSelector(
@@ -512,7 +512,7 @@ fun SettingsScreen(
             // ── 7. DATENSCHUTZ ─────────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_privacy), entranceDelayMs = 360) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.badgePurpleFg) },
+                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.tilePurple) },
                     label = stringResource(R.string.settings_privacy_policy),
                     showChevron = true,
                     onClick = {
@@ -523,7 +523,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.badgePurpleFg) },
+                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.tilePurple) },
                     label = stringResource(R.string.settings_terms_of_service),
                     showChevron = true,
                     onClick = {
@@ -534,7 +534,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.badgePurpleFg) },
+                    iconContent = { IosIconBox(Icons.Filled.Policy, detoxColors.tilePurple) },
                     label = stringResource(R.string.settings_impressum),
                     showChevron = true,
                     onClick = {
@@ -584,7 +584,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.HelpOutline, detoxColors.badgePurpleFg) },
+                    iconContent = { IosIconBox(Icons.AutoMirrored.Filled.HelpOutline, detoxColors.tilePurple) },
                     label = stringResource(R.string.settings_faq),
                     showChevron = true,
                     onClick = onNavigateToFaq
@@ -594,7 +594,7 @@ fun SettingsScreen(
             // ── 9. APP INFO ────────────────────────────────────────────────────
             IosSection(stringResource(R.string.settings_section_app_info), entranceDelayMs = 480) {
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Info, detoxColors.subtext) },
+                    iconContent = { IosIconBox(Icons.Filled.Info, detoxColors.tileNeutral) },
                     label = stringResource(R.string.settings_version),
                     trailingContent = {
                         Text(
@@ -606,7 +606,7 @@ fun SettingsScreen(
                 )
                 IosRowDivider()
                 IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Star, detoxColors.warningStrong) },
+                    iconContent = { IosIconBox(Icons.Filled.Star, detoxColors.tileOrange) },
                     label = stringResource(R.string.settings_rate_app),
                     showChevron = true,
                     onClick = {
@@ -634,7 +634,7 @@ fun SettingsScreen(
                 IosSection(stringResource(R.string.settings_section_debug)) {
                     val evalQueuedMsg = stringResource(R.string.profile_evaluation_queued)
                     IosRow(
-                        iconContent = { IosIconBox(Icons.Filled.PlayArrow, detoxColors.subtext) },
+                        iconContent = { IosIconBox(Icons.Filled.PlayArrow, detoxColors.tileNeutral) },
                         label = stringResource(R.string.profile_run_evaluation),
                         onClick = {
                             viewModel.runEvaluationNow()
@@ -758,9 +758,7 @@ private fun IosIconBox(icon: ImageVector, backgroundColor: Color) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            // surface = white in light / #1A1A1A in dark: the tile colors brighten to
-            // pastels in dark mode, where a dark glyph keeps contrast a white one loses.
-            tint = MaterialTheme.colorScheme.surface,
+            tint = detoxColors.tileGlyph,
             modifier = Modifier.size(18.dp)
         )
     }

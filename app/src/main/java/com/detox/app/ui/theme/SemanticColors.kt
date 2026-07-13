@@ -12,10 +12,10 @@ import androidx.compose.ui.graphics.Color
  * file-private `Color(0x…)` literals.
  *
  * The set mirrors what actually recurs across the screens' private palette headers:
- * the accent/success/warning/danger family, the four badge/icon-tile
- * background/foreground pairs, the group accent, selected-card surface, and the
- * iOS-gray family (grouped screen background, card background/border, divider,
- * label, subtext, chevron/hint).
+ * the accent/success/warning/danger family, the four badge background/foreground
+ * pairs, the icon-tile system (tile* backgrounds + tileGlyph), the group accent,
+ * selected-card surface, and the iOS-gray family (grouped screen background, card
+ * background/border, divider, label, subtext, chevron/hint).
  *
  * Design-fixed alarm colors that are deliberately identical in both modes live in
  * [DetoxAlertColors] instead.
@@ -39,6 +39,21 @@ data class DetoxSemanticColors(
     val badgePurpleFg: Color,
     val badgeBlueBg: Color,
     val badgeBlueFg: Color,
+    // Icon-tile system (Settings/Auth/Maintenance/FAQ/Support rows): a saturated
+    // tile background with [tileGlyph] drawn on top. Tiles whose color CARRIES
+    // meaning keep their semantic slot instead (accent, success, danger,
+    // groupAccent); the tile* family is for hue-keyed decorative tiles.
+    val tileGreen: Color,
+    val tileOrange: Color,
+    val tilePurple: Color,
+    val tileBlue: Color,
+    val tileRed: Color,
+    val tileNeutral: Color,
+    /**
+     * Glyph on ANY tile* background. Dark tiles brighten to pastels, so the glyph
+     * darkens to keep contrast — that inversion lives here, not at call sites.
+     */
+    val tileGlyph: Color,
     /** Surface tint of a selected card/option (wizard mode cards, app picker rows). */
     val selectedSurface: Color,
     val screenBackground: Color,
@@ -65,6 +80,13 @@ val DetoxSemanticLight = DetoxSemanticColors(
     badgePurpleFg = Color(0xFF5856D6),
     badgeBlueBg = Color(0xFFE8F0FF),
     badgeBlueFg = Color(0xFF2979FF),
+    tileGreen = Color(0xFF00C853),
+    tileOrange = Color(0xFFFF9500),
+    tilePurple = Color(0xFF5856D6),
+    tileBlue = Color(0xFF2979FF),
+    tileRed = Color(0xFFFF3B30),
+    tileNeutral = Color(0xFF8E8E93),
+    tileGlyph = Color(0xFFFFFFFF),
     selectedSurface = Color(0xFFF0FDF4),
     screenBackground = Color(0xFFF2F2F7),
     cardBackground = Color(0xFFFFFFFF),
@@ -90,6 +112,13 @@ val DetoxSemanticDark = DetoxSemanticColors(
     badgePurpleFg = Color(0xFFB8B5FF),
     badgeBlueBg = Color(0xFF152A45),
     badgeBlueFg = Color(0xFF8AB4FF),
+    tileGreen = Color(0xFF00E676),
+    tileOrange = Color(0xFFFF9F0A),
+    tilePurple = Color(0xFFB8B5FF),
+    tileBlue = Color(0xFF8AB4FF),
+    tileRed = Color(0xFFFF6B6B),
+    tileNeutral = Color(0xFF9E9E9E),
+    tileGlyph = Color(0xFF1A1A1A),
     selectedSurface = Color(0xFF12291B),
     screenBackground = Color(0xFF0F0F0F),
     cardBackground = Color(0xFF1A1A1A),

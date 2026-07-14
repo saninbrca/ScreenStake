@@ -23,4 +23,7 @@ object DetoxAlertColors {
 
     /** Permission-banner background behind the pulsing content. */
     val RedBackground = Color(0xFF7F0000)
+
+    /** Foreground (text/icons, and the CTA button fill) on the alarm reds. */
+    val OnAlert = Color(0xFFFFFFFF)
 }

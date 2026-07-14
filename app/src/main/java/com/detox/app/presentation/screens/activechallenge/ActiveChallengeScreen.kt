@@ -257,16 +257,18 @@ private fun ActiveChallengeContent(
                     }
                 },
                 dismissButton = {
+                    // Deliberately a filled GREEN button, not a plain cancel: this is the
+                    // only money-at-stake abandon, so the design de-emphasizes the costly
+                    // action (muted confirm above) and emphasizes "keep going". Solid family
+                    // (saturated bg + white fg) keeps it legible in dark.
                     Button(
                         onClick = { showAbandonDialog = false },
-                        // PENDING safe-action-role ruling — temporarily the raw pre-migration
-                        // literal (NOT a role-inverted slot). See docs/design_inconsistencies.md.
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                    ) {
-                        Text(
-                            text = stringResource(R.string.active_challenge_abandon_hard_no),
-                            color = Color.White
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = detoxColors.solidGreenBg,
+                            contentColor = detoxColors.onSolid
                         )
+                    ) {
+                        Text(text = stringResource(R.string.active_challenge_abandon_hard_no))
                     }
                 }
             )

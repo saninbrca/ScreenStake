@@ -73,6 +73,8 @@ import com.detox.app.domain.model.Challenge
 import com.detox.app.presentation.components.ChallengeCard
 import com.detox.app.presentation.util.pressScaleFeedback
 import androidx.compose.ui.platform.LocalContext
+import com.detox.app.ui.theme.DetoxAlertColors
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.DateUtils
 
 @Composable
@@ -462,7 +464,10 @@ private fun PermissionWarningBanner(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val bannerRed = Color(0xFFFF3B30)
+    // Ruling A: this permission alarm folds onto the design-fixed alarm red (was
+    // #FF3B30 → #D32F2F), matching MainScreen's banner. An alarm must not soften in
+    // dark, so it is deliberately mode-invariant (DetoxAlertColors), not `danger`.
+    val bannerRed = DetoxAlertColors.Red
 
     val infiniteTransition = rememberInfiniteTransition(label = "bannerPulse")
     val scale by infiniteTransition.animateFloat(
@@ -497,7 +502,7 @@ private fun PermissionWarningBanner(
                 Text(text = "⚠️", fontSize = 20.sp)
                 Text(
                     text = stringResource(R.string.permission_banner_title),
-                    color = Color.White,
+                    color = DetoxAlertColors.OnAlert,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -505,7 +510,7 @@ private fun PermissionWarningBanner(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = bodyText,
-                color = Color.White.copy(alpha = 0.8f),
+                color = DetoxAlertColors.OnAlert.copy(alpha = 0.8f),
                 fontSize = 13.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -524,7 +529,7 @@ private fun PermissionWarningBanner(
                     },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
+                        containerColor = DetoxAlertColors.OnAlert,
                         contentColor = bannerRed
                     ),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -561,9 +566,9 @@ private fun RedemptionBanner(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, Color(0xFFFF6B35), MaterialTheme.shapes.medium),
+            .border(1.dp, detoxColors.warning, MaterialTheme.shapes.medium),
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))
+        colors = CardDefaults.cardColors(containerColor = detoxColors.softOrangeBg)
     ) {
         Row(
             modifier = Modifier
@@ -579,7 +584,7 @@ private fun RedemptionBanner(
                     text = stringResource(R.string.redemption_banner_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFE65100)
+                    color = detoxColors.softOrangeText
                 )
                 Text(
                     text = stringResource(R.string.redemption_banner_body, refundEuros),
@@ -594,7 +599,7 @@ private fun RedemptionBanner(
                 TextButton(
                     onClick = onStartRedemption,
                     contentPadding = PaddingValues(0.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF6B35))
+                    colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.warning)
                 ) {
                     Text(
                         text = stringResource(R.string.redemption_banner_cta),
@@ -623,9 +628,9 @@ private fun UpdateAvailableBanner(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, Color(0xFF00C853), MaterialTheme.shapes.medium),
+            .border(1.dp, detoxColors.accent, MaterialTheme.shapes.medium),
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F8EF))
+        colors = CardDefaults.cardColors(containerColor = detoxColors.softGreenBg)
     ) {
         Row(
             modifier = Modifier
@@ -641,12 +646,12 @@ private fun UpdateAvailableBanner(
                     text = stringResource(R.string.update_banner_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E7A3C)
+                    color = detoxColors.softGreenText
                 )
                 TextButton(
                     onClick = onUpdate,
                     contentPadding = PaddingValues(0.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF00C853))
+                    colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.accent)
                 ) {
                     Text(
                         text = stringResource(R.string.update_banner_cta),

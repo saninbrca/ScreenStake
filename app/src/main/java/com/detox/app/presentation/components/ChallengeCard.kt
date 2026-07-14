@@ -56,14 +56,13 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.util.pressScaleFeedback
-import com.detox.app.ui.theme.DetoxWarning
+import com.detox.app.ui.theme.DetoxAlertColors
+import com.detox.app.ui.theme.detoxColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
-private val TextSecondary = Color(0xFF8E8E93)
-private val FallbackBg = Color(0xFFF2F2F7)
-private val FaviconFallbackBg = Color(0xFFAEAEB2)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 // Process-level caches keyed by package name. App icon/label lookups are otherwise re-run every
 // time a card is recomposed after scrolling back into view (LazyColumn disposes off-screen items,
@@ -116,14 +115,14 @@ private fun FaviconFallbackContent(domain: String) {
     Surface(
         modifier = Modifier.fillMaxSize(),
         shape = RoundedCornerShape(10.dp),
-        color = FaviconFallbackBg
+        color = detoxColors.avatarFallbackBg
     ) {
         Box(contentAlignment = Alignment.Center) {
             Text(
                 text = letter,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = detoxColors.onSolid,
                 textAlign = TextAlign.Center
             )
         }
@@ -154,7 +153,7 @@ fun ChallengeCard(
     }.coerceIn(0f, 1f)
 
     val progressColor = if (dailyStats.limitExceeded)
-        DetoxWarning
+        detoxColors.warning
     else
         MaterialTheme.colorScheme.primary
 
@@ -248,7 +247,7 @@ fun ChallengeCard(
                                 dailyStats.maxParticipants
                             ),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF5C6BC0),
+                            color = detoxColors.groupAccent,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -258,7 +257,7 @@ fun ChallengeCard(
                         Text(
                             text = stringResource(R.string.challenge_card_rank, dailyStats.userRank),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF5C6BC0),
+                            color = detoxColors.groupAccent,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -305,7 +304,7 @@ fun ChallengeCard(
                         dailyStats.moneyLostCents / 100f
                     ),
                     style = MaterialTheme.typography.labelSmall,
-                    color = DetoxWarning
+                    color = detoxColors.warning
                 )
             }
         }
@@ -341,7 +340,8 @@ private fun AppIconStack(
                     modifier = Modifier
                         .size(iconSize)
                         .offset(x = (i * overlap).dp)
-                        .border(1.5.dp, Color.White, RoundedCornerShape(10.dp))
+                        // Ring that separates overlapping icons = the card surface behind them.
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
                 )
             } else {
                 val pkg = packageNames.getOrNull(i)
@@ -352,7 +352,7 @@ private fun AppIconStack(
                     modifier = Modifier
                         .size(iconSize)
                         .offset(x = (i * overlap).dp)
-                        .border(1.5.dp, Color.White, CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                 )
             }
         }
@@ -365,14 +365,14 @@ private fun AppIconStack(
                     .size(iconSize)
                     .offset(x = (3 * overlap).dp),
                 shape = CircleShape,
-                color = FallbackBg
+                color = detoxColors.avatarFallbackBg
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         text = "+$remaining",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextSecondary,
+                        color = detoxColors.onSolid,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -391,7 +391,7 @@ private fun AppIconStack(
                 imageVector = if (isGroup) Icons.Filled.Group else Icons.Filled.Person,
                 contentDescription = null,
                 modifier = Modifier.padding(2.dp),
-                tint = if (isGroup) Color(0xFF5C6BC0)
+                tint = if (isGroup) detoxColors.groupAccent
                 else MaterialTheme.colorScheme.primary
             )
         }
@@ -449,7 +449,7 @@ private fun AppNameLabel(
             Text(
                 text = labels,
                 fontSize = 13.sp,
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = modifier
@@ -458,7 +458,7 @@ private fun AppNameLabel(
         else -> Text(
             text = stringResource(R.string.challenge_apps_count, n),
             fontSize = 13.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             maxLines = 1,
             modifier = modifier
         )
@@ -467,10 +467,13 @@ private fun AppNameLabel(
 
 @Composable
 private fun ModeBadge(dailyStats: DailyStats) {
+    // Solid saturated mode badges (white text). Group uses solidPurpleBg (not
+    // groupAccent, which brightens to #9F8BFF where white text is ~2.2:1 in dark);
+    // HARD uses the design-fixed alarm red.
     val (label, color) = when {
-        dailyStats.isGroup -> stringResource(R.string.challenge_card_badge_group) to Color(0xFF5C6BC0)
-        dailyStats.mode == ChallengeMode.HARD -> stringResource(R.string.challenge_card_badge_hard) to Color(0xFFB71C1C)
-        else -> stringResource(R.string.challenge_card_badge_soft) to Color(0xFF2E7D32)
+        dailyStats.isGroup -> stringResource(R.string.challenge_card_badge_group) to detoxColors.solidPurpleBg
+        dailyStats.mode == ChallengeMode.HARD -> stringResource(R.string.challenge_card_badge_hard) to DetoxAlertColors.RedDeep
+        else -> stringResource(R.string.challenge_card_badge_soft) to detoxColors.solidGreenBg
     }
     Surface(
         shape = RoundedCornerShape(50),
@@ -481,7 +484,7 @@ private fun ModeBadge(dailyStats: DailyStats) {
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = detoxColors.onSolid
         )
     }
 }
@@ -490,15 +493,20 @@ private fun ModeBadge(dailyStats: DailyStats) {
 private fun DaysLeftBadge(daysRemaining: Int, isOpenEnded: Boolean = false, streak: Int = 0) {
     if (daysRemaining == Int.MAX_VALUE && !isOpenEnded) return
 
-    val (label, badgeColor) = when {
+    // Each badge carries its own foreground: primary badges use onPrimary (deep green
+    // in dark), the solid-orange "ends today" badge uses onSolid (white). Pairing the
+    // foreground with the background is what keeps white off the bright dark primary.
+    val primary = MaterialTheme.colorScheme.primary
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val (label, badgeColor, textColor) = when {
         // Open-ended: "days remaining" is meaningless → show the consecutive-success streak instead.
         // Compact card format ("🔥 N Tage"); the flame signals "streak", full wording is on the detail
         // screen. streak == 0 means day 1 of the (possibly just-restarted) streak → "🔥 Tag 1".
-        isOpenEnded && streak <= 0 -> stringResource(R.string.challenge_card_streak_day_one) to MaterialTheme.colorScheme.primary
-        isOpenEnded -> stringResource(R.string.challenge_card_streak_format, streak) to MaterialTheme.colorScheme.primary
-        daysRemaining <= 0 -> stringResource(R.string.challenge_card_ends_today) to Color(0xFFE65100)
-        daysRemaining == 1 -> stringResource(R.string.challenge_card_tomorrow) to MaterialTheme.colorScheme.primary
-        else -> stringResource(R.string.challenge_card_days_left, daysRemaining) to MaterialTheme.colorScheme.primary
+        isOpenEnded && streak <= 0 -> Triple(stringResource(R.string.challenge_card_streak_day_one), primary, onPrimary)
+        isOpenEnded -> Triple(stringResource(R.string.challenge_card_streak_format, streak), primary, onPrimary)
+        daysRemaining <= 0 -> Triple(stringResource(R.string.challenge_card_ends_today), detoxColors.solidOrangeBg, detoxColors.onSolid)
+        daysRemaining == 1 -> Triple(stringResource(R.string.challenge_card_tomorrow), primary, onPrimary)
+        else -> Triple(stringResource(R.string.challenge_card_days_left, daysRemaining), primary, onPrimary)
     }
 
     Surface(
@@ -509,7 +517,7 @@ private fun DaysLeftBadge(daysRemaining: Int, isOpenEnded: Boolean = false, stre
             text = label,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
+            color = textColor,
             maxLines = 1
         )
     }
@@ -562,14 +570,14 @@ internal fun AppIconImage(packageName: String?, appName: String, modifier: Modif
         Surface(
             modifier = modifier,
             shape = CircleShape,
-            color = FallbackBg
+            color = detoxColors.avatarFallbackBg
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     text = firstLetter,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextSecondary,
+                    color = detoxColors.onSolid,
                     textAlign = TextAlign.Center
                 )
             }

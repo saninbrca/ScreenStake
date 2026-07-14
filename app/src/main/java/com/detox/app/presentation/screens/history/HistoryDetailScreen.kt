@@ -498,7 +498,7 @@ private fun DetailAppIcon(packageName: String?, appName: String, modifier: Modif
                     text = initial,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = detoxColors.avatarFallbackFg,
+                    color = detoxColors.onSolid,
                 )
             }
         }

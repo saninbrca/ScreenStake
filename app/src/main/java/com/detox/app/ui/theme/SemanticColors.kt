@@ -56,6 +56,24 @@ data class DetoxSemanticColors(
     val softPurpleIcon: Color,
     val softBlueBg: Color,
     val softBlueIcon: Color,
+    // Solid saturated containers — a SATURATED background with a WHITE foreground
+    // ([onSolid]): filled status badges and money-at-stake action buttons. Distinct
+    // from soft* (pale bg + dark fg) and tile* (saturated bg + darkening glyph):
+    // because the foreground is white, the dark values stay saturated and must NOT
+    // brighten to pastels (white would drop below contrast). Purple exists because
+    // the group badge is a white-text solid badge and groupAccent brightens to
+    // #9F8BFF in dark, where white text is ~2.2:1. Extend hues only when a consumer
+    // appears (Green: soft-mode badge + abandon "keep going"; Orange: "ends today";
+    // Purple: group badge). Red uses [DetoxAlertColors] instead.
+    val solidGreenBg: Color,
+    val solidOrangeBg: Color,
+    val solidPurpleBg: Color,
+    /**
+     * White foreground on ANY opaque colored surface: solid* badges/buttons AND the
+     * fallback avatar monogram (its background stays muted, so white stays legible).
+     * The one white-on-color foreground role — never add a second white `*Fg` twin.
+     */
+    val onSolid: Color,
     // Icon-tile system (Settings/Auth/Maintenance/FAQ/Support rows): a saturated
     // tile background with [tileGlyph] drawn on top. Tiles whose color CARRIES
     // meaning keep their semantic slot instead (accent, success, danger,
@@ -94,15 +112,11 @@ data class DetoxSemanticColors(
     /**
      * Fallback avatar/monogram circle (app icon or favicon unavailable). Unlike
      * tile* backgrounds it stays MUTED in dark mode — the opposite behavior of
-     * tiles, which brighten. Known consumers: HistoryDetail's DetailAppIcon,
-     * ChallengeCard's favicon fallback.
+     * tiles, which brighten. Its monogram letter uses [onSolid] (white in both modes;
+     * the muted bg keeps it legible). Known consumers: HistoryDetail's DetailAppIcon,
+     * ChallengeCard's app-icon + favicon fallbacks + "+X" overflow circle.
      */
     val avatarFallbackBg: Color,
-    /**
-     * Monogram letter on [avatarFallbackBg]; stays light in BOTH modes because the
-     * background stays muted (reusing tileGlyph here would be ~2:1 contrast in dark).
-     */
-    val avatarFallbackFg: Color,
     val cardBorder: Color,
     val divider: Color,
     val label: Color,
@@ -128,6 +142,10 @@ val DetoxSemanticLight = DetoxSemanticColors(
     softPurpleIcon = Color(0xFF7B61FF),
     softBlueBg = Color(0xFFE8F0FF),
     softBlueIcon = Color(0xFF2979FF),
+    solidGreenBg = Color(0xFF2E7D32),
+    solidOrangeBg = Color(0xFFE65100),
+    solidPurpleBg = Color(0xFF7B61FF),
+    onSolid = Color(0xFFFFFFFF),
     tileGreen = Color(0xFF00C853),
     tileOrange = Color(0xFFFF9500),
     tilePurple = Color(0xFF5856D6),
@@ -143,7 +161,6 @@ val DetoxSemanticLight = DetoxSemanticColors(
     insetSurface = Color(0xFFF2F2F7),
     dialogSurface = Color(0xFFF2F2F7),
     avatarFallbackBg = Color(0xFFAEAEB2),
-    avatarFallbackFg = Color(0xFFFFFFFF),
     cardBorder = Color(0x0F000000),
     divider = Color(0xFFF2F2F7),
     label = Color(0xFF000000),
@@ -169,6 +186,11 @@ val DetoxSemanticDark = DetoxSemanticColors(
     softPurpleIcon = Color(0xFF9F8BFF),
     softBlueBg = Color(0xFF152A45),
     softBlueIcon = Color(0xFF8AB4FF),
+    // Solid saturated badges/buttons: kept saturated in dark so white stays legible.
+    solidGreenBg = Color(0xFF2E7D32),
+    solidOrangeBg = Color(0xFFE65100),
+    solidPurpleBg = Color(0xFF7B61FF),
+    onSolid = Color(0xFFFFFFFF),
     tileGreen = Color(0xFF00E676),
     tileOrange = Color(0xFFFF9F0A),
     tilePurple = Color(0xFFB8B5FF),
@@ -184,7 +206,6 @@ val DetoxSemanticDark = DetoxSemanticColors(
     insetSurface = Color(0xFF111111),
     dialogSurface = Color(0xFF0F0F0F),
     avatarFallbackBg = Color(0xFF48484A),
-    avatarFallbackFg = Color(0xFFFFFFFF),
     cardBorder = Color(0x14FFFFFF),
     divider = Color(0xFF222222),
     label = Color(0xFFFFFFFF),

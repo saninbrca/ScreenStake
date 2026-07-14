@@ -42,7 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import com.detox.app.service.TrackedAppEventBus
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import com.detox.app.ui.theme.DetoxAlertColors
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -566,8 +566,8 @@ private fun PermissionBanner(
 
     val pulse = rememberInfiniteTransition(label = "bannerPulse")
     val bgColor by pulse.animateColor(
-        initialValue = Color(0xFFD32F2F),
-        targetValue  = Color(0xFFB71C1C),
+        initialValue = DetoxAlertColors.Red,
+        targetValue  = DetoxAlertColors.RedDeep,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1000),
             repeatMode = RepeatMode.Reverse
@@ -585,7 +585,7 @@ private fun PermissionBanner(
             modifier = Modifier
                 .width(6.dp)
                 .matchParentSize()
-                .background(Color(0xFF7F0000))
+                .background(DetoxAlertColors.RedBackground)
         )
 
         Column(
@@ -598,7 +598,7 @@ private fun PermissionBanner(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "🚨 ACHTUNG — Challenge in Gefahr!",
-                    color = Color.White,
+                    color = DetoxAlertColors.OnAlert,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -606,7 +606,7 @@ private fun PermissionBanner(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = bodyText,
-                color = Color.White,
+                color = DetoxAlertColors.OnAlert,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(start = 42.dp)
             )
@@ -618,8 +618,8 @@ private fun PermissionBanner(
                     .height(44.dp),
                 shape = RoundedCornerShape(6.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFFD32F2F)
+                    containerColor = DetoxAlertColors.OnAlert,
+                    contentColor = DetoxAlertColors.Red
                 ),
                 contentPadding = PaddingValues(0.dp)
             ) {
@@ -627,7 +627,7 @@ private fun PermissionBanner(
                     text = "JETZT BEHEBEN →",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = Color(0xFFD32F2F)
+                    color = DetoxAlertColors.Red
                 )
             }
         }

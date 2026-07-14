@@ -81,6 +81,8 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.usecase.DailyLimitStatus
+import com.detox.app.ui.theme.LocalDetoxDarkTheme
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.DateUtils
 import timber.log.Timber
 import java.text.SimpleDateFormat
@@ -88,14 +90,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private val BgGray = Color(0xFFF2F2F7)
-private val CardWhite = Color.White
-private val CardBorder = Color(0x0F000000)
-private val TextSecondary = Color(0xFF8E8E93)
-private val AccentGreen = Color(0xFF00C853)
-private val AccentOrange = Color(0xFFFF9500)
-private val AbandonRed = Color(0xFFFF3B30)
-private val DividerColor = Color(0xFFF2F2F7)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,20 +120,23 @@ fun ActiveChallengeScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.nav_back),
-                            tint = Color.Black
+                            tint = detoxColors.label
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = BgGray)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = detoxColors.screenBackground)
             )
         },
-        containerColor = BgGray
+        containerColor = detoxColors.screenBackground,
+        // Resolves LocalContentColor (ripples + default text) — the static Black
+        // default is invisible on the dark background.
+        contentColor = detoxColors.label
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(BgGray)
+                .background(detoxColors.screenBackground)
         ) {
             when (val state = uiState) {
                 is ActiveChallengeUiState.Loading -> {
@@ -172,7 +170,7 @@ fun ActiveChallengeScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0x66000000)),
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f)),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
@@ -209,7 +207,6 @@ private fun ActiveChallengeContent(
     isReducing: Boolean,
 ) {
     val isHardMode = challenge.mode == ChallengeMode.HARD
-    val darkGreen = Color(0xFF2E7D32)
     var showAbandonDialog by remember { mutableStateOf(false) }
 
     // ── Limit reduction state ────────────────────────────────────────────────
@@ -262,12 +259,14 @@ private fun ActiveChallengeContent(
                 dismissButton = {
                     Button(
                         onClick = { showAbandonDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = darkGreen)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.active_challenge_abandon_hard_no),
-                            color = Color.White
+                        // #2E7D32 folded into the softGreen pair (approved consolidation);
+                        // the pair inverts in dark so the label stays readable.
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = detoxColors.softGreenText,
+                            contentColor = detoxColors.softGreenBg
                         )
+                    ) {
+                        Text(text = stringResource(R.string.active_challenge_abandon_hard_no))
                     }
                 }
             )
@@ -279,7 +278,12 @@ private fun ActiveChallengeContent(
                 confirmButton = {
                     Button(
                         onClick = { showAbandonDialog = false; onAbandon() },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            // Explicit: the default contentColor is onPrimary, which is
+                            // deep green on red in dark mode.
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
                     ) {
                         Text(stringResource(R.string.active_challenge_abandon_confirm_yes))
                     }
@@ -308,9 +312,12 @@ private fun ActiveChallengeContent(
                         showReduceSheet = false
                         onReduceLimit(pickerValue)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
-                    Text(stringResource(R.string.limit_reduce_confirm_ok), color = Color.White)
+                    Text(stringResource(R.string.limit_reduce_confirm_ok))
                 }
             },
             dismissButton = {
@@ -337,24 +344,26 @@ private fun ActiveChallengeContent(
                     text = stringResource(R.string.limit_reduce_sheet_title),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.Black
+                    color = detoxColors.label
                 )
                 Text(
                     text = "Aktuell: $currentLimitValue $limitUnit",
                     fontSize = 14.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
                 DetoxHorizontalPicker(
                     values = (1 until currentLimitValue).toList(),
                     selectedValue = pickerValue,
                     onValueChange = { pickerValue = it },
                     unit = limitUnit,
-                    darkMode = false
+                    // The picker keeps its two-palette darkMode parameter; screens pass
+                    // the RESOLVED theme (overlays keep passing true by design).
+                    darkMode = LocalDetoxDarkTheme.current
                 )
                 Text(
                     text = stringResource(R.string.limit_reduce_warning),
                     fontSize = 12.sp,
-                    color = AccentOrange
+                    color = detoxColors.warningStrong
                 )
                 Button(
                     onClick = { showReduceConfirm = true },
@@ -363,16 +372,18 @@ private fun ActiveChallengeContent(
                         .fillMaxWidth()
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
                     if (isReducing) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.height(20.dp).width(20.dp))
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp, modifier = Modifier.height(20.dp).width(20.dp))
                     } else {
                         Text(
                             text = stringResource(R.string.limit_reduce_button, pickerValue, limitUnit),
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -442,7 +453,7 @@ private fun ActiveChallengeContent(
                 ) {
                     ModeBadge(isHardMode)
                     endDateStr?.let {
-                        Text(text = it, fontSize = 12.sp, color = TextSecondary)
+                        Text(text = it, fontSize = 12.sp, color = detoxColors.subtext)
                     }
                 }
 
@@ -458,7 +469,7 @@ private fun ActiveChallengeContent(
                     text = displayTitle,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black,
+                    color = detoxColors.label,
                     letterSpacing = (-0.3).sp
                 )
 
@@ -476,7 +487,7 @@ private fun ActiveChallengeContent(
                 val streakScale = remember { Animatable(1f) }
                 var streakGreenPulse by remember { mutableStateOf(false) }
                 val streakColor by animateColorAsState(
-                    targetValue = if (streakGreenPulse) AccentGreen else Color.Black,
+                    targetValue = if (streakGreenPulse) detoxColors.accent else detoxColors.label,
                     animationSpec = tween(200),
                     label = "streakColor"
                 )
@@ -513,7 +524,7 @@ private fun ActiveChallengeContent(
                     DetailStatColumn(
                         label = stringResource(R.string.detail_days_left_label),
                         value = if (daysLeft != null) animatedDaysLeft.toString() else "∞",
-                        valueColor = AccentGreen,
+                        valueColor = detoxColors.success,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -536,7 +547,7 @@ private fun ActiveChallengeContent(
                         Text(
                             text = stringResource(R.string.detail_header_today),
                             fontSize = 12.sp,
-                            color = TextSecondary
+                            color = detoxColors.subtext
                         )
                         val rightLabel = when (challenge.limitType) {
                             LimitType.SESSIONS ->
@@ -551,7 +562,7 @@ private fun ActiveChallengeContent(
                             text = rightLabel,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.Black
+                            color = detoxColors.label
                         )
                     }
 
@@ -580,8 +591,8 @@ private fun ActiveChallengeContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp),
-                        color = if (s.limitExceeded) AbandonRed else AccentGreen,
-                        trackColor = Color(0xFFE0E0E5)
+                        color = if (s.limitExceeded) detoxColors.danger else detoxColors.success,
+                        trackColor = MaterialTheme.colorScheme.outlineVariant
                     )
 
                     // Footer row
@@ -607,11 +618,11 @@ private fun ActiveChallengeContent(
                                 )
                             LimitType.TIME_WINDOW -> "–"
                         }
-                        Text(text = remainingLabel, fontSize = 11.sp, color = TextSecondary)
+                        Text(text = remainingLabel, fontSize = 11.sp, color = detoxColors.subtext)
                         Text(
                             text = stringResource(R.string.detail_reset_midnight),
                             fontSize = 11.sp,
-                            color = TextSecondary
+                            color = detoxColors.subtext
                         )
                     }
                 }
@@ -625,7 +636,7 @@ private fun ActiveChallengeContent(
                 text = stringResource(R.string.detail_blocked_apps_section),
                 fontSize = 13.sp,
                 fontWeight = FontWeight(600),
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
             )
             DetoxCard {
@@ -649,12 +660,12 @@ private fun ActiveChallengeContent(
                                     text = appLabel,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight(600),
-                                    color = Color.Black
+                                    color = detoxColors.label
                                 )
                                 Text(
                                     text = pkg,
                                     fontSize = 12.sp,
-                                    color = TextSecondary
+                                    color = detoxColors.subtext
                                 )
                             }
                         }
@@ -671,7 +682,7 @@ private fun ActiveChallengeContent(
                 text = stringResource(R.string.detail_blocked_websites_section),
                 fontSize = 13.sp,
                 fontWeight = FontWeight(600),
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
             )
             DetoxCard {
@@ -692,7 +703,7 @@ private fun ActiveChallengeContent(
                                 text = domain,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight(600),
-                                color = Color.Black
+                                color = detoxColors.label
                             )
                         }
                         if (index < challenge.blockedDomains.lastIndex) InfoDivider()
@@ -752,7 +763,7 @@ private fun ActiveChallengeContent(
                             R.string.detail_info_bei_erfolg_val,
                             "%.2f".format(refundAmount / 100f)
                         ),
-                        valueColor = AccentGreen
+                        valueColor = detoxColors.success
                     )
                 }
 
@@ -775,7 +786,7 @@ private fun ActiveChallengeContent(
                 text = stringResource(R.string.limit_reduce_section_title),
                 fontSize = 13.sp,
                 fontWeight = FontWeight(500),
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
             )
             DetoxCard {
@@ -790,18 +801,18 @@ private fun ActiveChallengeContent(
                         Text(
                             text = stringResource(R.string.limit_reduce_row_label),
                             fontSize = 17.sp,
-                            color = Color.Black
+                            color = detoxColors.label
                         )
                         Text(
                             text = stringResource(R.string.limit_reduce_row_sub),
                             fontSize = 12.sp,
-                            color = TextSecondary
+                            color = detoxColors.subtext
                         )
                     }
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowRight,
                         contentDescription = null,
-                        tint = Color(0xFFC7C7CC)
+                        tint = detoxColors.hint
                     )
                 }
             }
@@ -810,7 +821,7 @@ private fun ActiveChallengeContent(
             Text(
                 text = stringResource(R.string.limit_reduce_pending, challenge.pendingLimitValue!!, limitUnit),
                 fontSize = 13.sp,
-                color = AccentOrange,
+                color = detoxColors.warningStrong,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
         }
@@ -820,7 +831,7 @@ private fun ActiveChallengeContent(
             Text(
                 text = stringResource(R.string.detail_stripe_note),
                 fontSize = 11.sp,
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -830,7 +841,7 @@ private fun ActiveChallengeContent(
         Text(
             text = "\"$quote\"",
             fontSize = 12.sp,
-            color = Color(0xFFC7C7CC),
+            color = detoxColors.hint,
             fontStyle = FontStyle.Italic,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -851,7 +862,7 @@ private fun ActiveChallengeContent(
                 Text(
                     text = stringResource(R.string.detail_abandon_text),
                     fontSize = 14.sp,
-                    color = AbandonRed
+                    color = detoxColors.danger
                 )
             }
         } else {
@@ -894,11 +905,11 @@ private fun AbrechnungSoloCard(
                 text = stringResource(R.string.abrechnung_title),
                 fontSize = 13.sp,
                 fontWeight = FontWeight(600),
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 letterSpacing = 0.5.sp
             )
             Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+            HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
             Spacer(modifier = Modifier.height(10.dp))
 
             if (isCompleted) {
@@ -913,19 +924,19 @@ private fun AbrechnungSoloCard(
                     trailing = null
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = stringResource(R.string.abrechnung_total, formatCents(stakeRefund)),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black
+                    color = detoxColors.label
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = stringResource(R.string.abrechnung_refunded),
                     fontSize = 13.sp,
-                    color = AccentGreen
+                    color = detoxColors.success
                 )
             } else {
                 // ── FAIL ────────────────────────────────────────────────────
@@ -934,12 +945,12 @@ private fun AbrechnungSoloCard(
                     trailing = "❌"
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = stringResource(R.string.abrechnung_not_passed),
                     fontSize = 13.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
             }
         }
@@ -956,7 +967,7 @@ private fun SoloAbrechnungRow(label: String, trailing: String?) {
         Text(
             text = label,
             fontSize = 13.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             modifier = Modifier.weight(1f)
         )
         if (trailing != null) {
@@ -973,9 +984,9 @@ fun DetoxCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(0.5.dp, CardBorder),
+        border = BorderStroke(0.5.dp, detoxColors.cardBorder),
         content = content
     )
 }
@@ -984,8 +995,8 @@ fun DetoxCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
 
 @Composable
 private fun ModeBadge(isHardMode: Boolean) {
-    val bgColor = if (isHardMode) Color(0xFFFFF0E8) else Color(0xFFE8F8EF)
-    val textColor = if (isHardMode) Color(0xFFC05A00) else Color(0xFF1E7A3C)
+    val bgColor = if (isHardMode) detoxColors.softOrangeBg else detoxColors.softGreenBg
+    val textColor = if (isHardMode) detoxColors.softOrangeText else detoxColors.softGreenText
     val label = if (isHardMode) stringResource(R.string.active_challenge_mode_hard)
                 else stringResource(R.string.active_challenge_mode_soft)
     Surface(shape = RoundedCornerShape(4.dp), color = bgColor) {
@@ -1004,7 +1015,7 @@ private fun DetailStatColumn(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    valueColor: Color = Color.Black
+    valueColor: Color = detoxColors.label
 ) {
     Column(
         modifier = modifier,
@@ -1014,7 +1025,7 @@ private fun DetailStatColumn(
         Text(
             text = label,
             fontSize = 11.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             textAlign = TextAlign.Center
         )
         Text(
@@ -1028,7 +1039,7 @@ private fun DetailStatColumn(
 }
 
 @Composable
-private fun InfoRow(label: String, value: String, valueColor: Color = Color.Black) {
+private fun InfoRow(label: String, value: String, valueColor: Color = detoxColors.label) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1036,14 +1047,14 @@ private fun InfoRow(label: String, value: String, valueColor: Color = Color.Blac
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, fontSize = 14.sp, color = TextSecondary)
+        Text(text = label, fontSize = 14.sp, color = detoxColors.subtext)
         Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.W500, color = valueColor)
     }
 }
 
 @Composable
 private fun InfoDivider() {
-    HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+    HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
 }
 
 private fun resolveAppLabel(context: Context, packageName: String): String? = try {

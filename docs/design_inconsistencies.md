@@ -26,6 +26,15 @@ Format: what contradicts what, where, and which slots are involved.
    title to `detoxColors.label` (#000000) but leaves the arrow on the default.
    Extends inconsistency 1 (Settings: green arrow; Support/FAQ: label-black arrow).
 
+## Open questions (awaiting ruling)
+
+- **Hard-Mode abandon dialog "Nein, weitermachen" button** (ActiveChallengeScreen).
+  A filled GREEN safe-action button (#2E7D32) — the only one of its kind in the app;
+  every other destructive-confirm dialog uses a plain-text safe/cancel button. It is
+  currently reverted to the raw #2E7D32 literal, marked PENDING in code, until the
+  safe-action-role question is ruled (real role → new `safeAction*` pair, or drift →
+  `primary`/`onPrimary` with a logged visible change). See the batch-7 report survey.
+
 ## Deliberate consolidations (approved light-mode changes)
 
 These are conscious, user-approved visible changes made during migration — the design

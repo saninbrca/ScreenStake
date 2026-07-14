@@ -259,14 +259,14 @@ private fun ActiveChallengeContent(
                 dismissButton = {
                     Button(
                         onClick = { showAbandonDialog = false },
-                        // #2E7D32 folded into the softGreen pair (approved consolidation);
-                        // the pair inverts in dark so the label stays readable.
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = detoxColors.softGreenText,
-                            contentColor = detoxColors.softGreenBg
-                        )
+                        // PENDING safe-action-role ruling — temporarily the raw pre-migration
+                        // literal (NOT a role-inverted slot). See docs/design_inconsistencies.md.
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                     ) {
-                        Text(text = stringResource(R.string.active_challenge_abandon_hard_no))
+                        Text(
+                            text = stringResource(R.string.active_challenge_abandon_hard_no),
+                            color = Color.White
+                        )
                     }
                 }
             )

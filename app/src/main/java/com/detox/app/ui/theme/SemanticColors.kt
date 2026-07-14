@@ -20,6 +20,14 @@ import androidx.compose.ui.graphics.Color
  *
  * Design-fixed alarm colors that are deliberately identical in both modes live in
  * [DetoxAlertColors] instead.
+ *
+ * INVARIANT — a slot's name states its layer, with NO exceptions: a `*Bg` /
+ * `*Surface` / `*Container` slot is ONLY ever a background, and a `*Text` / `*Fg` /
+ * `*Icon` / `*Glyph` slot is ONLY ever a foreground. Never fill a button with a
+ * `*Text` slot or color a label with a `*Bg` slot, even when the values happen to
+ * work out: the moment you do, the name lies, and whoever later tunes that slot for
+ * its named role silently breaks the misused one. If the value you want lives under
+ * the wrong-layer name, the slot you need is missing — add it, don't borrow.
  */
 @Immutable
 data class DetoxSemanticColors(

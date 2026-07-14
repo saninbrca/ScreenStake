@@ -25,23 +25,17 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.detox.app.ui.theme.detoxColors
 import kotlinx.coroutines.flow.filter
 
 private val ITEM_HEIGHT: Dp = 56.dp
 private val COLUMN_WIDTH: Dp = 76.dp
 private const val VISIBLE_ITEMS = 3
 
-// iOS-token theming — matches the wizard's light design system (no M3 colorScheme/shapes).
-private val SpinnerSelected   = Color(0xFF00C853)
-private val SpinnerUnselected = Color(0xFFC7C7CC)
-private val SpinnerHighlight  = Color(0xFFE8F8EF)
-private val SpinnerLabel      = Color(0xFF8E8E93)
-private val SpinnerColon      = Color(0xFF000000)
 private val SpinnerShape      = RoundedCornerShape(16.dp)
 private val SpinnerStripShape = RoundedCornerShape(12.dp)
 
@@ -75,7 +69,7 @@ fun TimeSpinnerPicker(
                 text = label,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = SpinnerLabel,
+                color = detoxColors.subtext,
             )
         }
 
@@ -93,7 +87,7 @@ fun TimeSpinnerPicker(
                 text = ":",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = SpinnerColon,
+                color = detoxColors.label,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
 
@@ -159,7 +153,9 @@ private fun SpinnerColumn(
                 .height(ITEM_HEIGHT)
                 .align(Alignment.Center)
                 .background(
-                    color = SpinnerHighlight,
+                    // Consolidated onto the single selected-option tint (was #E8F8EF —
+                    // a deliberate, logged light-mode change; see design_inconsistencies.md).
+                    color = detoxColors.selectedSurface,
                     shape = SpinnerStripShape
                 )
         )
@@ -184,7 +180,7 @@ private fun SpinnerColumn(
                             text = value,
                             fontSize = if (isSelected) 20.sp else 15.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) SpinnerSelected else SpinnerUnselected,
+                            color = if (isSelected) detoxColors.accent else detoxColors.hint,
                         )
                     }
                 }

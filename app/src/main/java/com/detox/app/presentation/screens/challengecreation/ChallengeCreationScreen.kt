@@ -55,6 +55,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -95,37 +96,15 @@ import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.TimeSpinnerPicker
 import com.detox.app.presentation.util.pressScaleFeedback
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.FeatureFlags
 import com.detox.app.util.HapticManager
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import com.stripe.android.paymentsheet.rememberPaymentSheet
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-
-private val WizBg         = Color(0xFFF2F2F7)
-private val CardBg        = Color(0xFFFFFFFF)
-private val CardBorder    = Color(0x0F000000)   // rgba(0,0,0,0.06)
-private val GreenPrimary  = Color(0xFF00C853)
-private val GreenLight    = Color(0xFFE8F8EF)   // icon-circle + soft badge background
-// Single source of truth for "selected" card/row SURFACES across the wizard (mode cards,
-// limit cards, app-selection row). Kept distinct from GreenLight so a selected card never
-// blends into its own green icon circle; #00C853 stays reserved for the accent line/check.
-private val GreenSelected = Color(0xFFF0FDF4)
-private val TextPrimary   = Color(0xFF000000)
-private val TextSecondary = Color(0xFF8E8E93)
-private val TextHint      = Color(0xFFC7C7CC)
-private val OrangeLight   = Color(0xFFFFF0E8)
-private val PurpleLight   = Color(0xFFEEF0FF)
-private val BlueLight     = Color(0xFFE8F0FF)
-private val GreenBadgeText   = Color(0xFF1E7A3C)
-private val OrangeBadgeText  = Color(0xFFC05A00)
-private val OrangeIcon       = Color(0xFFFF6B35)
-private val PurpleIcon       = Color(0xFF7B61FF)
-private val BlueIcon         = Color(0xFF2979FF)
-private val DisabledBg    = Color(0xFFE0E0E5)
-private val DisabledText  = Color(0xFF8E8E93)
-private val DividerColor  = Color(0xFFF2F2F7)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
+// Icon circles use the soft* family (one tinted container per hue, soft*Icon glyph).
 
 private val CardShape   = RoundedCornerShape(16.dp)
 private val BtnShape    = RoundedCornerShape(14.dp)
@@ -186,7 +165,7 @@ fun ChallengeCreationScreen(
             text = { Text(stringResource(R.string.cancel_challenge_body)) },
             confirmButton = {
                 TextButton(onClick = { showDiscardDialog = false; onDiscarded() }) {
-                    Text(stringResource(R.string.discard), color = Color(0xFFFF3B30))
+                    Text(stringResource(R.string.discard), color = detoxColors.danger)
                 }
             },
             dismissButton = {
@@ -209,7 +188,7 @@ fun ChallengeCreationScreen(
             },
             dismissButton = {
                 TextButton(onClick = viewModel::dismissRootWarning) {
-                    Text(stringResource(R.string.root_warning_cancel), color = Color(0xFFFF3B30))
+                    Text(stringResource(R.string.root_warning_cancel), color = detoxColors.danger)
                 }
             },
         )
@@ -217,7 +196,10 @@ fun ChallengeCreationScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = WizBg,
+        color = detoxColors.screenBackground,
+        // Resolves LocalContentColor (ripples + default text) — the static Black
+        // default is invisible on the dark background.
+        contentColor = detoxColors.label,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
@@ -323,7 +305,7 @@ fun ChallengeCreationScreen(
 
             if (state.currentStep < TOTAL_STEPS) {
                 val context = LocalContext.current
-                HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Button(
                         onClick = {
@@ -337,10 +319,10 @@ fun ChallengeCreationScreen(
                         enabled = viewModel.canGoNext(),
                         shape = BtnShape,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = GreenPrimary,
-                            contentColor = Color.White,
-                            disabledContainerColor = DisabledBg,
-                            disabledContentColor = DisabledText,
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.outlineVariant,
+                            disabledContentColor = detoxColors.subtext,
                         ),
                     ) {
                         Text(
@@ -383,14 +365,14 @@ private fun WizardHeader(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Zurück",
-                    tint = TextPrimary,
+                    tint = detoxColors.label,
                 )
             }
             Text(
                 text = "Schritt $currentStep von $totalSteps",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Normal,
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
@@ -401,8 +383,8 @@ private fun WizardHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(2.dp),
-            color = GreenPrimary,
-            trackColor = DisabledBg,
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.outlineVariant,
         )
     }
 }
@@ -426,24 +408,24 @@ private fun Step1ModeSelection(
             text = stringResource(R.string.wizard_mode_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = detoxColors.label,
         )
         Text(
             text = stringResource(R.string.wizard_mode_subtitle),
             fontSize = 14.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
         ModeCard(
             icon = Icons.Default.Star,
-            iconTint = GreenPrimary,
-            iconBg = GreenLight,
+            iconTint = detoxColors.softGreenIcon,
+            iconBg = detoxColors.softGreenBg,
             title = "Soft Mode",
             description = stringResource(R.string.wizard_mode_soft_desc),
             badge = stringResource(R.string.wizard_mode_soft_badge),
-            badgeBg = GreenLight,
-            badgeText = GreenBadgeText,
+            badgeBg = detoxColors.softGreenBg,
+            badgeText = detoxColors.softGreenText,
             isSelected = selectedMode == ChallengeMode.SOFT,
             onClick = { onSelectMode(ChallengeMode.SOFT) },
         )
@@ -456,14 +438,14 @@ private fun Step1ModeSelection(
         if (FeatureFlags.moneyEnabled) {
             ModeCard(
                 icon = null,
-                iconTint = OrangeIcon,
-                iconBg = OrangeLight,
+                iconTint = detoxColors.softOrangeIcon,
+                iconBg = detoxColors.softOrangeBg,
                 euroIcon = true,
                 title = "Hard Mode",
                 description = stringResource(R.string.wizard_mode_hard_desc),
                 badge = stringResource(R.string.wizard_mode_hard_badge),
-                badgeBg = OrangeLight,
-                badgeText = OrangeBadgeText,
+                badgeBg = detoxColors.softOrangeBg,
+                badgeText = detoxColors.softOrangeText,
                 isSelected = selectedMode == ChallengeMode.HARD,
                 onClick = { onSelectMode(ChallengeMode.HARD) },
                 enabled = hardModeEnabled,
@@ -490,7 +472,7 @@ private fun ModeCard(
     disabledNote: String? = null,
 ) {
     val borderColor by animateColorAsState(
-        targetValue = if (isSelected) GreenPrimary else CardBorder,
+        targetValue = if (isSelected) detoxColors.accent else detoxColors.cardBorder,
         animationSpec = tween(150), label = "mode_border_color",
     )
     val borderWidth by animateDpAsState(
@@ -498,7 +480,7 @@ private fun ModeCard(
         animationSpec = tween(150), label = "mode_border_width",
     )
     val bgColor by animateColorAsState(
-        targetValue = if (isSelected) GreenSelected else CardBg,
+        targetValue = if (isSelected) detoxColors.selectedSurface else detoxColors.cardBackground,
         animationSpec = tween(150), label = "mode_bg",
     )
 
@@ -551,7 +533,7 @@ private fun ModeCard(
                         text = title,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
+                        color = detoxColors.label,
                     )
                     Box(
                         modifier = Modifier
@@ -570,7 +552,7 @@ private fun ModeCard(
                 Text(
                     text = description,
                     fontSize = 13.sp,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     lineHeight = 18.sp,
                 )
                 if (!enabled && disabledNote != null) {
@@ -578,7 +560,7 @@ private fun ModeCard(
                         text = disabledNote,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = OrangeBadgeText,
+                        color = detoxColors.softOrangeText,
                     )
                 }
             }
@@ -596,14 +578,14 @@ private fun ModeCard(
                             modifier = Modifier
                                 .size(20.dp)
                                 .clip(CircleShape)
-                                .background(CardBg)
-                                .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
+                                .background(detoxColors.cardBackground)
+                                .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                         )
                     }
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = GreenPrimary,
+                        tint = detoxColors.accent,
                         modifier = Modifier
                             .size(20.dp)
                             .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
@@ -632,19 +614,19 @@ private fun Step3LimitType(
             text = stringResource(R.string.wizard_limit_type_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = detoxColors.label,
         )
         Text(
             text = stringResource(R.string.wizard_limit_type_subtitle),
             fontSize = 14.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
         LimitTypeCard(
             icon = Icons.Outlined.Schedule,
-            iconTint = PurpleIcon,
-            iconBg = PurpleLight,
+            iconTint = detoxColors.softPurpleIcon,
+            iconBg = detoxColors.softPurpleBg,
             title = stringResource(R.string.wizard_limit_time_title),
             description = stringResource(R.string.wizard_limit_time_desc),
             isSelected = selected == LimitType.TIME,
@@ -652,8 +634,8 @@ private fun Step3LimitType(
         )
         LimitTypeCard(
             icon = Icons.Outlined.TouchApp,
-            iconTint = GreenPrimary,
-            iconBg = GreenLight,
+            iconTint = detoxColors.softGreenIcon,
+            iconBg = detoxColors.softGreenBg,
             title = stringResource(R.string.wizard_limit_sessions_title),
             description = stringResource(R.string.wizard_limit_sessions_desc),
             isSelected = selected == LimitType.SESSIONS,
@@ -661,8 +643,8 @@ private fun Step3LimitType(
         )
         LimitTypeCard(
             icon = Icons.Outlined.HourglassTop,
-            iconTint = OrangeIcon,
-            iconBg = OrangeLight,
+            iconTint = detoxColors.softOrangeIcon,
+            iconBg = detoxColors.softOrangeBg,
             title = stringResource(R.string.wizard_limit_budget_title),
             description = stringResource(R.string.wizard_limit_budget_desc),
             isSelected = selected == LimitType.TIME_BUDGET,
@@ -670,8 +652,8 @@ private fun Step3LimitType(
         )
         LimitTypeCard(
             icon = Icons.Outlined.CalendarToday,
-            iconTint = BlueIcon,
-            iconBg = BlueLight,
+            iconTint = detoxColors.softBlueIcon,
+            iconBg = detoxColors.softBlueBg,
             title = stringResource(R.string.wizard_limit_window_title),
             description = stringResource(R.string.wizard_limit_window_desc),
             isSelected = selected == LimitType.TIME_WINDOW,
@@ -691,7 +673,7 @@ private fun LimitTypeCard(
     onClick: () -> Unit,
 ) {
     val borderColor by animateColorAsState(
-        targetValue = if (isSelected) GreenPrimary else CardBorder,
+        targetValue = if (isSelected) detoxColors.accent else detoxColors.cardBorder,
         animationSpec = tween(150), label = "limit_border_color",
     )
     val borderWidth by animateDpAsState(
@@ -699,7 +681,7 @@ private fun LimitTypeCard(
         animationSpec = tween(150), label = "limit_border_width",
     )
     val bgColor by animateColorAsState(
-        targetValue = if (isSelected) GreenSelected else CardBg,
+        targetValue = if (isSelected) detoxColors.selectedSurface else detoxColors.cardBackground,
         animationSpec = tween(150), label = "limit_bg",
     )
 
@@ -736,12 +718,12 @@ private fun LimitTypeCard(
                     text = title,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
+                    color = detoxColors.label,
                 )
                 Text(
                     text = description,
                     fontSize = 13.sp,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     maxLines = 2,
                 )
             }
@@ -755,14 +737,14 @@ private fun LimitTypeCard(
                         modifier = Modifier
                             .size(20.dp)
                             .clip(CircleShape)
-                            .background(CardBg)
-                            .border(1.5.dp, Color(0xFFD1D1D6), CircleShape),
+                            .background(detoxColors.cardBackground)
+                            .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                     )
                 }
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = GreenPrimary,
+                    tint = detoxColors.accent,
                     modifier = Modifier
                         .size(20.dp)
                         .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
@@ -793,7 +775,7 @@ private fun Step4LimitValues(
             text = stringResource(R.string.wizard_set_limit_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = detoxColors.label,
         )
 
         when (state.limitType) {
@@ -804,7 +786,7 @@ private fun Step4LimitValues(
                     selectedValue = state.limitValueMinutes.coerceIn(5, 120),
                     onValueChange = onUpdateLimitMinutes,
                     unit = stringResource(R.string.wizard_set_limit_minutes_unit),
-                    surfaceColor = WizBg,
+                    surfaceColor = detoxColors.screenBackground,
                 )
             }
 
@@ -815,14 +797,14 @@ private fun Step4LimitValues(
                     selectedValue = state.limitValueSessions.coerceAtMost(20),
                     onValueChange = onUpdateLimitSessions,
                     unit = stringResource(R.string.wizard_set_limit_opens_unit),
-                    surfaceColor = WizBg,
+                    surfaceColor = detoxColors.screenBackground,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = stringResource(R.string.wizard_set_limit_session_label),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
+                    color = detoxColors.label,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
@@ -830,7 +812,7 @@ private fun Step4LimitValues(
                     selectedValue = state.sessionDurationMinutes.coerceAtMost(30),
                     onValueChange = onUpdateSessionDuration,
                     unit = stringResource(R.string.wizard_set_limit_session_unit),
-                    surfaceColor = WizBg,
+                    surfaceColor = detoxColors.screenBackground,
                 )
             }
 
@@ -841,7 +823,7 @@ private fun Step4LimitValues(
                     selectedValue = state.dailyBudgetMinutes.coerceIn(5, 120),
                     onValueChange = onUpdateDailyBudget,
                     unit = stringResource(R.string.wizard_set_limit_budget_unit),
-                    surfaceColor = WizBg,
+                    surfaceColor = detoxColors.screenBackground,
                 )
             }
 
@@ -854,7 +836,7 @@ private fun Step4LimitValues(
                 Text(
                     text = "Bitte gehe zurück und wähle einen Limit-Typ.",
                     fontSize = 14.sp,
-                    color = Color(0xFFFF3B30),
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
         }
@@ -889,14 +871,14 @@ private fun ScheduleTimeColumn(
         Text(
             text = label,
             fontSize = 11.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = time,
             fontSize = 22.sp,
             fontWeight = FontWeight.SemiBold,
-            color = if (isSet) TextPrimary else TextHint,
+            color = if (isSet) detoxColors.label else detoxColors.hint,
             style = TextStyle(fontFeatureSettings = "tnum"),
         )
     }
@@ -944,7 +926,7 @@ private fun Step5Schedule(
                 text = stringResource(R.string.wizard_optional_label),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 letterSpacing = 0.8.sp,
             )
         }
@@ -952,12 +934,12 @@ private fun Step5Schedule(
             text = stringResource(R.string.wizard_schedule_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = detoxColors.label,
         )
         Text(
             text = stringResource(R.string.wizard_schedule_subtitle),
             fontSize = 13.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             lineHeight = 18.sp,
         )
         Spacer(modifier = Modifier.height(4.dp))
@@ -968,8 +950,8 @@ private fun Step5Schedule(
                 .fillMaxWidth()
                 .height(IntrinsicSize.Min)
                 .clip(CardShape)
-                .background(CardBg)
-                .border(0.5.dp, CardBorder, CardShape),
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, CardShape),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ScheduleTimeColumn(
@@ -984,7 +966,7 @@ private fun Step5Schedule(
                 modifier = Modifier
                     .fillMaxHeight()
                     .width(0.5.dp)
-                    .background(CardBorder),
+                    .background(detoxColors.cardBorder),
             )
             ScheduleTimeColumn(
                 label = "Bis",
@@ -997,7 +979,7 @@ private fun Step5Schedule(
         }
 
         if (timeError != null) {
-            Text(text = timeError, fontSize = 12.sp, color = Color(0xFFFF3B30))
+            Text(text = timeError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
         }
 
         // Weekday circles inside a card, with the "no selection = every day" hint below them.
@@ -1005,8 +987,8 @@ private fun Step5Schedule(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(CardShape)
-                .background(CardBg)
-                .border(0.5.dp, CardBorder, CardShape)
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, CardShape)
                 .padding(horizontal = 16.dp, vertical = 16.dp),
         ) {
             Row(
@@ -1016,11 +998,11 @@ private fun Step5Schedule(
                 ALL_DAYS.forEach { day ->
                     val isSelected = activeDays.contains(day)
                     val dayBg by animateColorAsState(
-                        targetValue = if (isSelected) GreenPrimary else WizBg,
+                        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else detoxColors.insetSurface,
                         animationSpec = tween(150), label = "day_bg",
                     )
                     val dayText by animateColorAsState(
-                        targetValue = if (isSelected) Color.White else TextSecondary,
+                        targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else detoxColors.subtext,
                         animationSpec = tween(150), label = "day_text",
                     )
                     Box(
@@ -1045,13 +1027,13 @@ private fun Step5Schedule(
             Text(
                 text = stringResource(R.string.wizard_schedule_days_hint),
                 fontSize = 12.sp,
-                color = TextSecondary,
+                color = detoxColors.subtext,
             )
         }
 
         if (hasSchedule) {
             TextButton(onClick = onClearSchedule) {
-                Text(stringResource(R.string.delete_schedule), color = Color(0xFFFF3B30), fontSize = 14.sp)
+                Text(stringResource(R.string.delete_schedule), color = detoxColors.danger, fontSize = 14.sp)
             }
         }
 
@@ -1064,7 +1046,7 @@ private fun Step5Schedule(
                 Text(
                     text = stringResource(R.string.wizard_btn_skip_step),
                     fontSize = 14.sp,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     modifier = Modifier.clickable { onSkip() },
                 )
             }
@@ -1088,7 +1070,7 @@ private fun Step5Schedule(
                     text = "Zeitfenster festlegen",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
+                    color = detoxColors.label,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
@@ -1114,7 +1096,7 @@ private fun Step5Schedule(
                     Text(
                         text = timeError,
                         fontSize = 12.sp,
-                        color = Color(0xFFFF3B30),
+                        color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -1124,8 +1106,8 @@ private fun Step5Schedule(
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = BtnShape,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GreenPrimary,
-                        contentColor = Color.White,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                 ) {
                     Text(stringResource(R.string.done), fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -1162,7 +1144,7 @@ private fun Step6Duration(
             text = stringResource(R.string.wizard_duration_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = detoxColors.label,
         )
 
         if (isHardMode) {
@@ -1171,7 +1153,7 @@ private fun Step6Duration(
                 text = "Einsatz",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
+                color = detoxColors.label,
             )
             Spacer(modifier = Modifier.height(8.dp))
             DetoxHorizontalPicker(
@@ -1179,14 +1161,14 @@ private fun Step6Duration(
                 selectedValue = state.amountEuros.coerceIn(safeStakeMin, safeStakeMax),
                 onValueChange = onUpdateAmount,
                 unit = "Euro Einsatz",
-                surfaceColor = WizBg,
+                surfaceColor = detoxColors.screenBackground,
             )
             Text(
                 text = "Wenn du das Limit überschreitest, werden €${state.amountEuros} sofort eingezogen.",
                 fontSize = 13.sp,
-                color = Color(0xFFFF3B30),
+                color = detoxColors.danger,
             )
-            HorizontalDivider(color = DividerColor)
+            HorizontalDivider(color = detoxColors.divider)
         }
 
         if (!isHardMode) {
@@ -1194,8 +1176,8 @@ private fun Step6Duration(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(CardShape)
-                    .background(CardBg)
-                    .border(0.5.dp, CardBorder, CardShape)
+                    .background(detoxColors.cardBackground)
+                    .border(0.5.dp, detoxColors.cardBorder, CardShape)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 Row(
@@ -1207,15 +1189,17 @@ private fun Step6Duration(
                         text = "Kein Enddatum",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
+                        color = detoxColors.label,
                     )
                     Switch(
                         checked = state.noEndDate,
                         onCheckedChange = onToggleNoEndDate,
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = GreenPrimary,
-                            checkedBorderColor = GreenPrimary,
+                            // M3 defaults render identically in light (thumb=onPrimary,
+                            // track=primary; the old explicit border matched the track).
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            checkedBorderColor = MaterialTheme.colorScheme.primary,
                         ),
                     )
                 }
@@ -1233,7 +1217,7 @@ private fun Step6Duration(
                 selectedValue = state.durationDays.coerceIn(minDays, 90),
                 onValueChange = onUpdateDuration,
                 unit = "Tage",
-                surfaceColor = WizBg,
+                surfaceColor = detoxColors.screenBackground,
             )
         }
     }
@@ -1271,7 +1255,7 @@ private fun Step7Confirm(
             text = stringResource(R.string.wizard_review_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = detoxColors.label,
         )
 
         // Summary card with dividers
@@ -1279,8 +1263,8 @@ private fun Step7Confirm(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(CardShape)
-                .background(CardBg)
-                .border(0.5.dp, CardBorder, CardShape),
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, CardShape),
         ) {
             Column {
                 val modeLabel = when (state.selectedMode) {
@@ -1357,7 +1341,7 @@ private fun Step7Confirm(
             Text(
                 text = uiState.message,
                 fontSize = 14.sp,
-                color = Color(0xFFFF3B30),
+                color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1378,15 +1362,15 @@ private fun Step7Confirm(
             enabled = !isLoading && (!isHardMode || (waiverChecked && forfeitChecked)),
             shape = BtnShape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = GreenPrimary,
-                contentColor = Color.White,
-                disabledContainerColor = DisabledBg,
-                disabledContentColor = DisabledText,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                disabledContainerColor = MaterialTheme.colorScheme.outlineVariant,
+                disabledContentColor = detoxColors.subtext,
             ),
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
                 )
@@ -1416,7 +1400,7 @@ private fun MotivationField(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     val borderColor by animateColorAsState(
-        targetValue = if (isFocused) GreenPrimary else CardBorder,
+        targetValue = if (isFocused) detoxColors.accent else detoxColors.cardBorder,
         animationSpec = tween(150), label = "motivation_border_color",
     )
     val borderWidth by animateDpAsState(
@@ -1434,13 +1418,13 @@ private fun MotivationField(
                 modifier = Modifier
                     .size(22.dp)
                     .clip(CircleShape)
-                    .background(GreenLight),
+                    .background(detoxColors.softGreenBg),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Lightbulb,
                     contentDescription = null,
-                    tint = GreenPrimary,
+                    tint = detoxColors.softGreenIcon,
                     modifier = Modifier.size(14.dp),
                 )
             }
@@ -1448,12 +1432,12 @@ private fun MotivationField(
                 text = stringResource(R.string.wizard_review_motivation_label),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
+                color = detoxColors.label,
             )
             Text(
                 text = stringResource(R.string.wizard_review_motivation_optional),
                 fontSize = 12.sp,
-                color = TextSecondary,
+                color = detoxColors.subtext,
             )
         }
 
@@ -1464,11 +1448,11 @@ private fun MotivationField(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(CardShape)
-                .background(CardBg)
+                .background(detoxColors.cardBackground)
                 .border(borderWidth, borderColor, CardShape)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            textStyle = TextStyle(fontSize = 14.sp, color = TextPrimary),
-            cursorBrush = SolidColor(GreenPrimary),
+            textStyle = TextStyle(fontSize = 14.sp, color = detoxColors.label),
+            cursorBrush = SolidColor(detoxColors.accent),
             minLines = 2,
             maxLines = 4,
             interactionSource = interactionSource,
@@ -1479,7 +1463,7 @@ private fun MotivationField(
                             Text(
                                 text = stringResource(R.string.wizard_review_motivation_hint),
                                 fontSize = 14.sp,
-                                color = TextHint,
+                                color = detoxColors.hint,
                             )
                         }
                         innerTextField()
@@ -1488,7 +1472,7 @@ private fun MotivationField(
                     Text(
                         text = stringResource(R.string.wizard_review_motivation_counter, value.length),
                         fontSize = 11.sp,
-                        color = TextHint,
+                        color = detoxColors.hint,
                         textAlign = TextAlign.End,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -1500,7 +1484,7 @@ private fun MotivationField(
         Text(
             text = stringResource(R.string.wizard_review_motivation_helper),
             fontSize = 12.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             lineHeight = 16.sp,
         )
     }
@@ -1514,7 +1498,7 @@ private fun SummaryDividerRow(
     isLast: Boolean = false,
 ) {
     if (!isFirst) {
-        HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
     }
     Row(
         modifier = Modifier
@@ -1525,13 +1509,13 @@ private fun SummaryDividerRow(
         Text(
             text = label,
             fontSize = 14.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
         )
         Text(
             text = value,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
+            color = detoxColors.label,
         )
     }
 }
@@ -1542,8 +1526,8 @@ private fun SummaryDividerRow(
 private fun formatEuroCents(cents: Int): String =
     "€%d,%02d".format(cents / 100, cents % 100)
 
-private val FeeRowLabel  = Color(0xFF333333)
-private val FeeReturnGreen = Color(0xFF00C853)
+// detoxColors.label (#333333) folded into detoxColors.label; detoxColors.success into success —
+// deliberate consolidations, see docs/design_inconsistencies.md.
 
 @Composable
 private fun FeeBreakdownCard(
@@ -1557,36 +1541,36 @@ private fun FeeBreakdownCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(CardShape)
-            .background(CardBg)
-            .border(0.5.dp, CardBorder, CardShape),
+            .background(detoxColors.cardBackground)
+            .border(0.5.dp, detoxColors.cardBorder, CardShape),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = stringResource(R.string.fee_overview_title).uppercase(),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextSecondary,
+                color = detoxColors.subtext,
             )
             Spacer(modifier = Modifier.height(12.dp))
-            FeeRow(stakeLabel, stakeValue, TextPrimary)
+            FeeRow(stakeLabel, stakeValue, detoxColors.label)
             HorizontalDivider(
-                color = DividerColor,
+                color = detoxColors.divider,
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(vertical = 10.dp),
             )
-            FeeRow(stringResource(R.string.fee_return_on_success), refundValue, FeeReturnGreen)
+            FeeRow(stringResource(R.string.fee_return_on_success), refundValue, detoxColors.success)
             HorizontalDivider(
-                color = DividerColor,
+                color = detoxColors.divider,
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(vertical = 10.dp),
             )
-            FeeRow(stringResource(R.string.fee_service_fee), feeValue, TextSecondary)
+            FeeRow(stringResource(R.string.fee_service_fee), feeValue, detoxColors.subtext)
             if (note != null) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = note,
                     fontSize = 12.sp,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                 )
             }
@@ -1601,7 +1585,7 @@ private fun FeeRow(label: String, value: String, valueColor: Color) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, fontSize = 14.sp, color = FeeRowLabel)
+        Text(text = label, fontSize = 14.sp, color = detoxColors.label)
         Text(
             text = value,
             fontSize = 15.sp,
@@ -1618,11 +1602,11 @@ private fun WaiverCheckboxRow(
     label: String = stringResource(R.string.withdrawal_waiver_text),
 ) {
     val boxBg by animateColorAsState(
-        targetValue = if (checked) GreenPrimary else Color.White,
+        targetValue = if (checked) detoxColors.accent else detoxColors.cardBackground,
         animationSpec = tween(150), label = "waiver_bg",
     )
     val boxBorder by animateColorAsState(
-        targetValue = if (checked) GreenPrimary else Color(0xFFE0E0E5),
+        targetValue = if (checked) detoxColors.accent else MaterialTheme.colorScheme.outlineVariant,
         animationSpec = tween(150), label = "waiver_border",
     )
     val checkScale by animateFloatAsState(
@@ -1652,7 +1636,7 @@ private fun WaiverCheckboxRow(
             Icon(
                 imageVector = Icons.Filled.Check,
                 contentDescription = null,
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
                     .size(16.dp)
                     .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
@@ -1662,7 +1646,7 @@ private fun WaiverCheckboxRow(
         Text(
             text = label,
             fontSize = 14.sp,
-            color = FeeRowLabel,
+            color = detoxColors.label,
         )
     }
 }

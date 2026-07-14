@@ -701,7 +701,8 @@ private fun IosThemeModeSelector(selected: ThemeMode, onSelect: (ThemeMode) -> U
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 60.dp, end = 16.dp, bottom = 12.dp)
-            .background(detoxColors.screenBackground, RoundedCornerShape(8.dp))
+            // insetSurface, not screenBackground: a segmented track recessed into a card.
+            .background(detoxColors.insetSurface, RoundedCornerShape(8.dp))
             .padding(2.dp)
     ) {
         ThemeMode.entries.forEach { mode ->

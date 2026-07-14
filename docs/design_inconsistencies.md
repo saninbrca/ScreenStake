@@ -25,3 +25,17 @@ Format: what contradicts what, where, and which slots are involved.
    both on the TopAppBar default (`onSurface`, #1A1A1A light); HistoryDetail sets the
    title to `detoxColors.label` (#000000) but leaves the arrow on the default.
    Extends inconsistency 1 (Settings: green arrow; Support/FAQ: label-black arrow).
+
+## Deliberate consolidations (approved light-mode changes)
+
+These are conscious, user-approved visible changes made during migration — the design
+previously used near-duplicate values for one role.
+
+- **TimeSpinnerPicker selection highlight** #E8F8EF → `selectedSurface` (#F0FDF4).
+  One selected-option tint across the flow instead of two near-identical pale greens.
+- **Radio rings / inactive control outlines** #D1D1D6 → `colorScheme.outlineVariant`
+  (#E0E0E5). ChallengeCreation mode/limit radio circles; Welcome's pager dots should
+  follow when that screen migrates.
+- **Fee-row label** #333333 → `label` (#000000). Hard-mode fee breakdown rows.
+- (Earlier approvals, applied in later batches: #2E7D32/#E8F5E9 → softGreen pair,
+  #E65100/#FFF3E0 → softOrange pair, ChallengeCard group-#5C6BC0 → groupAccent.)

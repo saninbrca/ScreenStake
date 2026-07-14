@@ -65,6 +65,13 @@ data class DetoxSemanticColors(
     val tileGlyph: Color,
     /** Surface tint of a selected card/option (wizard mode cards, app picker rows). */
     val selectedSurface: Color,
+    /**
+     * Caution container — a card warning the user about a consequential setting
+     * (adult-content blocking). Deliberately NOT errorContainer: this is caution,
+     * not an error state.
+     */
+    val attentionSurface: Color,
+    val attentionBorder: Color,
     val screenBackground: Color,
     val cardBackground: Color,
     /** Recessed fill inside a card: text-field containers, inset panels. */
@@ -121,6 +128,8 @@ val DetoxSemanticLight = DetoxSemanticColors(
     tileNeutral = Color(0xFF8E8E93),
     tileGlyph = Color(0xFFFFFFFF),
     selectedSurface = Color(0xFFF0FDF4),
+    attentionSurface = Color(0xFFFFF5F5),
+    attentionBorder = Color(0xFFFFD0D0),
     screenBackground = Color(0xFFF2F2F7),
     cardBackground = Color(0xFFFFFFFF),
     insetSurface = Color(0xFFF2F2F7),
@@ -160,6 +169,8 @@ val DetoxSemanticDark = DetoxSemanticColors(
     tileNeutral = Color(0xFF9E9E9E),
     tileGlyph = Color(0xFF1A1A1A),
     selectedSurface = Color(0xFF12291B),
+    attentionSurface = Color(0xFF2A1414),
+    attentionBorder = Color(0xFF4D2321),
     screenBackground = Color(0xFF0F0F0F),
     cardBackground = Color(0xFF1A1A1A),
     insetSurface = Color(0xFF111111),

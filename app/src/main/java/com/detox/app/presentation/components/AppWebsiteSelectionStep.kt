@@ -49,21 +49,25 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.detox.app.util.HapticManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -74,14 +78,11 @@ import com.detox.app.R
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
+import com.detox.app.ui.theme.detoxColors
 
 // ── Shared App/Website selection step ─────────────────────────────────────────
 // Used identically in Solo Wizard (Step 2) and Group Challenge Wizard (Step 1).
-
-// Single selected-surface green, shared with the wizard's GreenSelected token
-// (ChallengeCreationScreen.kt). One value for every "selected" surface across the flow;
-// #00C853 stays reserved for the accent check.
-private val SelectedSurface = Color(0xFFF0FDF4)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 @Composable
 internal fun AppWebsiteSelectionStep(
@@ -104,6 +105,9 @@ internal fun AppWebsiteSelectionStep(
     onRemoveManualDomain: (String) -> Unit,
     onBlockAdultContentChange: (Boolean) -> Unit,
 ) {
+    // LocalContentColor's static Black default would make every ripple and every
+    // default-colored Text invisible in dark mode — resolve it once for the step.
+    CompositionLocalProvider(LocalContentColor provides detoxColors.label) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Pill tab switcher with a sliding white indicator (no elevation — replaces the old
         // per-tab drop shadow). Labels use clean line icons instead of emoji.
@@ -112,7 +116,7 @@ internal fun AppWebsiteSelectionStep(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .clip(RoundedCornerShape(50.dp))
-                .background(Color(0xFFF2F2F7))
+                .background(detoxColors.insetSurface)
                 .padding(4.dp),
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(40.dp)) {
@@ -129,7 +133,7 @@ internal fun AppWebsiteSelectionStep(
                         .width(tabWidth)
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(50.dp))
-                        .background(Color.White),
+                        .background(detoxColors.cardBackground),
                 )
                 Row(modifier = Modifier.fillMaxSize()) {
                     val tabIcons = listOf(Icons.Outlined.Apps, Icons.Outlined.Language)
@@ -140,7 +144,7 @@ internal fun AppWebsiteSelectionStep(
                     tabIcons.forEachIndexed { index, icon ->
                         val isActive = activeTab == index
                         val tabTint by animateColorAsState(
-                            targetValue = if (isActive) Color(0xFF00C853) else Color(0xFF8E8E93),
+                            targetValue = if (isActive) detoxColors.accent else detoxColors.subtext,
                             animationSpec = tween(200),
                             label = "tab_tint",
                         )
@@ -196,6 +200,7 @@ internal fun AppWebsiteSelectionStep(
             )
         }
     }
+    }
 }
 
 // ── Apps tab ──────────────────────────────────────────────────────────────────
@@ -222,15 +227,19 @@ internal fun AppsTabContent(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .clip(RoundedCornerShape(50.dp))
-                .background(Color(0xFFF2F2F7))
+                .background(detoxColors.insetSurface)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
+            // BasicTextField's static black text/cursor defaults are invisible on the
+            // dark field — resolve both from the theme.
+            textStyle = TextStyle(color = detoxColors.label),
+            cursorBrush = SolidColor(detoxColors.label),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             decorationBox = { innerTextField ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Default.Search,
                         contentDescription = null,
-                        tint = Color(0xFF8E8E93),
+                        tint = detoxColors.subtext,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
@@ -238,7 +247,7 @@ internal fun AppsTabContent(
                         if (searchQuery.isEmpty()) {
                             Text(
                                 stringResource(R.string.app_selection_search_placeholder),
-                                color = Color(0xFF8E8E93),
+                                color = detoxColors.subtext,
                                 fontSize = 15.sp,
                             )
                         }
@@ -431,8 +440,8 @@ internal fun WebsitesTabContent(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5)),
-            border = BorderStroke(0.5.dp, Color(0xFFFFD0D0)),
+            colors = CardDefaults.cardColors(containerColor = detoxColors.attentionSurface),
+            border = BorderStroke(0.5.dp, detoxColors.attentionBorder),
             elevation = CardDefaults.cardElevation(0.dp),
         ) {
             Row(
@@ -445,14 +454,14 @@ internal fun WebsitesTabContent(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(50.dp))
-                        .background(Color(0xFFFF3B30)),
+                        .background(detoxColors.danger),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = "18+",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = detoxColors.tileGlyph,
                     )
                 }
                 Spacer(Modifier.width(12.dp))
@@ -461,20 +470,20 @@ internal fun WebsitesTabContent(
                         text = stringResource(R.string.app_selection_adult_content_block),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.Black,
+                        color = detoxColors.label,
                     )
                     Text(
                         text = stringResource(R.string.app_selection_adult_content_desc),
                         fontSize = 12.sp,
-                        color = Color(0xFF8E8E93),
+                        color = detoxColors.subtext,
                     )
                 }
                 Switch(
                     checked = blockAdultContent,
                     onCheckedChange = onBlockAdultContentChange,
                     colors = SwitchDefaults.colors(
-                        checkedTrackColor = Color(0xFFFF3B30),
-                        uncheckedTrackColor = Color(0xFFE0E0E5),
+                        checkedTrackColor = detoxColors.danger,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
                     ),
                 )
             }
@@ -494,8 +503,11 @@ internal fun WebsitesTabContent(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(50.dp))
-                    .background(Color(0xFFF2F2F7))
+                    .background(detoxColors.insetSurface)
                     .padding(horizontal = 16.dp, vertical = 14.dp),
+                // Static black text/cursor defaults are invisible on the dark field.
+                textStyle = TextStyle(color = detoxColors.label),
+                cursorBrush = SolidColor(detoxColors.label),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
                     imeAction = ImeAction.Done,
@@ -506,7 +518,7 @@ internal fun WebsitesTabContent(
                         if (manualDomainInput.isEmpty()) {
                             Text(
                                 stringResource(R.string.app_selection_domain_input_hint),
-                                color = Color(0xFF8E8E93),
+                                color = detoxColors.subtext,
                                 fontSize = 15.sp,
                             )
                         }
@@ -518,10 +530,13 @@ internal fun WebsitesTabContent(
                 onClick = onAddManualDomain,
                 modifier = Modifier.height(48.dp),
                 shape = RoundedCornerShape(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
                 contentPadding = PaddingValues(horizontal = 16.dp),
             ) {
-                Text(stringResource(R.string.add), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.add), fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }
         }
 
@@ -544,16 +559,16 @@ internal fun WebsitesTabContent(
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF2F2F7))
+                            .background(detoxColors.insetSurface)
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(domain, fontSize = 13.sp, color = Color.Black)
+                        Text(domain, fontSize = 13.sp, color = detoxColors.label)
                         Spacer(Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Remove",
-                            tint = Color(0xFF8E8E93),
+                            tint = detoxColors.subtext,
                             modifier = Modifier
                                 .size(14.dp)
                                 .clickable { onRemoveManualDomain(domain) },
@@ -580,8 +595,8 @@ internal fun AppSelectionRow(
     val isBusy = conflictChallengeName != null
     val context = LocalContext.current
     val bgColor = when {
-        isBusy -> Color(0xFFF5F5F5)
-        isSelected -> SelectedSurface
+        isBusy -> MaterialTheme.colorScheme.surfaceVariant
+        isSelected -> detoxColors.selectedSurface
         else -> Color.Transparent
     }
     Row(
@@ -610,7 +625,7 @@ internal fun AppSelectionRow(
             text = app.appName,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
-            color = if (isBusy) Color(0xFFC7C7CC) else Color.Black,
+            color = if (isBusy) detoxColors.hint else detoxColors.label,
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
@@ -618,13 +633,13 @@ internal fun AppSelectionRow(
             isBusy -> Icon(
                 imageVector = Icons.Default.Lock,
                 contentDescription = null,
-                tint = Color(0xFFC7C7CC),
+                tint = detoxColors.hint,
                 modifier = Modifier.size(16.dp),
             )
             isSelected -> Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
-                tint = Color(0xFF00C853),
+                tint = detoxColors.accent,
                 modifier = Modifier.size(24.dp),
             )
             else -> Box(modifier = Modifier.size(24.dp))

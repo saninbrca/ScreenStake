@@ -79,6 +79,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
+import androidx.compose.material3.MaterialTheme
 import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.ui.theme.PoppinsFamily
 import com.detox.app.util.FeatureFlags
@@ -87,20 +89,7 @@ import kotlinx.coroutines.launch
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
-private val IosBg = Color(0xFFF2F2F7)
-private val CardBg = Color(0xFFFFFFFF)
-private val CardBorder = Color(0xFFE0E0E5)
-private val GreenPrimary = Color(0xFF00C853)
-private val GreenLight = Color(0xFFE8F8EF)
-private val TextPrimary = Color(0xFF000000)
-private val TextSecondary = Color(0xFF8E8E93)
-private val OrangeAccent = Color(0xFFFF6B35)
-private val OrangeLight = Color(0xFFFFF0E8)
-private val PurpleAccent = Color(0xFF7B61FF)
-private val PurpleLight = Color(0xFFEEF0FF)
-private val GreenBadgeText = Color(0xFF1E7A3C)
-private val OrangeBadgeText = Color(0xFFC05A00)
-private val DotInactive = Color(0xFFD1D1D6)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 private val CardShape = RoundedCornerShape(16.dp)
 private val ButtonShape = RoundedCornerShape(14.dp)
@@ -145,7 +134,7 @@ fun WelcomeOnboardingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(IosBg)
+            .background(detoxColors.screenBackground)
     ) {
         HorizontalPager(
             state = pagerState,
@@ -154,7 +143,7 @@ fun WelcomeOnboardingScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(IosBg)
+                    .background(detoxColors.screenBackground)
             ) {
                 when (page) {
                     0 -> WelcomePage(
@@ -242,8 +231,8 @@ private fun WelcomePage(
         // "De" + "tox" in green
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = TextPrimary)) { append("Stop") }
-                withStyle(SpanStyle(color = GreenPrimary)) { append("Dooming") }
+                withStyle(SpanStyle(color = detoxColors.label)) { append("Stop") }
+                withStyle(SpanStyle(color = detoxColors.accent)) { append("Dooming") }
             },
             style = TextStyle(
                 fontFamily = PoppinsFamily,
@@ -264,13 +253,13 @@ private fun WelcomePage(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(GreenLight),
+                        .background(detoxColors.softGreenBg),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = GreenPrimary,
+                        tint = detoxColors.softGreenIcon,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -281,7 +270,7 @@ private fun WelcomePage(
                             fontFamily = PoppinsFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp,
-                            color = TextPrimary
+                            color = detoxColors.label
                         )
                     )
                     Text(
@@ -290,7 +279,7 @@ private fun WelcomePage(
                             fontFamily = PoppinsFamily,
                             fontWeight = FontWeight.Normal,
                             fontSize = 13.sp,
-                            color = TextSecondary
+                            color = detoxColors.subtext
                         )
                     )
                 }
@@ -321,10 +310,10 @@ private fun ConceptPage(
     ) {
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = TextPrimary)) {
+                withStyle(SpanStyle(color = detoxColors.label)) {
                     append(stringResource(R.string.welcome_p1_title_pre))
                 }
-                withStyle(SpanStyle(color = GreenPrimary)) {
+                withStyle(SpanStyle(color = detoxColors.accent)) {
                     append(stringResource(R.string.welcome_p1_title_highlight))
                 }
             },
@@ -342,7 +331,7 @@ private fun ConceptPage(
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
-                color = TextSecondary
+                color = detoxColors.subtext
             ),
             textAlign = TextAlign.Center
         )
@@ -377,8 +366,8 @@ private fun ConceptPage(
                         .fillMaxWidth()
                         .height(6.dp)
                         .clip(CircleShape),
-                    color = GreenPrimary,
-                    trackColor = GreenLight
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = detoxColors.softGreenBg
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -390,7 +379,7 @@ private fun ConceptPage(
                             fontFamily = PoppinsFamily,
                             fontWeight = FontWeight.Medium,
                             fontSize = 12.sp,
-                            color = TextSecondary
+                            color = detoxColors.subtext
                         )
                     )
                     Text(
@@ -399,7 +388,7 @@ private fun ConceptPage(
                             fontFamily = PoppinsFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
-                            color = TextPrimary
+                            color = detoxColors.label
                         )
                     )
                 }
@@ -421,7 +410,7 @@ private fun ConceptStep(number: String, title: String, desc: String) {
             modifier = Modifier
                 .size(28.dp)
                 .clip(CircleShape)
-                .background(GreenPrimary),
+                .background(MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -430,7 +419,7 @@ private fun ConceptStep(number: String, title: String, desc: String) {
                     fontFamily = PoppinsFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
@@ -441,7 +430,7 @@ private fun ConceptStep(number: String, title: String, desc: String) {
                     fontFamily = PoppinsFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = TextPrimary
+                    color = detoxColors.label
                 )
             )
             Text(
@@ -450,7 +439,7 @@ private fun ConceptStep(number: String, title: String, desc: String) {
                     fontFamily = PoppinsFamily,
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
             )
         }
@@ -474,10 +463,10 @@ private fun ModesPage(
     ) {
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = TextPrimary)) {
+                withStyle(SpanStyle(color = detoxColors.label)) {
                     append(stringResource(R.string.welcome_p2_title_pre))
                 }
-                withStyle(SpanStyle(color = GreenPrimary)) {
+                withStyle(SpanStyle(color = detoxColors.accent)) {
                     append(stringResource(R.string.welcome_p2_title_highlight))
                 }
             },
@@ -499,43 +488,43 @@ private fun ModesPage(
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
-                color = TextSecondary
+                color = detoxColors.subtext
             ),
             textAlign = TextAlign.Center
         )
 
         ModeCard(
-            iconBg = GreenLight,
+            iconBg = detoxColors.softGreenBg,
             icon = Icons.Default.Star,
-            iconTint = GreenPrimary,
+            iconTint = detoxColors.softGreenIcon,
             title = stringResource(R.string.welcome_p2_soft_title),
             subtitle = stringResource(R.string.welcome_p2_soft_sub),
             badge = stringResource(R.string.welcome_p2_soft_badge),
-            badgeBg = GreenLight,
-            badgeColor = GreenBadgeText
+            badgeBg = detoxColors.softGreenBg,
+            badgeColor = detoxColors.softGreenText
         )
         // Money surfaces (Hard Mode + Group) gated behind the build-level money floor.
         // Gate only — flipping BuildConfig.MONEY_FEATURES_ENABLED restores this page exactly.
         if (FeatureFlags.moneyEnabled) {
             ModeCard(
-                iconBg = OrangeLight,
+                iconBg = detoxColors.softOrangeBg,
                 icon = Icons.Default.Whatshot,
-                iconTint = OrangeAccent,
+                iconTint = detoxColors.softOrangeIcon,
                 title = stringResource(R.string.welcome_p2_hard_title),
                 subtitle = stringResource(R.string.welcome_p2_hard_sub),
                 badge = stringResource(R.string.welcome_p2_hard_badge),
-                badgeBg = OrangeLight,
-                badgeColor = OrangeBadgeText
+                badgeBg = detoxColors.softOrangeBg,
+                badgeColor = detoxColors.softOrangeText
             )
             ModeCard(
-                iconBg = PurpleLight,
+                iconBg = detoxColors.softPurpleBg,
                 icon = Icons.Default.Group,
-                iconTint = PurpleAccent,
+                iconTint = detoxColors.softPurpleIcon,
                 title = stringResource(R.string.welcome_p2_group_title),
                 subtitle = stringResource(R.string.welcome_p2_group_sub),
                 badge = stringResource(R.string.welcome_p2_group_badge),
-                badgeBg = PurpleLight,
-                badgeColor = PurpleAccent
+                badgeBg = detoxColors.softPurpleBg,
+                badgeColor = detoxColors.softPurpleIcon
             )
         }
 
@@ -559,8 +548,8 @@ private fun ModeCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(CardShape)
-            .background(CardBg)
-            .border(0.5.dp, Color(0x0F000000), CardShape)
+            .background(detoxColors.cardBackground)
+            .border(0.5.dp, detoxColors.cardBorder, CardShape)
             .padding(16.dp)
     ) {
         Row(
@@ -588,7 +577,7 @@ private fun ModeCard(
                         fontFamily = PoppinsFamily,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
-                        color = TextPrimary
+                        color = detoxColors.label
                     )
                 )
                 Text(
@@ -597,7 +586,7 @@ private fun ModeCard(
                         fontFamily = PoppinsFamily,
                         fontWeight = FontWeight.Normal,
                         fontSize = 12.sp,
-                        color = TextSecondary
+                        color = detoxColors.subtext
                     )
                 )
             }
@@ -675,7 +664,7 @@ private fun PermissionsPage(
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 22.sp,
-                color = TextPrimary
+                color = detoxColors.label
             )
         )
 
@@ -685,7 +674,7 @@ private fun PermissionsPage(
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
-                color = TextSecondary
+                color = detoxColors.subtext
             )
         )
 
@@ -694,14 +683,14 @@ private fun PermissionsPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(CardShape)
-                .background(CardBg)
-                .border(1.dp, CardBorder, CardShape)
+                .background(detoxColors.cardBackground)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CardShape)
         ) {
             Column {
                 PermissionRow(
-                    iconBg = GreenLight,
+                    iconBg = detoxColors.softGreenBg,
                     icon = Icons.Default.Check,
-                    iconTint = GreenPrimary,
+                    iconTint = detoxColors.softGreenIcon,
                     title = stringResource(R.string.welcome_p3_overlay_title),
                     desc = stringResource(R.string.welcome_p3_overlay_desc),
                     isGranted = overlayGranted,
@@ -714,21 +703,21 @@ private fun PermissionsPage(
                         )
                     }
                 )
-                HorizontalDivider(color = CardBorder, thickness = 1.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
                 PermissionRow(
-                    iconBg = PurpleLight,
+                    iconBg = detoxColors.softPurpleBg,
                     icon = Icons.Default.AccessTime,
-                    iconTint = PurpleAccent,
+                    iconTint = detoxColors.softPurpleIcon,
                     title = stringResource(R.string.welcome_p3_accessibility_title),
                     desc = stringResource(R.string.welcome_p3_accessibility_desc),
                     isGranted = accessibilityGranted,
                     onClick = { showAccessibilityDisclosure = true }
                 )
-                HorizontalDivider(color = CardBorder, thickness = 1.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
                 PermissionRow(
-                    iconBg = OrangeLight,
+                    iconBg = detoxColors.softOrangeBg,
                     icon = Icons.Default.Shield,
-                    iconTint = OrangeAccent,
+                    iconTint = detoxColors.softOrangeIcon,
                     title = stringResource(R.string.welcome_p3_usage_title),
                     desc = stringResource(R.string.welcome_p3_usage_desc),
                     isGranted = usageStatsGranted,
@@ -744,7 +733,7 @@ private fun PermissionsPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(CardShape)
-                .background(GreenLight)
+                .background(detoxColors.softGreenBg)
                 .padding(16.dp)
         ) {
             Row(
@@ -754,7 +743,7 @@ private fun PermissionsPage(
                 Icon(
                     imageVector = Icons.Default.Security,
                     contentDescription = null,
-                    tint = GreenPrimary,
+                    tint = detoxColors.accent,
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
@@ -763,7 +752,7 @@ private fun PermissionsPage(
                         fontFamily = PoppinsFamily,
                         fontWeight = FontWeight.Normal,
                         fontSize = 12.sp,
-                        color = TextPrimary
+                        color = detoxColors.label
                     )
                 )
             }
@@ -847,7 +836,7 @@ private fun PermissionRow(
                     fontFamily = PoppinsFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = TextPrimary
+                    color = detoxColors.label
                 )
             )
             Text(
@@ -856,7 +845,7 @@ private fun PermissionRow(
                     fontFamily = PoppinsFamily,
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
             )
         }
@@ -864,14 +853,14 @@ private fun PermissionRow(
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
-                tint = GreenPrimary,
+                tint = detoxColors.success,
                 modifier = Modifier.size(20.dp)
             )
         } else {
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = TextSecondary,
+                tint = detoxColors.subtext,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -898,10 +887,10 @@ private fun StartPage(
 
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = TextPrimary)) {
+                withStyle(SpanStyle(color = detoxColors.label)) {
                     append(stringResource(R.string.welcome_p4_title_pre))
                 }
-                withStyle(SpanStyle(color = GreenPrimary)) {
+                withStyle(SpanStyle(color = detoxColors.accent)) {
                     append(stringResource(R.string.welcome_p4_title_dot))
                 }
             },
@@ -918,7 +907,7 @@ private fun StartPage(
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
-                color = TextSecondary
+                color = detoxColors.subtext
             ),
             textAlign = TextAlign.Center
         )
@@ -932,7 +921,7 @@ private fun StartPage(
                         fontFamily = PoppinsFamily,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 11.sp,
-                        color = TextSecondary,
+                        color = detoxColors.subtext,
                         letterSpacing = 0.8.sp
                     )
                 )
@@ -958,13 +947,13 @@ private fun RecommendationRow(text: String) {
             modifier = Modifier
                 .size(22.dp)
                 .clip(CircleShape)
-                .background(GreenLight),
+                .background(detoxColors.softGreenBg),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
-                tint = GreenPrimary,
+                tint = detoxColors.softGreenIcon,
                 modifier = Modifier.size(14.dp)
             )
         }
@@ -974,7 +963,7 @@ private fun RecommendationRow(text: String) {
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
-                color = TextPrimary
+                color = detoxColors.label
             )
         )
     }
@@ -1023,7 +1012,7 @@ private fun RotatingStatCard() {
                             fontFamily = PoppinsFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 48.sp,
-                            color = GreenPrimary
+                            color = detoxColors.accent
                         ),
                         textAlign = TextAlign.Center
                     )
@@ -1033,7 +1022,7 @@ private fun RotatingStatCard() {
                             fontFamily = PoppinsFamily,
                             fontWeight = FontWeight.Normal,
                             fontSize = 14.sp,
-                            color = TextSecondary
+                            color = detoxColors.subtext
                         ),
                         textAlign = TextAlign.Center
                     )
@@ -1050,7 +1039,7 @@ private fun RotatingStatCard() {
                         modifier = Modifier
                             .size(6.dp)
                             .clip(CircleShape)
-                            .background(if (i == currentStatIndex) GreenPrimary else Color(0xFFC7C7CC))
+                            .background(if (i == currentStatIndex) MaterialTheme.colorScheme.primary else detoxColors.hint)
                     )
                 }
             }
@@ -1064,13 +1053,13 @@ private fun DetoxLogoIcon() {
         modifier = Modifier
             .size(72.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(GreenPrimary),
+            .background(MaterialTheme.colorScheme.primary),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = Icons.Default.Check,
             contentDescription = null,
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.size(36.dp)
         )
     }
@@ -1082,8 +1071,8 @@ private fun OnboardingCard(content: @Composable () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(CardShape)
-            .background(CardBg)
-            .border(0.5.dp, Color(0x0F000000), CardShape)
+            .background(detoxColors.cardBackground)
+            .border(0.5.dp, detoxColors.cardBorder, CardShape)
             .padding(20.dp)
     ) {
         content()
@@ -1103,7 +1092,7 @@ private fun PageDots(currentPage: Int, pageCount: Int = 5) {
                     .width(width)
                     .height(6.dp)
                     .clip(CircleShape)
-                    .background(if (i == currentPage) GreenPrimary else DotInactive)
+                    .background(if (i == currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
             )
         }
     }
@@ -1116,7 +1105,7 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) {
             .fillMaxWidth()
             .height(54.dp)
             .clip(ButtonShape)
-            .background(GreenPrimary)
+            .background(MaterialTheme.colorScheme.primary)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -1126,7 +1115,7 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) {
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onPrimary
             )
         )
     }
@@ -1140,10 +1129,10 @@ private fun SecondaryButton(text: String, onClick: () -> Unit) {
             .fillMaxWidth()
             .height(54.dp),
         shape = ButtonShape,
-        border = BorderStroke(1.5.dp, CardBorder),
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = CardBg,
-            contentColor = GreenPrimary
+            containerColor = detoxColors.cardBackground,
+            contentColor = detoxColors.accent
         )
     ) {
         Text(
@@ -1152,7 +1141,7 @@ private fun SecondaryButton(text: String, onClick: () -> Unit) {
                 fontFamily = PoppinsFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
-                color = GreenPrimary
+                color = detoxColors.accent
             )
         )
     }

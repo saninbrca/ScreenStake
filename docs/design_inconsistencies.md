@@ -35,6 +35,17 @@ Format: what contradicts what, where, and which slots are involved.
    one discourages losing money), but two abandon dialogs on one screen reading
    oppositely is a real design question to settle at the end. Ruled: KEEP both.
 
+6. **Welcome feature badges: purple uses vivid text, green/orange use muted text.**
+   The three onboarding feature badges are all `soft*Bg` containers, but the green and
+   orange badges color their label with the muted `soft*Text` (#1E7A3C / #C05A00) while
+   the purple badge uses the vivid `softPurpleIcon` (#7B61FF, the icon-glyph color).
+   Migrated as-is (value-preserving); the purple badge just reads louder than its peers.
+
+7. **Two "inactive dot" grays in Welcome.** The bottom pager dots use #D1D1D6 (mapped to
+   `outlineVariant`); the page-4 stat-cycle dots use #C7C7CC (mapped to `hint`). Same
+   "inactive indicator" role, two grays. Also: the Profile row chevron uses #8E8E93
+   (`subtext`) where Settings/FAQ chevrons use #C7C7CC (`hint`) — extends inconsistency 2.
+
 ## Deliberate consolidations (approved light-mode changes)
 
 These are conscious, user-approved visible changes made during migration — the design

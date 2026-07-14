@@ -21,6 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -30,7 +31,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -41,11 +41,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
 
-private val BgColor = Color(0xFFF2F2F7)
-private val AccentGreen = Color(0xFF00C853)
-private val ErrorRed = Color(0xFFFF3B30)
-private val TextSecondary = Color(0xFF8E8E93)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 
 @Composable
 fun UsernameSelectionScreen(
@@ -61,7 +59,7 @@ fun UsernameSelectionScreen(
         if (state.saved || state.skip) onComplete()
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = BgColor) {
+    Surface(modifier = Modifier.fillMaxSize(), color = detoxColors.screenBackground) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -72,13 +70,13 @@ fun UsernameSelectionScreen(
             Box(
                 modifier = Modifier
                     .size(96.dp)
-                    .background(Color(0xFFE8F8EF), CircleShape),
+                    .background(detoxColors.softGreenBg, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Filled.Person,
                     contentDescription = null,
-                    tint = AccentGreen,
+                    tint = detoxColors.softGreenIcon,
                     modifier = Modifier.size(64.dp)
                 )
             }
@@ -89,7 +87,7 @@ fun UsernameSelectionScreen(
                 text = stringResource(R.string.username_title),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Black,
+                color = detoxColors.label,
                 textAlign = TextAlign.Center
             )
 
@@ -98,7 +96,7 @@ fun UsernameSelectionScreen(
             Text(
                 text = stringResource(R.string.username_subtitle),
                 fontSize = 14.sp,
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 textAlign = TextAlign.Center
             )
 
@@ -107,8 +105,8 @@ fun UsernameSelectionScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0x0F000000))
+                colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, detoxColors.cardBorder)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     OutlinedTextField(
@@ -116,13 +114,13 @@ fun UsernameSelectionScreen(
                         onValueChange = viewModel::onInputChange,
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        prefix = { Text("@", fontSize = 16.sp, color = TextSecondary) },
+                        prefix = { Text("@", fontSize = 16.sp, color = detoxColors.subtext) },
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.None
                         ),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentGreen,
-                            cursorColor = AccentGreen
+                            focusedBorderColor = detoxColors.accent,
+                            cursorColor = detoxColors.accent
                         )
                     )
 
@@ -134,21 +132,21 @@ fun UsernameSelectionScreen(
                     ) {
                         val (statusText, statusColor) = when (state.availability) {
                             UsernameAvailability.Checking ->
-                                stringResource(R.string.username_checking) to TextSecondary
+                                stringResource(R.string.username_checking) to detoxColors.subtext
                             UsernameAvailability.Available ->
-                                stringResource(R.string.username_available) to AccentGreen
+                                stringResource(R.string.username_available) to detoxColors.success
                             UsernameAvailability.Taken ->
-                                stringResource(R.string.username_taken) to ErrorRed
+                                stringResource(R.string.username_taken) to detoxColors.danger
                             UsernameAvailability.TooShort ->
-                                stringResource(R.string.username_too_short) to TextSecondary
+                                stringResource(R.string.username_too_short) to detoxColors.subtext
                             UsernameAvailability.Idle ->
-                                stringResource(R.string.username_hint) to TextSecondary
+                                stringResource(R.string.username_hint) to detoxColors.subtext
                         }
                         Text(text = statusText, fontSize = 12.sp, color = statusColor)
                         Text(
                             text = stringResource(R.string.username_counter, state.usernameInput.length),
                             fontSize = 12.sp,
-                            color = TextSecondary
+                            color = detoxColors.subtext
                         )
                     }
                 }
@@ -165,13 +163,13 @@ fun UsernameSelectionScreen(
                     .height(54.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentGreen,
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 enabled = canSubmit
             ) {
                 if (state.isSaving) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
                 } else {
                     Text(stringResource(R.string.username_continue), fontSize = 16.sp)
                 }

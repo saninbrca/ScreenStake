@@ -55,7 +55,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -77,15 +76,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.BuildConfig
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import timber.log.Timber
 
-private val ErrorRed = Color(0xFFFF3B30)
-private val AccentGreen = Color(0xFF00C853)
-private val WarnOrange = Color(0xFFFF9500)
-private val TextSecondary = Color(0xFF8E8E93)
+// All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
+// AuthScreen uses M3 OutlinedTextField, whose cursor/text/selection are already
+// theme-driven (no BasicTextField invisible-cursor defect on this screen).
 
 @Composable
 fun AuthScreen(
@@ -249,7 +248,7 @@ private fun InlineError(message: String?) {
         Text(
             text = message ?: "",
             fontSize = 12.sp,
-            color = ErrorRed,
+            color = MaterialTheme.colorScheme.error,
             modifier = Modifier.fillMaxWidth()
         )
     }
@@ -340,7 +339,7 @@ private fun LoginForm(
             Text(
                 text = it,
                 fontSize = 12.sp,
-                color = AccentGreen,
+                color = detoxColors.success,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -348,7 +347,7 @@ private fun LoginForm(
         Text(
             text = stringResource(R.string.auth_forgot_password),
             fontSize = 13.sp,
-            color = AccentGreen,
+            color = detoxColors.accent,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 4.dp)
@@ -475,7 +474,7 @@ private fun RegisterForm(
             Text(
                 text = stringResource(R.string.auth_password_hint),
                 fontSize = 12.sp,
-                color = TextSecondary
+                color = detoxColors.subtext
             )
         }
 
@@ -557,7 +556,7 @@ private fun PasswordToggle(visible: Boolean, onToggle: () -> Unit) {
             contentDescription = stringResource(
                 if (visible) R.string.auth_hide_password else R.string.auth_show_password
             ),
-            tint = TextSecondary
+            tint = detoxColors.subtext
         )
     }
 }
@@ -583,7 +582,7 @@ private fun ConsentRow(
                     url = linkUrl,
                     styles = TextLinkStyles(
                         style = SpanStyle(
-                            color = AccentGreen,
+                            color = detoxColors.accent,
                             textDecoration = TextDecoration.Underline
                         )
                     )
@@ -610,7 +609,7 @@ private fun ConsentRow(
             checked = checked,
             onCheckedChange = { if (enabled) onCheckedChange(it) },
             enabled = enabled,
-            colors = CheckboxDefaults.colors(checkedColor = AccentGreen)
+            colors = CheckboxDefaults.colors(checkedColor = detoxColors.accent)
         )
         Text(
             text = annotatedLabel,
@@ -622,10 +621,12 @@ private fun ConsentRow(
 
 @Composable
 private fun PasswordStrengthBar(strength: Int) {
+    // Semantic status scale: strong=success, medium=caution (warningStrong, a real
+    // caution not decoration), weak=danger.
     val (label, color) = when (strength) {
-        2 -> stringResource(R.string.auth_password_strength_strong) to AccentGreen
-        1 -> stringResource(R.string.auth_password_strength_medium) to WarnOrange
-        else -> stringResource(R.string.auth_password_strength_weak) to ErrorRed
+        2 -> stringResource(R.string.auth_password_strength_strong) to detoxColors.success
+        1 -> stringResource(R.string.auth_password_strength_medium) to detoxColors.warningStrong
+        else -> stringResource(R.string.auth_password_strength_weak) to detoxColors.danger
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -638,7 +639,7 @@ private fun PasswordStrengthBar(strength: Int) {
                     .weight(1f)
                     .height(4.dp)
                     .background(
-                        color = if (index <= strength) color else Color(0xFFE0E0E5),
+                        color = if (index <= strength) color else MaterialTheme.colorScheme.outlineVariant,
                         shape = RoundedCornerShape(2.dp)
                     )
             )

@@ -81,6 +81,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.service.TrackedAppEventBus
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.DateUtils
 import com.detox.app.util.FeatureFlags
 import io.sentry.Sentry
@@ -170,7 +171,7 @@ fun ProfileScreen(
                     ) {
                         Text(
                             stringResource(R.string.payout_balance_confirm_yes),
-                            color = Color(0xFF00C853)
+                            color = detoxColors.accent
                         )
                     }
                 },
@@ -191,7 +192,7 @@ fun ProfileScreen(
                         text = stringResource(R.string.profile_title),
                         fontSize = 22.sp,
                         fontWeight = FontWeight(700),
-                        color = Color.Black
+                        color = detoxColors.label
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -270,7 +271,7 @@ fun ProfileScreen(
                 text = nameToShow,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Black
+                color = detoxColors.label
             )
 
             // Member since
@@ -280,7 +281,7 @@ fun ProfileScreen(
                 Text(
                     text = stringResource(R.string.profile_member_since, dateStr),
                     fontSize = 13.sp,
-                    color = Color(0xFF8E8E93)
+                    color = detoxColors.subtext
                 )
             }
 
@@ -308,8 +309,8 @@ fun ProfileScreen(
                     .fillMaxWidth()
                     .clickable { onOpenSettings() },
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(0.5.dp, Color(0x0F000000))
+                colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+                border = BorderStroke(0.5.dp, detoxColors.cardBorder)
             ) {
                 Row(
                     modifier = Modifier
@@ -321,20 +322,20 @@ fun ProfileScreen(
                     Icon(
                         imageVector = Icons.Filled.Settings,
                         contentDescription = null,
-                        tint = Color.Black,
+                        tint = detoxColors.label,
                         modifier = Modifier.size(20.dp)
                     )
                     Text(
                         text = stringResource(R.string.profile_settings),
                         fontSize = 17.sp,
                         fontWeight = FontWeight(600),
-                        color = Color.Black,
+                        color = detoxColors.label,
                         modifier = Modifier.weight(1f)
                     )
                     Icon(
                         imageVector = Icons.Filled.ChevronRight,
                         contentDescription = null,
-                        tint = Color(0xFF8E8E93),
+                        tint = detoxColors.subtext,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -365,8 +366,8 @@ internal fun GuthabenCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(0.5.dp, Color(0x0F000000))
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+        border = BorderStroke(0.5.dp, detoxColors.cardBorder)
     ) {
         Column(
             modifier = Modifier
@@ -378,19 +379,19 @@ internal fun GuthabenCard(
                 text = stringResource(R.string.payout_balance_title),
                 fontSize = 17.sp,
                 fontWeight = FontWeight(600),
-                color = Color.Black
+                color = detoxColors.label
             )
             Text(
                 text = amountFormatted,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF00C853)
+                color = detoxColors.success
             )
             Text(
                 text = stringResource(R.string.payout_balance_source, balance.sourceCount),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color(0xFF8E8E93)
+                color = detoxColors.subtext
             )
             Spacer(modifier = Modifier.height(4.dp))
             if (ibanData == null) {
@@ -400,8 +401,8 @@ internal fun GuthabenCard(
                         .fillMaxWidth()
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.5.dp, Color(0xFFE0E0E5)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00C853))
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = detoxColors.accent)
                 ) {
                     Text(
                         text = stringResource(R.string.payout_balance_iban_missing),
@@ -413,7 +414,7 @@ internal fun GuthabenCard(
                 Text(
                     text = stringResource(R.string.payout_balance_iban_stored, ibanData.iban.takeLast(4)),
                     fontSize = 14.sp,
-                    color = Color(0xFF8E8E93)
+                    color = detoxColors.subtext
                 )
                 Button(
                     onClick = onRequestPayout,
@@ -422,8 +423,8 @@ internal fun GuthabenCard(
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF00C853),
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     enabled = payoutRequestState !is PayoutRequestState.Loading
                 ) {
@@ -431,7 +432,7 @@ internal fun GuthabenCard(
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
                     } else {
                         Text(
@@ -463,7 +464,7 @@ internal fun SimpleHistoryRow(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(0.5.dp, Color(0x0F000000))
+        border = BorderStroke(0.5.dp, detoxColors.cardBorder)
     ) {
         Row(
             modifier = Modifier
@@ -499,7 +500,7 @@ internal fun SimpleHistoryRow(
             Text(
                 text = dateStr,
                 fontSize = 12.sp,
-                color = Color(0xFF8E8E93)
+                color = detoxColors.subtext
             )
         }
     }
@@ -507,6 +508,9 @@ internal fun SimpleHistoryRow(
 
 // ── Debug Panel ───────────────────────────────────────────────────────────────
 
+// Debug-only, DELIBERATELY UNTHEMED. The DebugPanel below (BuildConfig.DEBUG only) is
+// never shown to users, so its colors — this palette and any inline literals within the
+// panel — are intentionally left hardcoded and exempt from the theme migration.
 private val DebugOrange = Color(0xFFE65100)
 private val DebugOrangeBorder = Color(0xFFFF6D00)
 private val DebugBg = Color(0xFFFFF3E0)

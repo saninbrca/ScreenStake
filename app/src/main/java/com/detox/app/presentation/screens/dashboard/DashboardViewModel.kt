@@ -14,6 +14,7 @@ import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
+import com.detox.app.domain.usecase.SettleEndedSoftChallengesUseCase
 import com.detox.app.domain.usecase.SyncUserDataUseCase
 import com.detox.app.service.TrackedAppEventBus
 import com.google.firebase.firestore.FirebaseFirestore
@@ -87,6 +88,7 @@ class DashboardViewModel @Inject constructor(
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
     private val appConfigRepository: AppConfigRepository,
     private val firestore: FirebaseFirestore,
+    private val settleEndedSoftChallengesUseCase: SettleEndedSoftChallengesUseCase,
 ) : ViewModel() {
 
     // ── Soft update banner ──────────────────────────────────────────────────────
@@ -233,6 +235,12 @@ class DashboardViewModel @Inject constructor(
             // Wait for the one-shot sync to finish before reading Room.
             // If it already completed this is a no-op.
             syncJob.join()
+            // On-app-open backstop: finalise any fixed-end Soft challenge whose endDate passed while
+            // the app was closed (EMUI throttles the periodic worker). Runs BEFORE refreshStats and
+            // the completed/failed dialog checks below, so a just-finalised challenge drops off the
+            // active cards and surfaces its success/fail dialog this same session. Open-ended
+            // challenges are never touched (they run indefinitely).
+            settleEndedSoftChallengesUseCase()
             refreshStats()
             // First authoritative state is now set: the Room observer may update it from here on.
             initialLoadComplete = true

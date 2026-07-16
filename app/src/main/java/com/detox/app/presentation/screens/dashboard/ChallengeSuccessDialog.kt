@@ -413,7 +413,12 @@ fun ChallengeSuccessDialog(
 /** Computes `durationDays` from a Challenge, handling both timestamp and day-offset endDate formats. */
 private val Challenge.durationDays: Int
     get() {
-        val endDateMs = if (endDate > 1_700_000_000_000L) endDate
+        val resolvedEnd = if (endDate > 1_700_000_000_000L) endDate
         else startDate + (endDate * DateUtils.MILLIS_PER_DAY)
-        return ((endDateMs - startDate) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(1)
+        // Open-ended challenges carry a ~100-year sentinel end date — never render that span as a
+        // day count (was surfacing as a huge "N Tage"). Clamp to days-elapsed-so-far. (Open-ended
+        // challenges are not completed by the worker/backstop, so reaching this dialog is defensive.)
+        val effectiveEnd = if (DateUtils.isOpenEnded(startDate, resolvedEnd)) System.currentTimeMillis()
+        else resolvedEnd
+        return ((effectiveEnd - startDate) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(1)
     }

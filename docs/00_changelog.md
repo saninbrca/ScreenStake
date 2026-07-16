@@ -21,6 +21,39 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-16 — Soft-challenge completion reliability + open-ended display + overlay contrast (3 bug fixes)
+
+**WHAT.** Three soft-mode bug fixes:
+1. **Soft challenge sometimes never ended (Bug 1).** Solo completion previously happened ONLY in the
+   periodic `DailyEvaluationWorker`, which EMUI throttles — plus the 23:59-fires-before-endDate
+   (23:59:59.999) wrinkle needed a next-day run. Added an on-app-open backstop
+   `SettleEndedSoftChallengesUseCase`, invoked in `DashboardViewModel.loadStats()` before the
+   completed/failed dialog checks. It reuses the worker's exact end-of-challenge trigger — extracted
+   to `DateUtils.hasReachedEnd(start, end, now)` and routed through by BOTH the worker (all 5 inline
+   sites) and the backstop, so the two paths can't diverge. Strictly SOFT-only
+   (`mode==SOFT && stripePaymentIntentId==null && groupChallengeId==null`); open-ended challenges are
+   never completed. Runs in-process (not WorkManager), so it's immune to the throttling. The periodic
+   worker is untouched — this is an additional net, not a replacement.
+2. **"230483 Tage" for open-ended end date (Bug 2).** Open-ended challenges store a ~100-year
+   sentinel `endDate`. Applied the existing `DateUtils.isOpenEnded()` guard at the four unguarded
+   day-count surfaces: `ChallengeSuccessDialog` (clamp to days-elapsed), `HistoryViewModel` +
+   `HistoryDetailViewModel` (new shared `openEndedSafeDurationDays()` → real days-survived from the
+   last DailyLog), and the two `ProfileViewModel` payout sites (defensive; those are Hard-only).
+3. **Blocked-website overlay showed generic "Website" (Bug 3).** The domain WAS passed correctly but
+   rendered `#333` on the `#111` inset (~1.4:1 contrast, invisible). `WebsiteBlockedOverlay` domain
+   text → `Color.White`, `FontWeight.Medium`, 14sp.
+
+**WHY.** All three are soft-mode UX correctness. Open-ended challenges remain a supported,
+streak-based feature (DECISION) — made to work correctly, not removed.
+
+**TESTS.** JVM unit tests: `DateUtilsTest` (hasReachedEnd boundaries + isOpenEnded), History
+`OpenEndedSafeDurationDaysTest`, and `SettleEndedSoftChallengesUseCaseTest` (completes fixed-end
+soft; skips open-ended/Hard/staked/group). 19 tests, all green.
+
+**MONEY-SAFETY.** No changes to money-authority/settlement, the Hard capture/refund gates,
+`applicationId`, or gate-don't-delete. The backstop provably never touches a challenge with a
+`stripePaymentIntentId`.
+
 ### 2026-07-08 — Accessibility prominent disclosure + EN→DE strings (Play compliance)
 
 **WHAT.** New shared `AccessibilityDisclosureDialog` (`presentation/components/`) shown BEFORE

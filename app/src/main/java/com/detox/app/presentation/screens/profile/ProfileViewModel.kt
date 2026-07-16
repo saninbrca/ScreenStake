@@ -379,7 +379,8 @@ class ProfileViewModel @Inject constructor(
             database.challengeDao().getFinishedSoloChallenges()
                 .filter { it.status == "completed" && it.mode == "hard" && it.amountCents != null && it.amountCents > 0 && it.isRedemption == 0 }
                 .forEach { entity ->
-                    val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate) {
+                    val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate
+                        && !DateUtils.isOpenEnded(entity.startDate, entity.endDate)) {
                         ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
                     } else 0
                     val originalAmount = entity.amountCents ?: 0
@@ -411,7 +412,8 @@ class ProfileViewModel @Inject constructor(
                     val originalAmount = entity.originalChallengeId
                         ?.let { database.challengeDao().getChallengeById(it)?.amountCents } ?: 0
                     val appFee = if (originalAmount > 0) originalAmount - refundCents else 0
-                    val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate) {
+                    val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate
+                        && !DateUtils.isOpenEnded(entity.startDate, entity.endDate)) {
                         ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
                     } else 0
                     payouts += PayoutChallengeInfo(

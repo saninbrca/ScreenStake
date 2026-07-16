@@ -190,7 +190,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     )
                     val durationDays = ((challenge.endDate - challenge.startDate) /
                             DateUtils.MILLIS_PER_DAY).toInt()
-                    if (now >= challenge.endDate || durationDays == 1) {
+                    if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                         val log = existingRealLog
                         val finalStatus = if (log.limitExceeded) {
                             ChallengeStatus.FAILED
@@ -339,8 +339,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             )
                             continue
                         }
-                        val durationDays = ((challenge.endDate - challenge.startDate) /
-                                DateUtils.MILLIS_PER_DAY).toInt()
                         if (limitExceeded) {
                             paymentRepository.capturePayment(challenge.stripePaymentIntentId)
                                 .onSuccess {
@@ -350,7 +348,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 .onFailure { e ->
                                     Timber.e(e, "Failed to capture payment for ${challenge.id}")
                                 }
-                        } else if (now >= challenge.endDate || durationDays == 1) {
+                        } else if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                             if (challenge.isRedemption && challenge.originalPaymentIntentId != null && challenge.refundAmountCents != null) {
                                 Timber.d("Redemption TIME_BUDGET challenge ${challenge.id} completed → 60%% partial refund")
                                 val userId = firebaseAuthService.currentUserId()
@@ -419,7 +417,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
 
                     val durationDays = ((challenge.endDate - challenge.startDate) /
                             DateUtils.MILLIS_PER_DAY).toInt()
-                    if (now >= challenge.endDate || durationDays == 1) {
+                    if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                         val finalStatus = if (limitExceeded) {
                             ChallengeStatus.FAILED
                         } else {
@@ -556,8 +554,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         )
                         continue
                     }
-                    val durationDays = ((challenge.endDate - challenge.startDate) /
-                            DateUtils.MILLIS_PER_DAY).toInt()
 
                     if (limitExceeded) {
                         // User broke their Hard Mode limit today → capture payment
@@ -582,7 +578,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 // Capture failed → leave ACTIVE so the next worker cycle retries.
                                 Timber.e(e, "Failed to capture payment for ${challenge.id}")
                             }
-                    } else if (now >= challenge.endDate || durationDays == 1) {
+                    } else if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                         if (challenge.isRedemption && challenge.originalPaymentIntentId != null && challenge.refundAmountCents != null) {
                             // Redemption Challenge completed → 60% partial refund from original payment
                             Timber.d("Redemption challenge ${challenge.id} completed → partial refund €${challenge.refundAmountCents / 100f}")
@@ -656,7 +652,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 // ── Update challenge status if end date reached ─────────────────
                 val durationDays = ((challenge.endDate - challenge.startDate) /
                         DateUtils.MILLIS_PER_DAY).toInt()
-                if (now >= challenge.endDate || durationDays == 1) {
+                if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                     val finalStatus = if (limitExceeded) {
                         ChallengeStatus.FAILED
                     } else {

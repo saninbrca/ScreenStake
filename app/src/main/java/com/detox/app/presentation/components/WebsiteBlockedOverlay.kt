@@ -109,8 +109,12 @@ fun WebsiteBlockedOverlay(
                 ) {
                     Text(
                         text = domain,
-                        fontSize = 13.sp,
-                        color = Color(0xFF333333),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        // Legible light color on the near-black inset (SurfaceDark 0xFF111111); the
+                        // previous 0xFF333333 was ~1.4:1 contrast, rendering the domain invisible so
+                        // only the generic "Website geblockt" title was readable.
+                        color = Color.White,
                         textAlign = TextAlign.Center
                     )
                 }

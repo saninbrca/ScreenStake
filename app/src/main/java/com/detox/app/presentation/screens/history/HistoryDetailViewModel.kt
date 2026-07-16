@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.DailyLogEntity
-import com.detox.app.util.DateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,8 +47,7 @@ class HistoryDetailViewModel @Inject constructor(
             return
         }
         val logs = database.dailyLogDao().getLogsForChallengeOnce(challengeId)
-        val durationDays = ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY)
-            .toInt().coerceAtLeast(1)
+        val durationDays = openEndedSafeDurationDays(entity.startDate, entity.endDate, logs)
         val stats = if (entity.status == "completed") computeStats(entity, logs, durationDays) else null
         _uiState.value = UiState.Success(entity, stats, durationDays)
         Timber.d("HistoryDetailViewModel: loaded ${entity.appDisplayName}, stats=$stats")

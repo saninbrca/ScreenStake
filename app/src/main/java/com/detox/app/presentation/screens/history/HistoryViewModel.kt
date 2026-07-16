@@ -28,6 +28,23 @@ data class SoloChallengeHistory(
     val durationDays: Int
 )
 
+/**
+ * Duration in days for a finished solo challenge, safe for open-ended ("Kein Enddatum") challenges.
+ * Fixed-end challenges use their real [startMs]→[endMs] span. Open-ended challenges carry a
+ * ~100-year sentinel end date ([DateUtils.isOpenEnded]) that must NEVER be rendered as a day count —
+ * for those we return the actual days survived, derived from the last tracked DailyLog date.
+ */
+internal fun openEndedSafeDurationDays(
+    startMs: Long,
+    endMs: Long,
+    logs: List<DailyLogEntity>
+): Int = if (DateUtils.isOpenEnded(startMs, endMs)) {
+    val lastActive = logs.maxOfOrNull { it.date } ?: startMs
+    (((lastActive - startMs) / DateUtils.MILLIS_PER_DAY).toInt() + 1).coerceAtLeast(1)
+} else {
+    ((endMs - startMs) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(1)
+}
+
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
     private val database: DetoxDatabase,
@@ -44,8 +61,7 @@ class HistoryViewModel @Inject constructor(
         val solos = database.challengeDao().getFinishedSoloChallenges()
         val result = solos.map { entity ->
             val logs = database.dailyLogDao().getLogsForChallengeOnce(entity.id)
-            val durationDays = ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY)
-                .toInt().coerceAtLeast(1)
+            val durationDays = openEndedSafeDurationDays(entity.startDate, entity.endDate, logs)
             val stats = if (entity.status == "completed") computeStats(entity, logs, durationDays) else null
             SoloChallengeHistory(entity, stats, durationDays)
         }

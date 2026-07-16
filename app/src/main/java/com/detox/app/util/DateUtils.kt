@@ -24,6 +24,19 @@ object DateUtils {
     fun isOpenEnded(startMs: Long, endMs: Long): Boolean =
         startMs > 0L && endMs > 0L && (endMs - startMs) / MILLIS_PER_DAY >= NO_END_DATE_DAYS - 1
 
+    /**
+     * The end-of-challenge trigger shared by [com.detox.app.service.DailyEvaluationWorker] and the
+     * on-app-open soft backstop ([com.detox.app.domain.usecase.SettleEndedSoftChallengesUseCase]),
+     * so the two completion paths can never diverge. Mirrors the worker's inline condition exactly:
+     * a challenge has reached its end when [now] is at/after its resolved [endMs], OR it is a
+     * single-day challenge. Open-endedness is a SEPARATE guard ([isOpenEnded]) — callers that must
+     * never complete open-ended challenges check that first.
+     */
+    fun hasReachedEnd(startMs: Long, endMs: Long, now: Long): Boolean {
+        val durationDays = ((endMs - startMs) / MILLIS_PER_DAY).toInt()
+        return now >= endMs || durationDays == 1
+    }
+
     fun todayKey(): Long {
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 0)

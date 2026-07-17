@@ -21,6 +21,28 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-17 — FIXED: adult-list monthly update downloaded the WRONG OISD list (ad-block, not NSFW)
+
+**BUG (root cause of "de.pornhub.com → blocked=false").** `AdultDomainsUpdateWorker` downloaded
+`https://small.oisd.nl/` — OISD **Small is the general ad-blocking list**, not the NSFW list. It
+passes the ≥10k size check, so on any device where the monthly worker had run, the runtime set was
+silently REPLACED by ad/tracker domains containing zero porn — every adult URL returned
+blocked=false. The subdomain matching itself was NEVER broken: `hostMatches` checks every
+dot-boundary suffix (equals or ends-with ".domain", O(labels) HashSet lookups, no substring), and
+the bundled list even contains `de.pornhub.com` verbatim.
+
+**FIX.**
+- Worker now downloads `https://nsfw-small.oisd.nl/` (oisd nsfw_small, ~20k entries, same ABP format).
+- **Canary guard:** a downloaded list without `pornhub.com` is never saved (wrong-endpoint proof).
+- **Merge, never replace:** `loadDomains` now unions updated file INTO the bundled 133k baseline —
+  a bad download can no longer shrink coverage.
+- **Self-heal:** an existing updated file with the old "OISD Small" header is deleted on load
+  (poisoned devices recover on next service start without waiting a month).
+- Hardening: host matching trims trailing dots; `blocked=false` log now prints host + list size +
+  source (`adultDomains=…, source=…`) so a poisoned list is visible in one logcat line.
+- JVM tests: `AdultDomainsMatchTest` pins the matching contract (de./www./m./deep subdomains match;
+  `notpornhub.com`, `xpornhub.com`, `pornhub.com.evil.com` do NOT).
+
 ### 2026-07-17 — FIXED: adult-block locked users out of the entire browser (incognito ban removed)
 
 **BUG.** Adult-only challenge → user opened an incognito tab → after leaving the adult site they

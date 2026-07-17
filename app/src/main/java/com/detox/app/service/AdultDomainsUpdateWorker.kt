@@ -17,7 +17,10 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Monthly WorkManager worker that downloads a fresh adult-domain blocklist from OISD
- * and saves it to [Context.getFilesDir]/adult_domains_updated.txt.
+ * (nsfw_small — the NSFW list, ~20k entries; NOT small.oisd.nl, which is the general
+ * ad-blocking list and contains no adult domains) and saves it to
+ * [Context.getFilesDir]/adult_domains_updated.txt. [AdultDomains.loadDomains] MERGES
+ * it into the bundled list, so updates only ever add coverage.
  *
  * After saving, [AdultDomains.loadDomains] is called so the running
  * [AppDetectionAccessibilityService] immediately uses the new list without a restart.
@@ -35,7 +38,10 @@ class AdultDomainsUpdateWorker @AssistedInject constructor(
 
     companion object {
         const val WORK_NAME = "adult_domains_update"
-        private const val OISD_URL = "https://small.oisd.nl/"
+        private const val OISD_URL = "https://nsfw-small.oisd.nl/"
+
+        /** Must be present in any genuine NSFW list — guards against a wrong endpoint. */
+        private const val CANARY_DOMAIN = "pornhub.com"
     }
 
     private val httpClient by lazy {
@@ -60,9 +66,18 @@ class AdultDomainsUpdateWorker @AssistedInject constructor(
                 return@withContext Result.retry()
             }
 
+            // Canary: the download must actually be an NSFW list. The pre-2026-07-17
+            // bug pointed this worker at small.oisd.nl (ad-block list, >10k entries,
+            // zero adult domains) and silently disabled adult blocking on updated
+            // devices. Never save a list that fails the canary.
+            if (CANARY_DOMAIN !in domains) {
+                Timber.w("AdultDomainsUpdateWorker: canary '$CANARY_DOMAIN' missing — not an NSFW list, keeping current list")
+                return@withContext Result.retry()
+            }
+
             val outFile = File(context.filesDir, AdultDomains.UPDATED_FILE_NAME)
             outFile.bufferedWriter().use { writer ->
-                writer.write("# OISD Small — auto-updated by AdultDomainsUpdateWorker\n")
+                writer.write("# oisd nsfw_small — auto-updated by AdultDomainsUpdateWorker\n")
                 for (domain in domains.sorted()) {
                     writer.write(domain)
                     writer.newLine()

@@ -30,19 +30,37 @@ object AdultDomains {
         private set
 
     /**
-     * Loads domains from [UPDATED_FILE_NAME] in filesDir if present, otherwise from assets.
+     * Loads the bundled asset list and MERGES [UPDATED_FILE_NAME] into it if present.
+     * Merge (never replace): a bad monthly download must not be able to shrink
+     * coverage below the bundled baseline.
      * Thread-safe: the new set is atomically swapped in after parsing is complete.
      */
     fun loadDomains(context: Context) {
+        val bundled = parseLines(
+            context.assets.open("adult_domains.txt").bufferedReader().lineSequence()
+        )
+
         val updatedFile = File(context.filesDir, UPDATED_FILE_NAME)
+
+        // Self-heal: a worker bug (fixed 2026-07-17) downloaded OISD *Small* — the
+        // general AD-BLOCKING list, not the NSFW list — into the updated file,
+        // silently replacing adult coverage with ad/tracker domains. Detect the old
+        // header and delete so those domains never (re)enter the set.
+        if (updatedFile.exists()) {
+            val header = updatedFile.bufferedReader().use { it.readLine() ?: "" }
+            if (header.contains("OISD Small")) {
+                Timber.w("AdultDomains: updated file is the ad-block Small list (old worker bug) — deleting")
+                updatedFile.delete()
+            }
+        }
+
         val (newDomains, source) = if (updatedFile.exists() && updatedFile.length() > 0) {
             val dateStr = SimpleDateFormat("dd. MMM yyyy", Locale.GERMAN)
                 .format(Date(updatedFile.lastModified()))
-            parseLines(updatedFile.bufferedReader().lineSequence()) to "updated ($dateStr)"
+            val updated = parseLines(updatedFile.bufferedReader().lineSequence())
+            bundled.apply { addAll(updated) } to "bundled+updated ($dateStr)"
         } else {
-            parseLines(
-                context.assets.open("adult_domains.txt").bufferedReader().lineSequence()
-            ) to "bundled"
+            bundled to "bundled"
         }
         domains = newDomains
         domainsCount = newDomains.size
@@ -52,11 +70,31 @@ object AdultDomains {
 
     /**
      * Returns true when [url] points to a blocked adult domain.
-     * Checks exact host match and parent-domain stripping for O(1) performance:
-     *   "www.example.com" → checks "www.example.com", then "example.com"
+     * The URL must carry a scheme — `Uri.parse("example.com").host` is null.
      */
     fun isBlocked(url: String): Boolean {
-        val host = Uri.parse(url).host?.lowercase() ?: return false
+        val host = Uri.parse(url).host ?: return false
+        return hostMatches(host)
+    }
+
+    /**
+     * Checks whether a bare [domain] string (no scheme) is in the blocklist.
+     * Used by the debug panel "Test domain" feature and unit tests.
+     */
+    fun isDomainBlocked(domain: String): Boolean = hostMatches(domain)
+
+    /**
+     * Subdomain-aware host match: true when the host EQUALS a listed domain or is a
+     * subdomain of one ("de.pornhub.com" matches list entry "pornhub.com").
+     *
+     * Checks every dot-boundary suffix of the host against the HashSet — semantically
+     * identical to `host == d || host.endsWith(".$d")` for every listed domain d, but
+     * O(label count) lookups instead of an O(list size) scan. Never a bare substring
+     * match: "notpornhub.com" and "pornhub.com.evil.com" do NOT match "pornhub.com"
+     * (their dot-boundary suffixes are "com" / "com.evil.com", "evil.com", "com").
+     */
+    private fun hostMatches(rawHost: String): Boolean {
+        val host = rawHost.lowercase().trim('.')
         if (domains.contains(host)) return true
         var remaining = host
         while (remaining.contains('.')) {
@@ -66,19 +104,12 @@ object AdultDomains {
         return false
     }
 
-    /**
-     * Checks whether a bare [domain] string (no scheme) is in the blocklist.
-     * Used by the debug panel "Test domain" feature.
-     */
-    fun isDomainBlocked(domain: String): Boolean {
-        val h = domain.lowercase().trimStart('.')
-        if (domains.contains(h)) return true
-        var remaining = h
-        while (remaining.contains('.')) {
-            remaining = remaining.substringAfter('.')
-            if (domains.contains(remaining)) return true
-        }
-        return false
+    /** Swaps in a fixed domain set for JVM unit tests (no Context/assets available). */
+    @androidx.annotation.VisibleForTesting
+    internal fun setDomainsForTest(testDomains: Set<String>) {
+        domains = HashSet(testDomains)
+        domainsCount = testDomains.size
+        domainSource = "test"
     }
 
     private fun parseLines(lines: Sequence<String>): HashSet<String> {

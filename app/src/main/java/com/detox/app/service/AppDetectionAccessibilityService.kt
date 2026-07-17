@@ -347,7 +347,11 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             return  // Don't also fire the custom-domain overlay for the same URL
         }
 
-        Timber.d("URL detected: $url in $packageName → blocked=false")
+        Timber.d(
+            "URL detected: $url in $packageName → blocked=false " +
+                "(host=${android.net.Uri.parse(normalizedUrl).host}, " +
+                "adultDomains=${AdultDomains.domainsCount}, source=${AdultDomains.domainSource})"
+        )
 
         // ── Custom blocked-domain check (full domain) ─────────────────────────
         val customBlockedDomains = TrackedAppEventBus.blockedDomains.value

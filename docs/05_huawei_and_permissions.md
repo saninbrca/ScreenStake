@@ -234,8 +234,11 @@ Overlay is skipped gracefully if SYSTEM_ALERT_WINDOW is missing
 // in ALL major browsers (Chrome, Firefox, Samsung Browser, etc.)
 
 // Domain list: ~133k domains (script-generated — see scripts/update_adult_domains.py; OISD, StevenBlack, ut1 blocklists)
-// Updated monthly by AdultDomainsUpdateWorker (WorkManager) — saves to filesDir
-// Loaded at service start from filesDir (assets/ fallback), cached in HashSet<String>
+// Updated monthly by AdultDomainsUpdateWorker (WorkManager) from https://nsfw-small.oisd.nl/
+//   (NSFW list! NOT small.oisd.nl = ad-block list — that mistake silently disabled
+//    adult blocking; a canary check ["pornhub.com" must be present] now prevents it)
+// Loaded at service start: bundled assets list MERGED with the updated file (union —
+// updates only ever ADD coverage), cached in HashSet<String>
 
 // Subdomain matching:
 fun isDomainBlocked(url: String): Boolean {

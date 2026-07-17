@@ -21,6 +21,34 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-17 — FIXED: adult-block locked users out of the entire browser (incognito ban removed)
+
+**BUG.** Adult-only challenge → user opened an incognito tab → after leaving the adult site they
+could not re-enter Chrome AT ALL until swiping it from Recents. Cause: `checkIncognito` in
+`AppDetectionAccessibilityService` blanket-blocked ANY browser window whose title or **page text**
+contained "incognito"/"private"/"privat" (`findAccessibilityNodeInfosByText` substring scan).
+The surviving incognito session re-triggered it on every launch; it also false-positived on normal
+pages containing "privat"/"private" and on Chrome's own "New Incognito tab" menu.
+
+**DECISION.** Blanket incognito blocking is REMOVED (checkIncognito, checkNodeForIncognito,
+INCOGNITO_INDICATORS deleted). Adult blocking is per-URL only via the address-bar check, which
+works in incognito too. Never re-add content-text scanning.
+
+**Also in this pass:**
+- **Scheme-less URL fix (latent):** address bars show "example.com" without scheme;
+  `Uri.parse("example.com").host == null`, so `AdultDomains.isBlocked` could never match —
+  the incognito ban had been masking this. `checkBrowserUrl` now normalizes to
+  `https://…` before matching.
+- **extractUrl tightened:** removed the "last resort" page-text scan for URL-shaped strings
+  (a displayed adult domain could be mistaken for the current URL). Address-bar view IDs only;
+  unreadable address bar ⇒ fail open.
+- **Block UX:** on adult match: localized toast (`adult_block_toast`, "🔞 Von Finite blockiert" —
+  replaces hardcoded "🔞 Blocked by Detox") + `goHome()` + new `emitAdultBlocked(host)` bus event →
+  `OverlayManager.showAdultBlockedOverlay` shows the `WebsiteBlockedOverlay` `isAdultBlock` variant
+  (🔞, subtitle `overlay_adult_blocked_subtitle`) over the home screen. No bypass. Gracefully
+  skipped when overlay permission is missing (adult-only challenges stay exempt from the
+  overlay pre-flight gate — see entry below).
+
 ### 2026-07-17 — Pre-flight permission check before challenge start (unified gate)
 
 **WHAT.** `ChallengeCreationViewModel.createChallenge()` now runs a unified enforcement-permission

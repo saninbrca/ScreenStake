@@ -222,6 +222,14 @@ class OverlayManager @Inject constructor(
             }
         }
 
+        // Adult blocking: the AccessibilityService already sent the user home;
+        // show an explanatory overlay so the redirect doesn't read as a browser crash.
+        scope.launch {
+            TrackedAppEventBus.adultBlockedEvents.collect { domain ->
+                showAdultBlockedOverlay(domain)
+            }
+        }
+
         // Home button detected while overlay is visible — dismiss overlay (user chose to go home).
         // Guard: ignore events fired <1s after the overlay appeared to avoid Recents animation
         // race where the launcher fires a state-changed event right after the overlay opens.
@@ -1062,6 +1070,51 @@ class OverlayManager @Inject constructor(
                     challengeName = blockingChallenge?.appDisplayName,
                     streak = streak,
                     motivationText = motivationText,
+                    onGoBack = {
+                        dismissOverlay()
+                        goHome()
+                    }
+                )
+            }
+        }
+        showOverlay(composeView)
+    }
+
+    /**
+     * Adult-content block: shown AFTER the AccessibilityService has already redirected
+     * the user to the home screen (unlike custom domains, the adult page must never
+     * stay resumed behind an overlay). Explains WHY the browser was closed.
+     * No bypass — adult blocking has no "Visit anyway" path.
+     */
+    private suspend fun showAdultBlockedOverlay(domain: String) {
+        if (currentOverlayView != null) return
+
+        // Adult-only challenges are exempt from the overlay permission in the
+        // pre-flight gate — without the permission, degrade to toast-only feedback
+        // (the AccessibilityService already showed the toast and went home).
+        if (!android.provider.Settings.canDrawOverlays(context)) {
+            Timber.d("Adult block: no overlay permission — toast-only fallback")
+            return
+        }
+
+        // Motivation/name from whichever active challenge enabled the adult block
+        val challenges = challengeRepository.getActiveChallengesList().getOrElse { emptyList() }
+        val blockingChallenge = challenges.firstOrNull { it.blockAdultContent }
+        val motivationText = blockingChallenge?.customMotivation?.takeIf { it.isNotBlank() }
+
+        val composeView = createSessionComposeView(
+            onBack = {
+                dismissOverlay()
+                goHome()
+            }
+        ) {
+            DetoxTheme(darkTheme = true) {
+                com.detox.app.presentation.components.WebsiteBlockedOverlay(
+                    domain = domain,
+                    challengeName = blockingChallenge?.appDisplayName,
+                    streak = 0,
+                    motivationText = motivationText,
+                    isAdultBlock = true,
                     onGoBack = {
                         dismissOverlay()
                         goHome()

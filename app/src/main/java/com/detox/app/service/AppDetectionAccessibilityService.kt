@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
+import com.detox.app.R
 import com.detox.app.domain.model.AdultDomains
 import io.sentry.Breadcrumb
 import io.sentry.Sentry
@@ -90,9 +91,6 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             ),
         )
 
-        /** Text fragments that indicate Chrome/Edge incognito mode in the window title. */
-        private val INCOGNITO_INDICATORS = listOf("incognito", "private", "privat")
-
         // Temporary allow-list: package -> elapsedRealtime expiry (ms).
         // Populated by OverlayManager when the user explicitly confirms an open
         // ("Ja, öffnen", "Continue", etc.). While entry is live, the
@@ -146,22 +144,16 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         if (isCurrentlyAllowed(packageName)) return
 
         // ── Browser URL monitoring ────────────────────────────────────────────
-        if (BROWSER_PACKAGES.contains(packageName)) {
-            when (eventType) {
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                    // Incognito check on any browser window event
-                    if (TrackedAppEventBus.adultBlockingActive.value) {
-                        checkIncognito(event, packageName)
-                    }
-                    if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-                        checkBrowserUrl(packageName)
-                    }
-                }
-            }
-            // Still allow window-state events to fall through to the normal
-            // app-open detection below (so browser tracking still works).
-            if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+        // URL-based only: adult and custom domains are matched against the address
+        // bar text (works in incognito too — Chrome exposes the url_bar there).
+        // There is deliberately NO blanket incognito block: it locked users out of
+        // the whole browser while a private tab existed. Window-state events still
+        // fall through to the normal app-open detection below.
+        if (BROWSER_PACKAGES.contains(packageName) &&
+            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            checkBrowserUrl(packageName)
+            return
         }
 
         // Secondary trigger: CONTENT_CHANGED from a tracked non-browser package whose foreground
@@ -322,60 +314,13 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ── Incognito detection ───────────────────────────────────────────────────
-
-    /**
-     * Detects when the user opens an incognito/private window in a browser while
-     * adult blocking is active. Sends the user to the home screen immediately.
-     *
-     * Browsers signal incognito mode in various ways:
-     *  - Chrome/Edge: window title contains "Incognito"
-     *  - Firefox: window title contains "Private"
-     *  - Samsung Internet: window title contains "Secret"
-     *
-     * We also scan visible node text for known incognito indicator strings as a fallback.
-     */
-    private fun checkIncognito(event: AccessibilityEvent, packageName: String) {
-        // Fast path: check window title from the event itself
-        val windowTitle = event.text?.joinToString(" ")?.lowercase()
-            ?: event.contentDescription?.toString()?.lowercase()
-            ?: ""
-
-        val isIncognito = INCOGNITO_INDICATORS.any { windowTitle.contains(it) }
-            || checkNodeForIncognito(packageName)
-
-        if (isIncognito) {
-            val now = System.currentTimeMillis()
-            if (now - lastAdultBlockTimeMs < adultBlockCooldownMs) return
-            lastAdultBlockTimeMs = now
-
-            Timber.d("Incognito/private mode detected in $packageName — adult blocking active, sending to home")
-            showBlockedToast()
-            performGlobalAction(GLOBAL_ACTION_HOME)
-        }
-    }
-
-    /**
-     * Searches the accessibility tree for incognito-indicator nodes.
-     * Used as a fallback when the window title doesn't carry the incognito label.
-     */
-    private fun checkNodeForIncognito(packageName: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        return try {
-            INCOGNITO_INDICATORS.any { indicator ->
-                root.findAccessibilityNodeInfosByText(indicator).isNotEmpty()
-            }
-        } finally {
-            root.recycle()
-        }
-    }
-
     // ── URL extraction & domain matching ─────────────────────────────────────
 
     /**
      * Extracts the current URL from the browser's address bar and checks it against:
-     *  1. Adult domains ([AdultDomains.BLOCKED_DOMAINS]) — only when adult blocking is active.
-     *     On match: send user to home screen immediately.
+     *  1. Adult domains ([AdultDomains.isBlocked]) — only when adult blocking is active.
+     *     On match: toast + send user home immediately, then emit
+     *     [TrackedAppEventBus.emitAdultBlocked] so OverlayManager explains the block.
      *  2. Custom blocked domains ([TrackedAppEventBus.blockedDomains]) — always checked.
      *     On match: emit [TrackedAppEventBus.emitUrlBlocked] to show the challenge overlay.
      */
@@ -384,13 +329,19 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
         val adultBlockingActive = TrackedAppEventBus.adultBlockingActive.value
 
+        // Address bars usually show scheme-less text ("example.com/path"), for which
+        // Uri.parse() returns a null host. Prepend a scheme so host parsing works.
+        val normalizedUrl = if (url.contains("://")) url else "https://$url"
+
         // ── Adult domain check (O(1) HashSet lookup) ─────────────────────────
-        if (adultBlockingActive && AdultDomains.isBlocked(url)) {
+        if (adultBlockingActive && AdultDomains.isBlocked(normalizedUrl)) {
             val now = System.currentTimeMillis()
             if (now - lastAdultBlockTimeMs >= adultBlockCooldownMs) {
                 lastAdultBlockTimeMs = now
                 Timber.d("URL detected: $url in $packageName → adult domain blocked")
                 showBlockedToast()
+                val host = android.net.Uri.parse(normalizedUrl).host ?: url
+                TrackedAppEventBus.emitAdultBlocked(host)
                 goHome()
             }
             return  // Don't also fire the custom-domain overlay for the same URL
@@ -422,9 +373,12 @@ class AppDetectionAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Tries every known URL-bar view ID for [packageName] in order, then falls back to a
-     * text search for anything that looks like a URL (contains "." and no spaces).
+     * Tries every known URL-bar view ID for [packageName] in order.
      * Returns the first non-blank URL found, or null if none can be extracted.
+     *
+     * Address-bar view IDs ONLY — never scan page text for URL-shaped strings:
+     * an adult domain merely displayed in page content must not be mistaken for
+     * the current URL. If the address bar can't be read, we fail OPEN (no block).
      */
     private fun extractUrl(packageName: String): String? {
         val root = rootInActiveWindow ?: return null
@@ -437,7 +391,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                 if (!text.isNullOrBlank()) return text
             }
 
-            // Fallback: generic IDs that some browsers use
+            // Fallback: generic address-bar IDs that some browsers use
             val genericIds = listOf("url_bar", "address_bar", "omnibox", "url_field", "location_bar")
             for (id in genericIds) {
                 val nodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/$id")
@@ -445,11 +399,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                 if (!text.isNullOrBlank()) return text
             }
 
-            // Last resort: text search for a URL-shaped string
-            val candidates = root.findAccessibilityNodeInfosByText(".")
-            return candidates
-                .mapNotNull { it.text?.toString()?.trim() }
-                .firstOrNull { it.contains(".") && !it.contains(" ") && it.length > 4 }
+            return null
         } finally {
             root.recycle()
         }
@@ -468,7 +418,11 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
     /** Shows a brief toast so the user understands why they were redirected. */
     private fun showBlockedToast() {
-        Toast.makeText(applicationContext, "🔞 Blocked by Detox", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            applicationContext,
+            getString(R.string.adult_block_toast),
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     // ── Schedule gate ─────────────────────────────────────────────────────────

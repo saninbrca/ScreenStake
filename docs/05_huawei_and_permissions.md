@@ -211,10 +211,21 @@ RECEIVE_BOOT_COMPLETED    ← BootReceiver
 
 ### Rules (ABSOLUTE — no exceptions)
 ```
-Adult content = 100% blocked, ALWAYS.
-No overlay, no bypass, no "öffnen" option.
-Silent redirect to home screen + brief Toast only.
+Adult content = 100% blocked, ALWAYS — but ONLY per-URL.
+No bypass, no "öffnen" option, no "Visit anyway".
+Redirect to home screen + Toast, then an explanatory overlay
+(WebsiteBlockedOverlay isAdultBlock variant) over the home screen.
+Overlay is skipped gracefully if SYSTEM_ALERT_WINDOW is missing
+(adult-only challenges are exempt from the overlay pre-flight gate).
 ```
+
+> **DECISION (2026-07-17): NO blanket incognito blocking.** The former incognito
+> detection (window-title / page-text scan for "incognito"/"private"/"privat")
+> locked users out of the ENTIRE browser while any private tab existed (until the
+> browser was swiped from Recents) and false-positived on normal pages containing
+> the word "privat". Removed. Adult blocking relies on the per-URL address-bar
+> check, which works in incognito too (Chrome exposes `url_bar` to accessibility
+> in private tabs). Do NOT re-add content-text scanning.
 
 ### Implementation
 
@@ -235,14 +246,20 @@ fun isDomainBlocked(url: String): Boolean {
     // "www.pornhub.com" matches "pornhub.com" ✅
 }
 
-// On match:
-// 1. performGlobalAction(GLOBAL_ACTION_HOME)  ← immediate
-// 2. Show Toast: "🔞 Blocked by Detox"        ← brief, no dismiss needed
-// 3. NO overlay, NO counter increment, NO bypass
+// On match (2s cooldown):
+// 1. Toast R.string.adult_block_toast ("🔞 Von Finite blockiert")
+// 2. emitAdultBlocked(host) → OverlayManager.showAdultBlockedOverlay
+//    (WebsiteBlockedOverlay isAdultBlock=true, over the home screen; skipped
+//     without overlay permission)
+// 3. goHome()                                  ← immediate, adult page never
+//                                                stays resumed behind an overlay
+// 4. NO counter increment, NO bypass
 
-// Incognito mode detection:
-// If user opens incognito tab in any browser AND adult content challenge is active
-// → treat as adult content → redirect home immediately
+// URL extraction: address-bar view IDs ONLY (URL_BAR_IDS + generic id fallback).
+// NEVER scan page text for URL-shaped strings — a displayed adult domain must
+// not be mistaken for the current URL. Unreadable address bar ⇒ FAIL OPEN.
+// Address-bar text is scheme-less ("example.com") ⇒ normalized to
+// "https://example.com" before Uri.parse(), otherwise host is null (no match).
 ```
 
 ### Browser URL Bar Detection

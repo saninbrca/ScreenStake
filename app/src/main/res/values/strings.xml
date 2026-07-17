@@ -1115,6 +1115,10 @@
     <string name="overlay_website_new_subtitle">Diese Website ist in deiner Challenge gesperrt.</string>
     <string name="overlay_website_back_button">Zurück</string>
 
+    <!-- Adult-content blocking (accessibility service + WebsiteBlockedOverlay variant) -->
+    <string name="adult_block_toast">🔞 Von Finite blockiert</string>
+    <string name="overlay_adult_blocked_subtitle">18+ Inhalte sind durch deine aktive Challenge gesperrt.</string>
+
     <!-- Dark overlay redesign — HardModeLockoutOverlay -->
     <string name="overlay_lockout_new_title">Hard Mode aktiv</string>
     <string name="overlay_lockout_new_subtitle">Du kannst die App nicht öffnen.</string>

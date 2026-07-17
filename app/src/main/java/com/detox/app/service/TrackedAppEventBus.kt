@@ -70,6 +70,17 @@ object TrackedAppEventBus {
     )
     val urlBlockedEvents: SharedFlow<String> = _urlBlockedEvents.asSharedFlow()
 
+    /**
+     * Fires when the AccessibilityService blocks an adult domain. The service has already
+     * sent the user home; [OverlayManager] shows an explanatory overlay so the redirect
+     * doesn't read as a browser crash. Carries the matched host.
+     */
+    private val _adultBlockedEvents = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val adultBlockedEvents: SharedFlow<String> = _adultBlockedEvents.asSharedFlow()
+
     /** Domains freed for the rest of the day after the user tapped "Visit anyway". */
     private val _freedDomainsToday = MutableStateFlow<Set<String>>(emptySet())
     val freedDomainsToday: StateFlow<Set<String>> = _freedDomainsToday.asStateFlow()
@@ -109,6 +120,10 @@ object TrackedAppEventBus {
 
     fun emitUrlBlocked(domain: String) {
         _urlBlockedEvents.tryEmit(domain)
+    }
+
+    fun emitAdultBlocked(domain: String) {
+        _adultBlockedEvents.tryEmit(domain)
     }
 
     fun markDomainFreeForToday(domain: String) {

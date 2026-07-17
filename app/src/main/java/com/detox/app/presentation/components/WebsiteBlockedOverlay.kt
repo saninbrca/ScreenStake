@@ -35,6 +35,8 @@ import com.detox.app.R
 
 /**
  * Full-screen opaque overlay shown when a blocked domain is detected in a browser.
+ * With [isAdultBlock] it becomes the adult-content variant (🔞 icon, 18+ subtitle),
+ * shown over the home screen after the user was already redirected out of the browser.
  *
  * No bypass — single "Zurück" button only.
  * Back button is also intercepted by OverlayManager via createSessionComposeView.
@@ -45,6 +47,7 @@ fun WebsiteBlockedOverlay(
     challengeName: String?,
     streak: Int,
     motivationText: String?,
+    isAdultBlock: Boolean = false,
     onGoBack: () -> Unit,
 ) {
     val TextHint    = Color(0xFF555555)
@@ -73,7 +76,11 @@ fun WebsiteBlockedOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // ── Emoji ──────────────────────────────────────────────────────────
-                Text(text = "🌐", fontSize = 48.sp, textAlign = TextAlign.Center)
+                Text(
+                    text = if (isAdultBlock) "🔞" else "🌐",
+                    fontSize = 48.sp,
+                    textAlign = TextAlign.Center
+                )
 
                 Spacer(Modifier.height(16.dp))
 
@@ -91,7 +98,10 @@ fun WebsiteBlockedOverlay(
 
                 // ── Subtitle ───────────────────────────────────────────────────────
                 Text(
-                    text = stringResource(R.string.overlay_website_new_subtitle),
+                    text = stringResource(
+                        if (isAdultBlock) R.string.overlay_adult_blocked_subtitle
+                        else R.string.overlay_website_new_subtitle
+                    ),
                     fontSize = 14.sp,
                     color = Color(0xFF666666),
                     textAlign = TextAlign.Center

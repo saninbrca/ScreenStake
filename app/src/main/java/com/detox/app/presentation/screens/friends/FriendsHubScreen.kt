@@ -44,7 +44,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
@@ -61,6 +60,7 @@ import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.ui.theme.detoxColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -138,7 +138,7 @@ fun FriendsHubScreen(
                             Text(
                                 text = stringResource(R.string.feature_temporarily_unavailable),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFFFF9500),
+                                color = detoxColors.warningStrong,
                                 modifier = Modifier.padding(start = 4.dp)
                             )
                         }
@@ -516,13 +516,13 @@ private fun WaitingChallengeCard(
 private fun LiveBadge() {
     Box(
         modifier = Modifier
-            .background(Color(0xFFE8F5E9), RoundedCornerShape(4.dp))
+            .background(detoxColors.softGreenBg, RoundedCornerShape(4.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(
             text = "🟢 LIVE",
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF2E7D32),
+            color = detoxColors.softGreenText,
             fontWeight = FontWeight.Bold
         )
     }

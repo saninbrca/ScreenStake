@@ -75,19 +75,14 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.presentation.screens.activechallenge.DetoxCard
+import com.detox.app.ui.theme.DetoxAvatarPalette
+import com.detox.app.ui.theme.DetoxPodiumColors
+import com.detox.app.ui.theme.detoxColors
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import timber.log.Timber
-
-private val BgGray = Color(0xFFF2F2F7)
-private val CardWhite = Color.White
-private val CardBorder = Color(0x0F000000)
-private val TextSecondary = Color(0xFF8E8E93)
-private val AccentGreen = Color(0xFF00C853)
-private val AbandonRed = Color(0xFFFF3B30)
-private val DividerColor = Color(0xFFF2F2F7)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -251,15 +246,15 @@ fun GroupChallengeDetailScreen(
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.nav_back),
-                            tint = Color.Black
+                            tint = detoxColors.label
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = BgGray)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = detoxColors.screenBackground)
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = BgGray
+        containerColor = detoxColors.screenBackground
     ) { innerPadding ->
         when (val state = uiState) {
             GroupDetailUiState.Loading -> {
@@ -406,7 +401,7 @@ private fun GroupDetailContent(
             confirmButton = {
                 Button(
                     onClick = { showLeaveDialog = false; onLeave() },
-                    colors = ButtonDefaults.buttonColors(containerColor = AbandonRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = detoxColors.danger)
                 ) {
                     Text(stringResource(R.string.group_leave_dialog_confirm))
                 }
@@ -429,7 +424,7 @@ private fun GroupDetailContent(
             confirmButton = {
                 Button(
                     onClick = { showDeleteDialog = false; onDelete() },
-                    colors = ButtonDefaults.buttonColors(containerColor = AbandonRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = detoxColors.danger)
                 ) {
                     Text(stringResource(R.string.group_delete_dialog_confirm))
                 }
@@ -445,7 +440,7 @@ private fun GroupDetailContent(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(BgGray),
+            .background(detoxColors.screenBackground),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -521,7 +516,7 @@ private fun GroupDetailContent(
                     text = stringResource(R.string.group_detail_leaderboard_section),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.W500,
-                    color = TextSecondary,
+                    color = detoxColors.subtext,
                     letterSpacing = 0.5.sp
                 )
             }
@@ -531,7 +526,7 @@ private fun GroupDetailContent(
                     Text(
                         text = stringResource(R.string.group_detail_no_participants),
                         fontSize = 14.sp,
-                        color = TextSecondary
+                        color = detoxColors.subtext
                     )
                 }
             } else {
@@ -547,7 +542,7 @@ private fun GroupDetailContent(
                         isLast -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
                         else -> RoundedCornerShape(0.dp)
                     }
-                    val rowBg = if (participant.userId == currentUserId) Color(0xFFF9FFF9) else CardWhite
+                    val rowBg = if (participant.userId == currentUserId) detoxColors.selectedSurface else detoxColors.cardBackground
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -555,7 +550,7 @@ private fun GroupDetailContent(
                         shape = shape,
                         colors = CardDefaults.cardColors(containerColor = rowBg),
                         elevation = CardDefaults.cardElevation(0.dp),
-                        border = BorderStroke(0.5.dp, CardBorder)
+                        border = BorderStroke(0.5.dp, detoxColors.cardBorder)
                     ) {
                         LeaderboardRow(
                             rank = rankMap[participant.userId] ?: 0,
@@ -564,7 +559,7 @@ private fun GroupDetailContent(
                             isCurrentUser = participant.userId == currentUserId
                         )
                         if (!isLast) {
-                            HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+                            HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                         }
                     }
                 }
@@ -578,7 +573,7 @@ private fun GroupDetailContent(
                     text = stringResource(R.string.group_detail_session_section),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.W500,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
             }
             item {
@@ -613,7 +608,7 @@ private fun GroupDetailContent(
                         Text(
                             text = stringResource(R.string.group_detail_quit_button),
                             fontSize = 14.sp,
-                            color = AbandonRed
+                            color = detoxColors.danger
                         )
                     }
                 }
@@ -636,7 +631,7 @@ private fun GroupDetailContent(
                         Text(
                             text = stringResource(R.string.group_leave_button),
                             fontSize = 14.sp,
-                            color = AbandonRed
+                            color = detoxColors.danger
                         )
                     }
                 }
@@ -682,7 +677,7 @@ private fun GroupHeaderCard(
                     else -> ""
                 }
                 if (rightLabel.isNotEmpty()) {
-                    Text(text = rightLabel, fontSize = 12.sp, color = TextSecondary)
+                    Text(text = rightLabel, fontSize = 12.sp, color = detoxColors.subtext)
                 }
             }
 
@@ -691,7 +686,7 @@ private fun GroupHeaderCard(
                 text = gc.appDisplayName,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Black,
+                color = detoxColors.label,
                 letterSpacing = (-0.3).sp
             )
 
@@ -706,11 +701,11 @@ private fun GroupHeaderCard(
                 LimitType.TIME_WINDOW ->
                     stringResource(R.string.group_detail_limit_window)
             }
-            Text(text = limitSubtitle, fontSize = 13.sp, color = TextSecondary)
+            Text(text = limitSubtitle, fontSize = 13.sp, color = detoxColors.subtext)
 
             // Stats row (3 columns) — only for ACTIVE
             if (gc.status == GroupChallengeStatus.ACTIVE) {
-                HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
 
                 val totalPotCents = gc.participants.sumOf { it.amountCents }
                 val activeCount = gc.participants.count { it.status == ParticipantStatus.ACTIVE }
@@ -735,7 +730,7 @@ private fun GroupHeaderCard(
                         modifier = Modifier
                             .width(0.5.dp)
                             .height(48.dp)
-                            .background(DividerColor)
+                            .background(detoxColors.divider)
                     )
                     GroupStatColumn(
                         label = stringResource(R.string.group_detail_teilnehmer_label),
@@ -749,12 +744,12 @@ private fun GroupHeaderCard(
                         modifier = Modifier
                             .width(0.5.dp)
                             .height(48.dp)
-                            .background(DividerColor)
+                            .background(detoxColors.divider)
                     )
                     GroupStatColumn(
                         label = stringResource(R.string.group_detail_gewinn_label),
                         value = stringResource(R.string.group_detail_gewinn_val, myGewinnCents / 100),
-                        valueColor = AccentGreen,
+                        valueColor = detoxColors.accent,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -762,12 +757,12 @@ private fun GroupHeaderCard(
 
             // WAITING: join code + share + player count + start button
             if (gc.status == GroupChallengeStatus.WAITING) {
-                HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
 
                 Text(
                     text = stringResource(R.string.group_detail_join_code_label),
                     fontSize = 12.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -791,14 +786,14 @@ private fun GroupHeaderCard(
                 Text(
                     text = stringResource(R.string.group_detail_join_code_hint),
                     fontSize = 12.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
 
                 val joined = gc.participants.size
                 Text(
                     text = stringResource(R.string.group_detail_waiting_players, joined, gc.maxParticipants),
                     fontSize = 13.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
 
                 // Authorization window countdown
@@ -807,11 +802,11 @@ private fun GroupHeaderCard(
                     val daysLeft = (gc.authorizationExpiresAt - now) / (24L * 60 * 60 * 1000)
                     val (countdownText, countdownColor) = when {
                         now >= gc.authorizationExpiresAt ->
-                            Pair(stringResource(R.string.group_auth_expired), Color(0xFFFF3B30))
+                            Pair(stringResource(R.string.group_auth_expired), detoxColors.danger)
                         daysLeft <= 1L ->
-                            Pair(stringResource(R.string.group_auth_expires_tomorrow), Color(0xFFFF9500))
+                            Pair(stringResource(R.string.group_auth_expires_tomorrow), detoxColors.warningStrong)
                         else ->
-                            Pair(stringResource(R.string.group_auth_days_remaining, daysLeft), Color(0xFF8E8E93))
+                            Pair(stringResource(R.string.group_auth_days_remaining, daysLeft), detoxColors.subtext)
                     }
                     Text(
                         text = countdownText,
@@ -828,19 +823,19 @@ private fun GroupHeaderCard(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = canStart && !isStarting,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentGreen
+                            containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
                         if (isStarting) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.dp,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         } else {
                             Text(
                                 text = stringResource(R.string.group_detail_start_button),
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }
@@ -848,7 +843,7 @@ private fun GroupHeaderCard(
                         Text(
                             text = stringResource(R.string.group_detail_need_players),
                             fontSize = 12.sp,
-                            color = TextSecondary,
+                            color = detoxColors.subtext,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -867,7 +862,7 @@ private fun GroupHeaderCard(
                             Text(
                                 text = stringResource(R.string.group_delete_button),
                                 fontSize = 14.sp,
-                                color = AbandonRed,
+                                color = detoxColors.danger,
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -883,14 +878,14 @@ private fun GroupStatColumn(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    valueColor: Color = Color.Black
+    valueColor: Color = detoxColors.label
 ) {
     Column(
         modifier = modifier.padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(text = label, fontSize = 11.sp, color = TextSecondary, textAlign = TextAlign.Center)
+        Text(text = label, fontSize = 11.sp, color = detoxColors.subtext, textAlign = TextAlign.Center)
         Text(
             text = value,
             fontSize = 18.sp,
@@ -910,10 +905,10 @@ private fun LeaderboardRow(
 ) {
     val isFailed = participant.status == ParticipantStatus.FAILED
     val rankColor = when (rank) {
-        1 -> Color(0xFFFFD700) // gold
-        2 -> Color(0xFFC0C0C0) // silver
-        3 -> Color(0xFFCD7F32) // bronze
-        else -> Color(0xFF8E8E93) // grey
+        1 -> DetoxPodiumColors.Gold
+        2 -> DetoxPodiumColors.Silver
+        3 -> DetoxPodiumColors.Bronze
+        else -> detoxColors.subtext // grey
     }
     val displayName = participant.displayName
         .takeIf { it.isNotBlank() }
@@ -943,7 +938,7 @@ private fun LeaderboardRow(
             text = if (isFailed) "—" else "#$rank",
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isFailed) Color(0xFFC7C7CC) else rankColor,
+            color = if (isFailed) detoxColors.hint else rankColor,
             modifier = Modifier.width(32.dp)
         )
 
@@ -964,7 +959,7 @@ private fun LeaderboardRow(
                     text = "@$displayName",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.W500,
-                    color = if (isFailed) Color(0xFFC7C7CC) else Color.Black,
+                    color = if (isFailed) detoxColors.hint else detoxColors.label,
                     textDecoration = if (isFailed) TextDecoration.LineThrough else TextDecoration.None
                 )
                 if (isCurrentUser) DuBadge()
@@ -975,8 +970,8 @@ private fun LeaderboardRow(
                 ParticipantStatus.SUCCESS -> stringResource(R.string.group_detail_row_won)
             }
             val statusColor = when (participant.status) {
-                ParticipantStatus.ACTIVE -> AccentGreen
-                else -> TextSecondary
+                ParticipantStatus.ACTIVE -> detoxColors.accent
+                else -> detoxColors.subtext
             }
             Text(text = statusLabel, fontSize = 11.sp, color = statusColor)
         }
@@ -986,7 +981,7 @@ private fun LeaderboardRow(
             text = stat,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isFailed) Color(0xFFC7C7CC) else Color.Black
+            color = if (isFailed) detoxColors.hint else detoxColors.label
         )
     }
 }
@@ -999,10 +994,7 @@ private fun AvatarCircle(name: String, size: Dp = 32.dp) {
         .take(2)
         .joinToString("")
         .ifEmpty { "?" }
-    val avatarColors = listOf(
-        Color(0xFF5C6BC0), Color(0xFF42A5F5), Color(0xFF26A69A),
-        Color(0xFFEC407A), Color(0xFFAB47BC), Color(0xFF26C6DA)
-    )
+    val avatarColors = DetoxAvatarPalette.Colors
     val bgColor = avatarColors[Math.abs(name.hashCode()) % avatarColors.size]
     Box(
         modifier = Modifier
@@ -1014,7 +1006,7 @@ private fun AvatarCircle(name: String, size: Dp = 32.dp) {
             text = initials,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = detoxColors.onSolid
         )
     }
 }
@@ -1023,13 +1015,13 @@ private fun AvatarCircle(name: String, size: Dp = 32.dp) {
 private fun DuBadge() {
     Surface(
         shape = RoundedCornerShape(50),
-        color = AccentGreen.copy(alpha = 0.15f)
+        color = detoxColors.accent.copy(alpha = 0.15f)
     ) {
         Text(
             text = stringResource(R.string.group_detail_du_badge),
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            color = AccentGreen,
+            color = detoxColors.accent,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
@@ -1081,11 +1073,11 @@ private fun SessionCard(
                 label = stringResource(R.string.group_detail_verbraucht_label),
                 value = verbrauchtVal
             )
-            HorizontalDivider(color = DividerColor, thickness = 0.5.dp)
+            HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
             SessionInfoRow(
                 label = stringResource(R.string.group_detail_noch_verfuegbar_label),
                 value = verfuegbarVal,
-                valueColor = AccentGreen
+                valueColor = detoxColors.accent
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -1104,13 +1096,13 @@ private fun SessionCard(
 }
 
 @Composable
-private fun SessionInfoRow(label: String, value: String, valueColor: Color = Color.Black) {
+private fun SessionInfoRow(label: String, value: String, valueColor: Color = detoxColors.label) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, fontSize = 14.sp, color = TextSecondary)
+        Text(text = label, fontSize = 14.sp, color = detoxColors.subtext)
         Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.W500, color = valueColor)
     }
 }
@@ -1121,13 +1113,13 @@ private fun SessionInfoRow(label: String, value: String, valueColor: Color = Col
 private fun GroupStatusBadge(status: GroupChallengeStatus) {
     val (label, bgColor, textColor) = when (status) {
         GroupChallengeStatus.ACTIVE ->
-            Triple(stringResource(R.string.group_detail_live_badge), Color(0xFFE8F5E9), Color(0xFF2E7D32))
+            Triple(stringResource(R.string.group_detail_live_badge), detoxColors.softGreenBg, detoxColors.softGreenText)
         GroupChallengeStatus.WAITING ->
-            Triple(stringResource(R.string.group_detail_waiting_badge), Color(0xFFF5F5F5), TextSecondary)
+            Triple(stringResource(R.string.group_detail_waiting_badge), detoxColors.insetSurface, detoxColors.subtext)
         GroupChallengeStatus.COMPLETED ->
-            Triple("Abgeschlossen", Color(0xFFE8F5E9), Color(0xFF2E7D32))
+            Triple("Abgeschlossen", detoxColors.softGreenBg, detoxColors.softGreenText)
         GroupChallengeStatus.CANCELLED ->
-            Triple("Abgebrochen", Color(0xFFFFEBEE), MaterialTheme.colorScheme.error)
+            Triple("Abgebrochen", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.error)
     }
     Surface(shape = RoundedCornerShape(50), color = bgColor) {
         Text(
@@ -1338,11 +1330,11 @@ private fun AbrechnungGroupCard(
                 text = stringResource(R.string.abrechnung_title),
                 fontSize = 13.sp,
                 fontWeight = FontWeight(600),
-                color = TextSecondary,
+                color = detoxColors.subtext,
                 letterSpacing = 0.5.sp
             )
             Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+            HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
             Spacer(modifier = Modifier.height(10.dp))
 
             if (isWinner) {
@@ -1386,7 +1378,7 @@ private fun AbrechnungGroupCard(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
                 Spacer(modifier = Modifier.height(10.dp))
 
                 val total = stakeRefund + (if (!nobodyFailed) prizePerWinner else 0)
@@ -1394,20 +1386,20 @@ private fun AbrechnungGroupCard(
                     text = stringResource(R.string.abrechnung_total, formatCents(total)),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black
+                    color = detoxColors.label
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = stringResource(R.string.abrechnung_refunded),
                     fontSize = 13.sp,
-                    color = AccentGreen
+                    color = detoxColors.accent
                 )
                 if (!nobodyFailed && prizePerWinner > 0 && payoutStatus == "pending_payout") {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = stringResource(R.string.abrechnung_prize_pending_note),
                         fontSize = 13.sp,
-                        color = Color(0xFFFF9500)
+                        color = detoxColors.warningStrong
                     )
                 }
             } else {
@@ -1417,12 +1409,12 @@ private fun AbrechnungGroupCard(
                     trailing = "❌"
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(thickness = 0.5.dp, color = DividerColor)
+                HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = stringResource(R.string.abrechnung_not_passed),
                     fontSize = 13.sp,
-                    color = TextSecondary
+                    color = detoxColors.subtext
                 )
             }
         }
@@ -1439,7 +1431,7 @@ private fun AbrechnungRow(label: String, trailing: String?) {
         Text(
             text = label,
             fontSize = 13.sp,
-            color = TextSecondary,
+            color = detoxColors.subtext,
             modifier = Modifier.weight(1f)
         )
         if (trailing != null) {
@@ -1456,9 +1448,9 @@ private fun GroupDetoxCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
         elevation = CardDefaults.cardElevation(0.dp),
-        border = BorderStroke(0.5.dp, CardBorder),
+        border = BorderStroke(0.5.dp, detoxColors.cardBorder),
         content = content
     )
 }

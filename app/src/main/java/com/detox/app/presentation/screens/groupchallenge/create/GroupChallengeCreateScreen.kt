@@ -39,6 +39,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SnackbarHost
@@ -80,6 +81,7 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.util.pressScaleFeedback
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.HapticManager
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
@@ -90,26 +92,9 @@ import java.util.Date
 import java.util.Locale
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
+// Colors are theme-resolved at each call site (detoxColors / MaterialTheme.colorScheme);
+// only the shared shapes remain file-local constants.
 
-private val GWizBg          = Color(0xFFF2F2F7)
-private val GCardBg         = Color(0xFFFFFFFF)
-private val GCardBorder     = Color(0x0F000000)
-private val GGreenPrimary   = Color(0xFF00C853)
-private val GGreenLight     = Color(0xFFE8F8EF)
-private val GGreenSelected  = Color(0xFFF0FDF4)
-private val GTextPrimary    = Color(0xFF000000)
-private val GTextSecondary  = Color(0xFF8E8E93)
-private val GOrangeLight    = Color(0xFFFFF0E8)
-private val GBlueLight      = Color(0xFFE8F0FF)
-private val GPurpleLight    = Color(0xFFEEF0FF)
-private val GGreenBadgeText = Color(0xFF1E7A3C)
-private val GOrangeBadgeText= Color(0xFFC05A00)
-private val GOrangeIcon     = Color(0xFFFF6B35)
-private val GBlueIcon       = Color(0xFF2979FF)
-private val GPurpleIcon     = Color(0xFF7B61FF)
-private val GDisabledBg     = Color(0xFFE0E0E5)
-private val GDisabledText   = Color(0xFF8E8E93)
-private val GDividerColor   = Color(0xFFF2F2F7)
 private val GCardShape      = RoundedCornerShape(16.dp)
 private val GBtnShape       = RoundedCornerShape(14.dp)
 
@@ -184,7 +169,7 @@ fun GroupChallengeCreateScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = GWizBg,
+        color = detoxColors.screenBackground,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             SnackbarHost(snackbarHostState)
@@ -267,7 +252,7 @@ fun GroupChallengeCreateScreen(
 
             if (formState.currentStep < GROUP_WIZARD_TOTAL_STEPS) {
                 val context = LocalContext.current
-                HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     val enabled = viewModel.canGoNext() && !isLoading
                     Button(
@@ -282,10 +267,10 @@ fun GroupChallengeCreateScreen(
                         enabled = enabled,
                         shape = GBtnShape,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = GGreenPrimary,
-                            contentColor = Color.White,
-                            disabledContainerColor = GDisabledBg,
-                            disabledContentColor = GDisabledText,
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.outlineVariant,
+                            disabledContentColor = detoxColors.subtext,
                         ),
                     ) {
                         Text(
@@ -320,13 +305,13 @@ private fun GWizardHeader(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Zurück",
-                    tint = GTextPrimary,
+                    tint = detoxColors.label,
                 )
             }
             Text(
                 text = "Schritt $currentStep von $totalSteps",
                 fontSize = 13.sp,
-                color = GTextSecondary,
+                color = detoxColors.subtext,
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
@@ -337,8 +322,8 @@ private fun GWizardHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(2.dp),
-            color = GGreenPrimary,
-            trackColor = GDisabledBg,
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.outlineVariant,
         )
     }
 }
@@ -361,17 +346,17 @@ private fun GStep2LimitType(
             text = stringResource(R.string.wizard_limit_type_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = GTextPrimary,
+            color = detoxColors.label,
         )
         Text(
             text = stringResource(R.string.group_wizard_limit_type_subtitle),
             fontSize = 14.sp,
-            color = GTextSecondary,
+            color = detoxColors.subtext,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
         GGroupLimitTypeCard(
-            iconBg = GOrangeLight,
+            iconBg = detoxColors.softOrangeBg,
             iconContent = { Text("⏱", fontSize = 18.sp) },
             title = stringResource(R.string.wizard_limit_time_title),
             description = stringResource(R.string.wizard_limit_time_desc),
@@ -379,7 +364,7 @@ private fun GStep2LimitType(
             onClick = { onSelect(LimitType.TIME) },
         )
         GGroupLimitTypeCard(
-            iconBg = GBlueLight,
+            iconBg = detoxColors.softBlueBg,
             iconContent = { Text("🔢", fontSize = 18.sp) },
             title = stringResource(R.string.wizard_limit_sessions_title),
             description = stringResource(R.string.wizard_limit_sessions_desc),
@@ -387,7 +372,7 @@ private fun GStep2LimitType(
             onClick = { onSelect(LimitType.SESSIONS) },
         )
         GGroupLimitTypeCard(
-            iconBg = GPurpleLight,
+            iconBg = detoxColors.softPurpleBg,
             iconContent = { Text("💰", fontSize = 18.sp) },
             title = stringResource(R.string.wizard_limit_budget_title),
             description = stringResource(R.string.wizard_limit_budget_desc),
@@ -406,9 +391,9 @@ private fun GGroupLimitTypeCard(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (isSelected) GGreenPrimary else GCardBorder
+    val borderColor = if (isSelected) detoxColors.accent else detoxColors.cardBorder
     val borderWidth = if (isSelected) 2.dp else 0.5.dp
-    val bgColor = if (isSelected) GGreenSelected else GCardBg
+    val bgColor = if (isSelected) detoxColors.selectedSurface else detoxColors.cardBackground
 
     Box(
         modifier = Modifier
@@ -437,19 +422,19 @@ private fun GGroupLimitTypeCard(
                     text = title,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = GTextPrimary,
+                    color = detoxColors.label,
                 )
                 Text(
                     text = description,
                     fontSize = 13.sp,
-                    color = GTextSecondary,
+                    color = detoxColors.subtext,
                 )
             }
             if (isSelected) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = GGreenPrimary,
+                    tint = detoxColors.accent,
                     modifier = Modifier.size(20.dp),
                 )
             } else {
@@ -457,7 +442,7 @@ private fun GGroupLimitTypeCard(
                     modifier = Modifier
                         .size(20.dp)
                         .clip(RoundedCornerShape(50))
-                        .border(1.5.dp, GTextSecondary, RoundedCornerShape(50)),
+                        .border(1.5.dp, detoxColors.subtext, RoundedCornerShape(50)),
                 )
             }
         }
@@ -486,7 +471,7 @@ private fun GStep3LimitAndDuration(
             text = stringResource(R.string.wizard_set_limit_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = GTextPrimary,
+            color = detoxColors.label,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -494,8 +479,8 @@ private fun GStep3LimitAndDuration(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(GCardShape)
-                .background(GCardBg)
-                .border(0.5.dp, GCardBorder, GCardShape)
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, GCardShape)
                 .padding(16.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -513,12 +498,12 @@ private fun GStep3LimitAndDuration(
                             onValueChange = onUpdateLimitSessions,
                             unit = stringResource(R.string.wizard_set_limit_opens_unit),
                         )
-                        HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                         Text(
                             text = stringResource(R.string.wizard_set_limit_session_label),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
-                            color = GTextSecondary,
+                            color = detoxColors.subtext,
                         )
                         DetoxHorizontalPicker(
                             values = (1..30).toList(),
@@ -544,15 +529,15 @@ private fun GStep3LimitAndDuration(
             text = stringResource(R.string.wizard_duration_title),
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
-            color = GTextPrimary,
+            color = detoxColors.label,
         )
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(GCardShape)
-                .background(GCardBg)
-                .border(0.5.dp, GCardBorder, GCardShape)
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, GCardShape)
                 .padding(16.dp),
         ) {
             DetoxHorizontalPicker(
@@ -590,12 +575,12 @@ private fun GStep4BuyIn(
             text = stringResource(R.string.group_wizard_buyin_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = GTextPrimary,
+            color = detoxColors.label,
         )
         Text(
             text = stringResource(R.string.group_wizard_buyin_subtitle),
             fontSize = 14.sp,
-            color = GTextSecondary,
+            color = detoxColors.subtext,
         )
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -603,8 +588,8 @@ private fun GStep4BuyIn(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(GCardShape)
-                .background(GCardBg)
-                .border(0.5.dp, GCardBorder, GCardShape)
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, GCardShape)
                 .padding(16.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -614,7 +599,7 @@ private fun GStep4BuyIn(
                     onValueChange = onBuyInChange,
                     unit = stringResource(R.string.group_wizard_buyin_unit),
                 )
-                HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -623,13 +608,13 @@ private fun GStep4BuyIn(
                     Text(
                         text = "Pot-Schätzung (20 Spieler)",
                         fontSize = 13.sp,
-                        color = GTextSecondary,
+                        color = detoxColors.subtext,
                     )
                     Text(
                         text = "€$estimatedPot",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = GGreenPrimary,
+                        color = detoxColors.accent,
                     )
                 }
             }
@@ -661,11 +646,11 @@ private fun GStep5StartDateAndBonus(
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let { onStartDateChange(it) }
                     showDatePicker = false
-                }) { Text(stringResource(R.string.ok), color = GGreenPrimary) }
+                }) { Text(stringResource(R.string.ok), color = detoxColors.accent) }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) {
-                    Text(stringResource(R.string.dialog_cancel), color = GTextSecondary)
+                    Text(stringResource(R.string.dialog_cancel), color = detoxColors.subtext)
                 }
             },
         ) {
@@ -684,7 +669,7 @@ private fun GStep5StartDateAndBonus(
             text = stringResource(R.string.group_wizard_start_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = GTextPrimary,
+            color = detoxColors.label,
         )
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -693,8 +678,8 @@ private fun GStep5StartDateAndBonus(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(GCardShape)
-                .background(GCardBg)
-                .border(0.5.dp, GCardBorder, GCardShape),
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, GCardShape),
         ) {
             Column {
                 Row(
@@ -708,30 +693,30 @@ private fun GStep5StartDateAndBonus(
                         text = stringResource(R.string.group_wizard_start_date_label),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
-                        color = GTextPrimary,
+                        color = detoxColors.label,
                     )
                     Switch(
                         checked = startDateEnabled,
                         onCheckedChange = onStartDateEnabledToggle,
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = GGreenPrimary,
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary,
                         ),
                     )
                 }
 
                 if (!startDateEnabled) {
-                    HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                    HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                     Text(
                         text = stringResource(R.string.group_wizard_start_manual_desc),
                         fontSize = 13.sp,
-                        color = GTextSecondary,
+                        color = detoxColors.subtext,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                 }
 
                 if (startDateEnabled) {
-                    HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                    HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -740,7 +725,7 @@ private fun GStep5StartDateAndBonus(
                             text = stringResource(R.string.group_wizard_start_date_section),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
-                            color = GTextSecondary,
+                            color = detoxColors.subtext,
                         )
                         OutlinedButton(
                             onClick = { showDatePicker = true },
@@ -753,20 +738,20 @@ private fun GStep5StartDateAndBonus(
                                 modifier = Modifier
                                     .size(16.dp)
                                     .padding(end = 4.dp),
-                                tint = GGreenPrimary,
+                                tint = detoxColors.accent,
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = if (startDateMs > 0L) sdf.format(Date(startDateMs))
                                 else stringResource(R.string.group_wizard_start_date_placeholder),
-                                color = if (startDateMs > 0L) GTextPrimary else GTextSecondary,
+                                color = if (startDateMs > 0L) detoxColors.label else detoxColors.subtext,
                             )
                         }
                         if (startDateError != null) {
                             Text(
                                 text = startDateError,
                                 fontSize = 12.sp,
-                                color = Color(0xFFFF3B30),
+                                color = detoxColors.danger,
                             )
                         }
                     }
@@ -782,8 +767,8 @@ private fun GStep5StartDateAndBonus(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(GCardShape)
-                .background(GCardBg)
-                .border(0.5.dp, GCardBorder, GCardShape),
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, GCardShape),
         ) {
             Column {
                 Row(
@@ -801,7 +786,7 @@ private fun GStep5StartDateAndBonus(
                             text = stringResource(R.string.group_wizard_bonus_label),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium,
-                            color = GTextPrimary,
+                            color = detoxColors.label,
                         )
                         TooltipBox(
                             positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -820,7 +805,7 @@ private fun GStep5StartDateAndBonus(
                                     Icons.Default.Info,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
-                                    tint = GTextSecondary,
+                                    tint = detoxColors.subtext,
                                 )
                             }
                         }
@@ -829,18 +814,18 @@ private fun GStep5StartDateAndBonus(
                         checked = bonusEnabled,
                         onCheckedChange = onBonusToggle,
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = GGreenPrimary,
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary,
                         ),
                     )
                 }
 
                 if (bonusEnabled) {
-                    HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+                    HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                     Text(
                         text = stringResource(R.string.group_wizard_bonus_desc),
                         fontSize = 13.sp,
-                        color = GTextSecondary,
+                        color = detoxColors.subtext,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                 }
@@ -872,7 +857,7 @@ private fun GStep6Review(
             text = stringResource(R.string.group_wizard_review_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = GTextPrimary,
+            color = detoxColors.label,
         )
 
         // ── Summary card ────────────────────────────────────────────────────
@@ -880,8 +865,8 @@ private fun GStep6Review(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(GCardShape)
-                .background(GCardBg)
-                .border(0.5.dp, GCardBorder, GCardShape),
+                .background(detoxColors.cardBackground)
+                .border(0.5.dp, detoxColors.cardBorder, GCardShape),
         ) {
             Column {
                 GSummaryDividerRow(
@@ -943,7 +928,7 @@ private fun GStep6Review(
                 GSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_pot_label),
                     value = stringResource(R.string.group_wizard_review_pot_value, estimatedPot),
-                    valueColor = GGreenPrimary,
+                    valueColor = detoxColors.accent,
                 )
             }
         }
@@ -984,15 +969,15 @@ private fun GStep6Review(
             enabled = !isLoading && waiverChecked,
             shape = GBtnShape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = GGreenPrimary,
-                contentColor = Color.White,
-                disabledContainerColor = GDisabledBg,
-                disabledContentColor = GDisabledText,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                disabledContainerColor = MaterialTheme.colorScheme.outlineVariant,
+                disabledContentColor = detoxColors.subtext,
             ),
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
                 )
@@ -1013,8 +998,6 @@ private fun GStep6Review(
 private fun gFormatEuroCents(cents: Int): String =
     "€%d,%02d".format(cents / 100, cents % 100)
 
-private val GFeeRowLabel = Color(0xFF333333)
-
 @Composable
 private fun GFeeBreakdownCard(
     buyInValue: String,
@@ -1025,35 +1008,35 @@ private fun GFeeBreakdownCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(GCardShape)
-            .background(GCardBg)
-            .border(0.5.dp, GCardBorder, GCardShape),
+            .background(detoxColors.cardBackground)
+            .border(0.5.dp, detoxColors.cardBorder, GCardShape),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = stringResource(R.string.fee_overview_title).uppercase(),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = GTextSecondary,
+                color = detoxColors.subtext,
             )
             Spacer(modifier = Modifier.height(12.dp))
-            GFeeRow(stringResource(R.string.fee_your_buyin), buyInValue, GTextPrimary)
+            GFeeRow(stringResource(R.string.fee_your_buyin), buyInValue, detoxColors.label)
             HorizontalDivider(
-                color = GDividerColor,
+                color = detoxColors.divider,
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(vertical = 10.dp),
             )
-            GFeeRow(stringResource(R.string.fee_return_on_success), refundValue, GGreenPrimary)
+            GFeeRow(stringResource(R.string.fee_return_on_success), refundValue, detoxColors.success)
             HorizontalDivider(
-                color = GDividerColor,
+                color = detoxColors.divider,
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(vertical = 10.dp),
             )
-            GFeeRow(stringResource(R.string.fee_service_fee), feeValue, GTextSecondary)
+            GFeeRow(stringResource(R.string.fee_service_fee), feeValue, detoxColors.subtext)
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = stringResource(R.string.fee_group_no_loser_note),
                 fontSize = 12.sp,
-                color = GTextSecondary,
+                color = detoxColors.subtext,
                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
             )
         }
@@ -1067,7 +1050,7 @@ private fun GFeeRow(label: String, value: String, valueColor: Color) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, fontSize = 14.sp, color = GFeeRowLabel, modifier = Modifier.weight(1f))
+        Text(text = label, fontSize = 14.sp, color = detoxColors.label, modifier = Modifier.weight(1f))
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = value,
@@ -1096,10 +1079,10 @@ private fun GWaiverCheckboxRow(
                 .padding(top = 1.dp)
                 .size(22.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(if (checked) GGreenPrimary else Color.White)
+                .background(if (checked) detoxColors.accent else detoxColors.cardBackground)
                 .border(
                     width = 1.5.dp,
-                    color = if (checked) GGreenPrimary else Color(0xFFE0E0E5),
+                    color = if (checked) detoxColors.accent else MaterialTheme.colorScheme.outlineVariant,
                     shape = RoundedCornerShape(6.dp),
                 ),
             contentAlignment = Alignment.Center,
@@ -1108,7 +1091,7 @@ private fun GWaiverCheckboxRow(
                 Icon(
                     imageVector = Icons.Filled.Check,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -1117,7 +1100,7 @@ private fun GWaiverCheckboxRow(
         Text(
             text = stringResource(R.string.withdrawal_waiver_text),
             fontSize = 14.sp,
-            color = GFeeRowLabel,
+            color = detoxColors.label,
         )
     }
 }
@@ -1128,11 +1111,11 @@ private fun GWaiverCheckboxRow(
 private fun GSummaryDividerRow(
     label: String,
     value: String,
-    valueColor: Color = GTextPrimary,
+    valueColor: Color = detoxColors.label,
     isFirst: Boolean = false,
 ) {
     if (!isFirst) {
-        HorizontalDivider(color = GDividerColor, thickness = 0.5.dp)
+        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
     }
     Row(
         modifier = Modifier
@@ -1144,7 +1127,7 @@ private fun GSummaryDividerRow(
         Text(
             text = label,
             fontSize = 14.sp,
-            color = GTextSecondary,
+            color = detoxColors.subtext,
             modifier = Modifier.weight(1f),
         )
         Text(

@@ -17,13 +17,13 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -33,12 +33,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
 import timber.log.Timber
-
-private val BgColor = Color(0xFFF2F2F7)
-private val RedColor = Color(0xFFFF3B30)
-private val TitleColor = Color(0xFF000000)
-private val SubtextColor = Color(0xFF8E8E93)
 
 /**
  * Hard block shown when the user's account is disabled (banned). Back is disabled;
@@ -54,7 +50,7 @@ fun AccountDisabledScreen(viewModel: AccountDisabledViewModel = hiltViewModel())
     val message = reason?.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.account_disabled_message_default)
 
-    Scaffold(containerColor = BgColor) { innerPadding ->
+    Scaffold(containerColor = detoxColors.screenBackground) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -66,7 +62,7 @@ fun AccountDisabledScreen(viewModel: AccountDisabledViewModel = hiltViewModel())
             Icon(
                 imageVector = Icons.Filled.Block,
                 contentDescription = null,
-                tint = RedColor,
+                tint = detoxColors.danger,
                 modifier = Modifier.size(64.dp)
             )
             Spacer(Modifier.height(24.dp))
@@ -74,14 +70,14 @@ fun AccountDisabledScreen(viewModel: AccountDisabledViewModel = hiltViewModel())
                 text = stringResource(R.string.account_disabled_title),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = TitleColor,
+                color = detoxColors.label,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 text = message,
                 fontSize = 14.sp,
-                color = SubtextColor,
+                color = detoxColors.subtext,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(32.dp))
@@ -101,8 +97,8 @@ fun AccountDisabledScreen(viewModel: AccountDisabledViewModel = hiltViewModel())
                     .height(54.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF00C853),
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 Text(

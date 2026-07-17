@@ -77,6 +77,95 @@ previously used near-duplicate values for one role.
   `solidPurpleBg` (badge) / `groupAccent` (text+icon); "ends today" `#E65100` →
   `solidOrangeBg`. All white text → `onSolid`.
 
+### Batch 9 (Friends + Groups + System screens) — new design-fixed sets & decisions
+
+Final coverage batch. **Zero new holder slots** — every mapping reused existing slots.
+Two new *design-fixed identity* constant sets were introduced (in `ui/theme/IdentityColors.kt`),
+the same mechanism as `DetoxAlertColors` / `DetoxCelebrationColors`:
+
+- **`DetoxAvatarPalette`** (pre-approved in the running plan) — the 6-color avatar hash
+  palette (#5C6BC0/#42A5F5/#26A69A/#EC407A/#AB47BC/#26C6DA) from GroupChallengeDetail's
+  `AvatarCircle`. Identity-distinguishing, theme-independent, order is load-bearing. NO recolor.
+  Monogram letter uses `onSolid`.
+- **`DetoxPodiumColors`** (**RATIFIED** — added to the documented exemption list) —
+  Gold/Silver/Bronze (#FFD700/#C0C0C0/#CD7F32) for the leaderboard rank medals. Identity-
+  carrying like the avatar palette (the color IS the meaning — rank 1/2/3), must not shift
+  with the theme, no meaningful dark variant. Same reasoning as `DetoxAvatarPalette` /
+  `DetoxAlertColors`. The frozen `GroupChallengeResultsScreen` podium keeps its OWN private
+  copies under the overlay freeze — not refactored.
+
+### Documented literal-exemption list (canonical, post-Batch-9)
+
+A raw `Color(0x…)` in `presentation/` is a bug UNLESS it is one of:
+`DetoxAlertColors`, `DetoxCelebrationColors`, `DetoxAvatarPalette`, **`DetoxPodiumColors`**,
+the `BuildConfig.DEBUG` panels (ProfileScreen developer section), the frozen always-dark
+overlays, and the `DetoxHorizontalPicker` dark/overlay-treatment palette (the `darkMode`
+render branch — shared by `BudgetSelectionOverlay` and the in-app dark *style*; its light/
+in-app branch is fully theme-resolved).
+
+### Batch 9 cleanup — the two dark-mode defects (fixed, not deferred)
+
+Both were "screen doesn't follow dark mode" — the exact defect class this refactor removes:
+
+- **`DetoxHorizontalPicker` in-app branch** was rendering its neighbour-dimming ramp from
+  hardcoded light grays (#000/#AAA/#CCC/#E0E0E0), so wizards (which always pass
+  `darkMode = false`) showed black-on-dark in dark mode. Fixed by resolving the ramp from
+  the theme: selected value → `label`, unit → `subtext`, centre-dot → `accent`, and the
+  neighbour fade = `lerp(label, cardBackground, t)` for the original t-factors (170/204/224
+  ÷255). On a white surface that lerp reproduces the exact original grays (light pixel-
+  identical); in dark it fades white → #1A1A1A (readable). The `surfaceColor` default
+  `Color.White` → `cardBackground` (fixes default-surface callers like GroupCreate/Active
+  in dark; #FFFFFF in light, unchanged). **The `darkMode = true` render path is byte-for-byte
+  untouched → the frozen `BudgetSelectionOverlay` is pixel-identical.**
+- **ProfileScreen payout/Guthaben card** (`PayoutChallengeCard`, money-gated) still had
+  #00C853/#000000/#8E8E93/`Color.White`. Migrated colors only (money-floor gating untouched):
+  card → `cardBackground`; "Abgeschlossen" badge → `solidGreenBg` + `onSolid` (white-text
+  status badge; **visible light shift #00C853→#2E7D32** — the solid-badge family keeps white
+  legible in both modes, a logged legibility exception, same family as the Batch-7
+  ChallengeCard badges); refunded status → `success`; date/labels → `label`/`subtext`.
+
+Approved-style consolidations applied this batch (visible, minor):
+- **Leaderboard own-row** #F9FFF9 → `selectedSurface` (#F0FDF4 light / #12291B dark). The
+  raw near-white had no dark value; `selectedSurface` gives the correct green-tinted dark row.
+- **Group LIVE / COMPLETED status badge** #E8F5E9 bg + #2E7D32 text → `softGreenBg` /
+  `softGreenText` (same #E8F5E9/#2E7D32→softGreen consolidation used for FriendsHub's LiveBadge).
+  Now matches the canonical design-system "Group LIVE" badge (#E8F8EF/#1E7A3C).
+- **Group CANCELLED badge** bg #FFEBEE → `colorScheme.errorContainer` (text stays
+  `colorScheme.error`). Imperceptible light shift, correct dark rendering.
+- **Fee-row / summary greens** split by meaning: refund value → `success`, pot highlight → `accent`.
+- **DuBadge** kept value-preserving: `accent.copy(alpha=0.15f)` bg + `accent` text (NOT migrated to
+  the canonical softGreen "Du badge" pair — see new inconsistency 10 below).
+
+Judgment call logged (nearest-meaning, no new slot):
+- **WAITING status badge** neutral bg #F5F5F5 → `insetSurface` + `subtext`. The holder has no
+  pale-neutral badge background; a neutral chip reads as a recessed neutral fill, so it folds
+  onto `insetSurface`. If a distinct "neutral chip" role is wanted later, that's the one slot the
+  group screens might argue for — flagged, not added.
+
+New pre-existing inconsistencies noticed (migrated as-is, decide later):
+
+8. **Group screen shells disagree on background.** FriendsHub sits on
+   `colorScheme.background` (white light) with elevated (2dp) borderless cards; GroupChallengeCreate
+   /Detail sit on `screenBackground` (#F2F2F7) with 0.5dp-bordered flat white cards. Same feature
+   family, two shell treatments — extends inconsistency 3 (History list vs detail).
+
+9. **Three "waiting" treatments.** FriendsHub's WaitingBadge is a green (`colorScheme.primary`)
+   bordered pill; GroupChallengeDetail's WAITING status badge is a neutral grey pill
+   (`insetSurface`/`subtext`); the design-system doc specs Group WAIT as grey (#F2F2F7/#8E8E93).
+   The two code paths render "waiting" differently.
+
+10. **DuBadge vs canonical "Du badge".** GroupChallengeDetail's DuBadge is `accent`@15% bg +
+    `accent` text (translucent green); the design-system doc's "Du badge" is the opaque softGreen
+    pair (#E8F8EF/#1E7A3C). Kept value-preserving; two green-badge idioms for the same concept.
+
+11. **Group limit-card unchecked ring is darker than the solo wizard's.** GroupChallengeCreate's
+    limit-type radio ring outlines with `subtext` (#8E8E93); the solo `ChallengeCreationScreen`
+    uses `colorScheme.outlineVariant` (#E0E0E5) for the same unchecked ring. Preserved as-is.
+
+12. **Destructive-confirm red is spelled three ways on GroupChallengeDetail.** Quit dialog confirm =
+    `colorScheme.error`; leave/delete dialog confirms = `danger` (ex-`AbandonRed`). They resolve to
+    the same value in both modes, but the same role is written two ways on one screen.
+
 ## Value-twin sweep (holder audit)
 
 Same-value-in-both-modes pairs found. Most are **deliberate role separations** kept

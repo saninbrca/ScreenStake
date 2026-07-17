@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.HapticManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,14 +49,16 @@ private val ArrowClr     = Color(0xFFCCCCCC)
 private val ItemWidthDp = 68.dp
 private val FadeWidthDp = 40.dp
 
-// ── Light-mode smooth interpolation (Wave 2 restyle) ─────────────────────────────
-// The light picker scales size + colour by FRACTIONAL distance from centre (not integer
-// buckets) so items grow/shrink smoothly as they pass the centre. Dark mode is untouched
-// and keeps its integer `when(dist)` buckets.
-private val LightSelClr  = Color(0xFF000000)
-private val LightAdj1Clr = Color(0xFFAAAAAA)
-private val LightAdj2Clr = Color(0xFFCCCCCC)
-private val LightFarClr  = Color(0xFFE0E0E0)
+// ── In-app smooth interpolation (Wave 2 restyle) ─────────────────────────────────
+// The in-app picker scales size + colour by FRACTIONAL distance from centre (not integer
+// buckets) so items grow/shrink smoothly as they pass the centre. The overlay (darkMode)
+// path is untouched and keeps its integer `when(dist)` buckets.
+//
+// Colours are theme-resolved and passed in by the composable: the selected value is
+// detoxColors.label, and the neighbour-dimming ramp fades label → cardBackground. On a
+// white surface that lerp reproduces the original #000/#AAA/#CCC/#E0E0E0 grays exactly;
+// in dark mode it fades white → #1A1A1A, so neighbours dim toward the dark card instead
+// of rendering as unreadable black-on-dark.
 
 private fun lerpF(a: Float, b: Float, t: Float): Float = a + (b - a) * t.coerceIn(0f, 1f)
 
@@ -65,10 +68,10 @@ private fun lightFontSize(f: Float): Float = when {
     else    -> lerpF(16f, 14f, (f - 2f).coerceAtMost(1f))
 }
 
-private fun lightColor(f: Float): Color = when {
-    f <= 1f -> lerp(LightSelClr, LightAdj1Clr, f.coerceIn(0f, 1f))
-    f <= 2f -> lerp(LightAdj1Clr, LightAdj2Clr, (f - 1f).coerceIn(0f, 1f))
-    else    -> lerp(LightAdj2Clr, LightFarClr, (f - 2f).coerceIn(0f, 1f))
+private fun lightColor(f: Float, sel: Color, adj1: Color, adj2: Color, far: Color): Color = when {
+    f <= 1f -> lerp(sel, adj1, f.coerceIn(0f, 1f))
+    f <= 2f -> lerp(adj1, adj2, (f - 1f).coerceIn(0f, 1f))
+    else    -> lerp(adj2, far, (f - 2f).coerceIn(0f, 1f))
 }
 
 /**
@@ -99,15 +102,25 @@ fun DetoxHorizontalPicker(
     unit: String,
     darkMode: Boolean = false,
     enableHaptics: Boolean = true,
-    surfaceColor: Color = Color.White,
+    surfaceColor: Color = detoxColors.cardBackground,
 ) {
     val pickerBg     = if (darkMode) Color(0xFF0A0A0A) else surfaceColor
-    val selectedClr  = if (darkMode) Color(0xFFFFFFFF) else Color(0xFF000000)
-    val adjacent1Clr = if (darkMode) Color(0xFF555555) else Color(0xFFAAAAAA)
-    val adjacent2Clr = if (darkMode) Color(0xFF2E2E2E) else Color(0xFFCCCCCC)
-    val fartherClr   = if (darkMode) Color(0xFF2E2E2E) else Color(0xFFE0E0E0)
-    val unitClr      = if (darkMode) Color(0xFF666666) else Color(0xFF8E8E93)
+    // Dark-style (overlay + in-app dark) value/neighbour palette — read ONLY by the
+    // `if (darkMode)` render branch. The in-app light-style branch resolves its own
+    // theme colours below (indicatorClr / unitClr / the label→cardBackground ramp).
+    val selectedClr  = Color(0xFFFFFFFF)
+    val adjacent1Clr = Color(0xFF555555)
+    val adjacent2Clr = Color(0xFF2E2E2E)
+    val fartherClr   = Color(0xFF2E2E2E)
+    val unitClr      = if (darkMode) Color(0xFF666666) else detoxColors.subtext
     val arrowClr     = if (darkMode) Color(0xFF3A3A3A) else ArrowClr
+    // In-app theme colours (light-style branch): green centre-dot = brand accent;
+    // neighbour-dimming ramp fades the label toward the card surface (see lightColor).
+    val indicatorClr = if (darkMode) IndicatorClr else detoxColors.accent
+    val rampSel  = detoxColors.label
+    val rampAdj1 = lerp(detoxColors.label, detoxColors.cardBackground, 170f / 255f)
+    val rampAdj2 = lerp(detoxColors.label, detoxColors.cardBackground, 204f / 255f)
+    val rampFar  = lerp(detoxColors.label, detoxColors.cardBackground, 224f / 255f)
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
@@ -223,7 +236,7 @@ fun DetoxHorizontalPicker(
                                 Box(
                                     modifier = Modifier
                                         .size(6.dp)
-                                        .background(IndicatorClr, CircleShape),
+                                        .background(indicatorClr, CircleShape),
                                 )
                             } else {
                                 // Reserve dot space so the value baseline never shifts.
@@ -249,7 +262,7 @@ fun DetoxHorizontalPicker(
                                 Box(
                                     modifier = Modifier
                                         .size(6.dp)
-                                        .background(IndicatorClr, CircleShape),
+                                        .background(indicatorClr, CircleShape),
                                 )
                             } else {
                                 // Reserve dot space so the value baseline never shifts.
@@ -260,7 +273,7 @@ fun DetoxHorizontalPicker(
                                 text = values[idx].toString(),
                                 fontSize = lightFontSize(fdist).sp,
                                 fontWeight = if (near) FontWeight.Bold else FontWeight.Normal,
-                                color = lightColor(fdist),
+                                color = lightColor(fdist, rampSel, rampAdj1, rampAdj2, rampFar),
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 softWrap = false,

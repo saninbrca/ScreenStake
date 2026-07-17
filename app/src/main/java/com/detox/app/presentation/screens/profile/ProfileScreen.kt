@@ -598,7 +598,7 @@ private fun PayoutChallengeCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -628,11 +628,11 @@ private fun PayoutChallengeCard(
                     }
                 }
                 androidx.compose.material3.Badge(
-                    containerColor = Color(0xFF00C853)
+                    containerColor = detoxColors.solidGreenBg
                 ) {
                     Text(
                         text = "Abgeschlossen",
-                        color = Color.White,
+                        color = detoxColors.onSolid,
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
@@ -704,7 +704,7 @@ private fun PayoutChallengeCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = if (payout.payoutStatus == "pending_payout")
                     MaterialTheme.colorScheme.onSurfaceVariant
-                else Color(0xFF00C853)
+                else detoxColors.success
             )
 
             // Expected / confirmed date line
@@ -718,13 +718,13 @@ private fun PayoutChallengeCard(
                     Text(
                         text = stringResource(R.string.payout_date_credit, dateStr),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF000000)
+                        color = detoxColors.label
                     )
                 } else {
                     Text(
                         text = stringResource(R.string.payout_date_expected, dateStr),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF8E8E93)
+                        color = detoxColors.subtext
                     )
                 }
             }
@@ -743,7 +743,7 @@ private fun PayoutChallengeCard(
                 Text(
                     text = stringResource(R.string.payout_prize_pending_iban_note),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF8E8E93)
+                    color = detoxColors.subtext
                 )
             }
         }

@@ -17,13 +17,13 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -33,12 +33,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
+import com.detox.app.ui.theme.detoxColors
 import timber.log.Timber
-
-private val BgColor = Color(0xFFF2F2F7)
-private val GreenColor = Color(0xFF00C853)
-private val TitleColor = Color(0xFF000000)
-private val SubtextColor = Color(0xFF8E8E93)
 
 /**
  * Hard blocking screen shown when the installed version is below `minVersionCode`.
@@ -52,7 +48,7 @@ fun ForceUpdateScreen(viewModel: SystemViewModel = hiltViewModel()) {
     // Block the back button entirely — the user cannot bypass the update gate.
     BackHandler(enabled = true) { /* intentionally blocked */ }
 
-    Scaffold(containerColor = BgColor) { innerPadding ->
+    Scaffold(containerColor = detoxColors.screenBackground) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -64,7 +60,7 @@ fun ForceUpdateScreen(viewModel: SystemViewModel = hiltViewModel()) {
             Icon(
                 imageVector = Icons.Filled.SystemUpdate,
                 contentDescription = null,
-                tint = GreenColor,
+                tint = detoxColors.accent,
                 modifier = Modifier.size(64.dp)
             )
             Spacer(Modifier.height(24.dp))
@@ -72,14 +68,14 @@ fun ForceUpdateScreen(viewModel: SystemViewModel = hiltViewModel()) {
                 text = stringResource(R.string.force_update_title),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = TitleColor,
+                color = detoxColors.label,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.force_update_message),
                 fontSize = 14.sp,
-                color = SubtextColor,
+                color = detoxColors.subtext,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(32.dp))
@@ -99,8 +95,8 @@ fun ForceUpdateScreen(viewModel: SystemViewModel = hiltViewModel()) {
                     .height(54.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = GreenColor,
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 Text(

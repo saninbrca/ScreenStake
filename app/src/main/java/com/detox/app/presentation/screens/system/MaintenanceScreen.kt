@@ -22,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -31,11 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
-
-private val BgColor = Color(0xFFF2F2F7)
-private val OrangeColor = Color(0xFFFF9500)
-private val TitleColor = Color(0xFF000000)
-private val SubtextColor = Color(0xFF8E8E93)
+import com.detox.app.ui.theme.detoxColors
 
 /**
  * Blocking screen shown while [AppConfig.maintenanceMode] is active. Back is disabled;
@@ -56,7 +51,7 @@ fun MaintenanceScreen(
         stringResource(R.string.maintenance_message_default)
     }
 
-    Scaffold(containerColor = BgColor) { innerPadding ->
+    Scaffold(containerColor = detoxColors.screenBackground) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -68,7 +63,7 @@ fun MaintenanceScreen(
             Icon(
                 imageVector = Icons.Filled.Build,
                 contentDescription = null,
-                tint = OrangeColor,
+                tint = detoxColors.warningStrong,
                 modifier = Modifier.size(64.dp)
             )
             Spacer(Modifier.height(24.dp))
@@ -76,14 +71,14 @@ fun MaintenanceScreen(
                 text = stringResource(R.string.maintenance_title),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = TitleColor,
+                color = detoxColors.label,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 text = message,
                 fontSize = 14.sp,
-                color = SubtextColor,
+                color = detoxColors.subtext,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(32.dp))
@@ -95,14 +90,14 @@ fun MaintenanceScreen(
                     .height(54.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = OrangeColor,
-                    contentColor = Color.White
+                    containerColor = detoxColors.warningStrong,
+                    contentColor = detoxColors.onSolid
                 )
             ) {
                 if (retrying) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(22.dp),
-                        color = Color.White,
+                        color = detoxColors.onSolid,
                         strokeWidth = 2.dp
                     )
                 } else {

@@ -1,7 +1,6 @@
 package com.detox.app.presentation.screens.challengecreation
 
 import android.content.Context
-import android.content.Intent
 import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,6 +25,7 @@ import com.detox.app.service.RootDetectionManager
 import com.detox.app.service.UsageTrackingService
 import com.detox.app.util.DateUtils
 import com.detox.app.util.FeatureFlags
+import com.detox.app.util.PermissionUtils
 import androidx.lifecycle.SavedStateHandle
 import io.sentry.Sentry
 import com.google.firebase.auth.FirebaseAuth
@@ -142,6 +142,17 @@ sealed interface ChallengeCreationUiState {
     data class Success(val challengeId: String) : ChallengeCreationUiState
     data class Error(val message: String) : ChallengeCreationUiState
     data object RootedDeviceWarning : ChallengeCreationUiState
+
+    /**
+     * Pre-flight enforcement-permission gate result: at least one flagged permission is missing,
+     * so the challenge was NOT created. The screen shows a dialog naming each missing permission
+     * and routes the user to grant it (accessibility through the prominent-disclosure dialog).
+     */
+    data class MissingPermissions(
+        val needsUsage: Boolean,
+        val needsAccessibility: Boolean,
+        val needsOverlay: Boolean,
+    ) : ChallengeCreationUiState
 }
 
 // ── ViewModel ─────────────────────────────────────────────────────────────────
@@ -457,19 +468,25 @@ class ChallengeCreationViewModel @Inject constructor(
 
     fun createChallenge() {
         firebaseAuthService.logAuthState("ChallengeCreationViewModel.createChallenge")
-        // Hard gate: never create a challenge (and for Hard Mode never authorize a Stripe payment)
-        // while usage access is off — tracking/enforcement would be blind. Abort BEFORE the root
-        // check, save, or payment, and route the user to usage-access settings.
-        if (!usageStatsRepository.hasUsageStatsPermission()) {
-            runCatching {
-                context.startActivity(
-                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
-            _uiState.value = ChallengeCreationUiState.Error(
-                context.getString(R.string.challenge_create_needs_usage_access)
+        // Pre-flight permission gate (Soft AND Hard): never create a challenge (and for Hard Mode
+        // never authorize a Stripe payment) while an enforcement permission is off — the challenge
+        // would silently block nothing. Aborts BEFORE the root check, save, or payment. Overlay is
+        // only required when something consumes it: app blocking or custom-domain blocking
+        // (adult-only blocking uses toast + go-home, no overlay). The screen routes each missing
+        // permission to its grant flow — accessibility through the prominent-disclosure dialog.
+        val blocksApps = _state.value.activeTab == 0 && _state.value.selectedApps.isNotEmpty()
+        val missing = ChallengeCreationUiState.MissingPermissions(
+            needsUsage = !usageStatsRepository.hasUsageStatsPermission(),
+            needsAccessibility = !PermissionUtils.isAccessibilityServiceEnabled(context),
+            needsOverlay = (blocksApps || computeBlockedDomains().isNotEmpty()) &&
+                !Settings.canDrawOverlays(context),
+        )
+        if (missing.needsUsage || missing.needsAccessibility || missing.needsOverlay) {
+            Timber.w(
+                "createChallenge blocked — missing permissions: usage=%s accessibility=%s overlay=%s",
+                missing.needsUsage, missing.needsAccessibility, missing.needsOverlay,
             )
+            _uiState.value = missing
             return
         }
         if (_state.value.selectedMode == ChallengeMode.HARD) {
@@ -499,6 +516,11 @@ class ChallengeCreationViewModel @Inject constructor(
     }
 
     fun dismissRootWarning() {
+        _uiState.value = ChallengeCreationUiState.Idle
+    }
+
+    /** Closes the missing-permissions dialog without creating anything. */
+    fun dismissPermissionDialog() {
         _uiState.value = ChallengeCreationUiState.Idle
     }
 

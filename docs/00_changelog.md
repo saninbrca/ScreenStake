@@ -21,6 +21,36 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-17 — Pre-flight permission check before challenge start (unified gate)
+
+**WHAT.** `ChallengeCreationViewModel.createChallenge()` now runs a unified enforcement-permission
+gate at the very top — before the root check, the Hard Mode payment branch, and any persistence.
+Replaces the old usage-only gate (which silently fired `ACTION_USAGE_ACCESS_SETTINGS` + inline
+error) with a `MissingPermissions(needsUsage, needsAccessibility, needsOverlay)` uiState rendered
+as a dialog in `ChallengeCreationScreen` that names each missing permission with an "Erteilen"
+action. A challenge that starts without these permissions silently blocks nothing — now it can't
+start until they're granted.
+
+**Required-permissions mapping (from how enforcement actually consumes them):**
+- Usage stats — always (unchanged behavior; TIME-limit accounting, foreground fallback, backup violation).
+- Accessibility — always (sole trigger for app blocking AND browser URL reading).
+- Overlay — only when the challenge blocks apps OR `computeBlockedDomains()` is non-empty.
+  Adult-only website challenges are exempt (adult blocking uses toast + go-home, no overlay).
+
+**Routing.** Accessibility routes through the existing `AccessibilityDisclosureDialog`
+(Play prominent disclosure) — never fires `ACTION_ACCESSIBILITY_SETTINGS` directly. Overlay →
+`ACTION_MANAGE_OVERLAY_PERMISSION` + package URI; usage → `ACTION_USAGE_ACCESS_SETTINGS`.
+Dismiss → Idle, nothing created; the wizard re-checks on RESUME so grant-and-retry just works.
+
+**MONEY-SAFETY.** Covers Soft AND Hard (the gate sits before the Hard branch, so it runs
+pre-payment); no money/capture/payment code touched. Groups out of scope (own gate in
+`GroupChallengeCreateViewModel`).
+
+**DECISION.** New canonical helper `util/PermissionUtils.isAccessibilityServiceEnabled(context)` —
+the 4 existing private copies (MainActivity, WelcomeOnboardingScreen, PermissionCheckWorker,
+UsageTrackingService) are left as-is; new call sites must use the helper. The now-unused
+`challenge_create_needs_usage_access` string is kept (gate-don't-delete).
+
 ### 2026-07-17 — Open-ended challenges: history no longer shows the ~2126 sentinel end DATE
 
 **WHAT.** Completes the open-ended-display fix started in a96615f. That commit guarded the **day-count**

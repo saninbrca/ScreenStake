@@ -1,6 +1,9 @@
 package com.detox.app.presentation.screens.challengecreation
 
 import com.detox.app.BuildConfig
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -92,6 +95,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
+import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.TimeSpinnerPicker
@@ -171,6 +175,65 @@ fun ChallengeCreationScreen(
             dismissButton = {
                 TextButton(onClick = { showDiscardDialog = false }) {
                     Text(stringResource(R.string.keep_editing))
+                }
+            },
+        )
+    }
+
+    // ── Pre-flight permission gate ────────────────────────────────────────────
+    // Prominent-disclosure gate for the AccessibilityService (Play policy): the settings intent
+    // fires ONLY after the affirmative tap — same pattern as OnboardingScreen.
+    val context = LocalContext.current
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    if (showAccessibilityDisclosure) {
+        AccessibilityDisclosureDialog(
+            onAccept = {
+                showAccessibilityDisclosure = false
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+            onDismiss = { showAccessibilityDisclosure = false },
+        )
+    }
+
+    (uiState as? ChallengeCreationUiState.MissingPermissions)?.let { missing ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPermissionDialog,
+            title = { Text(stringResource(R.string.challenge_permission_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.challenge_permission_dialog_body))
+                    if (missing.needsUsage) {
+                        MissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_usage),
+                            onGrant = {
+                                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            },
+                        )
+                    }
+                    if (missing.needsAccessibility) {
+                        MissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_accessibility),
+                            onGrant = { showAccessibilityDisclosure = true },
+                        )
+                    }
+                    if (missing.needsOverlay) {
+                        MissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_overlay),
+                            onGrant = {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                )
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPermissionDialog) {
+                    Text(stringResource(R.string.challenge_permission_dialog_cancel))
                 }
             },
         )
@@ -1648,5 +1711,24 @@ private fun WaiverCheckboxRow(
             fontSize = 14.sp,
             color = detoxColors.label,
         )
+    }
+}
+
+// ── Missing-permission dialog row ─────────────────────────────────────────────
+
+@Composable
+private fun MissingPermissionRow(name: String, onGrant: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "• $name",
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onGrant) {
+            Text(stringResource(R.string.challenge_permission_grant))
+        }
     }
 }

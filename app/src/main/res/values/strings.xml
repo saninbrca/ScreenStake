@@ -1411,6 +1411,14 @@
     <string name="wizard_review_days_format">%1$d Tage</string>
     <string name="wizard_review_start_btn">Challenge starten</string>
     <string name="challenge_create_needs_usage_access">Nutzungszugriff ist erforderlich, um eine Challenge zu starten. Bitte aktiviere ihn in den Einstellungen und versuche es erneut.</string>
+    <!-- Pre-flight permission gate (challenge creation) -->
+    <string name="challenge_permission_dialog_title">Berechtigungen fehlen</string>
+    <string name="challenge_permission_dialog_body">Damit deine Challenge wirklich blockieren kann, fehlen noch folgende Berechtigungen. Erteile sie und tippe danach erneut auf „Challenge starten“.</string>
+    <string name="challenge_permission_usage">Nutzungszugriff</string>
+    <string name="challenge_permission_accessibility">Bedienungshilfe-Dienst</string>
+    <string name="challenge_permission_overlay">Über anderen Apps einblenden</string>
+    <string name="challenge_permission_grant">Erteilen</string>
+    <string name="challenge_permission_dialog_cancel">Abbrechen</string>
     <string name="wizard_review_motivation_label">Deine Motivation</string>
     <string name="wizard_review_motivation_optional">optional</string>
     <string name="wizard_review_motivation_hint">Warum machst du das?</string>

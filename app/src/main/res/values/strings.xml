@@ -1489,6 +1489,7 @@
     <string name="verlauf_status_completed">✓ Geschafft</string>
     <string name="verlauf_status_failed">✗ Aufgegeben</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d Tage</string>
+    <string name="verlauf_no_end_date">Kein Enddatum</string>
     <string name="verlauf_stats_time_label">ZEIT ZURÜCKGEWONNEN</string>
     <string name="verlauf_stats_subtext_full_day">≈ ein ganzer Arbeitstag</string>
     <string name="verlauf_stats_subtext_half_day">≈ ein halber Arbeitstag</string>

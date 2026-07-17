@@ -21,6 +21,25 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-17 — Open-ended challenges: history no longer shows the ~2126 sentinel end DATE
+
+**WHAT.** Completes the open-ended-display fix started in a96615f. That commit guarded the **day-count**
+surfaces (`openEndedSafeDurationDays` in HistoryViewModel/HistoryDetailViewModel, ChallengeSuccessDialog,
+Profile) but missed the **date-formatting** surfaces, so History still rendered the ~100-year sentinel
+`endDate` as a literal date ("bis 12. Mär 2126"). Two sites fixed, both now guarded with
+`DateUtils.isOpenEnded` and showing the existing "Kein Enddatum" copy (new screen-scoped string
+`verlauf_no_end_date`, same wording as `active_challenge_no_end_date`):
+
+1. `HistoryScreen.kt` — list-row subtitle formatted `entity.endDate` unconditionally.
+2. `HistoryDetailScreen.kt` — `endStr` formatted unconditionally and fed into `verlauf_date_range`;
+   now reads "start–Kein Enddatum · N Tage" (N = already-safe survived-days from the ViewModel).
+
+App-wide sweep found no other unguarded sites: ActiveChallengeScreen already guarded; group-challenge
+end dates (FriendsHub, GroupChallengeDetail) are duration-based and cannot be open-ended.
+
+**MONEY-SAFETY.** Display-only; no ViewModel/repo/CF/settlement changes. Fixed-end challenges format
+exactly as before (else-branch identical to old code).
+
 ### 2026-07-16 — Prevent creating a challenge that blocks nothing (wizard validation gap)
 
 **WHAT.** A challenge is valid iff it has ≥1 active blocking source (≥1 app OR ≥1 custom domain OR

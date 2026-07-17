@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.ui.theme.detoxColors
+import com.detox.app.util.DateUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -151,7 +152,12 @@ private fun DetailContent(
     val isGroup     = !entity.groupChallengeId.isNullOrBlank()
     val dateFormat  = remember { SimpleDateFormat("d. MMM yyyy", Locale("de")) }
     val startStr    = remember(entity.startDate) { dateFormat.format(Date(entity.startDate)) }
-    val endStr      = remember(entity.endDate)   { dateFormat.format(Date(entity.endDate)) }
+    // Open-ended sentinel endDate must never render as a far-future date.
+    val isOpenEnded = remember(entity.startDate, entity.endDate) {
+        DateUtils.isOpenEnded(entity.startDate, entity.endDate)
+    }
+    val endStr      = if (isOpenEnded) stringResource(R.string.verlauf_no_end_date)
+                      else remember(entity.endDate) { dateFormat.format(Date(entity.endDate)) }
 
     Column(
         modifier = modifier

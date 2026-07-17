@@ -43,6 +43,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.ui.theme.detoxColors
+import com.detox.app.util.DateUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -153,7 +154,12 @@ private fun HistoryRow(entry: SoloChallengeHistory, onClick: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = dateFormat.format(Date(entity.endDate)),
+                    // Open-ended sentinel endDate must never render as a far-future date.
+                    text = if (DateUtils.isOpenEnded(entity.startDate, entity.endDate)) {
+                        stringResource(R.string.verlauf_no_end_date)
+                    } else {
+                        dateFormat.format(Date(entity.endDate))
+                    },
                     fontSize = 12.sp,
                     color = detoxColors.subtext
                 )

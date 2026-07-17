@@ -1,6 +1,6 @@
 # Compliance — Open Legal Questions (DRAFT)
 
-> **Scope:** Austrian/EU legal questions for ScreenStake — GSpG gambling classification, §18 FAGG
+> **Scope:** Austrian/EU legal questions for Finite — GSpG gambling classification, §18 FAGG
 > withdrawal-right waiver, DSGVO/GDPR basis for `deviceId`, tax/Gewerbe/USt, 18+ gating, AGB alignment.
 > **When to load:** Any work touching money flows, consent capture, data-protection basis, or AGB/ToS.
 > _Last verified: 2026-06-22 (commit e287b79)_
@@ -22,7 +22,7 @@
 
 ## 1. GSpG classification (gambling vs. skill/effort)
 
-**(a) Question for counsel:** Is ScreenStake's stake-and-forfeit mechanic *Glücksspiel* or a *Wette*
+**(a) Question for counsel:** Is Finite's stake-and-forfeit mechanic *Glücksspiel* or a *Wette*
 under §1 GSpG, or does it fall outside the GSpG because the outcome depends predominantly on the
 user's **own behaviour/effort** (keeping under a self-set screen-time limit) rather than on *Zufall*
 (chance)? Capture **both** the skill/effort argument **and** the counter-arguments (e.g. is forfeiting

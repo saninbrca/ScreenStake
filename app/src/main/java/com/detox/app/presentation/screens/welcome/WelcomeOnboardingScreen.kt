@@ -228,11 +228,11 @@ private fun WelcomePage(
     ) {
         DetoxLogoIcon()
 
-        // "De" + "tox" in green
+        // "Finite" + accent "." — the dot marks where the scrolling ends
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = detoxColors.label)) { append("Stop") }
-                withStyle(SpanStyle(color = detoxColors.accent)) { append("Dooming") }
+                withStyle(SpanStyle(color = detoxColors.label)) { append(stringResource(R.string.app_name)) }
+                withStyle(SpanStyle(color = detoxColors.accent)) { append(".") }
             },
             style = TextStyle(
                 fontFamily = PoppinsFamily,

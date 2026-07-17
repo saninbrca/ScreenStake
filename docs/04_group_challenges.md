@@ -542,7 +542,7 @@ Called by the **creator** to cancel a challenge in `waiting` status.
 
 Stripe PaymentIntents created with `capture_method: "manual"` hold their authorization for
 **~7 days** (Stripe's real limit); after that the authorization expires and capture becomes impossible.
-ScreenStake does **not** rely on that full window for groups. `createGroupChallenge` sets a
+Finite does **not** rely on that full window for groups. `createGroupChallenge` sets a
 **conservative 5-day buffer** — `authorizationExpiresAt = now + 5 days` (`functions/src/index.ts`,
 `Date.now() + 5 * MILLIS_PER_DAY`) — which sits *before* Stripe's ~7-day expiry, leaving margin for
 capture/retry. The **5 days is our own enforced cap, not Stripe's limit.**

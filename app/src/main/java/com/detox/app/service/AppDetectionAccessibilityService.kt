@@ -342,7 +342,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                 showBlockedToast()
                 val host = android.net.Uri.parse(normalizedUrl).host ?: url
                 TrackedAppEventBus.emitAdultBlocked(host)
-                goHome()
+                redirectToNeutralPage(packageName)
             }
             return  // Don't also fire the custom-domain overlay for the same URL
         }
@@ -411,13 +411,51 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
     // ── Actions ───────────────────────────────────────────────────────────────
 
-    /** Sends the user to the launcher (used by browser-side adult/blocked-domain blocking). */
-    private fun goHome() {
-        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    /**
+     * Primary adult-block action: fronts [browserPackage] on about:blank in a new
+     * tab, demoting the adult tab to background (Chrome pauses its media). The user
+     * stays in the browser and the re-block loop is broken by construction — no
+     * adult URL remains in the foreground to re-trigger detection. about:blank
+     * itself parses to host "about" → never matches → no self-loop.
+     *
+     * A single GLOBAL_ACTION_BACK first pops the adult page out of visible history
+     * in the common search-referral case. Deliberately never iterated — porn
+     * redirect chains would loop; the redirect is the correctness mechanism.
+     *
+     * Falls back to [goHome]: background-activity-launch restrictions (API 29+)
+     * SILENTLY drop startActivity from services unless the app holds
+     * SYSTEM_ALERT_WINDOW (documented BAL exemption). Adult-only challenges are
+     * exempt from the overlay pre-flight gate, so without the permission we must
+     * not rely on the intent — a dropped launch would leave the adult page visible.
+     */
+    private fun redirectToNeutralPage(browserPackage: String) {
+        performGlobalAction(GLOBAL_ACTION_BACK)
+
+        if (!android.provider.Settings.canDrawOverlays(applicationContext)) {
+            Timber.d("Adult block: no overlay permission (no BAL exemption) — goHome fallback")
+            goHome()
+            return
         }
-        applicationContext.startActivity(homeIntent)
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("about:blank")).apply {
+                setPackage(browserPackage)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            applicationContext.startActivity(intent)
+            Timber.d("Adult block: redirected $browserPackage to about:blank")
+        } catch (e: Exception) {
+            Timber.w(e, "Adult block: redirect failed — goHome fallback")
+            goHome()
+        }
+    }
+
+    /**
+     * Fallback only (see [redirectToNeutralPage]): sends the user to the launcher
+     * via the sanctioned accessibility API, which is immune to background-activity-
+     * launch restrictions, unlike a startActivity(HOME) intent.
+     */
+    private fun goHome() {
+        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     /** Shows a brief toast so the user understands why they were redirected. */

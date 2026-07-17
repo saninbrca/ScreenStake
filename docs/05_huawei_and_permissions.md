@@ -213,8 +213,12 @@ RECEIVE_BOOT_COMPLETED    ← BootReceiver
 ```
 Adult content = 100% blocked, ALWAYS — but ONLY per-URL.
 No bypass, no "öffnen" option, no "Visit anyway".
-Redirect to home screen + Toast, then an explanatory overlay
-(WebsiteBlockedOverlay isAdultBlock variant) over the home screen.
+Redirect the BROWSER to about:blank (user STAYS in the browser — never a
+home-kick) + Toast, then an explanatory overlay (WebsiteBlockedOverlay
+isAdultBlock variant) whose "Zurück" only dismisses.
+goHome (GLOBAL_ACTION_HOME) is the FALLBACK only: used when overlay
+permission is missing (no background-activity-launch exemption — the VIEW
+intent would be silently dropped) or startActivity throws.
 Overlay is skipped gracefully if SYSTEM_ALERT_WINDOW is missing
 (adult-only challenges are exempt from the overlay pre-flight gate).
 ```
@@ -252,11 +256,19 @@ fun isDomainBlocked(url: String): Boolean {
 // On match (2s cooldown):
 // 1. Toast R.string.adult_block_toast ("🔞 Von Finite blockiert")
 // 2. emitAdultBlocked(host) → OverlayManager.showAdultBlockedOverlay
-//    (WebsiteBlockedOverlay isAdultBlock=true, over the home screen; skipped
-//     without overlay permission)
-// 3. goHome()                                  ← immediate, adult page never
-//                                                stays resumed behind an overlay
+//    (WebsiteBlockedOverlay isAdultBlock=true, over the browser's neutral page;
+//     "Zurück" only dismisses; skipped without overlay permission)
+// 3. redirectToNeutralPage(browserPackage):
+//    - ONE GLOBAL_ACTION_BACK (pop adult page from visible history; never iterated)
+//    - VIEW intent "about:blank" + setPackage(browser) + NEW_TASK → browser fronts
+//      a neutral tab, adult tab demoted to background (media pauses). User STAYS
+//      in the browser; loop broken by construction (about:blank → host "about" →
+//      never matches). Fallback goHome() [GLOBAL_ACTION_HOME] when overlay
+//      permission is missing (VIEW would be silently BAL-dropped) or start throws.
 // 4. NO counter increment, NO bypass
+// Known limitation (accepted): in incognito the VIEW intent opens a NORMAL-mode
+// tab; the incognito adult tab survives in background and re-bounces if manually
+// reopened — no lockout, page never viewable.
 
 // URL extraction: address-bar view IDs ONLY (URL_BAR_IDS + generic id fallback).
 // NEVER scan page text for URL-shaped strings — a displayed adult domain must

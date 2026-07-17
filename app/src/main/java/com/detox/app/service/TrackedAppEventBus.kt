@@ -72,8 +72,9 @@ object TrackedAppEventBus {
 
     /**
      * Fires when the AccessibilityService blocks an adult domain. The service has already
-     * sent the user home; [OverlayManager] shows an explanatory overlay so the redirect
-     * doesn't read as a browser crash. Carries the matched host.
+     * redirected the browser to about:blank (goHome fallback); [OverlayManager] shows an
+     * explanatory overlay so the redirect doesn't read as a browser crash. Carries the
+     * matched host.
      */
     private val _adultBlockedEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 1,

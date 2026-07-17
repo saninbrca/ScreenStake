@@ -21,6 +21,31 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-17 — FIXED: adult-block re-block loop (home-kick → about:blank redirect in browser)
+
+**BUG.** After an adult-URL block the page stayed open in the tab: user kicked home → reopens
+browser → tab restores the adult page → re-detect → kicked again, forever (same trap class as the
+old incognito lockout). No cooldown can fix this without becoming a bypass — the trigger (URL in
+the foreground tab) must be removed.
+
+**FIX (approach 1a — VIEW-intent redirect).** `redirectToNeutralPage(browserPackage)` replaces the
+home-kick: one `GLOBAL_ACTION_BACK` (pops the adult page from visible history in the
+search-referral case; deliberately never iterated — redirect is the correctness mechanism), then
+`ACTION_VIEW about:blank` + `setPackage(browser)` + `NEW_TASK`. Browser fronts a neutral tab, adult
+tab demoted (media pauses), user STAYS in the browser, loop broken by construction (about:blank →
+host "about" → never matches; verified against normalization + matcher).
+- **Fallback:** `goHome()` (now `GLOBAL_ACTION_HOME` — sanctioned a11y API, immune to BAL
+  restrictions) when overlay permission is missing (without the SYSTEM_ALERT_WINDOW BAL exemption
+  the VIEW intent is SILENTLY dropped on API 29+ — a try/catch cannot detect that, hence the
+  explicit `canDrawOverlays` gate) or when startActivity throws.
+- **Overlay flow:** 🔞 overlay now appears over the browser's neutral page; "Zurück" only
+  DISMISSES (no goHome — staying in the browser is the point).
+- **Accepted limitation:** in incognito the VIEW intent opens a normal-mode tab; the incognito
+  adult tab survives in background and re-bounces if manually reopened — no lockout, never viewable.
+- NO node/view-ID manipulation for the redirect (rejected omnibox `ACTION_SET_TEXT`: submit needs
+  API 30+ `ACTION_IME_ENTER`, Firefox URL bar not editable; rejected tab-close automation: fragile
+  multi-step UI scripting).
+
 ### 2026-07-17 — FIXED: adult-list monthly update downloaded the WRONG OISD list (ad-block, not NSFW)
 
 **BUG (root cause of "de.pornhub.com → blocked=false").** `AdultDomainsUpdateWorker` downloaded

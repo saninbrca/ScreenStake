@@ -222,8 +222,8 @@ class OverlayManager @Inject constructor(
             }
         }
 
-        // Adult blocking: the AccessibilityService already sent the user home;
-        // show an explanatory overlay so the redirect doesn't read as a browser crash.
+        // Adult blocking: the AccessibilityService already redirected the browser to
+        // about:blank (goHome fallback); explain the block so it doesn't read as a crash.
         scope.launch {
             TrackedAppEventBus.adultBlockedEvents.collect { domain ->
                 showAdultBlockedOverlay(domain)
@@ -1082,16 +1082,18 @@ class OverlayManager @Inject constructor(
 
     /**
      * Adult-content block: shown AFTER the AccessibilityService has already redirected
-     * the user to the home screen (unlike custom domains, the adult page must never
-     * stay resumed behind an overlay). Explains WHY the browser was closed.
-     * No bypass — adult blocking has no "Visit anyway" path.
+     * the browser to about:blank (unlike custom domains, the adult page must never
+     * stay resumed in the foreground). Appears over the browser's neutral page;
+     * "Zurück" only DISMISSES — the user stays in the browser, which is the point
+     * of the redirect (no home-kick). No bypass — adult blocking has no
+     * "Visit anyway" path.
      */
     private suspend fun showAdultBlockedOverlay(domain: String) {
         if (currentOverlayView != null) return
 
         // Adult-only challenges are exempt from the overlay permission in the
         // pre-flight gate — without the permission, degrade to toast-only feedback
-        // (the AccessibilityService already showed the toast and went home).
+        // (the AccessibilityService already showed the toast and redirected).
         if (!android.provider.Settings.canDrawOverlays(context)) {
             Timber.d("Adult block: no overlay permission — toast-only fallback")
             return
@@ -1103,10 +1105,7 @@ class OverlayManager @Inject constructor(
         val motivationText = blockingChallenge?.customMotivation?.takeIf { it.isNotBlank() }
 
         val composeView = createSessionComposeView(
-            onBack = {
-                dismissOverlay()
-                goHome()
-            }
+            onBack = { dismissOverlay("adult_back") }
         ) {
             DetoxTheme(darkTheme = true) {
                 com.detox.app.presentation.components.WebsiteBlockedOverlay(
@@ -1115,10 +1114,7 @@ class OverlayManager @Inject constructor(
                     streak = 0,
                     motivationText = motivationText,
                     isAdultBlock = true,
-                    onGoBack = {
-                        dismissOverlay()
-                        goHome()
-                    }
+                    onGoBack = { dismissOverlay("adult_dismiss") }
                 )
             }
         }

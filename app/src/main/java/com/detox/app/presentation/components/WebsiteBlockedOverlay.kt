@@ -36,7 +36,8 @@ import com.detox.app.R
 /**
  * Full-screen opaque overlay shown when a blocked domain is detected in a browser.
  * With [isAdultBlock] it becomes the adult-content variant (🔞 icon, 18+ subtitle),
- * shown over the home screen after the user was already redirected out of the browser.
+ * shown over the browser's neutral page after the tab was redirected to about:blank;
+ * its back action only dismisses (the user stays in the browser).
  *
  * No bypass — single "Zurück" button only.
  * Back button is also intercepted by OverlayManager via createSessionComposeView.

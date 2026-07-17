@@ -100,6 +100,16 @@ class CreateChallengeUseCase @Inject constructor(
                 }
             }
         }
+        // WEBSITE challenges must carry ≥1 active blocking source: at least one custom domain OR
+        // adult-content blocking. (An adult-only challenge with no domains is valid — do NOT require
+        // non-empty blockedDomains.) Defense-in-depth backstop for the wizard's tab-aware Step-2 gate;
+        // catches any non-wizard path. NOTE: for Hard Mode this runs AFTER payment, so the wizard gate
+        // is the real pre-payment guard — this only prevents persisting a blocks-nothing doc.
+        if (blockingType == BlockingType.WEBSITE && blockedDomains.isEmpty() && !blockAdultContent) {
+            return Result.failure(
+                IllegalArgumentException("Website challenges must block at least one domain or adult content")
+            )
+        }
 
         val id = challengeId ?: UUID.randomUUID().toString()
         val now = System.currentTimeMillis()

@@ -58,6 +58,26 @@ val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
 
 const val TOTAL_STEPS = 7
 
+/**
+ * Step-2 gate predicate: true when the ACTIVE tab has a real blocking source that will actually be
+ * persisted at submit. Tab-aware because the two tabs persist different sources:
+ *  - Apps tab (activeTab == 0): submits [ChallengeCreationState.selectedApps]; the Website-tab
+ *    sources (domains/adult) are NOT the primary block, so they don't count here.
+ *  - Website tab (activeTab == 1): submits manualDomains + blockAdultContent and DISCARDS
+ *    selectedApps (see `saveSoftModeChallenge`). A leftover app selection must therefore NOT satisfy
+ *    the gate — otherwise a "blocks nothing" challenge (no app, no domain, no adult) can be created.
+ *
+ * Extracted as a pure top-level function so it is unit-testable without constructing the full
+ * (Hilt-injected, coroutine-driven) ViewModel; [ChallengeCreationViewModel.canGoNext] delegates to it.
+ */
+internal fun step2HasValidBlockingSource(
+    state: ChallengeCreationState,
+    conflictingPackages: Map<String, String>,
+): Boolean = when (state.activeTab) {
+    0 -> state.selectedApps.isNotEmpty() && state.selectedApps.none { conflictingPackages.containsKey(it) }
+    else -> state.manualDomains.isNotEmpty() || state.blockAdultContent
+}
+
 // ── App list sub-state ────────────────────────────────────────────────────────
 
 data class AppListState(
@@ -402,8 +422,7 @@ class ChallengeCreationViewModel @Inject constructor(
         val conflicts = _appListState.value.conflictingPackages
         return when (s.currentStep) {
             1 -> s.selectedMode != null
-            2 -> (s.selectedApps.isNotEmpty() || s.manualDomains.isNotEmpty() || s.blockAdultContent) &&
-                        s.selectedApps.none { conflicts.containsKey(it) }
+            2 -> step2HasValidBlockingSource(s, conflicts)
             3 -> s.limitType != null
             4 -> when (s.limitType) {
                 LimitType.TIME        -> s.limitMinutesError == null

@@ -21,6 +21,37 @@
 
 ## [Unreleased] — June 2026
 
+### 2026-07-16 — Prevent creating a challenge that blocks nothing (wizard validation gap)
+
+**WHAT.** A challenge is valid iff it has ≥1 active blocking source (≥1 app OR ≥1 custom domain OR
+`blockAdultContent=true`). A wizard gap let a "blocks nothing" website challenge through (real Doc B:
+`blockingType=website`, `blockAdultContent=false`, `blockedDomains=null`, no apps).
+
+- **Fix 1 (primary, pre-payment).** `ChallengeCreationViewModel.canGoNext()` step 2 was tab-blind — it
+  counted `selectedApps` even on the Website tab, where apps are discarded at submit
+  (`saveSoftModeChallenge`). Repro: select an app on the Apps tab → switch to Websites tab → add no
+  domain, adult off → the gate stayed true → a challenge blocking nothing could be created (and could
+  reach the Hard-mode payment step). Now tab-aware via extracted pure predicate
+  `step2HasValidBlockingSource(state, conflicts)`: Apps tab requires ≥1 non-conflicting app; Website
+  tab requires ≥1 manual domain OR `blockAdultContent`, and does NOT count `selectedApps`. Tab-switch
+  intentionally does NOT clear selections (verified no residual leak — website submit structurally
+  discards apps), so "switch tabs to compare, switch back" keeps the app selected.
+- **Fix 2 (backstop).** `CreateChallengeUseCase` now mirrors the existing APP guard with a WEBSITE
+  branch: fail if `blockingType==WEBSITE && blockedDomains.isEmpty() && !blockAdultContent`. Catches
+  non-wizard paths. (For Hard Mode this runs after payment, so Fix 1 is the money-safe guard — this
+  only prevents persisting a blocks-nothing doc.)
+
+**WHY.** Creation-time validation correctness. Adult-only challenges (adult=true, no domains, no apps)
+stay creatable (Doc A). App-mode was already guarded (`require(appPackageNames.isNotEmpty())`).
+
+**TESTS.** `Step2BlockingSourceGateTest` (7 tests) covers the real predicate: Apps tab needs an app;
+Website tab needs domain OR adult; the exact Doc-B repro (leftover app on Website tab) → gate false;
+adult-only → true.
+
+**MONEY-SAFETY.** Creation-time validation only — no money-authority/capture/refund/settlement changes.
+Existing broken docs in Firestore are NOT retroactively fixed (Soft blocks-nothing docs are harmless
+dead cards; no staked doc should exist given the pre-payment gate).
+
 ### 2026-07-16 — Soft-challenge completion reliability + open-ended display + overlay contrast (3 bug fixes)
 
 **WHAT.** Three soft-mode bug fixes:

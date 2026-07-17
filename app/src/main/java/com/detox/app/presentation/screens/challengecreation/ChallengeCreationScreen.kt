@@ -180,6 +180,43 @@ fun ChallengeCreationScreen(
         )
     }
 
+    // ── Adult-block exclusivity dialogs (both directions, no silent clearing) ──
+    if (state.showAdultExclusiveDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAdultExclusiveDialog,
+            title = { Text(stringResource(R.string.adult_exclusive_dialog_title)) },
+            text = { Text(stringResource(R.string.adult_exclusive_dialog_body)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmAdultExclusive) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAdultExclusiveDialog) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_dismiss))
+                }
+            },
+        )
+    }
+
+    if (state.pendingAdultAppPackage != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAppOverAdultDialog,
+            title = { Text(stringResource(R.string.adult_exclusive_dialog_title)) },
+            text = { Text(stringResource(R.string.adult_exclusive_app_dialog_body)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmAppOverAdult) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAppOverAdultDialog) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_dismiss))
+                }
+            },
+        )
+    }
+
     // ── Pre-flight permission gate ────────────────────────────────────────────
     // Prominent-disclosure gate for the AccessibilityService (Play policy): the settings intent
     // fires ONLY after the affirmative tap — same pattern as OnboardingScreen.
@@ -266,13 +303,12 @@ fun ChallengeCreationScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // TIME_WINDOW skips internal step 4, so it has 6 effective steps. Renumber the
-            // displayed counter contiguously (internal 5/6/7 → shown 4/5/6) so no number is
-            // visibly skipped; the denominator becomes 6 once TIME_WINDOW is chosen on step 3.
-            val isTimeWindow = state.limitType == LimitType.TIME_WINDOW
-            val displayedTotal = if (isTimeWindow) TOTAL_STEPS - 1 else TOTAL_STEPS
-            val displayedStep = if (isTimeWindow && state.currentStep >= 5)
-                state.currentStep - 1 else state.currentStep
+            // The displayed "Schritt X von Y" counter is the position within the path's
+            // visible-step list (APP: 7, APP+TIME_WINDOW: 6, Website/Adult block path: 4),
+            // so skipped internal steps never surface as a visibly missing number.
+            val steps = visibleSteps(state)
+            val displayedTotal = steps.size
+            val displayedStep = (steps.indexOf(state.currentStep) + 1).coerceAtLeast(1)
 
             WizardHeader(
                 currentStep = displayedStep,
@@ -1334,32 +1370,47 @@ private fun Step7Confirm(
                     ChallengeMode.HARD -> stringResource(R.string.wizard_review_mode_hard)
                     else -> stringResource(R.string.wizard_review_mode_soft)
                 }
+                // Block-only path (Website tab): the target row lists the domains (or "Adult-Block"
+                // for adult-only) and the limit row reads "Immer blockiert" — these challenges skip
+                // the limit/schedule steps and are hard-blocked 24/7.
+                val isBlockPath = state.activeTab == 1
                 val appNames = appListState.trackableApps
                     .filter { it.packageName in state.selectedApps }
                     .map { it.appName }
+                val targetLabel = if (isBlockPath) stringResource(R.string.wizard_review_blocked_label)
+                    else stringResource(R.string.wizard_review_apps_label)
+                val targetNames = if (isBlockPath) state.manualDomains else appNames
                 val appsLabel = when {
-                    appNames.size == 1 -> appNames[0]
-                    appNames.size == 2 -> "${appNames[0]}, ${appNames[1]}"
-                    appNames.size >= 3 -> stringResource(
+                    isBlockPath && targetNames.isEmpty() -> stringResource(R.string.adult_block_display_name)
+                    targetNames.size == 1 -> targetNames[0]
+                    targetNames.size == 2 -> "${targetNames[0]}, ${targetNames[1]}"
+                    targetNames.size >= 3 -> stringResource(
                         R.string.wizard_review_apps_overflow_format,
-                        appNames[0], appNames[1], appNames.size - 2,
+                        targetNames[0], targetNames[1], targetNames.size - 2,
                     )
                     state.selectedApps.isNotEmpty() ->
                         stringResource(R.string.wizard_review_apps_count, state.selectedApps.size)
                     else -> stringResource(R.string.wizard_review_apps_count, 0)
                 }
-                val limitLabel = when (state.limitType) {
-                    LimitType.TIME        -> stringResource(R.string.wizard_review_limit_time_format, state.limitValueMinutes)
-                    LimitType.SESSIONS    -> stringResource(R.string.wizard_review_limit_sessions_format, state.limitValueSessions, state.sessionDurationMinutes)
-                    LimitType.TIME_BUDGET -> stringResource(R.string.wizard_review_limit_budget_format, state.dailyBudgetMinutes)
-                    LimitType.TIME_WINDOW -> "Nur Zeitfenster"
-                    null                  -> "—"
-                }
+                val limitLabel = if (isBlockPath) stringResource(R.string.wizard_review_always_blocked)
+                    else when (state.limitType) {
+                        LimitType.TIME        -> stringResource(R.string.wizard_review_limit_time_format, state.limitValueMinutes)
+                        LimitType.SESSIONS    -> stringResource(R.string.wizard_review_limit_sessions_format, state.limitValueSessions, state.sessionDurationMinutes)
+                        LimitType.TIME_BUDGET -> stringResource(R.string.wizard_review_limit_budget_format, state.dailyBudgetMinutes)
+                        LimitType.TIME_WINDOW -> "Nur Zeitfenster"
+                        null                  -> "—"
+                    }
                 val durationLabel = if (state.noEndDate) "Kein Enddatum"
                     else "${state.durationDays} Tage"
 
                 SummaryDividerRow(stringResource(R.string.wizard_review_mode_label), modeLabel, isFirst = true)
-                SummaryDividerRow(stringResource(R.string.wizard_review_apps_label), appsLabel)
+                SummaryDividerRow(targetLabel, appsLabel)
+                if (isBlockPath && state.blockAdultContent && state.manualDomains.isNotEmpty()) {
+                    SummaryDividerRow(
+                        stringResource(R.string.adult_block_display_name),
+                        stringResource(R.string.wizard_review_adult_active),
+                    )
+                }
                 SummaryDividerRow(stringResource(R.string.wizard_review_limit_label), limitLabel)
                 SummaryDividerRow(stringResource(R.string.wizard_review_duration_label), durationLabel, isLast = true)
             }

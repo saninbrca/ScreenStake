@@ -68,10 +68,13 @@ class GetDailyStatsUseCase @Inject constructor(
                 // Open-ended ("Kein Enddatum") sentinel — display-only flag so the card shows a label
                 // instead of the ~36500-day count. Never affects completion/win-loss (endDate unchanged).
                 val isOpenEnded = DateUtils.isOpenEnded(challenge.startDate, effectiveEndDateMs)
-                // Streak is shown on the card badge for open-ended challenges only — compute it solely
-                // in that case so dated cards pay zero added DB cost. Same use case the detail screen
-                // uses, so the two surfaces always agree. Display-only; never affects win/loss.
-                val streak = if (isOpenEnded) getChallengeStreakUseCase(challenge, now) else 0
+                // Streak is shown on the card badge for open-ended challenges — and as the hero
+                // element of the dedicated adult-only card — so compute it only in those cases;
+                // ordinary dated cards pay zero added DB cost. Same use case the detail screen
+                // uses, so the surfaces always agree. Display-only; never affects win/loss.
+                val isAdultOnly = challenge.blockAdultContent &&
+                    challenge.appPackageNames.isEmpty() && challenge.blockedDomains.isEmpty()
+                val streak = if (isOpenEnded || isAdultOnly) getChallengeStreakUseCase(challenge, now) else 0
 
                 // Skip group challenges where the current user already failed
                 if (groupChallenge != null && currentUid != null) {

@@ -59,6 +59,12 @@
     <string name="app_selection_domain_input_hint">z.B. instagram.com</string>
     <string name="app_selection_adult_content_block">Adult Content sperren</string>
     <string name="app_selection_adult_content_desc">Blockiert alle 18+ Websites</string>
+    <string name="adult_block_display_name">Adult-Block</string>
+    <string name="adult_exclusive_dialog_title">Adult-Block ist eine eigene Challenge</string>
+    <string name="adult_exclusive_dialog_body">Adult-Block funktioniert nur als eigene Challenge. Deine ausgewählten Apps werden entfernt.</string>
+    <string name="adult_exclusive_app_dialog_body">Adult-Block funktioniert nur als eigene Challenge. Wenn du eine App auswählst, wird Adult-Block deaktiviert.</string>
+    <string name="adult_exclusive_dialog_confirm">Ja, passt</string>
+    <string name="adult_exclusive_dialog_dismiss">Später getrennt</string>
 
     <!-- Challenge Setup -->
     <string name="challenge_setup_title">Set Up Challenge</string>
@@ -116,6 +122,7 @@
     <!-- Open-ended card badge: compact streak (flame already signals "streak"; full wording on detail screen) -->
     <string name="challenge_card_streak_format">🔥 %1$d Tage</string>
     <string name="challenge_card_streak_day_one">🔥 Tag 1</string>
+    <string name="challenge_card_adult_subtitle">Alle 18+ Websites blockiert – rund um die Uhr</string>
     <string name="challenge_card_ends_today">Endet heute</string>
     <string name="challenge_card_tomorrow">Morgen</string>
     <string name="challenge_card_days_left">Noch %1$d Tage</string>
@@ -1409,6 +1416,9 @@
     <string name="wizard_review_mode_label">Modus</string>
     <string name="wizard_review_apps_label">Apps</string>
     <string name="wizard_review_limit_label">Limit</string>
+    <string name="wizard_review_blocked_label">Blockiert</string>
+    <string name="wizard_review_always_blocked">Immer blockiert (24/7)</string>
+    <string name="wizard_review_adult_active">Aktiv</string>
     <string name="wizard_review_duration_label">Dauer</string>
     <string name="wizard_review_apps_count">%1$d ausgewählt</string>
     <string name="wizard_review_no_end_date">Kein Enddatum</string>

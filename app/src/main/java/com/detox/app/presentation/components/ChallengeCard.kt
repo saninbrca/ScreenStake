@@ -135,6 +135,16 @@ fun ChallengeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Adult-only challenge (no app, no custom domains): dedicated card — the generic
+    // limit/progress layout has nothing meaningful to show for a pure 24/7 block.
+    if (dailyStats.blockAdultContent &&
+        dailyStats.appPackageNames.isEmpty() && dailyStats.appPackageName == null &&
+        dailyStats.blockedDomains.isEmpty()
+    ) {
+        AdultBlockCard(dailyStats = dailyStats, onClick = onClick, modifier = modifier)
+        return
+    }
+
     val progress = when (dailyStats.limitType) {
         LimitType.TIME -> {
             if (dailyStats.limitValueMinutes > 0)
@@ -307,6 +317,107 @@ fun ChallengeCard(
                     color = detoxColors.warning
                 )
             }
+        }
+    }
+}
+
+/**
+ * Card for adult-only challenges ("Adult-Block" — no app, no domains, no minute limit).
+ * There is no progress to fill on an always-on block, so the streak is the hero element;
+ * the footer shows the end date or "Kein Enddatum". Reuses the generic card tokens
+ * (surface, medium shape, 4dp elevation) and the wizard's red "18+" circle motif.
+ */
+@Composable
+private fun AdultBlockCard(
+    dailyStats: DailyStats,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().pressScaleFeedback(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // "18+" circle — same motif as the wizard's adult toggle card.
+                Surface(
+                    modifier = Modifier.size(32.dp),
+                    shape = CircleShape,
+                    color = detoxColors.danger
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "18+",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = detoxColors.onSolid
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.adult_block_display_name),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.challenge_card_adult_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+                ModeBadge(dailyStats = dailyStats)
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Streak hero — replaces the progress bar.
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = if (dailyStats.streak <= 0)
+                        stringResource(R.string.challenge_card_streak_day_one)
+                    else
+                        stringResource(R.string.challenge_card_streak_format, dailyStats.streak),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = when {
+                    dailyStats.isOpenEnded -> stringResource(R.string.challenge_card_no_end_date)
+                    dailyStats.daysRemaining <= 0 -> stringResource(R.string.challenge_card_ends_today)
+                    else -> stringResource(R.string.challenge_card_days_left, dailyStats.daysRemaining)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

@@ -78,6 +78,24 @@ internal fun step2HasValidBlockingSource(
     else -> state.manualDomains.isNotEmpty() || state.blockAdultContent
 }
 
+/**
+ * Ordered list of internal step ids (1..7) visible for the current wizard path. The internal ids
+ * stay stable content keys (the screen's `when(step)` switch and [ChallengeCreationViewModel.canGoNext]
+ * key on them); only membership changes per path:
+ *  - APP (Apps tab): all steps; with [LimitType.TIME_WINDOW] the step-4 value picker is skipped
+ *    (the window is configured on the schedule step).
+ *  - Block-only (Website tab — custom domains and/or adult): the challenge is a 24/7 hard block,
+ *    so both the minute-limit steps (3+4) AND the time-window step (5) are skipped.
+ *
+ * [ChallengeCreationViewModel.goNext]/[ChallengeCreationViewModel.goBack] walk this list, and the
+ * displayed "Schritt X von Y" counter is the position in it — pure so it is unit-testable.
+ */
+internal fun visibleSteps(state: ChallengeCreationState): List<Int> = when {
+    state.activeTab == 1 -> listOf(1, 2, 6, 7)
+    state.limitType == LimitType.TIME_WINDOW -> listOf(1, 2, 3, 5, 6, 7)
+    else -> listOf(1, 2, 3, 4, 5, 6, 7)
+}
+
 // ── App list sub-state ────────────────────────────────────────────────────────
 
 data class AppListState(
@@ -107,6 +125,11 @@ data class ChallengeCreationState(
     val manualDomainInput: String = "",
     val manualDomainError: String? = null,
     val blockAdultContent: Boolean = false,
+    // Step 2 — adult-block exclusivity dialogs (no silent clearing in either direction)
+    /** True while the "adult ON would remove your selected apps" dialog is shown. */
+    val showAdultExclusiveDialog: Boolean = false,
+    /** Package the user tapped on the Apps tab while adult-block is ON; non-null shows the mirrored dialog. */
+    val pendingAdultAppPackage: String? = null,
     // Step 3
     val limitType: LimitType? = null,
     // Step 4
@@ -269,6 +292,28 @@ class ChallengeCreationViewModel @Inject constructor(
     fun updateSearchQuery(query: String) = _state.update { it.copy(searchQuery = query) }
 
     fun toggleApp(packageName: String) {
+        // Adult-block is exclusive: adding an app while it is ON needs an explicit choice
+        // (mirrored dialog — "Ja, passt" disables adult and adds the app). Removing is
+        // unreachable then (adult ON implies no selected apps), but stays allowed defensively.
+        val current = _state.value
+        if (current.blockAdultContent && !current.selectedApps.contains(packageName)) {
+            _state.update { it.copy(pendingAdultAppPackage = packageName) }
+            return
+        }
+        applyToggleApp(packageName)
+    }
+
+    /** Mirrored exclusivity dialog: user chose the app over adult-block. */
+    fun confirmAppOverAdult() {
+        val pkg = _state.value.pendingAdultAppPackage ?: return
+        _state.update { it.copy(blockAdultContent = false, pendingAdultAppPackage = null) }
+        applyToggleApp(pkg)
+    }
+
+    /** Mirrored exclusivity dialog: keep adult-block, don't add the app. */
+    fun dismissAppOverAdultDialog() = _state.update { it.copy(pendingAdultAppPackage = null) }
+
+    private fun applyToggleApp(packageName: String) {
         _state.update { s ->
             val newSelected = if (s.selectedApps.contains(packageName))
                 s.selectedApps - packageName else s.selectedApps + packageName
@@ -328,8 +373,28 @@ class ChallengeCreationViewModel @Inject constructor(
     fun removeManualDomain(domain: String) =
         _state.update { it.copy(manualDomains = it.manualDomains - domain) }
 
-    fun updateBlockAdultContent(enabled: Boolean) =
+    fun updateBlockAdultContent(enabled: Boolean) {
+        // Adult-block is exclusive: enabling it while apps are selected needs an explicit
+        // choice (dialog) — never silently clear the selection. Disabling is always free.
+        if (enabled && _state.value.selectedApps.isNotEmpty()) {
+            _state.update { it.copy(showAdultExclusiveDialog = true) }
+            return
+        }
         _state.update { it.copy(blockAdultContent = enabled) }
+    }
+
+    /** Exclusivity dialog: user confirmed — clear the selected apps, enable adult-block. */
+    fun confirmAdultExclusive() = _state.update {
+        it.copy(
+            selectedApps = emptySet(),
+            domainToggles = emptyMap(),
+            blockAdultContent = true,
+            showAdultExclusiveDialog = false,
+        )
+    }
+
+    /** Exclusivity dialog: user declined — keep the apps, adult-block stays OFF. */
+    fun dismissAdultExclusiveDialog() = _state.update { it.copy(showAdultExclusiveDialog = false) }
 
     // ── Step 3: Limit type ────────────────────────────────────────────────────
 
@@ -414,18 +479,15 @@ class ChallengeCreationViewModel @Inject constructor(
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
-    // TIME_WINDOW has no Step-4 limit value (the window is set on the schedule step), so we skip
-    // index 4 entirely for that type: 3 → 5 forward, 5 → 3 back. Internal indices stay 1..7 as
-    // content identifiers; the displayed "Schritt X von Y" counter is renumbered in the screen.
+    // Navigation walks [visibleSteps] (nearest visible neighbour), so per-path skips — TIME_WINDOW's
+    // missing step 4, the block-only paths' missing 3/4/5 — need no special cases here. Internal
+    // indices stay 1..7 as content identifiers; the screen derives the displayed counter from the
+    // same list.
     fun goBack() = _state.update { s ->
-        val prev = if (s.limitType == LimitType.TIME_WINDOW && s.currentStep == 5) 3
-                   else (s.currentStep - 1).coerceAtLeast(1)
-        s.copy(currentStep = prev)
+        s.copy(currentStep = visibleSteps(s).lastOrNull { it < s.currentStep } ?: 1)
     }
     fun goNext() = _state.update { s ->
-        val next = if (s.limitType == LimitType.TIME_WINDOW && s.currentStep == 3) 5
-                   else (s.currentStep + 1).coerceAtMost(TOTAL_STEPS)
-        s.copy(currentStep = next)
+        s.copy(currentStep = visibleSteps(s).firstOrNull { it > s.currentStep } ?: s.currentStep)
     }
 
     fun canGoNext(): Boolean {
@@ -556,7 +618,10 @@ class ChallengeCreationViewModel @Inject constructor(
 
     private fun displayName(): String {
         val s = _state.value
-        if (s.activeTab == 1) return s.manualDomains.firstOrNull() ?: "Website"
+        // Website tab: first custom domain, or the dedicated adult-only name (the Step-2 gate
+        // guarantees adult is ON when no domain was added).
+        if (s.activeTab == 1) return s.manualDomains.firstOrNull()
+            ?: context.getString(R.string.adult_block_display_name)
         if (s.selectedApps.isEmpty()) return "App"
         val apps = _appListState.value.trackableApps
         return s.selectedApps.joinToString(", ") { pkg ->
@@ -564,15 +629,61 @@ class ChallengeCreationViewModel @Inject constructor(
         }
     }
 
-    private fun resolveLimitPair(): Pair<Int, Int?> {
-        val s = _state.value
-        return when (s.limitType) {
-            LimitType.TIME        -> s.limitValueMinutes to null
-            LimitType.SESSIONS    -> s.sessionDurationMinutes to s.limitValueSessions
-            LimitType.TIME_BUDGET -> 0 to null
-            LimitType.TIME_WINDOW -> 0 to null
-            null -> 0 to null
+    private fun resolveLimitPair(s: ChallengeCreationState): Pair<Int, Int?> = when (s.limitType) {
+        LimitType.TIME        -> s.limitValueMinutes to null
+        LimitType.SESSIONS    -> s.sessionDurationMinutes to s.limitValueSessions
+        LimitType.TIME_BUDGET -> 0 to null
+        LimitType.TIME_WINDOW -> 0 to null
+        null -> 0 to null
+    }
+
+    /** Limit/schedule/adult fields as actually persisted for the current path. */
+    private data class SubmissionFields(
+        val limitType: LimitType,
+        val limitValueMinutes: Int,
+        val limitValueSessions: Int?,
+        val blockAdultContent: Boolean,
+        val scheduleStartTime: String?,
+        val scheduleEndTime: String?,
+        val activeDays: List<String>,
+        val dailyBudgetMinutes: Int?,
+    )
+
+    /**
+     * Derives the persisted limit/schedule/adult fields from the wizard state — the single source
+     * for BOTH the Soft Mode save and the Hard Mode pending record, so the two paths can't drift.
+     *
+     * Block-only paths (Website tab) skip the limit and schedule steps entirely, so any leftover
+     * limit/schedule state from an earlier path switch is dropped here: the canonical "always
+     * blocked, no minute limit" shape is TIME_WINDOW with 0 minutes and no window (validated as-is
+     * by CreateChallengeUseCase; enforcement hard-blocks matched domains unconditionally).
+     * The APP path in turn NEVER carries the adult flag — adult-block is exclusive, and this is the
+     * submit-side guarantee behind the Step-2 dialogs.
+     */
+    private fun submissionFields(s: ChallengeCreationState): SubmissionFields {
+        if (s.activeTab == 1) {
+            return SubmissionFields(
+                limitType = LimitType.TIME_WINDOW,
+                limitValueMinutes = 0,
+                limitValueSessions = null,
+                blockAdultContent = s.blockAdultContent,
+                scheduleStartTime = null,
+                scheduleEndTime = null,
+                activeDays = emptyList(),
+                dailyBudgetMinutes = null,
+            )
         }
+        val (limitMinutes, limitSessions) = resolveLimitPair(s)
+        return SubmissionFields(
+            limitType = s.limitType ?: LimitType.TIME,
+            limitValueMinutes = limitMinutes,
+            limitValueSessions = limitSessions,
+            blockAdultContent = false,
+            scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
+            scheduleEndTime = s.scheduleEnd.takeIf { it.length == 5 },
+            activeDays = s.activeDays.toList(),
+            dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
+        )
     }
 
     private fun saveSoftModeChallenge() {
@@ -580,14 +691,14 @@ class ChallengeCreationViewModel @Inject constructor(
         val isWebsiteTab = s.activeTab == 1
         _uiState.value = ChallengeCreationUiState.Loading
         viewModelScope.launch {
-            val (limitMinutes, limitSessions) = resolveLimitPair()
+            val fields = submissionFields(s)
             val appPackages = if (!isWebsiteTab) s.selectedApps.toList() else emptyList()
             createChallengeUseCase(
                 appPackageName = appPackages.firstOrNull(),
                 appDisplayName = displayName(),
-                limitType = s.limitType ?: LimitType.TIME,
-                limitValueMinutes = limitMinutes,
-                limitValueSessions = limitSessions,
+                limitType = fields.limitType,
+                limitValueMinutes = fields.limitValueMinutes,
+                limitValueSessions = fields.limitValueSessions,
                 durationDays = if (s.noEndDate) DateUtils.NO_END_DATE_DAYS else s.durationDays,
                 customMotivation = s.motivationText.ifBlank { null },
                 mode = ChallengeMode.SOFT,
@@ -595,19 +706,19 @@ class ChallengeCreationViewModel @Inject constructor(
                 blockedDomains = computeBlockedDomains(),
                 partialBlockDomains = emptyList(),
                 blockingType = if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE,
-                blockAdultContent = s.blockAdultContent,
-                scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
-                scheduleEndTime = s.scheduleEnd.takeIf { it.length == 5 },
-                activeDays = s.activeDays.toList(),
+                blockAdultContent = fields.blockAdultContent,
+                scheduleStartTime = fields.scheduleStartTime,
+                scheduleEndTime = fields.scheduleEndTime,
+                activeDays = fields.activeDays,
                 sessionDurationMinutes = s.sessionDurationMinutes,
-                dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
+                dailyBudgetMinutes = fields.dailyBudgetMinutes,
                 partialBlockSections = emptyList(),
                 isPartialBlockOnly = false,
             ).fold(
                 onSuccess = { result ->
                     analyticsService.logChallengeCreated(
                         mode = "soft",
-                        limitType = (s.limitType ?: LimitType.TIME).name.lowercase(),
+                        limitType = fields.limitType.name.lowercase(),
                         durationDays = s.durationDays,
                     )
                     UsageTrackingService.start(context)
@@ -671,7 +782,9 @@ class ChallengeCreationViewModel @Inject constructor(
         paymentIntentId: String,
     ): PendingHardChallengeEntity {
         val isWebsiteTab = s.activeTab == 1
-        val (limitMinutes, limitSessions) = resolveLimitPair()
+        // Same field derivation as the Soft Mode save (block-only paths force the
+        // "always blocked" shape; APP path never carries the adult flag).
+        val fields = submissionFields(s)
         val appPackagesHard = if (!isWebsiteTab) s.selectedApps.toList() else emptyList()
         @Suppress("HardwareIds")
         val androidId = android.provider.Settings.Secure.getString(
@@ -686,21 +799,21 @@ class ChallengeCreationViewModel @Inject constructor(
             isImmediateCapture = if (s.durationDays > 7) 1 else 0,
             appDisplayName = displayName(),
             appPackageNames = appPackagesHard.joinToString(","),
-            limitType = (s.limitType ?: LimitType.TIME).name,
-            limitValueMinutes = limitMinutes,
-            limitValueSessions = limitSessions,
+            limitType = fields.limitType.name,
+            limitValueMinutes = fields.limitValueMinutes,
+            limitValueSessions = fields.limitValueSessions,
             durationDays = s.durationDays,
             amountCents = s.amountEuros * 100,
             customMotivation = s.motivationText.ifBlank { null },
             blockedDomains = computeBlockedDomains().joinToString(","),
             partialBlockDomains = "",
             blockingType = (if (!isWebsiteTab) BlockingType.APP else BlockingType.WEBSITE).name,
-            blockAdultContent = if (s.blockAdultContent) 1 else 0,
-            scheduleStartTime = s.scheduleStart.takeIf { it.length == 5 },
-            scheduleEndTime = s.scheduleEnd.takeIf { it.length == 5 },
-            activeDays = s.activeDays.joinToString(","),
+            blockAdultContent = if (fields.blockAdultContent) 1 else 0,
+            scheduleStartTime = fields.scheduleStartTime,
+            scheduleEndTime = fields.scheduleEndTime,
+            activeDays = fields.activeDays.joinToString(","),
             sessionDurationMinutes = s.sessionDurationMinutes,
-            dailyBudgetMinutes = if (s.limitType == LimitType.TIME_BUDGET) s.dailyBudgetMinutes else null,
+            dailyBudgetMinutes = fields.dailyBudgetMinutes,
             partialBlockSections = "",
             isPartialBlockOnly = 0,
             deviceId = androidId,

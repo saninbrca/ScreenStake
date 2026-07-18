@@ -553,6 +553,33 @@ class ChallengeCreationViewModel @Inject constructor(
             _uiState.value = missing
             return
         }
+        // Duplicate adult-block gate: the 133k adult list is enforced by ONE global flag, so a second
+        // adult-only challenge would block nothing new — it only clutters history. Abort before the
+        // root check, save, and the Hard payment branch. Only ACTIVE challenges count (a completed or
+        // failed adult-block never prevents re-creation); ANY active challenge with adult-block on
+        // matches, including adult+domains combos. DB-error fail-open: never lock creation out.
+        val adultOnly = _state.value.blockAdultContent && !blocksApps && computeBlockedDomains().isEmpty()
+        if (adultOnly) {
+            viewModelScope.launch {
+                val hasActiveAdultBlock = challengeRepository.getActiveChallengesList()
+                    .getOrElse { emptyList() }
+                    .any { it.blockAdultContent }
+                if (hasActiveAdultBlock) {
+                    Timber.w("createChallenge blocked — active adult-block challenge already exists")
+                    _uiState.value = ChallengeCreationUiState.Error(
+                        context.getString(R.string.challenge_error_duplicate_adult_block)
+                    )
+                } else {
+                    dispatchCreation()
+                }
+            }
+            return
+        }
+        dispatchCreation()
+    }
+
+    /** Mode dispatch after all creation gates passed: Hard → root check + payment, Soft → save. */
+    private fun dispatchCreation() {
         if (_state.value.selectedMode == ChallengeMode.HARD) {
             // Defense-in-depth: never authorize a Stripe payment for Hard Mode when money features
             // are gated off (build floor / remote kill-switch). Step 1 already blocks selecting HARD,

@@ -1091,9 +1091,9 @@ class OverlayManager @Inject constructor(
     private suspend fun showAdultBlockedOverlay(domain: String) {
         if (currentOverlayView != null) return
 
-        // Adult-only challenges are exempt from the overlay permission in the
-        // pre-flight gate — without the permission, degrade to toast-only feedback
-        // (the AccessibilityService already showed the toast and redirected).
+        // Defensive: the pre-flight gate requires overlay for adult challenges,
+        // but the user can revoke it after starting — degrade to toast-only
+        // feedback (the AccessibilityService already showed the toast and redirected).
         if (!android.provider.Settings.canDrawOverlays(context)) {
             Timber.d("Adult block: no overlay permission — toast-only fallback")
             return

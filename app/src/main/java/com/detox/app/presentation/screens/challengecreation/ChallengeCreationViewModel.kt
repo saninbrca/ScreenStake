@@ -533,14 +533,16 @@ class ChallengeCreationViewModel @Inject constructor(
         // Pre-flight permission gate (Soft AND Hard): never create a challenge (and for Hard Mode
         // never authorize a Stripe payment) while an enforcement permission is off — the challenge
         // would silently block nothing. Aborts BEFORE the root check, save, or payment. Overlay is
-        // only required when something consumes it: app blocking or custom-domain blocking
-        // (adult-only blocking uses toast + go-home, no overlay). The screen routes each missing
-        // permission to its grant flow — accessibility through the prominent-disclosure dialog.
+        // required when something consumes it: app blocking, custom-domain blocking, or adult
+        // blocking (the about:blank redirect needs SYSTEM_ALERT_WINDOW as its background-activity-
+        // launch exemption, and the explanation overlay needs it to draw). The screen routes each
+        // missing permission to its grant flow — accessibility through the prominent-disclosure dialog.
         val blocksApps = _state.value.activeTab == 0 && _state.value.selectedApps.isNotEmpty()
         val missing = ChallengeCreationUiState.MissingPermissions(
             needsUsage = !usageStatsRepository.hasUsageStatsPermission(),
             needsAccessibility = !PermissionUtils.isAccessibilityServiceEnabled(context),
-            needsOverlay = (blocksApps || computeBlockedDomains().isNotEmpty()) &&
+            needsOverlay = (blocksApps || computeBlockedDomains().isNotEmpty() ||
+                _state.value.blockAdultContent) &&
                 !Settings.canDrawOverlays(context),
         )
         if (missing.needsUsage || missing.needsAccessibility || missing.needsOverlay) {

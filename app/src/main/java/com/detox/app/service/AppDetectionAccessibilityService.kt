@@ -424,9 +424,10 @@ class AppDetectionAccessibilityService : AccessibilityService() {
      *
      * Falls back to [goHome]: background-activity-launch restrictions (API 29+)
      * SILENTLY drop startActivity from services unless the app holds
-     * SYSTEM_ALERT_WINDOW (documented BAL exemption). Adult-only challenges are
-     * exempt from the overlay pre-flight gate, so without the permission we must
-     * not rely on the intent — a dropped launch would leave the adult page visible.
+     * SYSTEM_ALERT_WINDOW (documented BAL exemption). The pre-flight gate requires
+     * overlay for adult challenges too, so this is a DEFENSIVE fallback (the user
+     * can revoke the permission after starting) — without it we must not rely on
+     * the intent, as a dropped launch would leave the adult page visible.
      */
     private fun redirectToNeutralPage(browserPackage: String) {
         performGlobalAction(GLOBAL_ACTION_BACK)

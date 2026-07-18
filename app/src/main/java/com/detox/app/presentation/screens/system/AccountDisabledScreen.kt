@@ -86,7 +86,7 @@ fun AccountDisabledScreen(viewModel: AccountDisabledViewModel = hiltViewModel())
                     runCatching {
                         context.startActivity(
                             Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("mailto:sanin.brica@gmail.com")
+                                data = Uri.parse("mailto:" + context.getString(R.string.support_email))
                                 putExtra(Intent.EXTRA_SUBJECT, "Konto gesperrt — Anfrage")
                             }
                         )

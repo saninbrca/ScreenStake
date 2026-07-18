@@ -627,6 +627,7 @@
     <string name="success_dialog_stat_opens">Bewusst\ngeöffnet</string>
     <string name="success_dialog_stat_reduction">weniger\nBildschirmzeit</string>
     <string name="success_dialog_cta_new">Neue Challenge starten</string>
+    <string name="success_dialog_cta_history">Im Verlauf ansehen</string>
     <string name="success_dialog_cta_back">Zurück zum Dashboard</string>
 
     <!-- Loss result dialog (ChallengeFailedDialog) -->

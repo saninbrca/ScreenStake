@@ -255,7 +255,8 @@ fun DashboardScreen(
                 onStartNewChallenge = {
                     viewModel.dismissSuccessDialog()
                     onAddChallenge()
-                }
+                },
+                onViewHistory = { viewModel.openSuccessChallengeHistory() }
             )
         }
 

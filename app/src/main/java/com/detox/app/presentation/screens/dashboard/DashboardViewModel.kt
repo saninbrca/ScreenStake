@@ -259,6 +259,12 @@ class DashboardViewModel @Inject constructor(
                     val streak = getChallengeStreakUseCase(completedChallenge)
                     _successDialogState.value = SuccessDialogState(completedChallenge, logs, streak)
                     _successDialogChallengeId.value = completedChallenge.id
+                    // Mark ON SHOW (mirrors checkUnshownFailedHard): a process kill / EMUI swipe-kill
+                    // before dismissal must never re-pop the dialog on the next launch. The dismiss-time
+                    // write below stays as an idempotent no-op.
+                    sp.edit().putBoolean("win_shown_${completedChallenge.id}", true).apply()
+                    challengeRepository.markCompletionShown(completedChallenge.id)
+                        .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown on-show for ${completedChallenge.id}") }
                 }
             }
 
@@ -366,7 +372,17 @@ class DashboardViewModel @Inject constructor(
         _redemptionChallenges.value = emptyList()
     }
 
-    /** Called when the user dismisses the success dialog (X button or "Zurück zum Dashboard"). */
+    /** "Im Verlauf ansehen" CTA: dismisses the dialog and deep-links to the challenge's history detail. */
+    fun openSuccessChallengeHistory() {
+        val challengeId = _successDialogChallengeId.value ?: return
+        dismissSuccessDialog()
+        TrackedAppEventBus.emitNavigateToHistoryDetail(challengeId)
+    }
+
+    /**
+     * Called when the user dismisses the success dialog (X button or "Zurück zum Dashboard").
+     * The shown-markers are already written on SHOW (see loadStats); this write is a defensive no-op.
+     */
     fun dismissSuccessDialog() {
         val challengeId = _successDialogChallengeId.value ?: return
         _successDialogState.value = null

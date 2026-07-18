@@ -83,7 +83,8 @@ fun ChallengeSuccessDialog(
     allLogs: List<DailyLog>,
     streak: Int,
     onDismiss: () -> Unit,
-    onStartNewChallenge: () -> Unit
+    onStartNewChallenge: () -> Unit,
+    onViewHistory: () -> Unit
 ) {
     val totalConsciousOpens = allLogs.sumOf { it.consciousOpens }
 
@@ -236,6 +237,16 @@ fun ChallengeSuccessDialog(
                                 color = detoxColors.success
                             )
                         }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        // Which challenge was won (blocked app names / domain / "Adult-Block")
+                        Text(
+                            text = challenge.appDisplayName,
+                            fontFamily = PoppinsFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            color = detoxColors.label,
+                            textAlign = TextAlign.Center
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         // Subtitle
                         Text(
@@ -397,6 +408,15 @@ fun ChallengeSuccessDialog(
                                 )
                             }
                         }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(R.string.success_dialog_cta_history),
+                            fontFamily = PoppinsFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { onViewHistory() }
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = stringResource(R.string.success_dialog_cta_back),

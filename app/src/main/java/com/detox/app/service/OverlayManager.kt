@@ -204,6 +204,15 @@ class OverlayManager @Inject constructor(
     /** Epoch-ms when the current overlay was added to the WindowManager. */
     private var currentOverlayShownAt: Long? = null
 
+    /**
+     * The blocked domain/host the currently visible website/adult block overlay is
+     * explaining, null for every other overlay type. On dismiss it is handed to
+     * [TrackedAppEventBus.markBlockOverlayDismissed] so the AccessibilityService can
+     * suppress the immediate post-dismiss re-detection of the same target while
+     * goHome()/the about:blank redirect completes.
+     */
+    private var currentBlockedTarget: String? = null
+
     // ── Public API ─────────────────────────────────────────────────────────────
 
     fun startListening(scope: CoroutineScope) {
@@ -1078,6 +1087,7 @@ class OverlayManager @Inject constructor(
             }
         }
         showOverlay(composeView)
+        if (isOverlayVisible) currentBlockedTarget = domain
     }
 
     /**
@@ -1119,6 +1129,7 @@ class OverlayManager @Inject constructor(
             }
         }
         showOverlay(composeView)
+        if (isOverlayVisible) currentBlockedTarget = domain
     }
 
     private suspend fun showBlockingOverlay(status: DailyLimitStatus, scope: CoroutineScope) {
@@ -1583,6 +1594,15 @@ class OverlayManager @Inject constructor(
             }
             currentOverlayView = null
             TrackedAppEventBus.setOverlayVisible(false)
+            // Website/adult block overlay: suppress the immediate re-detection of the same
+            // target — the blocked page is briefly foregrounded again until goHome()/the
+            // about:blank redirect lands, and its content-changed event must not re-show
+            // the overlay we just dismissed.
+            currentBlockedTarget?.let { target ->
+                TrackedAppEventBus.markBlockOverlayDismissed(target)
+                Timber.d("OverlayManager: block overlay for $target dismissed — post-dismiss suppression armed")
+            }
+            currentBlockedTarget = null
         }
 
         // Persist the duration this overlay was visible so usage-time calculations

@@ -82,6 +82,39 @@ object TrackedAppEventBus {
     )
     val adultBlockedEvents: SharedFlow<String> = _adultBlockedEvents.asSharedFlow()
 
+    /**
+     * Post-dismiss re-trigger suppression for the website/adult block overlays.
+     *
+     * When the user dismisses a block overlay, the blocked page is briefly foregrounded
+     * again until goHome()/the about:blank redirect lands. Chrome fires a
+     * WINDOW_CONTENT_CHANGED in that window, the address bar still holds the blocked URL,
+     * and the 2s detection cooldown (anchored to the ORIGINAL detection) has usually
+     * expired because the user viewed the overlay longer than that — so the overlay
+     * re-showed immediately. This guard is anchored to DISMISSAL instead: a re-detection
+     * of the SAME target within [BLOCK_DISMISS_SUPPRESS_MS] of dismissing its overlay is
+     * ignored. Per-target and short-lived — a different blocked page, or a genuine
+     * re-visit after the window, blocks normally.
+     */
+    private const val BLOCK_DISMISS_SUPPRESS_MS = 2_000L
+
+    @Volatile private var lastBlockDismissedTarget: String? = null
+    @Volatile private var lastBlockDismissedAtMs: Long = 0L
+
+    /** Called by [OverlayManager] when a website/adult block overlay is dismissed. */
+    fun markBlockOverlayDismissed(target: String) {
+        lastBlockDismissedTarget = target
+        lastBlockDismissedAtMs = System.currentTimeMillis()
+    }
+
+    /**
+     * True while [target]'s block overlay was dismissed less than
+     * [BLOCK_DISMISS_SUPPRESS_MS] ago — the detection path must not re-fire the block.
+     */
+    fun isBlockRedetectSuppressed(target: String): Boolean {
+        if (lastBlockDismissedTarget != target) return false
+        return System.currentTimeMillis() - lastBlockDismissedAtMs < BLOCK_DISMISS_SUPPRESS_MS
+    }
+
     /** Domains freed for the rest of the day after the user tapped "Visit anyway". */
     private val _freedDomainsToday = MutableStateFlow<Set<String>>(emptySet())
     val freedDomainsToday: StateFlow<Set<String>> = _freedDomainsToday.asStateFlow()

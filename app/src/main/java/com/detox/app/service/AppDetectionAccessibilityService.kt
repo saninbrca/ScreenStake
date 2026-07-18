@@ -335,12 +335,19 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
         // ── Adult domain check (O(1) HashSet lookup) ─────────────────────────
         if (adultBlockingActive && AdultDomains.isBlocked(normalizedUrl)) {
+            val host = android.net.Uri.parse(normalizedUrl).host ?: url
+            // Dismissal-anchored suppression: the user just closed this host's block
+            // overlay and the page is only foregrounded until the about:blank redirect
+            // lands — re-firing now would re-show the overlay that was just dismissed.
+            if (TrackedAppEventBus.isBlockRedetectSuppressed(host)) {
+                Timber.d("Adult block: overlay for $host just dismissed — suppressing re-trigger")
+                return
+            }
             val now = System.currentTimeMillis()
             if (now - lastAdultBlockTimeMs >= adultBlockCooldownMs) {
                 lastAdultBlockTimeMs = now
                 Timber.d("URL detected: $url in $packageName → adult domain blocked")
                 showBlockedToast()
-                val host = android.net.Uri.parse(normalizedUrl).host ?: url
                 TrackedAppEventBus.emitAdultBlocked(host)
                 redirectToNeutralPage(packageName)
             }
@@ -361,6 +368,14 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             }
             if (matchedCustom != null) {
                 if (!TrackedAppEventBus.freedDomainsToday.value.contains(matchedCustom)) {
+                    // Dismissal-anchored suppression: the user just closed this domain's
+                    // block overlay; the page is only foregrounded until goHome() lands.
+                    // The 2s cooldown below can't cover this — it anchors to the ORIGINAL
+                    // detection, which is >2s old whenever the overlay was read.
+                    if (TrackedAppEventBus.isBlockRedetectSuppressed(matchedCustom)) {
+                        Timber.d("Custom block: overlay for $matchedCustom just dismissed — suppressing re-trigger")
+                        return
+                    }
                     val now = System.currentTimeMillis()
                     if (matchedCustom != lastBlockedDomain || now - lastBlockedTimeMs >= 2_000L) {
                         lastBlockedDomain = matchedCustom

@@ -88,6 +88,12 @@ android {
         compose = true
         buildConfig = true
     }
+    androidResources {
+        // Keep only the locales the app actually ships (see res/xml/locales_config.xml).
+        // Strips the dozens of library locales (Stripe, Firebase, Material) from the APK
+        // so they can't leak into the Android 13+ per-app language picker.
+        localeFilters += listOf("en", "de")
+    }
 }
 
 

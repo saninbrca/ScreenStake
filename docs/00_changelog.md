@@ -21,6 +21,17 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-19 — Localization Phase 3: per-app language picker (Android 13+)
+
+Added `res/xml/locales_config.xml` (en, de) + `android:localeConfig` on the application tag,
+and `androidResources.localeFilters = [en, de]` in app/build.gradle.kts so library locales
+(Stripe/Firebase/Material ship dozens) are stripped from the APK — verified via
+`aapt2 dump configurations`: only de + en remain. On Android 13+ users can pick the app
+language under System Settings → Apps → Finite → Language; below 13 the app follows the
+device language. No AppCompat in the project (pure Compose), so the AppCompat pre-33
+backport was deliberately NOT added. An in-app switcher (Settings row via LocaleManager,
+API 33+) is assessed but not implemented.
+
 ### 2026-07-19 — Localization Phase 2b: values-de fully Germanized
 
 The 311 English-authored entries that had been copied verbatim into `values-de/strings.xml`

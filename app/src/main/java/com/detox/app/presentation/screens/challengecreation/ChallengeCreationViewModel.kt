@@ -358,7 +358,7 @@ class ChallengeCreationViewModel @Inject constructor(
             .trim()
 
         if (input.isBlank() || !input.contains(".") || input.contains(" ")) {
-            _state.update { it.copy(manualDomainError = "Please enter a valid website (e.g. instagram.com)") }
+            _state.update { it.copy(manualDomainError = context.getString(R.string.error_enter_valid_website)) }
             return
         }
 

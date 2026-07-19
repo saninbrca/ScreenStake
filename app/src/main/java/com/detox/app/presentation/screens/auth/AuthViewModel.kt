@@ -192,10 +192,11 @@ class AuthViewModel @Inject constructor(
     }
 
     fun onGoogleSignInNullToken() {
-        _uiState.value = AuthUiState.Error(
+        Timber.e(
             "Could not retrieve Google ID token. Check that the Web Client ID in " +
             "build.gradle matches the OAuth 2.0 Web Client ID in Firebase Console."
         )
+        _uiState.value = AuthUiState.Error(context.getString(R.string.error_google_signin))
     }
 
     fun onGoogleSignInApiError(statusCode: Int) {
@@ -203,10 +204,11 @@ class AuthViewModel @Inject constructor(
             // User cancelled — just reset to Idle, no error message
             _uiState.value = AuthUiState.Idle
         } else {
-            _uiState.value = AuthUiState.Error(
+            Timber.e(
                 "Google Sign-In failed (code $statusCode). Ensure the SHA-1 fingerprint " +
                 "is registered in Firebase Console."
             )
+            _uiState.value = AuthUiState.Error(context.getString(R.string.error_google_signin))
         }
     }
 

@@ -151,9 +151,9 @@ private fun ChallengeHistoryCard(
         ChallengeStatus.FAILED -> MaterialTheme.colorScheme.error
     }
     val statusLabel = when (challenge.status) {
-        ChallengeStatus.ACTIVE -> "Active"
-        ChallengeStatus.COMPLETED -> "Completed"
-        ChallengeStatus.FAILED -> "Failed"
+        ChallengeStatus.ACTIVE -> stringResource(R.string.challenge_status_active)
+        ChallengeStatus.COMPLETED -> stringResource(R.string.challenge_status_completed)
+        ChallengeStatus.FAILED -> stringResource(R.string.challenge_status_failed)
     }
 
     Card(

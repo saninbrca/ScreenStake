@@ -304,12 +304,12 @@ private fun GWizardHeader(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Zurück",
+                    contentDescription = stringResource(R.string.wizard_back),
                     tint = detoxColors.label,
                 )
             }
             Text(
-                text = "Schritt $currentStep von $totalSteps",
+                text = stringResource(R.string.wizard_step_progress, currentStep, totalSteps),
                 fontSize = 13.sp,
                 color = detoxColors.subtext,
                 modifier = Modifier.weight(1f),

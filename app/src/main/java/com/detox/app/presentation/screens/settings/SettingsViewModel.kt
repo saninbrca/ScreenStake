@@ -281,7 +281,7 @@ class SettingsViewModel @Inject constructor(
             val activeChallengesResult = challengeRepository.getActiveChallengesList()
             if (activeChallengesResult.isFailure) {
                 _state.update { it.copy(isLoading = false) }
-                _events.send(SettingsEvent.ShowSnackbar("Could not verify challenges. Try again."))
+                _events.send(SettingsEvent.ShowSnackbar(context.getString(R.string.settings_delete_verify_failed)))
                 return@launch
             }
 
@@ -294,9 +294,7 @@ class SettingsViewModel @Inject constructor(
             if (activeHardChallenge != null) {
                 _state.update { it.copy(isLoading = false) }
                 _events.send(
-                    SettingsEvent.ShowSnackbar(
-                        "You have an active Hard Mode challenge. Complete or cancel it before deleting your account."
-                    )
+                    SettingsEvent.ShowSnackbar(context.getString(R.string.settings_delete_active_hard))
                 )
                 return@launch
             }
@@ -317,7 +315,7 @@ class SettingsViewModel @Inject constructor(
                 val msg = authDeleteResult.exceptionOrNull()?.let { ErrorMessages.from(context, it) }
                     ?: context.getString(R.string.error_generic)
                 // Firebase requires recent sign-in for sensitive ops — surface a helpful message
-                _events.send(SettingsEvent.ShowSnackbar("Account deletion failed: $msg. Please re-sign in and try again."))
+                _events.send(SettingsEvent.ShowSnackbar(context.getString(R.string.settings_delete_failed, msg)))
                 return@launch
             }
 

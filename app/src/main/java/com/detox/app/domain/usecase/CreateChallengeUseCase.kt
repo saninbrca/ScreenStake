@@ -11,7 +11,9 @@ import com.detox.app.domain.model.PartialBlockSection
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.detox.app.R
 import com.detox.app.util.DateUtils
+import com.detox.app.util.UserFacingException
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
@@ -85,7 +87,7 @@ class CreateChallengeUseCase @Inject constructor(
             if (existingChallenge.isSuccess && existingChallenge.getOrNull() != null) {
                 val name = existingChallenge.getOrNull()!!.appDisplayName
                 return Result.failure(
-                    IllegalStateException("You already have an active challenge for $name.")
+                    UserFacingException(context.getString(R.string.uc_conflict_active_challenge, name))
                 )
             }
             // Also check group_challenges table directly (safety net for recently-started group challenges)
@@ -93,8 +95,11 @@ class CreateChallengeUseCase @Inject constructor(
                 val groupConflict = groupChallengeRepository.getActiveGroupChallengeForApp(pkg)
                 if (groupConflict != null) {
                     return Result.failure(
-                        IllegalStateException(
-                            "You already have an active group challenge for ${groupConflict.appDisplayName}."
+                        UserFacingException(
+                            context.getString(
+                                R.string.uc_conflict_active_group_challenge,
+                                groupConflict.appDisplayName
+                            )
                         )
                     )
                 }

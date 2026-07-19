@@ -1397,11 +1397,11 @@ private fun Step7Confirm(
                         LimitType.TIME        -> stringResource(R.string.wizard_review_limit_time_format, state.limitValueMinutes)
                         LimitType.SESSIONS    -> stringResource(R.string.wizard_review_limit_sessions_format, state.limitValueSessions, state.sessionDurationMinutes)
                         LimitType.TIME_BUDGET -> stringResource(R.string.wizard_review_limit_budget_format, state.dailyBudgetMinutes)
-                        LimitType.TIME_WINDOW -> "Nur Zeitfenster"
+                        LimitType.TIME_WINDOW -> stringResource(R.string.wizard_limit_window_title)
                         null                  -> "—"
                     }
-                val durationLabel = if (state.noEndDate) "Kein Enddatum"
-                    else "${state.durationDays} Tage"
+                val durationLabel = if (state.noEndDate) stringResource(R.string.challenge_no_end_date)
+                    else stringResource(R.string.wizard_review_days_format, state.durationDays)
 
                 SummaryDividerRow(stringResource(R.string.wizard_review_mode_label), modeLabel, isFirst = true)
                 SummaryDividerRow(targetLabel, appsLabel)

@@ -615,13 +615,13 @@ private fun PayoutChallengeCard(
                         else -> "Hard Mode"
                     }
                     Text(
-                        text = "$modeLabel — ${payout.challengeTitle}",
+                        text = stringResource(R.string.payout_challenge_title, modeLabel, payout.challengeTitle),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     if (payout.durationDays > 0) {
                         Text(
-                            text = "${payout.durationDays} Tage",
+                            text = stringResource(R.string.payout_duration_days, payout.durationDays),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -631,7 +631,7 @@ private fun PayoutChallengeCard(
                     containerColor = detoxColors.solidGreenBg
                 ) {
                     Text(
-                        text = "Abgeschlossen",
+                        text = stringResource(R.string.payout_completed),
                         color = detoxColors.onSolid,
                         style = MaterialTheme.typography.labelSmall
                     )
@@ -700,7 +700,7 @@ private fun PayoutChallengeCard(
                 stringResource(R.string.payout_status_refunded)
             }
             Text(
-                text = "Status: $statusText",
+                text = stringResource(R.string.payout_status, statusText),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (payout.payoutStatus == "pending_payout")
                     MaterialTheme.colorScheme.onSurfaceVariant

@@ -1,10 +1,14 @@
 package com.detox.app.domain.usecase
 
+import android.content.Context
+import com.detox.app.R
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.util.DateUtils
+import com.detox.app.util.UserFacingException
 import com.detox.app.domain.repository.GroupChallengeRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
@@ -26,7 +30,8 @@ data class GroupChallengeCreatedData(
 class CreateGroupChallengeUseCase @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
     private val challengeRepository: ChallengeRepository,
-    private val cloudFunctionsService: CloudFunctionsService
+    private val cloudFunctionsService: CloudFunctionsService,
+    @ApplicationContext private val context: Context,
 ) {
 
     /**
@@ -67,10 +72,7 @@ class CreateGroupChallengeUseCase @Inject constructor(
                 .first { conflictPkg in it.appPackageNames }
                 .appDisplayName
             return Result.failure(
-                IllegalStateException(
-                    "You already have an active challenge for $conflictName. " +
-                        "You cannot create this group challenge."
-                )
+                UserFacingException(context.getString(R.string.uc_create_group_conflict, conflictName))
             )
         }
 

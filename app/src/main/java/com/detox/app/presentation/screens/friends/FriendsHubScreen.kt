@@ -352,7 +352,7 @@ private fun ActiveChallengeCard(
             ) {
                 if (potEuros > 0) {
                     Text(
-                        text = "€$potEuros Topf",
+                        text = stringResource(R.string.group_pot_label, potEuros),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -367,7 +367,7 @@ private fun ActiveChallengeCard(
                     )
                 }
                 Text(
-                    text = "👥 ${gc.participants.size}/${gc.maxParticipants} Spieler",
+                    text = stringResource(R.string.group_player_count, gc.participants.size, gc.maxParticipants),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -386,9 +386,12 @@ private fun WaitingChallengeCard(
     val context = LocalContext.current
     val now = System.currentTimeMillis()
     val startInfo = when {
-        gc.startDate == 0L -> "Wartet auf Start"
-        gc.startDate > now -> "Startet am ${SimpleDateFormat("d. MMM", Locale.GERMAN).format(Date(gc.startDate))}"
-        else -> "Startet bald"
+        gc.startDate == 0L -> stringResource(R.string.group_waiting_for_start)
+        gc.startDate > now -> stringResource(
+            R.string.group_starts_on,
+            SimpleDateFormat("d. MMM", Locale.GERMAN).format(Date(gc.startDate))
+        )
+        else -> stringResource(R.string.group_starts_soon)
     }
     val joined = gc.participants.size
     val max = gc.maxParticipants
@@ -436,7 +439,7 @@ private fun WaitingChallengeCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Beitritts-Code",
+                        text = stringResource(R.string.group_join_code),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -454,7 +457,7 @@ private fun WaitingChallengeCard(
                             type = "text/plain"
                             putExtra(
                                 Intent.EXTRA_TEXT,
-                                "Tritt meiner Detox Group Challenge bei! Code: ${gc.code}"
+                                context.getString(R.string.group_share_message, gc.code)
                             )
                         }
                         context.startActivity(Intent.createChooser(shareIntent, null))
@@ -462,7 +465,7 @@ private fun WaitingChallengeCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Share,
-                        contentDescription = "Code teilen",
+                        contentDescription = stringResource(R.string.content_description_share_code),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -472,7 +475,7 @@ private fun WaitingChallengeCard(
 
             // Players count
             Text(
-                text = "👥 $joined/$max Spieler beigetreten${if (joined < 2) " — mind. 2 zum Starten" else ""}",
+                text = stringResource(R.string.group_joined_count, joined, max, if (joined < 2) stringResource(R.string.group_minimum_players) else ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -488,7 +491,7 @@ private fun WaitingChallengeCard(
             if (gc.buyInCents > 0) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Buy-in: €${gc.buyInCents / 100} · ${gc.durationDays} Tage",
+                    text = stringResource(R.string.group_buy_in_duration, gc.buyInCents / 100, gc.durationDays),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -520,7 +523,7 @@ private fun LiveBadge() {
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(
-            text = "🟢 LIVE",
+            text = stringResource(R.string.group_status_live),
             style = MaterialTheme.typography.labelSmall,
             color = detoxColors.softGreenText,
             fontWeight = FontWeight.Bold
@@ -536,7 +539,7 @@ private fun WaitingBadge() {
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(
-            text = "⏳ Warten",
+            text = stringResource(R.string.group_status_waiting),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Medium

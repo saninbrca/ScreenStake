@@ -275,7 +275,7 @@ internal fun AppsTabContent(
                         modifier = Modifier.padding(24.dp),
                     ) {
                         Text(
-                            text = "Usage access permission is required to see your app stats.",
+                            text = stringResource(R.string.app_selection_usage_permission_required),
                             style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center,
                         )
@@ -296,7 +296,7 @@ internal fun AppsTabContent(
                         modifier = Modifier.padding(24.dp),
                     ) {
                         Text(
-                            text = "Failed to load apps.",
+                            text = stringResource(R.string.app_selection_load_failed),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.error,
                             textAlign = TextAlign.Center,
@@ -334,7 +334,7 @@ internal fun AppsTabContent(
                             Column {
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                 Text(
-                                    text = "Not enough usage to track",
+                                    text = stringResource(R.string.app_selection_usage_insufficient),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -377,7 +377,7 @@ internal fun DomainSuggestionsSection(
         HorizontalDivider()
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Also block these websites?",
+            text = stringResource(R.string.app_selection_block_associated_sites),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -402,7 +402,7 @@ internal fun DomainSuggestionsSection(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Also block ${domains.joinToString(", ")}",
+                        text = stringResource(R.string.app_selection_block_domains, domains.joinToString(", ")),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
@@ -567,7 +567,7 @@ internal fun WebsitesTabContent(
                         Spacer(Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Remove",
+                            contentDescription = stringResource(R.string.content_description_remove),
                             tint = detoxColors.subtext,
                             modifier = Modifier
                                 .size(14.dp)
@@ -646,4 +646,3 @@ internal fun AppSelectionRow(
         }
     }
 }
-

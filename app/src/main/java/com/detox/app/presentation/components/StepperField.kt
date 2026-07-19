@@ -1,5 +1,6 @@
 package com.detox.app.presentation.components
 
+import com.detox.app.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -81,7 +83,7 @@ fun StepperField(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Remove,
-                    contentDescription = "Decrease",
+                    contentDescription = stringResource(R.string.content_description_decrease),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -125,7 +127,7 @@ fun StepperField(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Add,
-                    contentDescription = "Increase",
+                    contentDescription = stringResource(R.string.content_description_increase),
                     modifier = Modifier.size(20.dp)
                 )
             }

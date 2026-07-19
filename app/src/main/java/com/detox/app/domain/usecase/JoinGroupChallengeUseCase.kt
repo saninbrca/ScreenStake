@@ -1,11 +1,15 @@
 package com.detox.app.domain.usecase
 
+import android.content.Context
+import com.detox.app.R
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.PaymentIntentData
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.util.UserFacingException
+import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -18,7 +22,8 @@ data class JoinPaymentData(
 class JoinGroupChallengeUseCase @Inject constructor(
     private val groupChallengeRepository: GroupChallengeRepository,
     private val challengeRepository: ChallengeRepository,
-    private val cloudFunctionsService: CloudFunctionsService
+    private val cloudFunctionsService: CloudFunctionsService,
+    @ApplicationContext private val context: Context,
 ) {
 
     /**
@@ -31,20 +36,20 @@ class JoinGroupChallengeUseCase @Inject constructor(
     suspend fun fetchByCode(code: String, currentUserId: String): Result<GroupChallenge> {
         val gc = groupChallengeRepository.fetchGroupChallengeByCode(code)
             .getOrElse { return Result.failure(it) }
-            ?: return Result.failure(IllegalArgumentException("No challenge found for code \"$code\"."))
+            ?: return Result.failure(UserFacingException(context.getString(R.string.uc_join_not_found_code, code)))
 
         return when {
             gc.creatorUserId == currentUserId ->
-                Result.failure(IllegalStateException("You created this challenge — you're already the first participant!"))
+                Result.failure(UserFacingException(context.getString(R.string.uc_join_creator)))
             gc.participants.any { it.userId == currentUserId } ->
-                Result.failure(IllegalStateException("You have already joined this challenge."))
+                Result.failure(UserFacingException(context.getString(R.string.uc_join_already_joined)))
             gc.status != GroupChallengeStatus.WAITING ->
-                Result.failure(IllegalStateException("This challenge has already started or ended."))
+                Result.failure(UserFacingException(context.getString(R.string.uc_join_already_started)))
             gc.participants.size >= gc.maxParticipants ->
-                Result.failure(IllegalStateException("This challenge is full (${gc.maxParticipants}/${gc.maxParticipants})."))
+                Result.failure(UserFacingException(context.getString(R.string.uc_join_full, gc.maxParticipants)))
             // UX guard only — server re-validates with Date.now() in joinGroupChallenge CF
             gc.startDate > 0L && System.currentTimeMillis() >= gc.startDate ->
-                Result.failure(IllegalStateException("The join window for this challenge has closed."))
+                Result.failure(UserFacingException(context.getString(R.string.uc_join_window_closed)))
             else -> {
                 // Cross-check: block if user already has an active challenge for any of these apps
                 val activeChallenges = challengeRepository.getActiveChallengesList().getOrElse { emptyList() }
@@ -55,10 +60,7 @@ class JoinGroupChallengeUseCase @Inject constructor(
                         .first { conflictPkg in it.appPackageNames }
                         .appDisplayName
                     Result.failure(
-                        IllegalStateException(
-                            "You already have an active challenge for $conflictName. " +
-                                "You cannot join this group challenge."
-                        )
+                        UserFacingException(context.getString(R.string.uc_join_conflict, conflictName))
                     )
                 } else {
                     Result.success(gc)

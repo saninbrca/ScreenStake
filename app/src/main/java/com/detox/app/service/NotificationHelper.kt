@@ -72,10 +72,10 @@ object NotificationHelper {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_GROUP_EVENTS,
-                context.getString(R.string.notification_group_channel_name),
+                    context.getString(R.string.notification_group_channel_name),
                     NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
-                description = context.getString(R.string.notification_group_channel_description)
+                    description = context.getString(R.string.notification_group_channel_description)
                 }
             )
         }
@@ -221,14 +221,10 @@ object NotificationHelper {
     fun sendPermissionWarning(context: Context, level: Int, actionIntent: PendingIntent) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val (title, body) = when (level) {
-            0 -> "⚠️ Deine Challenge ist in Gefahr!" to
-                    "Detox braucht eine Erlaubnis um dich zu schützen. Handle jetzt!"
-            1 -> "🚨 Deine Challenge pausiert!" to
-                    "Je länger du wartest, desto mehr riskierst du. Tippe hier um es zu beheben."
-            2 -> "⏰ Zeit läuft ab..." to
-                    "Deine Challenge und dein Einsatz sind in Gefahr. Handle JETZT bevor es zu spät ist!"
-            3 -> "🔴 Letzte Warnung!" to
-                    "Deine Challenge wird bald automatisch beendet. Öffne Detox sofort."
+            0 -> context.getString(R.string.notification_permission_warning_0_title) to context.getString(R.string.notification_permission_warning_0_body)
+            1 -> context.getString(R.string.notification_permission_warning_1_title) to context.getString(R.string.notification_permission_warning_1_body)
+            2 -> context.getString(R.string.notification_permission_warning_2_title) to context.getString(R.string.notification_permission_warning_2_body)
+            3 -> context.getString(R.string.notification_permission_warning_3_title) to context.getString(R.string.notification_permission_warning_3_body)
             else -> return
         }
         val notifId = NOTIF_ID_PERMISSION_WARNING_BASE + level
@@ -240,7 +236,7 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(actionIntent)
-            .addAction(0, "Jetzt beheben →", actionIntent)
+            .addAction(0, context.getString(R.string.notification_fix_now), actionIntent)
             .build()
         try {
             NotificationManagerCompat.from(context).notify(notifId, notification)

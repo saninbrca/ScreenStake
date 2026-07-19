@@ -16,9 +16,19 @@ import timber.log.Timber
  * Firebase, Firestore, Stripe, or HTTP error details to the user: those messages are not
  * localized and may contain implementation details.
  */
+/**
+ * An exception whose [message] is already localized, user-facing copy (built from a string
+ * resource at the throw site). [ErrorMessages.from] shows it verbatim instead of mapping it
+ * to a generic message. Use for deliberate validation errors, never for backend failures.
+ */
+class UserFacingException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
 object ErrorMessages {
     fun from(context: Context, error: Throwable, fallback: Int = R.string.error_generic): String {
         Timber.e(error, "User-facing error mapped to a localized message")
+        if (error is UserFacingException) {
+            return error.message ?: context.getString(fallback)
+        }
         val resource = when (error) {
             is FirebaseNetworkException, is IOException, is SocketTimeoutException -> R.string.error_network
             is FirebaseAuthException -> R.string.error_authentication

@@ -102,8 +102,8 @@ class GroupChallengeJoinViewModel @Inject constructor(
         val displayName = firebaseAuthService.currentUser()?.let { user ->
             user.displayName?.takeIf { it.isNotBlank() }
                 ?: user.email?.substringBefore('@')
-                ?: "Anonymous"
-        } ?: "Anonymous"
+                ?: context.getString(R.string.display_name_fallback)
+        } ?: context.getString(R.string.display_name_fallback)
         _uiState.value = GroupJoinUiState.ProcessingPayment(groupChallenge)
         viewModelScope.launch {
             val activeChallenges = challengeRepository.getActiveChallengesList().getOrNull().orEmpty()
@@ -114,7 +114,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                     .firstOrNull { it.appPackageNames.contains(conflictingPkg) }
                     ?.appDisplayName ?: conflictingPkg
                 _uiState.value = GroupJoinUiState.Error(
-                    "Du hast bereits eine aktive Challenge für '$conflictName'. Beende sie zuerst."
+                    context.getString(R.string.join_conflict_active_challenge, conflictName)
                 )
                 return@launch
             }
@@ -187,13 +187,13 @@ class GroupChallengeJoinViewModel @Inject constructor(
                         msg.contains("not found", ignoreCase = true) -> {
                             // 404 — function not deployed or wrong URL; retry won't help
                             _uiState.value = GroupJoinUiState.Error(
-                                message = "Server nicht erreichbar. Bitte kontaktiere den Support.",
+                                message = context.getString(R.string.join_error_server_unreachable),
                                 retryGroupChallenge = null
                             )
                         }
                         else -> {
                             _uiState.value = GroupJoinUiState.Error(
-                                message = "Deine Zahlung wurde empfangen, aber der Beitritt konnte nicht bestätigt werden. Bitte erneut versuchen.",
+                                message = context.getString(R.string.join_error_confirm_failed),
                                 retryGroupChallenge = awaiting.groupChallenge
                             )
                         }

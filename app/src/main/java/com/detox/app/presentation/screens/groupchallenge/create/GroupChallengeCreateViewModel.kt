@@ -181,7 +181,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
             .substringBefore("/")
             .trim()
         if (input.isBlank() || !input.contains(".") || input.contains(" ")) {
-            _formState.update { it.copy(manualDomainError = "Please enter a valid website (e.g. instagram.com)") }
+            _formState.update { it.copy(manualDomainError = context.getString(R.string.error_enter_valid_website)) }
             return
         }
         _formState.update { s ->
@@ -348,14 +348,14 @@ class GroupChallengeCreateViewModel @Inject constructor(
         }
         val s = _formState.value
         val userId = firebaseAuthService.currentUserId() ?: run {
-            _uiState.value = GroupCreateUiState.Error("Not signed in.")
+            _uiState.value = GroupCreateUiState.Error(context.getString(R.string.error_not_signed_in))
             return
         }
         val creatorName = firebaseAuthService.currentUser()?.let { user ->
             user.displayName?.takeIf { it.isNotBlank() }
                 ?: user.email?.substringBefore('@')
-                ?: "Unknown"
-        } ?: "Unknown"
+                ?: context.getString(R.string.display_name_fallback)
+        } ?: context.getString(R.string.display_name_fallback)
 
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {

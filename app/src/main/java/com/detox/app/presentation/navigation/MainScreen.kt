@@ -556,11 +556,11 @@ private fun PermissionBanner(
 
     val bodyText = when {
         overlayMissing && accessibilityMissing ->
-            "Overlay + Accessibility fehlen.\nDein Geld wird eingezogen wenn du nicht sofort handelst!"
+            stringResource(R.string.permission_banner_body_both)
         overlayMissing ->
-            "Overlay Permission wurde deaktiviert.\nDein Geld ist in Gefahr wenn du nicht sofort handelst!"
+            stringResource(R.string.permission_banner_body_overlay)
         else ->
-            "Accessibility Service wurde deaktiviert.\nDein Geld ist in Gefahr wenn du nicht sofort handelst!"
+            stringResource(R.string.permission_banner_body_accessibility)
     }
     val onBeheben = if (overlayMissing) onOpenPermissionSettings else onOpenAccessibilitySettings
 

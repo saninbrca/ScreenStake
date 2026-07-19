@@ -371,7 +371,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "GroupDetailVM: sendTaunt failed to $targetUserId")
-                    _nudgeEvent.value = "Fehler beim Senden 😢"
+                    _nudgeEvent.value = context.getString(R.string.group_nudge_failed)
                 }
         }
     }

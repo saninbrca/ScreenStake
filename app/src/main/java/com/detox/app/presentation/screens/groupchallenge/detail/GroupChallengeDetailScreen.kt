@@ -123,7 +123,7 @@ fun GroupChallengeDetailScreen(
     LaunchedEffect(startState) {
         when (startState) {
             is StartChallengeState.Success -> {
-                Toast.makeText(context, "Challenge started! App is now blocked.", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.group_started_toast), Toast.LENGTH_LONG).show()
                 viewModel.clearStartError()
             }
             is StartChallengeState.Error -> {
@@ -212,15 +212,15 @@ fun GroupChallengeDetailScreen(
             title = {
                 Text(
                     text = if (info.bonusCents > 0)
-                        "🎉 Du hast €${info.bonusCents / 100} gewonnen!"
-                    else "🎉 Du hast gewonnen!"
+                        stringResource(R.string.group_won_amount_title, info.bonusCents / 100)
+                    else stringResource(R.string.group_result_won_title)
                 )
             },
             text = {
                 Text(
                     text = if (info.hasIban)
-                        "Dein Gewinn wird an deine hinterlegte IBAN überwiesen (1–2 Werktage)."
-                    else "Hinterlege deine IBAN um deinen Gewinn zu erhalten."
+                        stringResource(R.string.group_win_iban_present)
+                    else stringResource(R.string.group_win_iban_missing)
                 )
             },
             confirmButton = {
@@ -1119,7 +1119,7 @@ private fun GroupStatusBadge(status: GroupChallengeStatus) {
         GroupChallengeStatus.COMPLETED ->
             Triple("Abgeschlossen", detoxColors.softGreenBg, detoxColors.softGreenText)
         GroupChallengeStatus.CANCELLED ->
-            Triple("Abgebrochen", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.error)
+            Triple(stringResource(R.string.group_status_cancelled), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.error)
     }
     Surface(shape = RoundedCornerShape(50), color = bgColor) {
         Text(
@@ -1221,12 +1221,12 @@ private fun ResultSummaryCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 text = when {
-                    gc.status == GroupChallengeStatus.CANCELLED -> "⚠️ Challenge Abgebrochen"
-                    iLost -> "😔 Du hast verloren"
-                    iWon -> "🎉 Du hast gewonnen!"
-                    failedCount == 0 -> "🎉 Alle haben gewonnen!"
-                    succeededCount == 0 -> "💸 Alle haben verloren"
-                    else -> "🏁 Challenge beendet"
+                    gc.status == GroupChallengeStatus.CANCELLED -> stringResource(R.string.group_result_cancelled_title)
+                    iLost -> stringResource(R.string.group_result_lost_title)
+                    iWon -> stringResource(R.string.group_result_won_title)
+                    failedCount == 0 -> stringResource(R.string.group_result_all_won_title)
+                    succeededCount == 0 -> stringResource(R.string.group_result_all_lost_title)
+                    else -> stringResource(R.string.group_result_finished_title)
                 },
                 fontWeight = FontWeight.Bold
             )
@@ -1235,14 +1235,14 @@ private fun ResultSummaryCard(
                     Text(stringResource(R.string.group_result_too_few))
                 iLost -> {
                     val lostCents = myParticipant?.amountCents ?: gc.buyInCents
-                    Text("€${lostCents / 100} wurden eingezogen.")
+                    Text(stringResource(R.string.group_result_lost_stake, lostCents / 100))
                 }
                 failedCount == 0 ->
                     Text(stringResource(R.string.group_result_all_succeeded, succeededCount))
                 succeededCount == 0 ->
                     Text(stringResource(R.string.group_result_all_failed, failedCount))
                 else -> {
-                    Text("$succeededCount gewonnen · $failedCount ausgeschieden")
+                    Text(stringResource(R.string.group_result_summary, succeededCount, failedCount))
                     if (gc.perWinnerBonus > 0) {
                         Text(stringResource(R.string.group_bonus_per_winner, gc.perWinnerBonus / 100), fontSize = 13.sp)
                     }
@@ -1271,7 +1271,7 @@ private fun PayoutResultCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (bonus > 0) {
                 Text(
-                    text = "🎉 Du hast gewonnen! +€${bonus / 100} Bonus",
+                    text = stringResource(R.string.group_result_bonus, bonus / 100),
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -1279,7 +1279,7 @@ private fun PayoutResultCard(
             if (bonus > 0) {
                 if (isPending) {
                     Text(
-                        "⚠️ Verbinde dein Bankkonto um €${bonus / 100} zu erhalten",
+                        stringResource(R.string.group_connect_bank_warning, bonus / 100),
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error
                     )

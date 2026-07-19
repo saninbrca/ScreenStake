@@ -21,6 +21,17 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-19 — Localization Phase 1 (complete): centralized user-facing copy and safe errors
+
+All user-visible Kotlin literals extracted into `strings.xml` (~117 new keys, positional `%1$s`
+placeholders throughout) in preparation for EN/DE resources. Added `ErrorMessages` (+
+`UserFacingException` for use-case validation errors localized at the throw site) so
+Firebase/Firestore/Stripe exception details remain in Timber diagnostics but are never displayed
+to users. `CreateGroupChallengeUseCase` / `JoinGroupChallengeUseCase` now take `@ApplicationContext`.
+Deliberately still hardcoded: `BuildConfig.DEBUG` panels (ProfileScreen, FriendsHub force-start),
+product names "Soft Mode" / "Hard Mode", and language-neutral symbols/emoji ("18+", "⚠️", "€", "@",
+"•"). Phase 2 will split the default German resources into English + `values-de`.
+
 ### 2026-07-19 — Docs sync: full audit of docs/ against code
 
 All .md docs audited against the tip of main and corrected: docs/05 (inverted adult-block

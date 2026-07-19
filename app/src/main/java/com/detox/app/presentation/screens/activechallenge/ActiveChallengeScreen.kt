@@ -422,15 +422,15 @@ private fun ActiveChallengeContent(
 
     // ── Motivational quote (rotates daily) ───────────────────────────────────
     val quotes = listOf(
-        "Jeder Tag zählt.",
-        "Du bist stärker als dein Handy.",
-        "Kontrolle ist Freiheit.",
-        "Weniger Screen, mehr Leben.",
-        "Dein Streak ist dein Stolz.",
-        "Kleine Schritte, große Wirkung.",
-        "Der beste Moment ist jetzt."
+        stringResource(R.string.motivational_quote_1),
+        stringResource(R.string.motivational_quote_2),
+        stringResource(R.string.motivational_quote_3),
+        stringResource(R.string.motivational_quote_4),
+        stringResource(R.string.motivational_quote_5),
+        stringResource(R.string.motivational_quote_6),
+        stringResource(R.string.motivational_quote_7)
     )
-    val quote = remember { quotes[Calendar.getInstance().get(Calendar.DAY_OF_YEAR) % quotes.size] }
+    val quote = remember(quotes) { quotes[Calendar.getInstance().get(Calendar.DAY_OF_YEAR) % quotes.size] }
 
     // ── Layout ────────────────────────────────────────────────────────────────
     Column(
@@ -731,7 +731,7 @@ private fun ActiveChallengeContent(
                             R.string.detail_limit_budget_val,
                             challenge.dailyBudgetMinutes ?: 0
                         )
-                    LimitType.TIME_WINDOW -> "Zeitfenster"
+                    LimitType.TIME_WINDOW -> stringResource(R.string.detail_limit_window_val)
                 }
                 InfoRow(label = stringResource(R.string.detail_info_limit), value = limitVal)
 

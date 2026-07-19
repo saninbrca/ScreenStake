@@ -1,5 +1,6 @@
 package com.detox.app.presentation.screens.activechallenge
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,7 +16,10 @@ import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.util.DateUtils
+import com.detox.app.R
+import com.detox.app.util.ErrorMessages
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,6 +67,7 @@ class ActiveChallengeViewModel @Inject constructor(
     private val dailyLogRepository: DailyLogRepository,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
     private val paymentRepository: PaymentRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val challengeId: String = savedStateHandle.get<String>("challengeId") ?: ""
@@ -93,7 +98,7 @@ class ActiveChallengeViewModel @Inject constructor(
                 .fold(
                     onSuccess = { challenge ->
                         if (challenge == null) {
-                            _uiState.value = ActiveChallengeUiState.Error("Challenge not found")
+                            _uiState.value = ActiveChallengeUiState.Error(context.getString(R.string.error_challenge_not_found))
                             return@launch
                         }
 
@@ -178,7 +183,7 @@ class ActiveChallengeViewModel @Inject constructor(
                     onFailure = { e ->
                         Timber.e(e, "Failed to load challenge $challengeId")
                         _uiState.value = ActiveChallengeUiState.Error(
-                            e.message ?: "Failed to load challenge"
+                            ErrorMessages.from(context, e)
                         )
                     }
                 )
@@ -216,7 +221,7 @@ class ActiveChallengeViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "Failed to set pending limit for $challengeId")
-                    _reduceLimitState.value = ReduceLimitState.Error(e.message ?: "Fehler")
+                    _reduceLimitState.value = ReduceLimitState.Error(ErrorMessages.from(context, e))
                 }
         }
     }
@@ -252,7 +257,7 @@ class ActiveChallengeViewModel @Inject constructor(
                         // Real failure (network / Stripe / non-capturable PI). Leave the challenge ACTIVE
                         // and surface the error — NEVER mark FAILED without the stake being captured.
                         Timber.e(e, "Abandon: stake capture failed for $challengeId — staying ACTIVE")
-                        _abandonStatus.value = AbandonState.Error(e.message ?: "capture_failed")
+                        _abandonStatus.value = AbandonState.Error(ErrorMessages.from(context, e, R.string.error_payment))
                     }
             } else {
                 // Soft Mode, group challenge, or no pre-auth → no money to capture; behave as before.
@@ -278,7 +283,7 @@ class ActiveChallengeViewModel @Inject constructor(
             }
             .onFailure { e ->
                 Timber.e(e, "Failed to mark FAILED on abandon for $challengeId")
-                _abandonStatus.value = AbandonState.Error(e.message ?: "status_update_failed")
+                _abandonStatus.value = AbandonState.Error(ErrorMessages.from(context, e))
             }
     }
 

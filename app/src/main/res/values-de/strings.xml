@@ -121,21 +121,21 @@
     <string name="uc_create_group_conflict">Du hast bereits eine aktive Challenge für %1$s. Du kannst diese Gruppen-Challenge nicht erstellen.</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_title">Welcome to Finite</string>
-    <string name="onboarding_subtitle">Take control of your screen time. We need a few permissions to help you.</string>
-    <string name="onboarding_step_progress">Step %1$d of %2$d</string>
-    <string name="onboarding_next">Continue</string>
-    <string name="onboarding_skip">Skip for now</string>
+    <string name="onboarding_title">Willkommen bei Finite</string>
+    <string name="onboarding_subtitle">Übernimm die Kontrolle über deine Bildschirmzeit. Dafür brauchen wir ein paar Berechtigungen.</string>
+    <string name="onboarding_step_progress">Schritt %1$d von %2$d</string>
+    <string name="onboarding_next">Weiter</string>
+    <string name="onboarding_skip">Vorerst überspringen</string>
 
     <!-- Permissions -->
-    <string name="permission_granted">Permission granted</string>
-    <string name="permission_grant_button">Grant Permission</string>
+    <string name="permission_granted">Berechtigung erteilt</string>
+    <string name="permission_grant_button">Berechtigung erteilen</string>
 
-    <string name="permission_usage_title">Usage Data Access</string>
-    <string name="permission_usage_description">Finite needs to read your app usage to verify which apps you spend the most time on. This is the core of our Proof of Addiction system.</string>
+    <string name="permission_usage_title">Nutzungszugriff</string>
+    <string name="permission_usage_description">Finite liest deine App-Nutzung, um zu erkennen, mit welchen Apps du die meiste Zeit verbringst. Das ist der Kern unseres Systems.</string>
 
-    <string name="permission_overlay_title">Display Over Other Apps</string>
-    <string name="permission_overlay_description">Finite shows a gentle reminder screen before you open tracked apps, helping you pause and decide if you really need to open them.</string>
+    <string name="permission_overlay_title">Über anderen Apps anzeigen</string>
+    <string name="permission_overlay_description">Finite zeigt dir einen kurzen Erinnerungs-Bildschirm, bevor du getrackte Apps öffnest — so kannst du innehalten und bewusst entscheiden, ob du sie wirklich öffnen willst.</string>
 
     <string name="permission_accessibility_title">Bedienungshilfe-Dienst</string>
     <string name="permission_accessibility_description">Erkennt, welche App im Vordergrund ist, und gleicht bei Browsern die geöffnete Webadresse mit deinen Sperrlisten ab — damit der Erinnerungs- bzw. Sperrbildschirm rechtzeitig erscheint. Adressen werden sofort verworfen, nichts wird gespeichert.</string>
@@ -149,29 +149,29 @@
     <string name="accessibility_disclosure_accept">Zustimmen &amp; aktivieren</string>
     <string name="accessibility_disclosure_cancel">Abbrechen</string>
 
-    <string name="permission_notifications_title">Notifications</string>
-    <string name="permission_notifications_description">Finite sends you daily progress reports and gentle reminders to help you stay on track with your challenges.</string>
+    <string name="permission_notifications_title">Benachrichtigungen</string>
+    <string name="permission_notifications_description">Finite schickt dir tägliche Fortschrittsberichte und sanfte Erinnerungen, damit du bei deinen Challenges am Ball bleibst.</string>
 
     <!-- Accessibility Service -->
     <string name="accessibility_service_description">Finite nutzt diesen Dienst, um zu erkennen, welche App du gerade geöffnet hast, und um bei Browsern die aktuelle Webadresse mit deinen eigenen Sperrlisten abzugleichen. So kann ein Erinnerungs- oder Sperrbildschirm im richtigen Moment angezeigt werden. Webadressen werden nur im Moment des Abgleichs verarbeitet und nicht gespeichert oder übertragen.</string>
 
     <!-- App Selection -->
-    <string name="app_selection_title">Select Apps</string>
-    <string name="app_selection_subtitle">Choose an app to start a challenge. Only apps with high usage are eligible.</string>
-    <string name="app_selection_subtitle_multiselect">Select one or more apps to track. Only apps with high usage are eligible.</string>
-    <string name="app_selection_trackable">Trackable</string>
-    <string name="app_selection_not_trackable">Not enough usage in the last 14 days</string>
-    <string name="app_selection_not_enough_usage">Not enough usage data</string>
-    <string name="app_selection_avg_daily_time">%1$d min/day</string>
-    <string name="app_selection_avg_daily_opens">%1$d opens/day</string>
-    <string name="app_selection_usage_summary">%1$d min/day · %2$d opens/day</string>
-    <string name="app_selection_loading">Analyzing your app usage\u2026</string>
-    <string name="app_selection_error">Could not load usage data. Please make sure the Usage Data Access permission is granted.</string>
-    <string name="app_selection_no_permission">Usage data permission is required to see your apps.</string>
-    <string name="app_selection_grant_permission">Grant Permission</string>
-    <string name="app_selection_select_hint">Select at least one app</string>
-    <string name="app_selection_next">Next (%1$d selected)</string>
-    <string name="app_selection_already_in_challenge">Already in an active challenge: \'%1$s\'</string>
+    <string name="app_selection_title">Apps auswählen</string>
+    <string name="app_selection_subtitle">Wähle eine App für deine Challenge. Nur Apps mit hoher Nutzung kommen infrage.</string>
+    <string name="app_selection_subtitle_multiselect">Wähle eine oder mehrere Apps zum Tracken. Nur Apps mit hoher Nutzung kommen infrage.</string>
+    <string name="app_selection_trackable">Trackbar</string>
+    <string name="app_selection_not_trackable">Zu wenig Nutzung in den letzten 14 Tagen</string>
+    <string name="app_selection_not_enough_usage">Zu wenig Nutzungsdaten</string>
+    <string name="app_selection_avg_daily_time">%1$d Min./Tag</string>
+    <string name="app_selection_avg_daily_opens">%1$d Öffnungen/Tag</string>
+    <string name="app_selection_usage_summary">%1$d Min./Tag · %2$d Öffnungen/Tag</string>
+    <string name="app_selection_loading">Deine App-Nutzung wird analysiert\u2026</string>
+    <string name="app_selection_error">Nutzungsdaten konnten nicht geladen werden. Bitte stelle sicher, dass der Nutzungszugriff erteilt ist.</string>
+    <string name="app_selection_no_permission">Der Nutzungszugriff ist erforderlich, um deine Apps zu sehen.</string>
+    <string name="app_selection_grant_permission">Berechtigung erteilen</string>
+    <string name="app_selection_select_hint">W\u00e4hle mindestens eine App</string>
+    <string name="app_selection_next">Weiter (%1$d ausgew\u00e4hlt)</string>
+    <string name="app_selection_already_in_challenge">Bereits in einer aktiven Challenge: \'%1$s\'</string>
     <string name="app_selection_search_placeholder">Apps suchen…</string>
     <string name="app_selection_tab_apps">Apps</string>
     <string name="app_selection_tab_websites">Websites</string>
@@ -186,58 +186,58 @@
     <string name="adult_exclusive_dialog_dismiss">Später getrennt</string>
 
     <!-- Challenge Setup -->
-    <string name="challenge_setup_title">Set Up Challenge</string>
-    <string name="challenge_setup_app_label">Challenge for %1$s</string>
-    <string name="challenge_setup_limit_type">Limit Type</string>
-    <string name="challenge_setup_time_limit">Time Limit</string>
-    <string name="challenge_setup_session_limit">Session Limit</string>
-    <string name="challenge_setup_budget_limit">Daily Budget</string>
-    <string name="challenge_setup_daily_limit">Daily limit: %1$d minutes</string>
-    <string name="challenge_setup_max_opens">Max opens per day: %1$d</string>
-    <string name="challenge_setup_session_duration">Minutes per session: %1$d</string>
+    <string name="challenge_setup_title">Challenge einrichten</string>
+    <string name="challenge_setup_app_label">Challenge für %1$s</string>
+    <string name="challenge_setup_limit_type">Limit-Typ</string>
+    <string name="challenge_setup_time_limit">Zeit-Limit</string>
+    <string name="challenge_setup_session_limit">Session-Limit</string>
+    <string name="challenge_setup_budget_limit">Tagesbudget</string>
+    <string name="challenge_setup_daily_limit">Tageslimit: %1$d Minuten</string>
+    <string name="challenge_setup_max_opens">Max. Öffnungen pro Tag: %1$d</string>
+    <string name="challenge_setup_session_duration">Minuten pro Session: %1$d</string>
 
     <!-- Challenge Setup — text field limit inputs (replaces sliders) -->
-    <string name="challenge_setup_minutes_field_label">Time limit (minutes)</string>
-    <string name="challenge_setup_sessions_count_label">Sessions per day</string>
-    <string name="challenge_setup_session_mins_label">Minutes per session</string>
-    <string name="challenge_setup_time_summary">%1$s: max %2$d min/day</string>
-    <string name="challenge_setup_session_summary">%1$s: max %2$dx per day, %3$d min each</string>
-    <string name="challenge_setup_error_min_minutes">Minimum 5 minutes</string>
-    <string name="challenge_setup_error_max_minutes">Must be below your average (%1$d min/day)</string>
-    <string name="challenge_setup_error_min_sessions">Minimum 1 session</string>
+    <string name="challenge_setup_minutes_field_label">Zeit-Limit (Minuten)</string>
+    <string name="challenge_setup_sessions_count_label">Sessions pro Tag</string>
+    <string name="challenge_setup_session_mins_label">Minuten pro Session</string>
+    <string name="challenge_setup_time_summary">%1$s: max. %2$d Min./Tag</string>
+    <string name="challenge_setup_session_summary">%1$s: max. %2$dx pro Tag, je %3$d Min.</string>
+    <string name="challenge_setup_error_min_minutes">Mindestens 5 Minuten</string>
+    <string name="challenge_setup_error_max_minutes">Muss unter deinem Durchschnitt liegen (%1$d Min./Tag)</string>
+    <string name="challenge_setup_error_min_sessions">Mindestens 1 Session</string>
     <string name="challenge_setup_error_min_session_mins">Minimum 1 Minute pro Session</string>
-    <string name="challenge_setup_error_fix_limits">Please fix the highlighted fields before starting</string>
-    <string name="challenge_setup_error_min_budget">Minimum 5 minutes</string>
-    <string name="challenge_setup_error_hard_mode_min_days">Hard Mode requires minimum 14 days</string>
+    <string name="challenge_setup_error_fix_limits">Bitte korrigiere die markierten Felder vor dem Start</string>
+    <string name="challenge_setup_error_min_budget">Mindestens 5 Minuten</string>
+    <string name="challenge_setup_error_hard_mode_min_days">Hard Mode erfordert mindestens 14 Tage</string>
     <string name="challenge_create_sync_failed">Challenge konnte nicht gespeichert werden. Bitte prüfe deine Internetverbindung und versuche es erneut. Deine Zahlung ist sicher.</string>
     <string name="challenge_error_duplicate_adult_block">Du hast bereits eine aktive Adult-Block-Challenge.</string>
-    <string name="challenge_setup_budget_field_label">Daily budget (minutes)</string>
-    <string name="challenge_setup_duration_field_label">Duration</string>
-    <string name="challenge_setup_no_end_date">No end date</string>
-    <string name="challenge_setup_budget_summary">%1$s: choose your session duration each time, up to %2$d min/day total</string>
-    <string name="challenge_setup_duration">Duration</string>
-    <string name="challenge_setup_days">%1$d days</string>
+    <string name="challenge_setup_budget_field_label">Tagesbudget (Minuten)</string>
+    <string name="challenge_setup_duration_field_label">Dauer</string>
+    <string name="challenge_setup_no_end_date">Kein Enddatum</string>
+    <string name="challenge_setup_budget_summary">%1$s: w\u00e4hle jedes Mal deine Session-Dauer, insgesamt bis zu %2$d Min./Tag</string>
+    <string name="challenge_setup_duration">Dauer</string>
+    <string name="challenge_setup_days">%1$d Tage</string>
     <string name="challenge_setup_motivation_label">Motivation (optional)</string>
-    <string name="challenge_setup_motivation_hint">Why are you doing this? Write something to remind yourself\u2026</string>
-    <string name="challenge_setup_mode_soft">Mode: Soft (points at stake)</string>
-    <string name="challenge_setup_start_button">Start Challenge</string>
+    <string name="challenge_setup_motivation_hint">Warum machst du das? Schreib dir etwas zur Erinnerung\u2026</string>
+    <string name="challenge_setup_mode_soft">Modus: Soft (Punkte auf dem Spiel)</string>
+    <string name="challenge_setup_start_button">Challenge starten</string>
 
     <!-- Dashboard -->
     <string name="dashboard_title">Aktive Challenges</string>
-    <string name="dashboard_active_count">%d active challenges</string>
-    <string name="dashboard_empty">No active challenges yet. Start one to take control of your screen time!</string>
-    <string name="dashboard_empty_title">No active challenges</string>
-    <string name="dashboard_empty_subtitle">Take control of your screen time and build better habits.</string>
-    <string name="dashboard_start_first">Start your first challenge 🚀</string>
-    <string name="dashboard_add_challenge">Add Challenge</string>
+    <string name="dashboard_active_count">%d aktive Challenges</string>
+    <string name="dashboard_empty">Noch keine aktiven Challenges. Starte eine und übernimm die Kontrolle über deine Bildschirmzeit!</string>
+    <string name="dashboard_empty_title">Keine aktiven Challenges</string>
+    <string name="dashboard_empty_subtitle">Übernimm die Kontrolle über deine Bildschirmzeit und baue bessere Gewohnheiten auf.</string>
+    <string name="dashboard_start_first">Starte deine erste Challenge 🚀</string>
+    <string name="dashboard_add_challenge">Challenge hinzufügen</string>
 
     <!-- Points -->
-    <string name="points_badge_format">%1$d pts</string>
+    <string name="points_badge_format">%1$d Pkt.</string>
 
     <!-- Challenge Card -->
-    <string name="challenge_card_time_limit">Max %1$d min/day</string>
-    <string name="challenge_card_session_limit">Max %1$d opens/day, %2$d min each</string>
-    <string name="challenge_card_days_remaining">%1$d days left</string>
+    <string name="challenge_card_time_limit">Max. %1$d Min./Tag</string>
+    <string name="challenge_card_session_limit">Max. %1$d Öffnungen/Tag, je %2$d Min.</string>
+    <string name="challenge_card_days_remaining">Noch %1$d Tage</string>
     <string name="challenge_card_no_end_date">Kein Enddatum</string>
     <!-- Open-ended card badge: compact streak (flame already signals "streak"; full wording on detail screen) -->
     <string name="challenge_card_streak_format">🔥 %1$d Tage</string>
@@ -246,17 +246,17 @@
     <string name="challenge_card_ends_today">Endet heute</string>
     <string name="challenge_card_tomorrow">Morgen</string>
     <string name="challenge_card_days_left">Noch %1$d Tage</string>
-    <string name="challenge_card_time_progress">%1$d of %2$d min</string>
-    <string name="challenge_card_session_progress">%1$d of %2$d opens</string>
-    <string name="challenge_card_points_today">+%1$d pts today</string>
+    <string name="challenge_card_time_progress">%1$d von %2$d Min.</string>
+    <string name="challenge_card_session_progress">%1$d von %2$d Öffnungen</string>
+    <string name="challenge_card_points_today">+%1$d Pkt. heute</string>
 
     <!-- Blocking Overlay -->
-    <string name="blocking_overlay_title">Stop &amp; Think</string>
-    <string name="blocking_overlay_usage_time">%1$d of %2$d min used today</string>
-    <string name="blocking_overlay_usage_sessions">%1$d of %2$d opens today</string>
-    <string name="blocking_overlay_points_today">Points earned today: %1$d</string>
-    <string name="blocking_overlay_open_anyway">Open app anyway</string>
-    <string name="blocking_overlay_skip">No, I\'ll skip it</string>
+    <string name="blocking_overlay_title">Stopp &amp; denk nach</string>
+    <string name="blocking_overlay_usage_time">%1$d von %2$d Min. heute genutzt</string>
+    <string name="blocking_overlay_usage_sessions">%1$d von %2$d Öffnungen heute</string>
+    <string name="blocking_overlay_points_today">Heute verdiente Punkte: %1$d</string>
+    <string name="blocking_overlay_open_anyway">App trotzdem öffnen</string>
+    <string name="blocking_overlay_skip">Nein, ich lasse es</string>
 
     <!-- Limit Exceeded Overlay -->
     <string name="limit_exceeded_title">Tageslimit erreicht</string>
@@ -264,47 +264,47 @@
     <string name="limit_exceeded_continue">Trotzdem öffnen</string>
     <string name="limit_exceeded_stop">Stark bleiben</string>
     <string name="limit_exceeded_time_used">%1$d / %2$d Min. heute</string>
-    <string name="streak_display">🔥 %1$d day streak</string>
+    <string name="streak_display">🔥 %1$d Tage Streak</string>
 
     <!-- Notification -->
-    <string name="notification_channel_name">Usage Tracking</string>
-    <string name="notification_tracking_title">Finite is active</string>
-    <string name="notification_tracking_text">Monitoring your tracked apps</string>
+    <string name="notification_channel_name">Nutzungs-Tracking</string>
+    <string name="notification_tracking_title">Finite ist aktiv</string>
+    <string name="notification_tracking_text">Überwacht deine getrackten Apps</string>
 
-    <string name="notif_channel_daily_report_name">Daily Report</string>
-    <string name="notif_channel_daily_report_desc">Your daily detox summary and points</string>
-    <string name="notif_channel_milestones_name">Milestones</string>
-    <string name="notif_channel_milestones_desc">Notifications for completed or failed challenges</string>
+    <string name="notif_channel_daily_report_name">Tagesbericht</string>
+    <string name="notif_channel_daily_report_desc">Deine tägliche Detox-Zusammenfassung und Punkte</string>
+    <string name="notif_channel_milestones_name">Meilensteine</string>
+    <string name="notif_channel_milestones_desc">Benachrichtigungen zu abgeschlossenen oder gescheiterten Challenges</string>
 
-    <string name="notif_daily_report_title">Your Daily Report</string>
-    <string name="notif_daily_report_body">%1$d/%2$d challenges successful today.</string>
+    <string name="notif_daily_report_title">Dein Tagesbericht</string>
+    <string name="notif_daily_report_body">%1$d/%2$d Challenges heute erfolgreich.</string>
 
-    <string name="notif_challenge_completed_title">Challenge Completed!</string>
-    <string name="notif_challenge_completed_body">You successfully finished the %1$s challenge.</string>
-    <string name="notif_challenge_failed_title">Challenge Failed</string>
-    <string name="notif_challenge_failed_body">You exceeded the limit for %1$s (Hard Mode).</string>
+    <string name="notif_challenge_completed_title">Challenge geschafft!</string>
+    <string name="notif_challenge_completed_body">Du hast die %1$s-Challenge erfolgreich abgeschlossen.</string>
+    <string name="notif_challenge_failed_title">Challenge fehlgeschlagen</string>
+    <string name="notif_challenge_failed_body">Du hast das Limit für %1$s überschritten (Hard Mode).</string>
 
     <!-- Reminders channel (daily 20:00 + 80% threshold) -->
-    <string name="notif_channel_reminders_name">Daily Reminders</string>
-    <string name="notif_channel_reminders_desc">Daily progress reminders and usage warnings</string>
+    <string name="notif_channel_reminders_name">Tägliche Erinnerungen</string>
+    <string name="notif_channel_reminders_desc">Tägliche Fortschritts-Erinnerungen und Nutzungswarnungen</string>
 
     <!-- Daily 20:00 reminder -->
-    <string name="notif_daily_reminder_title">Check your progress 📊</string>
-    <string name="notif_daily_reminder_body">Don\'t forget to check your progress today</string>
+    <string name="notif_daily_reminder_title">Prüfe deinen Fortschritt 📊</string>
+    <string name="notif_daily_reminder_body">Vergiss nicht, heute deinen Fortschritt zu prüfen</string>
 
     <!-- 80% usage warning (legacy — kept for reference, superseded by 50/75/90 thresholds) -->
-    <string name="notif_usage_80_title">Almost at your limit — %1$s</string>
-    <string name="notif_usage_80_body">You\'ve used 80%% of your daily limit. Stay strong!</string>
+    <string name="notif_usage_80_title">Fast am Limit — %1$s</string>
+    <string name="notif_usage_80_body">Du hast 80%% deines Tageslimits genutzt. Bleib stark!</string>
 
     <!-- Usage threshold warnings: 50 / 75 / 90 % -->
-    <string name="notif_usage_50_title">⚠️ Halfway through your limit for %1$s</string>
-    <string name="notif_usage_75_title">⚠️ 75%% of your limit used for %1$s</string>
-    <string name="notif_usage_90_title">🚨 Almost at your limit for %1$s!</string>
-    <string name="notif_usage_threshold_body">Stay strong — you\'ve got this!</string>
+    <string name="notif_usage_50_title">⚠️ Halbzeit bei deinem Limit für %1$s</string>
+    <string name="notif_usage_75_title">⚠️ 75%% deines Limits für %1$s genutzt</string>
+    <string name="notif_usage_90_title">🚨 Fast am Limit für %1$s!</string>
+    <string name="notif_usage_threshold_body">Bleib stark — du schaffst das!</string>
 
     <!-- Successful-day congratulations (from DailyEvaluationWorker) -->
-    <string name="notif_day_congrats_title">Great job today! 🎉</string>
-    <string name="notif_day_congrats_body">You stayed within your %1$s limit today!</string>
+    <string name="notif_day_congrats_title">Stark gemacht heute! 🎉</string>
+    <string name="notif_day_congrats_body">Du bist heute in deinem %1$s-Limit geblieben!</string>
 
 
     <!-- Auth screen (Login / Register) -->
@@ -372,28 +372,28 @@
     <string name="username_hint">nur a–z, 0–9, _</string>
 
     <!-- Challenge Setup — Hard Mode -->
-    <string name="challenge_setup_mode_label">Challenge Mode</string>
+    <string name="challenge_setup_mode_label">Challenge-Modus</string>
     <string name="challenge_setup_mode_soft_label">Soft Mode</string>
     <string name="challenge_setup_mode_hard_label">Hard Mode</string>
-    <string name="challenge_setup_amount_label">Amount at stake: €%1$d</string>
-    <string name="challenge_setup_hard_warning">Real money will be charged if you break your limit. 50%% goes to charity.</string>
-    <string name="challenge_setup_processing_payment">Processing payment…</string>
+    <string name="challenge_setup_amount_label">Einsatz: €%1$d</string>
+    <string name="challenge_setup_hard_warning">Echtes Geld wird eingezogen, wenn du dein Limit brichst. 50%% gehen an wohltätige Zwecke.</string>
+    <string name="challenge_setup_processing_payment">Zahlung wird verarbeitet…</string>
 
     <!-- Active Challenge Screen -->
-    <string name="active_challenge_title">Challenge Details</string>
+    <string name="active_challenge_title">Challenge-Details</string>
     <string name="active_challenge_mode_soft">SOFT MODE</string>
     <string name="active_challenge_mode_hard">HARD MODE</string>
-    <string name="active_challenge_amount_at_stake">€%.2f at stake</string>
+    <string name="active_challenge_amount_at_stake">€%.2f auf dem Spiel</string>
     <string name="active_challenge_end_date">Endet: %1$s</string>
     <string name="active_challenge_no_end_date">Kein Enddatum</string>
     <string name="active_challenge_streak">🔥 %1$d Tage Streak</string>
     <string name="active_challenge_today_opens">Heute: %1$d/%2$d Opens</string>
-    <string name="active_challenge_adult_blocked">Adult content blocking active</string>
+    <string name="active_challenge_adult_blocked">Adult-Content-Sperre aktiv</string>
     <string name="active_challenge_abandon">Challenge aufgeben</string>
-    <string name="active_challenge_abandon_confirm_title">Abandon Challenge?</string>
-    <string name="active_challenge_abandon_confirm_message">This will end the challenge without awarding points. You cannot undo this.</string>
-    <string name="active_challenge_abandon_confirm_yes">Yes, abandon</string>
-    <string name="active_challenge_abandon_confirm_no">Keep going</string>
+    <string name="active_challenge_abandon_confirm_title">Challenge aufgeben?</string>
+    <string name="active_challenge_abandon_confirm_message">Die Challenge wird ohne Punkte beendet. Das kannst du nicht rückgängig machen.</string>
+    <string name="active_challenge_abandon_confirm_yes">Ja, aufgeben</string>
+    <string name="active_challenge_abandon_confirm_no">Weitermachen</string>
     <string name="active_challenge_abandon_hard_message">Wenn du abbrichst verlierst du €%.2f sofort. Bist du sicher?</string>
     <string name="active_challenge_abandon_hard_yes">Ja, Geld verlieren</string>
     <string name="active_challenge_abandon_hard_no">Nein, weitermachen</string>
@@ -401,40 +401,40 @@
     <string name="active_challenge_abandon_error_message">Dein Einsatz konnte nicht eingezogen werden. Die Challenge läuft weiter. Bitte überprüfe deine Internetverbindung und versuche es erneut.</string>
 
     <!-- Blocking Overlay — Hard Mode addition -->
-    <string name="blocking_overlay_amount_stake">⚠ €%.2f at stake</string>
+    <string name="blocking_overlay_amount_stake">⚠ €%.2f auf dem Spiel</string>
 
     <!-- Limit Exceeded Overlay — Hard Mode -->
     <string name="limit_exceeded_hard_title">Du verlierst €%.2f!</string>
     <string name="limit_exceeded_hard_message">Dein Tageslimit ist aufgebraucht. Dein Einsatz wird jetzt eingezogen und die App für heute gesperrt.</string>
     <string name="limit_exceeded_hard_continue">Trotzdem öffnen</string>
     <!-- Hard Mode Lockout Overlay -->
-    <string name="lockout_title">🔒 Locked for Today</string>
-    <string name="lockout_subtitle">You exceeded your limit for %1$s. The app is locked until midnight.</string>
-    <string name="lockout_money_lost">€%.2f has been charged.</string>
-    <string name="lockout_exit_home">Exit to Home</string>
+    <string name="lockout_title">🔒 Für heute gesperrt</string>
+    <string name="lockout_subtitle">Du hast dein Limit für %1$s überschritten. Die App ist bis Mitternacht gesperrt.</string>
+    <string name="lockout_money_lost">€%.2f wurden eingezogen.</string>
+    <string name="lockout_exit_home">Zur Startseite</string>
 
     <!-- Navigation -->
-    <string name="nav_back">Back</string>
+    <string name="nav_back">Zurück</string>
     <string name="nav_dashboard">Dashboard</string>
     <string name="nav_challenges">Challenges</string>
-    <string name="nav_profile">Profile</string>
+    <string name="nav_profile">Profil</string>
 
     <!-- Profile screen -->
     <string name="profile_title">Profil</string>
-    <string name="profile_run_evaluation">Run Daily Evaluation Now</string>
-    <string name="profile_evaluation_queued">Evaluation queued — check Logcat for results</string>
-    <string name="profile_points_label">%1$d pts</string>
-    <string name="profile_unknown_email">Unknown user</string>
+    <string name="profile_run_evaluation">Tagesauswertung jetzt starten</string>
+    <string name="profile_evaluation_queued">Auswertung eingereiht — Ergebnisse im Logcat</string>
+    <string name="profile_points_label">%1$d Pkt.</string>
+    <string name="profile_unknown_email">Unbekannter Nutzer</string>
     <string name="profile_settings">Einstellungen</string>
-    <string name="profile_logout">Log Out</string>
-    <string name="profile_logout_confirm_title">Log Out?</string>
-    <string name="profile_logout_confirm_message">This will sign you out and clear your local data.</string>
-    <string name="profile_logout_confirm_yes">Log Out</string>
-    <string name="profile_logout_confirm_no">Cancel</string>
+    <string name="profile_logout">Abmelden</string>
+    <string name="profile_logout_confirm_title">Abmelden?</string>
+    <string name="profile_logout_confirm_message">Du wirst abgemeldet und deine lokalen Daten werden gelöscht.</string>
+    <string name="profile_logout_confirm_yes">Abmelden</string>
+    <string name="profile_logout_confirm_no">Abbrechen</string>
     <string name="profile_member_since">Mitglied seit %1$s</string>
-    <string name="profile_stat_streak_label">Current streak</string>
-    <string name="profile_stat_completed_label">Challenges done</string>
-    <string name="profile_stat_apps_label">Apps blocked</string>
+    <string name="profile_stat_streak_label">Aktueller Streak</string>
+    <string name="profile_stat_completed_label">Challenges geschafft</string>
+    <string name="profile_stat_apps_label">Apps blockiert</string>
     <string name="profile_iban_section_title">💰 Auszahlung</string>
     <string name="profile_iban_holder_field">Kontoinhaber</string>
     <string name="profile_iban_holder_label">Kontoinhaber: %1$s</string>
@@ -452,55 +452,55 @@
     <string name="profile_payout_claimed">€%1$d wurden auf dein Bankkonto überwiesen!</string>
     <string name="notif_payout_received_title">💰 Auszahlung erhalten</string>
     <string name="notif_payout_received_body">€%1$d wurden auf dein Bankkonto überwiesen!</string>
-    <string name="profile_active_challenges">Active Challenges</string>
-    <string name="profile_view_all">View all →</string>
-    <string name="profile_recent_activity">Recent Activity</string>
-    <string name="profile_no_recent_activity">No completed challenges yet</string>
+    <string name="profile_active_challenges">Aktive Challenges</string>
+    <string name="profile_view_all">Alle anzeigen →</string>
+    <string name="profile_recent_activity">Letzte Aktivität</string>
+    <string name="profile_no_recent_activity">Noch keine abgeschlossenen Challenges</string>
 
     <!-- Challenges screen -->
     <string name="challenges_title">Challenges</string>
-    <string name="challenges_empty">No challenges yet. Tap + to start one!</string>
-    <string name="challenges_section_active">Active</string>
-    <string name="challenges_section_history">History</string>
+    <string name="challenges_empty">Noch keine Challenges. Tippe auf +, um eine zu starten!</string>
+    <string name="challenges_section_active">Aktiv</string>
+    <string name="challenges_section_history">Verlauf</string>
 
     <!-- Points Shop -->
-    <string name="shop_title">Points Shop</string>
-    <string name="shop_subtitle">Spend your points on rewards</string>
-    <string name="shop_balance_label">Your Balance</string>
-    <string name="shop_balance_value">%1$d pts</string>
-    <string name="shop_redeem_button">Redeem for %1$d pts</string>
-    <string name="shop_not_enough_points">Not enough points</string>
-    <string name="shop_redeemed_success">%1$s redeemed!</string>
-    <string name="shop_error_generic">Could not redeem reward. Try again.</string>
+    <string name="shop_title">Punkte-Shop</string>
+    <string name="shop_subtitle">Gib deine Punkte für Belohnungen aus</string>
+    <string name="shop_balance_label">Dein Guthaben</string>
+    <string name="shop_balance_value">%1$d Pkt.</string>
+    <string name="shop_redeem_button">Für %1$d Pkt. einlösen</string>
+    <string name="shop_not_enough_points">Nicht genug Punkte</string>
+    <string name="shop_redeemed_success">%1$s eingelöst!</string>
+    <string name="shop_error_generic">Belohnung konnte nicht eingelöst werden. Versuche es erneut.</string>
 
     <!-- Shop items -->
-    <string name="shop_item_dark_neon_name">Dark Neon Theme</string>
-    <string name="shop_item_dark_neon_desc">Switch the app to a vivid dark neon look</string>
-    <string name="shop_item_retro_name">Retro Theme</string>
-    <string name="shop_item_retro_desc">A nostalgic retro-pixel visual style</string>
-    <string name="shop_item_joker_name">Joker Card</string>
-    <string name="shop_item_joker_desc">Get +15 minutes extra today without losing points</string>
-    <string name="shop_item_icon_name">Custom App Icon</string>
-    <string name="shop_item_icon_desc">Change the Finite app icon on your home screen</string>
-    <string name="shop_item_badge_name">Premium Profile Badge</string>
-    <string name="shop_item_badge_desc">Show off a special badge on your profile</string>
+    <string name="shop_item_dark_neon_name">Dark-Neon-Theme</string>
+    <string name="shop_item_dark_neon_desc">Verpasse der App einen leuchtenden Dark-Neon-Look</string>
+    <string name="shop_item_retro_name">Retro-Theme</string>
+    <string name="shop_item_retro_desc">Ein nostalgischer Retro-Pixel-Look</string>
+    <string name="shop_item_joker_name">Joker-Karte</string>
+    <string name="shop_item_joker_desc">Heute +15 Minuten extra, ohne Punkte zu verlieren</string>
+    <string name="shop_item_icon_name">Eigenes App-Icon</string>
+    <string name="shop_item_icon_desc">Ändere das Finite-Icon auf deinem Homescreen</string>
+    <string name="shop_item_badge_name">Premium-Profil-Badge</string>
+    <string name="shop_item_badge_desc">Zeig ein besonderes Badge auf deinem Profil</string>
 
     <!-- Notifications — daily report channel -->
-    <string name="notification_channel_daily_report_name">Daily Report</string>
-    <string name="notification_channel_daily_report_desc">Your end-of-day summary of points and challenges</string>
-    <string name="notification_daily_report_title">Daily Summary</string>
-    <string name="notification_daily_report_text">You earned %1$d pts today. %2$d/%3$d challenges on track 🎯</string>
+    <string name="notification_channel_daily_report_name">Tagesbericht</string>
+    <string name="notification_channel_daily_report_desc">Deine Tageszusammenfassung mit Punkten und Challenges</string>
+    <string name="notification_daily_report_title">Tageszusammenfassung</string>
+    <string name="notification_daily_report_text">Du hast heute %1$d Pkt. verdient. %2$d/%3$d Challenges auf Kurs 🎯</string>
 
     <!-- Notifications — milestones channel -->
-    <string name="notification_channel_milestones_name">Milestones</string>
-    <string name="notification_channel_milestones_desc">Alerts when a challenge is completed or failed</string>
-    <string name="notification_challenge_completed_title">Challenge Completed! 🎉</string>
-    <string name="notification_challenge_completed_text">You successfully completed your %1$s challenge. Well done!</string>
-    <string name="notification_challenge_failed_title">Challenge Failed</string>
-    <string name="notification_challenge_failed_text">Your %1$s challenge has ended. Don\'t give up — start a new one!</string>
+    <string name="notification_channel_milestones_name">Meilensteine</string>
+    <string name="notification_channel_milestones_desc">Hinweise, wenn eine Challenge geschafft oder gescheitert ist</string>
+    <string name="notification_challenge_completed_title">Challenge geschafft! 🎉</string>
+    <string name="notification_challenge_completed_text">Du hast deine %1$s-Challenge erfolgreich abgeschlossen. Stark!</string>
+    <string name="notification_challenge_failed_title">Challenge fehlgeschlagen</string>
+    <string name="notification_challenge_failed_text">Deine %1$s-Challenge ist beendet. Gib nicht auf — starte eine neue!</string>
 
     <!-- Challenge card — Hard Mode payment captured -->
-    <string name="challenge_card_payment_captured">Payment captured — €%.2f lost today</string>
+    <string name="challenge_card_payment_captured">Zahlung eingezogen — heute €%.2f verloren</string>
     <!-- Challenge card — mode / type badges -->
     <string name="challenge_card_badge_hard">HARD MODE</string>
     <string name="challenge_card_badge_soft">SOFT MODE</string>
@@ -509,25 +509,25 @@
     <string name="challenge_card_rank">Platz %1$d 🏆</string>
 
     <!-- Default motivation text when none is set by the user -->
-    <string name="default_motivation_text">Stay strong!</string>
+    <string name="default_motivation_text">Bleib stark!</string>
 
     <!-- Session Intention Overlay (Stage 1 — session-limit challenges) -->
-    <string name="session_intention_title">Do you really want to open this app?</string>
-    <string name="session_intention_opens_used">Conscious opens today: %1$d of %2$d</string>
-    <string name="session_intention_last_session">Last session ended %1$dm %2$ds ago</string>
-    <string name="session_intention_yes">Yes, open it</string>
-    <string name="session_intention_no">No, go back</string>
+    <string name="session_intention_title">Willst du diese App wirklich öffnen?</string>
+    <string name="session_intention_opens_used">Bewusste Öffnungen heute: %1$d von %2$d</string>
+    <string name="session_intention_last_session">Letzte Session endete vor %1$dm %2$ds</string>
+    <string name="session_intention_yes">Ja, öffnen</string>
+    <string name="session_intention_no">Nein, zurück</string>
 
     <!-- Session Limit Reached Overlay (Stage 2 — all limit types) -->
     <string name="overlay_limit_reached_header">Limit erreicht 🔒</string>
-    <string name="session_limit_reached_title">You have reached your limit for today.</string>
-    <string name="session_limit_reached_message">Do you still want to continue?</string>
-    <string name="session_limit_reached_consequence_soft">You will lose all points for today.</string>
-    <string name="session_limit_reached_consequence_hard">€%.2f will be captured from your card.</string>
-    <string name="session_limit_reached_yes_soft">Yes, I accept — lose points</string>
+    <string name="session_limit_reached_title">Du hast dein Limit für heute erreicht.</string>
+    <string name="session_limit_reached_message">Willst du trotzdem weitermachen?</string>
+    <string name="session_limit_reached_consequence_soft">Du verlierst alle Punkte für heute.</string>
+    <string name="session_limit_reached_consequence_hard">€%.2f werden von deiner Karte eingezogen.</string>
+    <string name="session_limit_reached_yes_soft">Ja, ich akzeptiere — Punkte verlieren</string>
     <string name="session_limit_reached_yes_soft_lose">Ja, ich akzeptiere — Challenge verlieren</string>
-    <string name="session_limit_reached_yes_hard">Yes, I accept — charge my card</string>
-    <string name="session_limit_reached_no">No, stop</string>
+    <string name="session_limit_reached_yes_hard">Ja, ich akzeptiere — Karte belasten</string>
+    <string name="session_limit_reached_no">Nein, aufhören</string>
 
     <!-- Soft Mode fail confirmation dialog -->
     <string name="soft_fail_dialog_title">Bist du sicher?</string>
@@ -547,41 +547,41 @@
     <string name="streak_detail_format">🔥 Streak: %1$d Tage</string>
 
     <!-- Statistics screen -->
-    <string name="stats_title">Statistics</string>
-    <string name="stats_overview_title">Overview</string>
-    <string name="stats_total_points">Total pts</string>
-    <string name="stats_weekly_points">This week</string>
-    <string name="stats_completed">Completed</string>
-    <string name="stats_failed">Failed</string>
-    <string name="stats_no_challenges">No challenges yet. Start one from the dashboard!</string>
-    <string name="stats_per_app_header">Per-App Breakdown</string>
-    <string name="stats_success_rate">Success rate: %1$d%%</string>
-    <string name="stats_current_streak">🔥 %1$d day streak</string>
-    <string name="stats_best_streak">Best: %1$d days</string>
-    <string name="stats_last_7_days">Last 7 days</string>
+    <string name="stats_title">Statistiken</string>
+    <string name="stats_overview_title">Überblick</string>
+    <string name="stats_total_points">Punkte gesamt</string>
+    <string name="stats_weekly_points">Diese Woche</string>
+    <string name="stats_completed">Geschafft</string>
+    <string name="stats_failed">Gescheitert</string>
+    <string name="stats_no_challenges">Noch keine Challenges. Starte eine vom Dashboard aus!</string>
+    <string name="stats_per_app_header">Aufschlüsselung pro App</string>
+    <string name="stats_success_rate">Erfolgsrate: %1$d%%</string>
+    <string name="stats_current_streak">🔥 %1$d Tage Streak</string>
+    <string name="stats_best_streak">Beste: %1$d Tage</string>
+    <string name="stats_last_7_days">Letzte 7 Tage</string>
 
     <!-- Challenge Card — TIME_BUDGET -->
-    <string name="challenge_card_budget_limit">Budget: %1$d min/day</string>
-    <string name="challenge_card_budget_progress">%1$d of %2$d min used · %3$d min left</string>
+    <string name="challenge_card_budget_limit">Budget: %1$d Min./Tag</string>
+    <string name="challenge_card_budget_progress">%1$d von %2$d Min. genutzt · %3$d Min. übrig</string>
 
     <!-- Challenge Card — TIME_WINDOW + VPN/adult status lines -->
-    <string name="challenge_card_time_window_limit">Time window only</string>
-    <string name="challenge_card_time_window_progress">%1$d min used</string>
-    <string name="challenge_card_adult_blocked">🛡️ Adult content blocked</string>
+    <string name="challenge_card_time_window_limit">Nur Zeitfenster</string>
+    <string name="challenge_card_time_window_progress">%1$d Min. genutzt</string>
+    <string name="challenge_card_adult_blocked">🛡️ Adult Content gesperrt</string>
 
     <!-- Challenge Setup — TIME_WINDOW limit type -->
-    <string name="challenge_setup_time_window_limit">Time Window</string>
-    <string name="challenge_setup_time_window_info">Only accessible during scheduled hours — no usage limit applies</string>
-    <string name="challenge_setup_error_schedule_required">Set a start and end time above</string>
+    <string name="challenge_setup_time_window_limit">Zeitfenster</string>
+    <string name="challenge_setup_time_window_info">Nur während der geplanten Stunden zugänglich — kein Nutzungslimit</string>
+    <string name="challenge_setup_error_schedule_required">Lege oben Start- und Endzeit fest</string>
 
     <!-- Challenge Setup — adult content blocking -->
-    <string name="challenge_setup_adult_content_label">Block adult content</string>
-    <string name="challenge_setup_adult_content_info">Adult content is always fully blocked — no time limits</string>
+    <string name="challenge_setup_adult_content_label">Adult Content sperren</string>
+    <string name="challenge_setup_adult_content_info">Adult Content ist immer vollständig gesperrt — ohne Zeitlimits</string>
 
     <!-- Multi-app selection in Challenge Setup -->
-    <string name="challenge_setup_apps_label">Apps to track</string>
-    <string name="challenge_setup_apps_add">Add more apps</string>
-    <string name="challenge_setup_apps_hide">Hide app list</string>
+    <string name="challenge_setup_apps_label">Apps zum Tracken</string>
+    <string name="challenge_setup_apps_add">Weitere Apps hinzufügen</string>
+    <string name="challenge_setup_apps_hide">App-Liste ausblenden</string>
 
     <!-- Multi-app display (Dashboard card, Detail screen, Overlay) -->
     <string name="detail_blocked_apps_section">BLOCKIERTE APPS</string>
@@ -592,39 +592,39 @@
     <string name="website_name_more">+%1$d weitere</string>
 
     <!-- Website blocking in Challenge Setup -->
-    <string name="challenge_setup_websites_label">Block Websites</string>
-    <string name="challenge_setup_no_detected_domains">No known domains detected for selected apps. Add domains manually below.</string>
+    <string name="challenge_setup_websites_label">Websites blockieren</string>
+    <string name="challenge_setup_no_detected_domains">Keine bekannten Domains für die gewählten Apps gefunden. Füge unten manuell Domains hinzu.</string>
 
     <!-- Usage Schedule in Challenge Setup -->
-    <string name="challenge_setup_schedule_title">Usage Schedule (optional)</string>
-    <string name="challenge_setup_schedule_subtitle">Only enforce this challenge during specific hours and days.</string>
-    <string name="challenge_setup_schedule_from">Active from</string>
-    <string name="challenge_setup_schedule_to">Active until</string>
-    <string name="challenge_setup_schedule_clear">Clear schedule</string>
-    <string name="challenge_setup_block_adult">Also block all adult content</string>
-    <string name="challenge_setup_block_app_website">Also block %1$s</string>
-    <string name="challenge_setup_custom_domain_hint">Add domain (e.g. example.com)</string>
-    <string name="challenge_setup_custom_domain_add">Add</string>
-    <string name="challenge_setup_website_label">website</string>
+    <string name="challenge_setup_schedule_title">Nutzungsplan (optional)</string>
+    <string name="challenge_setup_schedule_subtitle">Diese Challenge nur zu bestimmten Stunden und Tagen durchsetzen.</string>
+    <string name="challenge_setup_schedule_from">Aktiv von</string>
+    <string name="challenge_setup_schedule_to">Aktiv bis</string>
+    <string name="challenge_setup_schedule_clear">Zeitplan löschen</string>
+    <string name="challenge_setup_block_adult">Auch allen Adult Content sperren</string>
+    <string name="challenge_setup_block_app_website">Auch %1$s blockieren</string>
+    <string name="challenge_setup_custom_domain_hint">Domain hinzufügen (z. B. example.com)</string>
+    <string name="challenge_setup_custom_domain_add">Hinzufügen</string>
+    <string name="challenge_setup_website_label">Website</string>
 
     <!-- Challenge Type picker -->
-    <string name="challenge_type_title">New Challenge</string>
-    <string name="challenge_type_subtitle">What do you want to reduce?</string>
-    <string name="challenge_type_app_title">Block App</string>
-    <string name="challenge_type_app_description">Limit or block a specific app on your phone</string>
-    <string name="challenge_type_website_title">Block Website</string>
-    <string name="challenge_type_website_description">Block specific websites in your browser</string>
+    <string name="challenge_type_title">Neue Challenge</string>
+    <string name="challenge_type_subtitle">Was möchtest du reduzieren?</string>
+    <string name="challenge_type_app_title">App blockieren</string>
+    <string name="challenge_type_app_description">Eine bestimmte App auf deinem Handy einschränken oder blockieren</string>
+    <string name="challenge_type_website_title">Website blockieren</string>
+    <string name="challenge_type_website_description">Bestimmte Websites in deinem Browser blockieren</string>
 
     <!-- Block Website setup screen -->
-    <string name="block_website_title">Block Websites</string>
-    <string name="block_website_subtitle">Add domains you want to block in your browser during this challenge.</string>
-    <string name="block_website_continue">Continue</string>
+    <string name="block_website_title">Websites blockieren</string>
+    <string name="block_website_subtitle">Füge Domains hinzu, die während dieser Challenge in deinem Browser blockiert werden sollen.</string>
+    <string name="block_website_continue">Weiter</string>
 
     <!-- Website Blocked Overlay -->
-    <string name="website_blocked_title">🚫 Website blocked</string>
-    <string name="website_blocked_go_back">Go back</string>
-    <string name="website_blocked_stay_strong">Stay strong 💪</string>
-    <string name="website_blocked_challenge_label">Part of your %1$s challenge</string>
+    <string name="website_blocked_title">🚫 Website geblockt</string>
+    <string name="website_blocked_go_back">Zurück</string>
+    <string name="website_blocked_stay_strong">Stark bleiben 💪</string>
+    <string name="website_blocked_challenge_label">Teil deiner %1$s-Challenge</string>
 
     <!-- Psychological friction buttons (SessionIntentionOverlay + BudgetSelectionOverlay) -->
     <string name="stay_strong_button">Stark bleiben</string>
@@ -641,64 +641,64 @@
     <string name="countdown_calm_cancel">Abbrechen</string>
 
     <!-- Budget Selection Overlay (TIME_BUDGET Stage 1) -->
-    <string name="budget_overlay_title">Opening %1$s</string>
-    <string name="budget_overlay_remaining">%1$d min remaining today</string>
-    <string name="budget_overlay_pick_label">How long do you need?</string>
-    <string name="budget_overlay_minutes_value">%1$d min</string>
-    <string name="budget_overlay_decrease">Decrease minutes</string>
-    <string name="budget_overlay_increase">Increase minutes</string>
-    <string name="budget_overlay_start">Start session</string>
-    <string name="budget_overlay_go_back">No, go back</string>
+    <string name="budget_overlay_title">%1$s öffnen</string>
+    <string name="budget_overlay_remaining">Noch %1$d Min. heute</string>
+    <string name="budget_overlay_pick_label">Wie lange brauchst du?</string>
+    <string name="budget_overlay_minutes_value">%1$d Min.</string>
+    <string name="budget_overlay_decrease">Minuten verringern</string>
+    <string name="budget_overlay_increase">Minuten erhöhen</string>
+    <string name="budget_overlay_start">Session starten</string>
+    <string name="budget_overlay_go_back">Nein, zurück</string>
 
     <!-- Navigation — Friends tab -->
-    <string name="nav_friends">Friends</string>
+    <string name="nav_friends">Freunde</string>
 
     <!-- Friends Hub screen -->
-    <string name="friends_hub_title">Friends</string>
-    <string name="friends_hub_create">Create Challenge</string>
-    <string name="friends_hub_join">Join with Code</string>
-    <string name="friends_hub_active">Active</string>
-    <string name="friends_hub_waiting">Waiting to Start</string>
+    <string name="friends_hub_title">Freunde</string>
+    <string name="friends_hub_create">Challenge erstellen</string>
+    <string name="friends_hub_join">Mit Code beitreten</string>
+    <string name="friends_hub_active">Aktiv</string>
+    <string name="friends_hub_waiting">Wartet auf Start</string>
     <string name="friends_hub_empty_title">Keine aktiven Group Challenges</string>
     <string name="friends_hub_empty_subtitle">Erstelle eine Challenge oder tritt einer bei!</string>
 
     <!-- Group Challenge — Create flow -->
-    <string name="group_create_title_step1">New Group Challenge</string>
-    <string name="group_create_title_step2">Review &amp; Share</string>
-    <string name="group_create_apps_label">Apps to Block</string>
-    <string name="group_create_apps_select">Select Apps…</string>
-    <string name="group_create_apps_change">Change Apps</string>
-    <string name="group_create_buy_in_label">Buy-In Per Player</string>
-    <string name="group_create_buy_in_field_label">Min. €10 per player</string>
-    <string name="group_create_buy_in_error">Minimum buy-in is €10</string>
-    <string name="group_create_max_participants_label">Max Participants</string>
-    <string name="group_create_start_date_label">Start Date (must be tomorrow or later)</string>
-    <string name="group_create_start_date_hint">Pick a date…</string>
-    <string name="group_create_bonus_label">Bonus for winner</string>
-    <string name="group_create_bonus_info">What is the winner bonus?</string>
-    <string name="group_create_bonus_tooltip">The participant with the best performance (fewest opens / most time saved) receives an extra 10%% of the total pot. The app takes a 5%% fee.</string>
-    <string name="group_create_next">Next — Review</string>
+    <string name="group_create_title_step1">Neue Group Challenge</string>
+    <string name="group_create_title_step2">Überprüfen &amp; teilen</string>
+    <string name="group_create_apps_label">Apps zum Blockieren</string>
+    <string name="group_create_apps_select">Apps auswählen…</string>
+    <string name="group_create_apps_change">Apps ändern</string>
+    <string name="group_create_buy_in_label">Buy-in pro Spieler</string>
+    <string name="group_create_buy_in_field_label">Mind. €10 pro Spieler</string>
+    <string name="group_create_buy_in_error">Mindest-Buy-in ist €10</string>
+    <string name="group_create_max_participants_label">Max. Teilnehmer</string>
+    <string name="group_create_start_date_label">Startdatum (frühestens morgen)</string>
+    <string name="group_create_start_date_hint">Datum wählen…</string>
+    <string name="group_create_bonus_label">Bonus für den Gewinner</string>
+    <string name="group_create_bonus_info">Was ist der Gewinner-Bonus?</string>
+    <string name="group_create_bonus_tooltip">Der Teilnehmer mit der besten Performance (wenigste Öffnungen / meiste gesparte Zeit) erhält 10%% extra aus dem Gesamtpot. Die App nimmt eine 5%%-Gebühr.</string>
+    <string name="group_create_next">Weiter — Überprüfen</string>
     <!-- Step 2 — Review -->
-    <string name="group_create_code_label">Your Group Code</string>
-    <string name="group_create_code_hint">Share this code with your friends so they can join!</string>
+    <string name="group_create_code_label">Dein Gruppen-Code</string>
+    <string name="group_create_code_hint">Teile diesen Code mit deinen Freunden, damit sie beitreten können!</string>
     <string name="group_create_summary_app">App</string>
-    <string name="group_create_summary_limit">Daily Limit</string>
-    <string name="group_create_summary_duration">Duration</string>
-    <string name="group_create_summary_buy_in">Buy-In Per Player</string>
-    <string name="join_group_entry_fee">Entry fee: €%1$d</string>
-    <string name="group_create_summary_max_players">Max Players</string>
-    <string name="group_create_summary_bonus">Winner Bonus</string>
-    <string name="group_create_share_button">Create &amp; Share Code</string>
-    <string name="group_create_done_button">Done — Go to Friends</string>
-    <string name="group_create_share_text">Join my Finite challenge! Code: %1$s — App: %2$s, %3$d days, min €%4$d</string>
-    <string name="group_create_share_chooser">Share Challenge Code</string>
+    <string name="group_create_summary_limit">Tageslimit</string>
+    <string name="group_create_summary_duration">Dauer</string>
+    <string name="group_create_summary_buy_in">Buy-in pro Spieler</string>
+    <string name="join_group_entry_fee">Einsatz: €%1$d</string>
+    <string name="group_create_summary_max_players">Max. Spieler</string>
+    <string name="group_create_summary_bonus">Gewinner-Bonus</string>
+    <string name="group_create_share_button">Erstellen &amp; Code teilen</string>
+    <string name="group_create_done_button">Fertig — zu Freunde</string>
+    <string name="group_create_share_text">Tritt meiner Finite-Challenge bei! Code: %1$s — App: %2$s, %3$d Tage, mind. €%4$d</string>
+    <string name="group_create_share_chooser">Challenge-Code teilen</string>
 
     <!-- Group Challenge — Join flow -->
     <string name="join_group_title">Challenge beitreten</string>
     <string name="join_group_subtitle">Gib den 6-stelligen Code ein, den der Ersteller mit dir geteilt hat.</string>
     <string name="join_group_code_label">Challenge-Code</string>
     <string name="join_group_lookup">Suchen</string>
-    <string name="join_group_pay_button">Pay €%1$d &amp; Join</string>
+    <string name="join_group_pay_button">€%1$d zahlen &amp; beitreten</string>
     <string name="join_group_join_and_pay">Jetzt beitreten — €%1$d bezahlen</string>
     <string name="join_group_confirming">Beitritt wird bestätigt…</string>
     <string name="join_group_retry">Fehler — erneut versuchen</string>
@@ -720,7 +720,7 @@
     <!-- Group Challenge — Detail / Leaderboard -->
     <string name="group_detail_title">Group Challenge</string>
     <string name="group_detail_leaderboard">Leaderboard</string>
-    <string name="group_detail_no_participants">No participants yet.</string>
+    <string name="group_detail_no_participants">Noch keine Teilnehmer.</string>
 
     <!-- Shared dialog buttons -->
     <string name="dialog_ok">OK</string>
@@ -764,9 +764,9 @@
     <!-- Legacy overlay strings (kept for any remaining references) -->
     <string name="success_overlay_title">Herzlichen Glückwunsch!</string>
     <string name="success_overlay_subtitle">Du hast deine Challenge geschafft!</string>
-    <string name="success_overlay_refund">Your €%1$d has been refunded to your card</string>
-    <string name="success_overlay_duration">Challenge duration: %1$d days</string>
-    <string name="success_overlay_new_challenge">Start New Challenge</string>
+    <string name="success_overlay_refund">Deine €%1$d wurden auf deine Karte zurückgebucht</string>
+    <string name="success_overlay_duration">Challenge-Dauer: %1$d Tage</string>
+    <string name="success_overlay_new_challenge">Neue Challenge starten</string>
     <string name="soft_success_title">Challenge geschafft!</string>
     <string name="soft_success_subtitle">Du hast %1$d Tage durchgehalten.</string>
     <string name="soft_success_streak">🔥 Streak: %1$d Tage</string>
@@ -788,51 +788,51 @@
     <string name="hard_fail_new_challenge">Neue Challenge starten</string>
 
     <!-- VPN rationale dialog (shown before the system VPN permission dialog) -->
-    <string name="vpn_rationale_title">Enable Website Blocking</string>
-    <string name="vpn_rationale_message">Finite needs VPN permission to block websites. Your data never leaves your device — the VPN only filters DNS requests locally.</string>
-    <string name="vpn_rationale_confirm">Continue</string>
-    <string name="vpn_rationale_cancel">Cancel</string>
+    <string name="vpn_rationale_title">Website-Blockierung aktivieren</string>
+    <string name="vpn_rationale_message">Finite braucht die VPN-Berechtigung, um Websites zu blockieren. Deine Daten verlassen nie dein Gerät — das VPN filtert nur lokal DNS-Anfragen.</string>
+    <string name="vpn_rationale_confirm">Weiter</string>
+    <string name="vpn_rationale_cancel">Abbrechen</string>
 
     <!-- VPN permission (onboarding step) -->
-    <string name="permission_vpn_title">Block websites completely</string>
-    <string name="permission_vpn_description">Finite uses a local VPN to block distracting and adult websites. Your data never leaves your device — this VPN only filters DNS requests.</string>
-    <string name="permission_vpn_enable_button">Enable Website Protection</string>
-    <string name="permission_vpn_denied_warning">Website blocking will not work without this permission</string>
-    <string name="permission_vpn_try_again">Try again</string>
+    <string name="permission_vpn_title">Websites vollständig blockieren</string>
+    <string name="permission_vpn_description">Finite nutzt ein lokales VPN, um ablenkende und Erwachsenen-Websites zu blockieren. Deine Daten verlassen nie dein Gerät — dieses VPN filtert nur DNS-Anfragen.</string>
+    <string name="permission_vpn_enable_button">Website-Schutz aktivieren</string>
+    <string name="permission_vpn_denied_warning">Ohne diese Berechtigung funktioniert die Website-Blockierung nicht</string>
+    <string name="permission_vpn_try_again">Erneut versuchen</string>
 
     <!-- Huawei battery optimization step -->
-    <string name="permission_huawei_battery_title">Keep VPN Running</string>
-    <string name="permission_huawei_battery_description">To prevent your device from stopping website blocking, please disable battery optimization for Finite. Look for "App launch" or "Protected apps" in Power settings.</string>
-    <string name="permission_huawei_battery_button">Adjust Power Settings</string>
+    <string name="permission_huawei_battery_title">VPN am Laufen halten</string>
+    <string name="permission_huawei_battery_description">Damit dein Gerät die Website-Blockierung nicht beendet, deaktiviere bitte die Akku-Optimierung für Finite. Suche in den Energieeinstellungen nach „App-Start" oder „Geschützte Apps".</string>
+    <string name="permission_huawei_battery_button">Energieeinstellungen anpassen</string>
 
     <!-- VPN foreground notification -->
-    <string name="notif_channel_vpn_name">Website Blocking VPN</string>
-    <string name="notif_vpn_title">Finite VPN active — websites protected</string>
-    <string name="notif_vpn_text">Local VPN active — your data stays on this device</string>
-    <string name="notif_vpn_paused_title">Website blocking paused</string>
-    <string name="notif_vpn_paused_text">Tap to restart website protection</string>
+    <string name="notif_channel_vpn_name">Website-Blockierung (VPN)</string>
+    <string name="notif_vpn_title">Finite-VPN aktiv — Websites geschützt</string>
+    <string name="notif_vpn_text">Lokales VPN aktiv — deine Daten bleiben auf diesem Gerät</string>
+    <string name="notif_vpn_paused_title">Website-Blockierung pausiert</string>
+    <string name="notif_vpn_paused_text">Tippe, um den Website-Schutz neu zu starten</string>
 
     <!-- Group Challenge — Detail screen -->
-    <string name="group_detail_total_pot">Total pot: €%1$d</string>
-    <string name="group_detail_share_code">Share Code</string>
-    <string name="group_detail_code_hint">Share this code with friends so they can join!</string>
+    <string name="group_detail_total_pot">Gesamtpot: €%1$d</string>
+    <string name="group_detail_share_code">Code teilen</string>
+    <string name="group_detail_code_hint">Teile diesen Code mit Freunden, damit sie beitreten können!</string>
 
     <!-- Group Challenge — Notifications -->
-    <string name="notif_group_participant_failed_title">%1$s failed! Keep going 💪</string>
-    <string name="notif_group_participant_failed_body">%1$s exceeded their limit in the %2$s challenge. Stay strong!</string>
-    <string name="notif_group_cancelled_title">Challenge Cancelled</string>
-    <string name="notif_group_cancelled_body">Not enough players joined the %1$s challenge. Your buy-in will be refunded.</string>
-    <string name="notif_group_completed_success_title">Challenge Complete! 🎉</string>
-    <string name="notif_group_completed_success_body">You completed the %1$s group challenge! €%2$d is being refunded.</string>
-    <string name="notif_group_completed_failed_title">Challenge Over</string>
-    <string name="notif_group_completed_failed_body">The %1$s group challenge has ended. Better luck next time!</string>
+    <string name="notif_group_participant_failed_title">%1$s ist gescheitert! Bleib dran 💪</string>
+    <string name="notif_group_participant_failed_body">%1$s hat das Limit in der %2$s-Challenge überschritten. Bleib stark!</string>
+    <string name="notif_group_cancelled_title">Challenge abgesagt</string>
+    <string name="notif_group_cancelled_body">Zu wenige Spieler sind der %1$s-Challenge beigetreten. Dein Buy-in wird zurückerstattet.</string>
+    <string name="notif_group_completed_success_title">Challenge geschafft! 🎉</string>
+    <string name="notif_group_completed_success_body">Du hast die %1$s-Group-Challenge geschafft! €%2$d werden zurückgebucht.</string>
+    <string name="notif_group_completed_failed_title">Challenge vorbei</string>
+    <string name="notif_group_completed_failed_body">Die %1$s-Group-Challenge ist beendet. Beim nächsten Mal klappt\'s!</string>
 
     <!-- Group Challenge — manual start reminder notification -->
-    <string name="notif_group_start_reminder_title">Your group challenge hasn\'t started yet</string>
-    <string name="notif_group_start_reminder_body">Tap to start when everyone has joined</string>
+    <string name="notif_group_start_reminder_title">Deine Group Challenge hat noch nicht begonnen</string>
+    <string name="notif_group_start_reminder_body">Tippe zum Starten, sobald alle beigetreten sind</string>
 
     <!-- Challenge Setup — schedule time validation -->
-    <string name="challenge_setup_schedule_time_error">End time must be after start time</string>
+    <string name="challenge_setup_schedule_time_error">Die Endzeit muss nach der Startzeit liegen</string>
 
     <!-- Settings screen -->
     <string name="settings_title">Einstellungen</string>
@@ -865,8 +865,8 @@
     <string name="settings_challenge_updates_subtitle">Bei Abschluss oder Fehler</string>
     <string name="settings_group_participant_failed">Wenn Teilnehmer scheitert</string>
     <string name="settings_group_participant_failed_subtitle">Benachrichtigung wenn ein Gruppenmitglied das Limit überschreitet</string>
-    <string name="settings_friend_alerts">Friend Alerts</string>
-    <string name="settings_friend_alerts_subtitle">Notifications when friends reach milestones</string>
+    <string name="settings_friend_alerts">Freunde-Hinweise</string>
+    <string name="settings_friend_alerts_subtitle">Benachrichtigungen, wenn Freunde Meilensteine erreichen</string>
 
     <!-- Settings — Permissions section -->
     <string name="settings_section_permissions">BERECHTIGUNGEN</string>

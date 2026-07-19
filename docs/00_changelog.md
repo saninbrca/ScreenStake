@@ -21,6 +21,15 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-19 — Localization Phase 2b: values-de fully Germanized
+
+The 311 English-authored entries that had been copied verbatim into `values-de/strings.xml`
+(onboarding, app selection, shop, notifications, VPN, group-create flow, stats, …) are now
+German — same glossary and du-form tone as the existing copy. Deliberate anglicisms kept:
+Streak, Dark Mode, SOFT/HARD MODE badges, Group Challenge, Leaderboard, Buy-in, LIVE.
+Key sets and placeholders re-verified against values/ (both PASS). The Play-disclosure
+strings were already German and were not touched.
+
 ### 2026-07-19 — Localization Phase 2 (complete): EN default + values-de split
 
 `res/values/strings.xml` is now fully ENGLISH (the default for all non-German devices);

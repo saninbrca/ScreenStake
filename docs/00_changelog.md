@@ -21,6 +21,19 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-19 — Localization Phase 2 (complete): EN default + values-de split
+
+`res/values/strings.xml` is now fully ENGLISH (the default for all non-German devices);
+`res/values-de/strings.xml` carries the German copy verbatim (1314 keys each — verified
+programmatically: identical key sets and identical positional placeholders per key).
+24 entries are marked `translatable="false"` and live only in values/ (support email, the
+3 finite-legal URLs, pure-format strings like `€%1$d`, medals, `HH:mm` hints, sample
+IBAN/join-code placeholders). Play-disclosure strings (`accessibility_disclosure_*`,
+`accessibility_service_description`) were translated faithfully — review before release.
+Note: ~35% of the pre-split file was already English; those entries were copied into
+values-de/ unchanged (no regression — German users see exactly what they saw before).
+Phase 3 (in-app locale picker / per-app language) is still open.
+
 ### 2026-07-19 — Localization Phase 1 (complete): centralized user-facing copy and safe errors
 
 All user-visible Kotlin literals extracted into `strings.xml` (~117 new keys, positional `%1$s`

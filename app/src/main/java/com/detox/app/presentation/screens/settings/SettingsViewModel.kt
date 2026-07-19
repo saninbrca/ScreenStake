@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.R
 import com.detox.app.service.DailyEvaluationWorker
+import com.detox.app.util.ErrorMessages
 import com.detox.app.BuildConfig
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.remote.firebase.FirebaseAuthService
@@ -147,7 +148,7 @@ class SettingsViewModel @Inject constructor(
                 _ibanData.value = IbanData(iban.trim(), name.trim())
                 _ibanSaveState.value = IbanSaveState.Success
             }.onFailure { e ->
-                _ibanSaveState.value = IbanSaveState.Error(e.message ?: "Fehler beim Speichern")
+                _ibanSaveState.value = IbanSaveState.Error(ErrorMessages.from(context, e))
             }
         }
     }
@@ -313,7 +314,8 @@ class SettingsViewModel @Inject constructor(
             val authDeleteResult = firebaseAuthService.deleteAccount()
             if (authDeleteResult.isFailure) {
                 _state.update { it.copy(isLoading = false) }
-                val msg = authDeleteResult.exceptionOrNull()?.message ?: "Deletion failed"
+                val msg = authDeleteResult.exceptionOrNull()?.let { ErrorMessages.from(context, it) }
+                    ?: context.getString(R.string.error_generic)
                 // Firebase requires recent sign-in for sensitive ops — surface a helpful message
                 _events.send(SettingsEvent.ShowSnackbar("Account deletion failed: $msg. Please re-sign in and try again."))
                 return@launch

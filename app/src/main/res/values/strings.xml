@@ -1,6 +1,45 @@
 <resources>
     <string name="app_name">Finite</string>
 
+    <!-- Generic, safe user-facing errors. Raw backend exceptions must never be shown in UI. -->
+    <string name="error_generic">Etwas ist schiefgelaufen. Bitte versuche es erneut.</string>
+    <string name="error_network">Keine Internetverbindung. Bitte prüfe deine Verbindung und versuche es erneut.</string>
+    <string name="error_authentication">Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.</string>
+    <string name="error_permission_denied">Du hast keine Berechtigung für diese Aktion.</string>
+    <string name="error_not_found">Der angeforderte Inhalt wurde nicht gefunden.</string>
+    <string name="error_payment">Die Zahlung konnte nicht verarbeitet werden. Bitte versuche es erneut.</string>
+    <string name="error_challenge_not_found">Challenge nicht gefunden.</string>
+    <string name="error_enter_valid_website">Bitte gib eine gültige Website ein.</string>
+    <string name="error_time_end_after_start">Die Endzeit muss nach der Startzeit liegen.</string>
+    <string name="error_select_limit_type">Bitte gehe zurück und wähle einen Limit-Typ.</string>
+    <string name="error_join_code_incomplete">Bitte gib den vollständigen 6-stelligen Code ein.</string>
+    <string name="error_not_signed_in">Du bist nicht angemeldet.</string>
+    <string name="error_group_creation_failed_after_payment">Die Zahlung wurde empfangen, aber die Challenge konnte nicht erstellt werden. Bitte kontaktiere den Support.</string>
+
+    <!-- Previously hardcoded UI copy (Phase 1 localization extraction) -->
+    <string name="wizard_back">Zurück</string>
+    <string name="wizard_step_progress">Schritt %1$d von %2$d</string>
+    <string name="challenge_schedule_from">Von</string>
+    <string name="challenge_schedule_until">Bis</string>
+    <string name="challenge_schedule_set_window">Zeitfenster festlegen</string>
+    <string name="challenge_stake">Einsatz</string>
+    <string name="challenge_stake_unit">Euro Einsatz</string>
+    <string name="challenge_stake_warning">Wenn du das Limit überschreitest, werden €%1$d sofort eingezogen.</string>
+    <string name="challenge_no_end_date">Kein Enddatum</string>
+    <string name="notification_group_channel_name">Gruppen-Challenges</string>
+    <string name="notification_group_channel_description">Updates zu deinen Gruppen-Challenges — Fehlschläge, Abschlüsse und Absagen</string>
+    <string name="notification_worker_evaluating">Challenge wird ausgewertet…</string>
+    <string name="notification_worker_checking_permissions">Berechtigungen werden geprüft…</string>
+    <string name="notification_permission_failed_title">❌ Challenge fehlgeschlagen</string>
+    <string name="notification_permission_urgent_title">🔴 Deine Challenge endet bald!</string>
+    <string name="notification_permission_urgent_body">Die erforderliche Erlaubnis fehlt seit zu langer Zeit. Behebe es jetzt oder deine Challenge wird automatisch beendet.</string>
+    <string name="notification_permission_restored">✅ Perfekt! Deine Challenge läuft weiter.</string>
+    <string name="permission_danger_title">🚨 ACHTUNG — Challenge in Gefahr!</string>
+    <string name="permission_fix_now">JETZT BEHEBEN →</string>
+    <string name="active_challenge_current_limit">Aktuell: %1$d %2$s</string>
+    <string name="group_pot_estimate">Pot-Schätzung (20 Spieler)</string>
+    <string name="group_pot_estimate_value">€%1$d</string>
+
     <!-- Onboarding -->
     <string name="onboarding_title">Welcome to Finite</string>
     <string name="onboarding_subtitle">Take control of your screen time. We need a few permissions to help you.</string>

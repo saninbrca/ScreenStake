@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import com.detox.app.util.DateUtils
+import com.detox.app.util.ErrorMessages
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -361,7 +362,7 @@ class DashboardViewModel @Inject constructor(
             },
             onFailure = { error ->
                 _uiState.value = DashboardUiState.Error(
-                    error.message ?: "Failed to load stats"
+                    ErrorMessages.from(appContext, error)
                 )
             }
         )

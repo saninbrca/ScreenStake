@@ -72,10 +72,10 @@ object NotificationHelper {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_GROUP_EVENTS,
-                    "Group Challenges",
+                context.getString(R.string.notification_group_channel_name),
                     NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
-                    description = "Updates from your group challenges — failures, completions, and cancellations"
+                description = context.getString(R.string.notification_group_channel_description)
                 }
             )
         }
@@ -254,7 +254,7 @@ object NotificationHelper {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("❌ Challenge fehlgeschlagen")
+            .setContentTitle(context.getString(R.string.notification_permission_failed_title))
             .setContentText(context.getString(R.string.notif_overlay_captured_body))
             .setStyle(NotificationCompat.BigTextStyle().bigText(
                 context.getString(R.string.notif_overlay_captured_body)

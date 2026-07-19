@@ -206,11 +206,10 @@ class MainActivity : ComponentActivity() {
                     BackHandler(enabled = true) { /* block back — user must fix permission */ }
                     AlertDialog(
                         onDismissRequest = {},
-                        title = { Text("🔴 Deine Challenge endet bald!") },
+            title = { Text(stringResource(R.string.notification_permission_urgent_title)) },
                         text = {
                             Text(
-                                "Die erforderliche Erlaubnis fehlt seit zu langer Zeit. " +
-                                "Behebe es jetzt oder deine Challenge wird automatisch beendet."
+                stringResource(R.string.notification_permission_urgent_body)
                             )
                         },
                         confirmButton = {
@@ -398,7 +397,7 @@ class MainActivity : ComponentActivity() {
                 .forEach { tag -> wm.cancelAllWorkByTag(tag) }
             overlayMissing = false
             showPermissionBlock = false
-            snackbarMessage = "✅ Perfekt! Deine Challenge läuft weiter."
+                    snackbarMessage = getString(R.string.notification_permission_restored)
             UsageTrackingService.start(this)
         } else if (lostAt > 0L && !Settings.canDrawOverlays(this)) {
             overlayMissing = true

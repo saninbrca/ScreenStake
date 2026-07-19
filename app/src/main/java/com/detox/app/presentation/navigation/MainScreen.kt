@@ -597,7 +597,7 @@ private fun PermissionBanner(
                 Text(text = "⚠️", fontSize = 32.sp)
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "🚨 ACHTUNG — Challenge in Gefahr!",
+                    text = stringResource(R.string.permission_danger_title),
                     color = DetoxAlertColors.OnAlert,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
@@ -624,7 +624,7 @@ private fun PermissionBanner(
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Text(
-                    text = "JETZT BEHEBEN →",
+                    text = stringResource(R.string.permission_fix_now),
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = DetoxAlertColors.Red

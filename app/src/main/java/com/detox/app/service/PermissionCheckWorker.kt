@@ -75,7 +75,7 @@ class PermissionCheckWorker @AssistedInject constructor(
         )
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(applicationContext.getString(R.string.app_name))
-            .setContentText("Berechtigungen werden geprüft…")
+            .setContentText(applicationContext.getString(R.string.notification_worker_checking_permissions))
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()

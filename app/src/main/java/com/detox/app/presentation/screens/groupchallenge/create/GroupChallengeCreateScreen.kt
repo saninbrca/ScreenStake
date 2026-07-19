@@ -606,12 +606,12 @@ private fun GStep4BuyIn(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Pot-Schätzung (20 Spieler)",
+                        text = stringResource(R.string.group_pot_estimate),
                         fontSize = 13.sp,
                         color = detoxColors.subtext,
                     )
                     Text(
-                        text = "€$estimatedPot",
+                        text = stringResource(R.string.group_pot_estimate_value, estimatedPot),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = detoxColors.accent,

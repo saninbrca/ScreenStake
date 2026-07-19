@@ -349,7 +349,7 @@ private fun ActiveChallengeContent(
                     color = detoxColors.label
                 )
                 Text(
-                    text = "Aktuell: $currentLimitValue $limitUnit",
+                    text = stringResource(R.string.active_challenge_current_limit, currentLimitValue, limitUnit),
                     fontSize = 14.sp,
                     color = detoxColors.subtext
                 )

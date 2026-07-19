@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.R
+import com.detox.app.util.ErrorMessages
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.PaymentIntentData
 import com.detox.app.domain.repository.ChallengeRepository
@@ -70,11 +72,11 @@ class GroupChallengeJoinViewModel @Inject constructor(
     fun lookupCode() {
         val code = _codeInput.value.trim()
         if (code.length != 6) {
-            _uiState.value = GroupJoinUiState.Error("Bitte den vollständigen 6-stelligen Code eingeben.")
+            _uiState.value = GroupJoinUiState.Error(context.getString(R.string.error_join_code_incomplete))
             return
         }
         val currentUserId = firebaseAuthService.currentUserId() ?: run {
-            _uiState.value = GroupJoinUiState.Error("Nicht angemeldet.")
+            _uiState.value = GroupJoinUiState.Error(context.getString(R.string.error_not_signed_in))
             return
         }
         _uiState.value = GroupJoinUiState.LookingUp
@@ -86,7 +88,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     Timber.e(e, "GroupJoinVM: lookup failed code=%s", code)
-                    _uiState.value = GroupJoinUiState.Error(e.message ?: "Challenge nicht gefunden.")
+                    _uiState.value = GroupJoinUiState.Error(ErrorMessages.from(context, e))
                 }
             )
         }
@@ -94,7 +96,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
 
     fun initiatePayment(groupChallenge: GroupChallenge) {
         val userId = firebaseAuthService.currentUserId() ?: run {
-            _uiState.value = GroupJoinUiState.Error("Nicht angemeldet.")
+            _uiState.value = GroupJoinUiState.Error(context.getString(R.string.error_not_signed_in))
             return
         }
         val displayName = firebaseAuthService.currentUser()?.let { user ->
@@ -131,7 +133,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                     },
                     onFailure = { e ->
                         Timber.e(e, "GroupJoinVM: initiatePayment failed")
-                        _uiState.value = GroupJoinUiState.Error(e.message ?: "Zahlungseinrichtung fehlgeschlagen.")
+                        _uiState.value = GroupJoinUiState.Error(ErrorMessages.from(context, e, R.string.error_payment))
                     }
                 )
         }
@@ -146,7 +148,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 return
             }
         val userId = firebaseAuthService.currentUserId() ?: run {
-            _uiState.value = GroupJoinUiState.Error("Nicht angemeldet.")
+            _uiState.value = GroupJoinUiState.Error(context.getString(R.string.error_not_signed_in))
             return
         }
         // Anti-cheat: capture deviceId (ANDROID_ID) so the participant entry carries it
@@ -172,7 +174,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     Timber.e(e, "GroupJoinVM: confirmJoin failed groupId=%s", awaiting.groupId)
-                    val msg = e.message ?: ""
+                    val msg = ErrorMessages.from(context, e)
                     when {
                         msg.contains("already", ignoreCase = true) -> {
                             // Idempotency: user already added — treat as success

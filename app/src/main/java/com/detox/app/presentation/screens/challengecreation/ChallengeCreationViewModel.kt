@@ -25,6 +25,7 @@ import com.detox.app.service.RootDetectionManager
 import com.detox.app.service.UsageTrackingService
 import com.detox.app.util.DateUtils
 import com.detox.app.util.FeatureFlags
+import com.detox.app.util.ErrorMessages
 import com.detox.app.util.PermissionUtils
 import androidx.lifecycle.SavedStateHandle
 import io.sentry.Sentry
@@ -250,7 +251,7 @@ class ChallengeCreationViewModel @Inject constructor(
                     )
                 },
                 onFailure = { error ->
-                    _appListState.value = AppListState(isLoading = false, error = error.message ?: "Unknown error")
+                    _appListState.value = AppListState(isLoading = false, error = ErrorMessages.from(context, error))
                 },
             )
         }
@@ -754,7 +755,7 @@ class ChallengeCreationViewModel @Inject constructor(
                     _uiState.value = ChallengeCreationUiState.Success(result.challengeId)
                 },
                 onFailure = { error ->
-                    _uiState.value = ChallengeCreationUiState.Error(error.message ?: "Failed to create challenge")
+                    _uiState.value = ChallengeCreationUiState.Error(ErrorMessages.from(context, error))
                 },
             )
         }
@@ -794,7 +795,7 @@ class ChallengeCreationViewModel @Inject constructor(
                     )
                 },
                 onFailure = { error ->
-                    _uiState.value = ChallengeCreationUiState.Error(error.message ?: "Payment setup failed")
+                    _uiState.value = ChallengeCreationUiState.Error(ErrorMessages.from(context, error, R.string.error_payment))
                 },
             )
         }

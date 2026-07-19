@@ -1,10 +1,13 @@
 package com.detox.app.presentation.screens.statistics
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.domain.model.OverallStatistics
 import com.detox.app.domain.usecase.GetStatisticsUseCase
+import com.detox.app.util.ErrorMessages
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +22,8 @@ sealed interface StatisticsUiState {
 
 @HiltViewModel
 class StatisticsViewModel @Inject constructor(
-    private val getStatisticsUseCase: GetStatisticsUseCase
+    private val getStatisticsUseCase: GetStatisticsUseCase,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<StatisticsUiState>(StatisticsUiState.Loading)
@@ -37,7 +41,7 @@ class StatisticsViewModel @Inject constructor(
                     _uiState.value = StatisticsUiState.Success(stats)
                 }
                 .onFailure { e ->
-                    _uiState.value = StatisticsUiState.Error(e.message ?: "Failed to load statistics")
+                    _uiState.value = StatisticsUiState.Error(ErrorMessages.from(context, e))
                 }
         }
     }

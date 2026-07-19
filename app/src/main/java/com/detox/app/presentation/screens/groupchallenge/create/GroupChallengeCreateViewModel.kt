@@ -1,5 +1,7 @@
 package com.detox.app.presentation.screens.groupchallenge.create
 
+import android.content.Context
+import com.detox.app.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
@@ -13,9 +15,11 @@ import com.detox.app.domain.usecase.CreateGroupChallengeUseCase
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
+import com.detox.app.util.ErrorMessages
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,6 +83,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
     private val usageStatsRepository: UsageStatsRepository,
     private val challengeRepository: ChallengeRepository,
     appConfigRepository: AppConfigRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     /** Live remote config — exposes the remote group buy-in range. */
@@ -123,7 +128,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                     )
                 },
                 onFailure = { error ->
-                    _appListState.value = AppListState(isLoading = false, error = error.message ?: "Unknown error")
+                    _appListState.value = AppListState(isLoading = false, error = ErrorMessages.from(context, error))
                 },
             )
         }
@@ -326,7 +331,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     Timber.e(e, "GroupChallengeCreateVM: initiatePayment failed")
-                    _uiState.value = GroupCreateUiState.Error(e.message ?: "Failed to prepare payment.")
+                    _uiState.value = GroupCreateUiState.Error(ErrorMessages.from(context, e, R.string.error_payment))
                 },
             )
         }
@@ -391,7 +396,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 onFailure = { e ->
                     Timber.e(e, "GroupChallengeCreateVM: createChallenge CF failed groupId=%s", pd.groupId)
                     _uiState.value = GroupCreateUiState.Error(
-                        e.message ?: "Payment received but challenge creation failed. Please contact support."
+                        ErrorMessages.from(context, e, R.string.error_group_creation_failed_after_payment)
                     )
                 },
             )

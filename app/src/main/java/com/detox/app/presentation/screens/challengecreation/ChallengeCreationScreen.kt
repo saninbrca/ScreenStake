@@ -463,12 +463,12 @@ private fun WizardHeader(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Zurück",
+                contentDescription = stringResource(R.string.wizard_back),
                     tint = detoxColors.label,
                 )
             }
             Text(
-                text = "Schritt $currentStep von $totalSteps",
+                text = stringResource(R.string.wizard_step_progress, currentStep, totalSteps),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Normal,
                 color = detoxColors.subtext,
@@ -933,7 +933,7 @@ private fun Step4LimitValues(
 
             null -> {
                 Text(
-                    text = "Bitte gehe zurück und wähle einen Limit-Typ.",
+                text = stringResource(R.string.error_select_limit_type),
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -1003,7 +1003,7 @@ private fun Step5Schedule(
     val (endH, endM) = parseTime(scheduleEnd)
 
     val timeError: String? = if (scheduleStart.length == 5 && scheduleEnd.length == 5) {
-        if (startH * 60 + startM >= endH * 60 + endM) "Endzeit muss nach Startzeit liegen" else null
+                    if (startH * 60 + startM >= endH * 60 + endM) stringResource(R.string.error_time_end_after_start) else null
     } else null
 
     val startSet = scheduleStart.length == 5
@@ -1054,7 +1054,7 @@ private fun Step5Schedule(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ScheduleTimeColumn(
-                label = "Von",
+                label = stringResource(R.string.challenge_schedule_from),
                 time = startText,
                 isSet = startSet,
                 modifier = Modifier
@@ -1068,7 +1068,7 @@ private fun Step5Schedule(
                     .background(detoxColors.cardBorder),
             )
             ScheduleTimeColumn(
-                label = "Bis",
+                label = stringResource(R.string.challenge_schedule_until),
                 time = endText,
                 isSet = endSet,
                 modifier = Modifier
@@ -1166,7 +1166,7 @@ private fun Step5Schedule(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Zeitfenster festlegen",
+                text = stringResource(R.string.challenge_schedule_set_window),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = detoxColors.label,
@@ -1180,13 +1180,13 @@ private fun Step5Schedule(
                     TimeSpinnerPicker(
                         hour = startH,
                         minute = startM,
-                        label = "Von",
+                label = stringResource(R.string.challenge_schedule_from),
                         onTimeChange = { h, m -> onStartChange("%02d:%02d".format(h, m)) },
                     )
                     TimeSpinnerPicker(
                         hour = endH,
                         minute = endM,
-                        label = "Bis",
+                label = stringResource(R.string.challenge_schedule_until),
                         onTimeChange = { h, m -> onEndChange("%02d:%02d".format(h, m)) },
                     )
                 }
@@ -1249,7 +1249,7 @@ private fun Step6Duration(
         if (isHardMode) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Einsatz",
+                text = stringResource(R.string.challenge_stake),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = detoxColors.label,
@@ -1259,11 +1259,11 @@ private fun Step6Duration(
                 values = (safeStakeMin..safeStakeMax).toList(),
                 selectedValue = state.amountEuros.coerceIn(safeStakeMin, safeStakeMax),
                 onValueChange = onUpdateAmount,
-                unit = "Euro Einsatz",
+                unit = stringResource(R.string.challenge_stake_unit),
                 surfaceColor = detoxColors.screenBackground,
             )
             Text(
-                text = "Wenn du das Limit überschreitest, werden €${state.amountEuros} sofort eingezogen.",
+                text = stringResource(R.string.challenge_stake_warning, state.amountEuros),
                 fontSize = 13.sp,
                 color = detoxColors.danger,
             )
@@ -1285,7 +1285,7 @@ private fun Step6Duration(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Kein Enddatum",
+                text = stringResource(R.string.challenge_no_end_date),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = detoxColors.label,

@@ -1,12 +1,15 @@
 package com.detox.app.presentation.screens.appselection
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
+import com.detox.app.util.ErrorMessages
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +33,8 @@ sealed interface AppSelectionUiState {
 class AppSelectionViewModel @Inject constructor(
     private val getAddictiveAppsUseCase: GetAddictiveAppsUseCase,
     private val usageStatsRepository: UsageStatsRepository,
-    private val challengeRepository: ChallengeRepository
+    private val challengeRepository: ChallengeRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AppSelectionUiState>(AppSelectionUiState.Loading)
@@ -64,7 +68,7 @@ class AppSelectionViewModel @Inject constructor(
                 },
                 onFailure = { error ->
                     _uiState.value = AppSelectionUiState.Error(
-                        error.message ?: "Unknown error"
+                        ErrorMessages.from(context, error)
                     )
                 }
             )

@@ -76,7 +76,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
         )
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(applicationContext.getString(R.string.app_name))
-            .setContentText("Challenge wird ausgewertet…")
+            .setContentText(applicationContext.getString(R.string.notification_worker_evaluating))
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()

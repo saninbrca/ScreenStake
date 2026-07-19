@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import com.detox.app.util.DateUtils
+import com.detox.app.util.ErrorMessages
+import com.detox.app.R
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -232,7 +234,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                                                     "— showing error", groupId
                                         )
                                         _uiState.value =
-                                            GroupDetailUiState.Error("Challenge not found.")
+                                            GroupDetailUiState.Error(context.getString(R.string.error_challenge_not_found))
                                     }
                                 }
                             }
@@ -273,7 +275,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                         val displayName = gc?.appDisplayName ?: ""
                         _startState.value = StartChallengeState.PaymentNotReady(displayName)
                     } else {
-                        _startState.value = StartChallengeState.Error(e.message ?: "Failed to start challenge")
+                        _startState.value = StartChallengeState.Error(ErrorMessages.from(context, e))
                     }
                 }
         }
@@ -300,7 +302,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "GroupDetailVM: quitChallenge failed for group %s", groupId)
-                    _quitState.value = QuitState.Error(e.message ?: "Fehler beim Aufgeben")
+                    _quitState.value = QuitState.Error(ErrorMessages.from(context, e))
                 }
         }
     }
@@ -318,7 +320,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "GroupDetailVM: leaveGroupChallenge failed for group %s", groupId)
-                    _leaveState.value = LeaveState.Error(e.message ?: "Fehler beim Verlassen")
+                    _leaveState.value = LeaveState.Error(ErrorMessages.from(context, e))
                 }
         }
     }
@@ -336,7 +338,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "GroupDetailVM: deleteGroupChallenge failed for group %s", groupId)
-                    _deleteState.value = DeleteState.Error(e.message ?: "Fehler beim Löschen")
+                    _deleteState.value = DeleteState.Error(ErrorMessages.from(context, e))
                 }
         }
     }

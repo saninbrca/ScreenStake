@@ -20,6 +20,7 @@ import com.detox.app.service.DailyEvaluationWorker
 import com.detox.app.service.NotificationHelper
 import com.detox.app.service.PermissionCheckWorker
 import com.detox.app.util.DateUtils
+import com.detox.app.util.ErrorMessages
 import com.detox.app.util.FeatureFlags
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -240,7 +241,7 @@ class ProfileViewModel @Inject constructor(
                 _ibanData.value = IbanData(iban.trim(), name.trim())
                 _ibanSaveState.value = IbanSaveState.Success
             }.onFailure { e ->
-                _ibanSaveState.value = IbanSaveState.Error(e.message ?: "Fehler beim Speichern")
+                _ibanSaveState.value = IbanSaveState.Error(ErrorMessages.from(context, e))
             }
         }
     }
@@ -305,7 +306,7 @@ class ProfileViewModel @Inject constructor(
                 _payoutRequestState.value = PayoutRequestState.Success
             }.onFailure { e ->
                 Timber.e(e, "requestPayout failed")
-                _payoutRequestState.value = PayoutRequestState.Error(e.message ?: "Fehler")
+                _payoutRequestState.value = PayoutRequestState.Error(ErrorMessages.from(context, e))
             }
         }
     }
@@ -363,7 +364,7 @@ class ProfileViewModel @Inject constructor(
                     fetchCompletedPayouts()
                 }
                 .onFailure { e ->
-                    _ibanSetupState.value = IbanSetupState.Error(e.message ?: "Fehler beim Speichern")
+                    _ibanSetupState.value = IbanSetupState.Error(ErrorMessages.from(context, e))
                 }
         }
     }
@@ -503,7 +504,7 @@ class ProfileViewModel @Inject constructor(
                     refreshPayoutState()
                 }
                 .onFailure { e ->
-                    _payoutClaimState.value = PayoutClaimState.Error(e.message ?: "Fehler")
+                    _payoutClaimState.value = PayoutClaimState.Error(ErrorMessages.from(context, e))
                 }
         }
     }

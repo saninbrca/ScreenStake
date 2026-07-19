@@ -1,7 +1,7 @@
 # 01 — Architecture & Stack
 > **Scope:** Tech-Stack, MVVM/Clean Architecture, File Structure, Code Rules, DB Migrations, Cloud Functions Pattern.
 > **When to load:** Any new screen, ViewModel, Repository, UseCase, DB change, or Cloud Function.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 ---
 
@@ -39,8 +39,9 @@
 ### Services & Workers
 - **Foreground Service:** `UsageTrackingService` — screen time tracking
 - **Accessibility Service:** `AppDetectionAccessibilityService` — app detection + overlay trigger
-- **Workers:** `DailyEvaluationWorker`, `PermissionCheckWorker`, `RedemptionNotificationWorker`, `AdultDomainsUpdateWorker`
+- **Workers:** `DailyEvaluationWorker`, `PermissionCheckWorker`, `RedemptionNotificationWorker`, `AdultDomainsUpdateWorker`, `GroupChallengeAutoStartWorker` (24h periodic — starts due WAITING groups with a scheduled start date), `PermissionWarningWorker` (staged permission-loss warnings, scheduled from `UsageTrackingService`)
   (`DailyReminderWorker` + `ServiceWatchdogWorker` were deleted in the notification cleanup)
+- **Money-safety gate (not a worker):** `service/ChallengeSettlementGuard.kt` — `@Singleton` pre-settlement server check that MUST precede every client-side capture/refund in `DailyEvaluationWorker` + `PermissionCheckWorker` (see `docs/03`)
 - **Boot:** `BootReceiver` — restarts services after device reboot
 
 ---
@@ -99,30 +100,37 @@ com.detox.app/
 │       ├── CreateChallengeUseCase.kt
 │       ├── CreateGroupChallengeUseCase.kt
 │       ├── GetAddictiveAppsUseCase.kt
+│       ├── GetChallengeStreakUseCase.kt
 │       ├── GetDailyStatsUseCase.kt
 │       ├── GetStatisticsUseCase.kt
 │       ├── JoinGroupChallengeUseCase.kt
 │       ├── ProcessPaymentUseCase.kt
+│       ├── SettleEndedSoftChallengesUseCase.kt  ← on-app-open Soft completion backstop (docs/02)
 │       └── SyncUserDataUseCase.kt
 ├── presentation/
 │   ├── components/
+│   │   ├── AccessibilityDisclosureDialog.kt  ← Play prominent disclosure (docs/07)
+│   │   ├── AppUsageCard.kt
 │   │   ├── AppWebsiteSelectionStep.kt
 │   │   ├── BlockingScreenOverlay.kt
 │   │   ├── BudgetSelectionOverlay.kt
+│   │   ├── ChallengeCard.kt
+│   │   ├── CountdownScreen.kt                ← 5s cooldown ring (docs/08)
 │   │   ├── DetoxHorizontalPicker.kt  ← reusable horizontal scroll number picker
 │   │   │                                Used in: all challenge creation wizard steps + BudgetSelectionOverlay
-│   │   │                                Params: values: List<Int>, selectedValue: Int,
-│   │   │                                        onValueChange: (Int) -> Unit, isDark: Boolean
-│   │   │                                isDark=true:  selected=#FFF, unselected=#444 (overlays)
-│   │   │                                isDark=false: selected=#000, unselected=#AAA (wizard, white bg)
-│   │   ├── HardModeFailOverlay.kt
+│   │   │                                Light/dark render branches — see docs/08 for the current spec
+│   │   ├── GroupChallengeFailOverlay.kt
 │   │   ├── HardModeLockoutOverlay.kt
 │   │   ├── LimitExceededOverlay.kt
 │   │   ├── SessionIntentionOverlay.kt
 │   │   ├── SessionLimitReachedOverlay.kt
-│   │   ├── SoftModeSuccessOverlay.kt
+│   │   ├── StepperField.kt
 │   │   ├── TauntOverlay.kt
-│   │   └── WebsiteBlockedOverlay.kt
+│   │   ├── TimeSpinnerPicker.kt
+│   │   ├── TimeWindowOverlay.kt
+│   │   └── WebsiteBlockedOverlay.kt          ← incl. isAdultBlock variant (docs/05)
+│   │   (HardModeFailOverlay + SoftModeSuccessOverlay were DELETED — replaced by the
+│   │    Dashboard ChallengeSuccessDialog / ChallengeFailedDialog, see docs/02)
 │   ├── navigation/
 │   │   ├── DetoxNavGraph.kt
 │   │   └── MainScreen.kt
@@ -130,42 +138,61 @@ com.detox.app/
 │       ├── activechallenge/   ActiveChallengeScreen + ViewModel
 │       ├── appselection/      AppSelectionScreen + ViewModel
 │       ├── auth/              AuthScreen + ViewModel,
-│       │                      EmailVerificationScreen + ViewModel,
-│       │                      UsernameSelectionScreen + ViewModel
-│       ├── challengecreation/ ChallengeCreationScreen (7-step wizard) + ViewModel
-│       ├── dashboard/         DashboardScreen + ViewModel
+│       │                      EmailVerificationScreen + ViewModel
+│       ├── blockwebsite/      BlockWebsiteScreen        ← legacy, not wired into navigation
+│       ├── challengecreation/ ChallengeCreationScreen + ViewModel
+│       │                      (wizard step count is PATH-DEPENDENT via visibleSteps —
+│       │                       7 / 6 / 4 steps, see docs/02 "Creation Wizard — paths & gates")
+│       ├── challenges/        ChallengesScreen + ViewModel
+│       ├── challengetype/     ChallengeTypeScreen       ← legacy, not wired into navigation
+│       ├── dashboard/         DashboardScreen + ViewModel,
+│       │                      ChallengeSuccessDialog, ChallengeFailedDialog,
+│       │                      ResultDialogComponents
 │       ├── friends/           FriendsHubScreen + ViewModel
 │       ├── groupchallenge/
 │       │   ├── create/        GroupChallengeCreateScreen + ViewModel
 │       │   ├── detail/        GroupChallengeDetailScreen + ViewModel
 │       │   ├── join/          GroupChallengeJoinScreen + ViewModel
 │       │   └── results/       GroupChallengeResultsScreen
-│       ├── hardmodefail/      HardModeFailScreen + ViewModel  ← manual Hard Mode quit
 │       ├── history/           HistoryScreen + ViewModel, HistoryDetailScreen
-│       ├── onboarding/        OnboardingScreen + ViewModel
+│       ├── onboarding/        OnboardingScreen + ViewModel  ← post-auth permission setup (docs/07)
 │       ├── profile/           ProfileScreen + ViewModel
 │       ├── settings/          SettingsScreen + ViewModel
+│       ├── softfail/          SoftFailResultScreen + ViewModel
 │       ├── statistics/        StatisticsScreen + ViewModel
 │       ├── support/           SupportScreen + ViewModel, FaqScreen  ← in-app support (docs/12)
-│       └── system/            ForceUpdateScreen, MaintenanceScreen, SystemViewModel,
-│                              AccountDisabledScreen + ViewModel  ← remote control (docs/13)
+│       ├── system/            ForceUpdateScreen, MaintenanceScreen, SystemViewModel,
+│       │                      AccountDisabledScreen + ViewModel  ← remote control (docs/13)
+│       ├── username/          UsernameSelectionScreen + ViewModel (docs/07)
+│       └── welcome/           WelcomeOnboardingScreen  ← first-run 5-page onboarding (docs/07)
+│       (hardmodefail/ was DELETED — the manual-quit fail surface is ChallengeFailedDialog;
+│        pointshop/ is an empty placeholder dir)
 ├── service/
 │   ├── AppDetectionAccessibilityService.kt  ← CORE
 │   ├── AdultDomainsUpdateWorker.kt
 │   ├── BootReceiver.kt
+│   ├── ChallengeSettlementGuard.kt          ← money-safety gate before client capture/refund (docs/03)
 │   ├── DailyEvaluationWorker.kt
 │   ├── DetoxFirebaseMessagingService.kt
+│   ├── GroupChallengeAutoStartWorker.kt     ← auto-starts due WAITING groups (docs/04)
 │   ├── NotificationHelper.kt
 │   ├── OverlayManager.kt                    ← CORE
 │   ├── PermissionCheckWorker.kt
+│   ├── PermissionWarningWorker.kt           ← staged permission-loss warnings
 │   ├── RedemptionNotificationWorker.kt
 │   ├── RootDetectionManager.kt
 │   ├── TrackedAppEventBus.kt
 │   └── UsageTrackingService.kt
 ├── ui/theme/
-│   ├── Colors.kt
-│   ├── DetoxTheme.kt
+│   ├── AlertColors.kt      ← DetoxAlertColors (design-fixed alarm reds)
+│   ├── CelebrationColors.kt
+│   ├── Color.kt
+│   ├── IdentityColors.kt   ← DetoxAvatarPalette + DetoxPodiumColors (design-fixed identity sets)
+│   ├── SemanticColors.kt   ← detoxColors slot holder (the theme-token system)
 │   ├── Shape.kt
+│   ├── Spacing.kt
+│   ├── Theme.kt
+│   ├── ThemeMode.kt
 │   └── Type.kt
 ├── DetoxApplication.kt
 └── MainActivity.kt
@@ -498,17 +525,20 @@ val participants = when (val raw = doc.get("participants")) {
 
 ---
 
-## Design System (DetoxTheme.kt)
+## Design System (ui/theme/ — token-based)
 
-| Token | Light | Dark |
-|-------|-------|------|
-| Primary | `#00C853` | `#00E676` |
-| Background | `#FFFFFF` | `#0F0F0F` |
-| Font | Poppins | Poppins |
-| Corner radii | 8 / 16 / 24 / 32 dp | same |
-
-- Material 3 throughout
-- Dark Mode toggle saved in `SharedPreferences`
+Screens resolve colors from the theme, never from hardcoded hex (Phase 2 theming migration,
+Batches 1–9 complete):
+- **`SemanticColors.kt`** — `DetoxSemanticColors` slot holder, read via `detoxColors`
+  (provided by `DetoxTheme` in `Theme.kt`); light + dark values per slot.
+- **Design-fixed constant sets** (theme-independent by design): `DetoxAlertColors`
+  (alarm reds), `DetoxCelebrationColors`, `DetoxAvatarPalette` + `DetoxPodiumColors`
+  (`IdentityColors.kt`).
+- **Literal-exemption rule:** a raw `Color(0x…)` in `presentation/` is a bug unless it is on
+  the documented exemption list — canonical list + migration decisions in
+  `docs/design_inconsistencies.md`.
+- Overlays are ALWAYS dark (frozen, not theme-following); Material 3 throughout; Dark Mode
+  toggle saved in `SharedPreferences`. Font: Poppins. Corner radii 8/16/24/32 dp.
 
 ---
 

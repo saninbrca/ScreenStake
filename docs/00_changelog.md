@@ -2,7 +2,7 @@
 > **Scope:** Chronological log of all fixes, features, and architectural decisions.
 > **When to load:** Load right after `docs/invariants.md`, before any other docs/ file.
 > This gives Claude Code full context on what has already been fixed and decided.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 ---
 
@@ -19,7 +19,65 @@
 
 ---
 
-## [Unreleased] — June 2026
+## [Unreleased] — July 2026
+
+### 2026-07-19 — Docs sync: full audit of docs/ against code
+
+All .md docs audited against the tip of main and corrected: docs/05 (inverted adult-block
+overlay-exemption claim → adult-block REQUIRES overlay at creation; suppression + self-heal +
+pre-flight gate documented), docs/01/02/03/04/07/08/12 stale claims fixed, wizard paths & gates
+documented in docs/02, `projekt_dokumentation.md` archived (superseded banner). The six
+2026-07-18 entries below were back-filled in the same pass (code shipped without entries).
+
+### 2026-07-18 — FIXED: block overlay re-appeared right after dismiss (dismissal-anchored suppression)
+
+The 2s detection cooldown anchors to the ORIGINAL detection, so after reading the block overlay
+for longer than 2s and dismissing it, the still-foregrounded blocked URL re-triggered instantly. New guard:
+`OverlayManager` calls `TrackedAppEventBus.markBlockOverlayDismissed(target)` on dismiss;
+`checkBrowserUrl` (adult + custom branches) skips re-firing while
+`isBlockRedetectSuppressed(target)` (< 2s since dismissal, per-target). UX guard only — the
+about:blank redirect / goHome still runs on the original detection. (Commit 4b54701.)
+
+### 2026-07-18 — Support email → support.stopdooming@gmail.com
+
+`strings.xml` `support_email` (used by the `AccountDisabledScreen` mailto) changed to
+`support.stopdooming@gmail.com`. Recorded in docs/12. (Commit c599392.)
+
+### 2026-07-18 — Duplicate adult-block challenge creation blocked
+
+The 133k adult list is enforced by ONE global flag, so a second adult-ONLY challenge blocks
+nothing new. `createChallenge()` now aborts (before root check / save / payment) with
+`challenge_error_duplicate_adult_block` when the new challenge is adult-only (adult on, no apps,
+no domains) AND any ACTIVE challenge already has `blockAdultContent`. Completed/failed
+adult-blocks never prevent re-creation; DB-read errors fail OPEN (never lock creation out).
+(Commit 6b712d5.)
+
+### 2026-07-18 — FIXED: success dialog re-pop + anonymous copy (marks on SHOW, names challenge, links History)
+
+`ChallengeSuccessDialog` guard now marks `completionShown` (+ `win_shown_{id}` prefs) **on
+display**, not on dismiss — a process death between show and dismiss could re-pop it. The dialog
+also names the completed challenge and gained a "Zum Verlauf" CTA (`success_dialog_cta_history`).
+Same on-show marking applied to the RED `ChallengeFailedDialog` path in `DashboardViewModel`.
+(Commit b59ede3.)
+
+### 2026-07-18 — DECISION: adult-only challenges now REQUIRE overlay permission (exemption removed)
+
+Supersedes the two 2026-07-17 notes below that kept adult-only challenges exempt from the
+overlay pre-flight gate. Since the about:blank redirect replaced the home-kick, SYSTEM_ALERT_WINDOW
+is load-bearing for adult blocking: it is the background-activity-launch exemption WITHOUT which
+`startActivity(about:blank)` is silently dropped on API 29+, and the explanation overlay needs it
+to draw. `needsOverlay` in the pre-flight gate now includes `blockAdultContent`; `goHome()` remains
+as a DEFENSIVE fallback only (permission revoked after start). (Commit 5b0444b.)
+
+### 2026-07-18 — Lean wizard path for block-only challenges + adult-block card (`visibleSteps`)
+
+Wizard navigation restructured around a pure `visibleSteps(state)` list of internal step ids
+(1..7 stay stable content keys; only membership changes per path): Apps tab = all steps
+(TIME_WINDOW skips the step-4 value picker → 1,2,3,5,6,7); Website tab (custom domains and/or
+adult) = 24/7 hard block → steps **1,2,6,7** (limit steps 3+4 AND schedule step 5 skipped).
+`goNext`/`goBack` walk the list; "Schritt X von Y" = position in it. Adult-block is exclusive
+with app selection — mirrored confirmation dialogs in both directions
+(`showAdultExclusiveDialog` / `pendingAdultAppPackage`), never silent clearing. (Commit ad8e50a.)
 
 ### 2026-07-17 — FIXED: adult-block re-block loop (home-kick → about:blank redirect in browser)
 
@@ -94,7 +152,8 @@ works in incognito too. Never re-add content-text scanning.
   `OverlayManager.showAdultBlockedOverlay` shows the `WebsiteBlockedOverlay` `isAdultBlock` variant
   (🔞, subtitle `overlay_adult_blocked_subtitle`) over the home screen. No bypass. Gracefully
   skipped when overlay permission is missing (adult-only challenges stay exempt from the
-  overlay pre-flight gate — see entry below).
+  overlay pre-flight gate — see entry below). *[SUPERSEDED by 5b0444b, 2026-07-18: the
+  exemption was removed — adult-block now REQUIRES overlay permission at creation.]*
 
 ### 2026-07-17 — Pre-flight permission check before challenge start (unified gate)
 
@@ -111,6 +170,8 @@ start until they're granted.
 - Accessibility — always (sole trigger for app blocking AND browser URL reading).
 - Overlay — only when the challenge blocks apps OR `computeBlockedDomains()` is non-empty.
   Adult-only website challenges are exempt (adult blocking uses toast + go-home, no overlay).
+  *[SUPERSEDED by 5b0444b, 2026-07-18: `needsOverlay` now also fires on `blockAdultContent` —
+  the about:blank redirect needs SYSTEM_ALERT_WINDOW as its BAL exemption.]*
 
 **Routing.** Accessibility routes through the existing `AccessibilityDisclosureDialog`
 (Play prominent disclosure) — never fires `ACTION_ACCESSIBILITY_SETTINGS` directly. Overlay →

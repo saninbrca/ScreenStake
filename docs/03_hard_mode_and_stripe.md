@@ -1,7 +1,7 @@
 # 03 — Hard Mode & Stripe
 > **Scope:** Hard Mode rules, Stripe payment flow (pre-auth → capture on fail → refund on success), app lockout during Hard Mode, Emergency Unlock, device binding.
 > **When to load:** Any work on Hard Mode, Stripe integration, `PaymentRepository`, Cloud Functions for payments, or the Hard Mode lockout overlay.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 ---
 
@@ -74,7 +74,8 @@ functions/.env:
 ### Phase 1: Challenge Start (Pre-Authorization)
 
 ```
-User completes 7-step challenge creation wizard → taps "Starten"
+User completes the challenge creation wizard (step count is path-dependent — see docs/02
+"Creation Wizard — paths & gates") → taps "Starten"
     ↓
 Android calls Cloud Function: createPaymentIntent
     {userId, amountCents, challengeId}
@@ -329,6 +330,25 @@ On SUCCESS — CRITICAL ORDER (never reverse):
     2. Mark COMPLETED in Room
     3. Mark COMPLETED in Firestore challenge document
     4. Show success notification + confetti
+
+### `ChallengeSettlementGuard` — server-settled check BEFORE any client capture/refund
+
+`service/ChallengeSettlementGuard.kt` (`@Singleton`) MUST precede every client-side
+`capturePayment()`/refund in the workers (`DailyEvaluationWorker`, `PermissionCheckWorker` —
+both inject it). It re-reads the challenge's server doc once and returns:
+
+- **`PROCEED`** — server doc is still active & unsettled → the worker may settle locally
+  exactly as before.
+- **`SKIP`** — either the server ALREADY settled the challenge (its terminal status is pulled
+  into Room) or the server state could not be confirmed (offline / error / no uid, in which case
+  the challenge stays ACTIVE for the next cycle; the server reconciliation net is the backstop).
+  Either way the worker must NOT capture/refund.
+
+Fail-safe money stance: never settle on a read we couldn't confirm — prevents a double
+settlement racing the server reconciliation net. **CRITICAL:** when pulling a server-terminal
+status into Room, the guard writes via `ChallengeDao.updateStatus` DIRECTLY — never the repo
+wrapper (`updateChallengeStatus`), which on FAILED calls the `markChallengeFailed` CF and would
+clobber the server's just-written payout record. Only the `status` column is touched.
 
 ---
 
@@ -602,8 +622,9 @@ no `limitExceeded`). It is now a **LOSS/forfeit**, detected by the ABSENCE of a 
   forfeit. Combined with the existing `reconciliationEnabled=false` + `reconciliationDryRun=true` gates,
   the feature ships fully dark and forfeits nobody until ops arms all three. See `docs/13`.
 - **Disclosure.** A mandatory **Step-7 forfeit-consent checkbox** hard-blocks Start until ticked.
-- **Best-effort nudge.** At ~grace/2 (36h) of worker suppression the device posts a "Detox meldet sich
-  nicht mehr — open the app" warning (`NotificationHelper.sendHeartbeatWarning`).
+- **Best-effort nudge.** At ~grace/2 (36h) of worker suppression the device posts a "⚠️ Finite meldet
+  sich nicht mehr — open the app" warning (`NotificationHelper.sendHeartbeatWarning`,
+  `notif_heartbeat_warn_title`).
 - **KNOWN RESIDUALS (accepted).** (1) For a **5–7-day** ≤7-day challenge, a device that goes dark in
   the back half can escape capture if GRACE outruns the remaining Stripe manual-auth window (auth
   releases ~7d after creation) — the auth-expiry is the backstop and the effective grace is shorter for

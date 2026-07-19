@@ -12,7 +12,7 @@
 * _Paths are hints — confirm against the actual tree before relying on them._
 * **Navigation:** `presentation/navigation/DetoxNavGraph.kt`
 * **Core Services:** `service/UsageTrackingService.kt`, `service/AppDetectionAccessibilityService.kt`, `service/OverlayManager.kt`
-* **Money workers (capture-gate loss/win paths):** `service/DailyEvaluationWorker.kt`, `service/PermissionCheckWorker.kt`
+* **Money workers (capture-gate loss/win paths):** `service/DailyEvaluationWorker.kt`, `service/PermissionCheckWorker.kt` (+ `service/ChallengeSettlementGuard.kt` — server-settled check that MUST precede every client capture/refund)
 * **Challenge repo:** `data/repository/ChallengeRepositoryImpl.kt` (`updateChallengeStatus` → local Room mirror + `markChallengeFailed` CF)
 * **Database:** `data/local/db/DetoxDatabase.kt` (current DB version: see `docs/01`)
 * **DB Encryption:** `data/local/db/DatabaseKeyManager.kt` (SQLCipher passphrase, Keystore-wrapped)

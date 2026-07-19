@@ -4,11 +4,22 @@
 > **When to load:** Any work on OnboardingScreen, AuthScreen,
 > LoginScreen, RegisterScreen, SettingsScreen (account section),
 > or permission-related flows.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 ---
 
-## Onboarding Flow
+## Onboarding — TWO distinct flows (don't conflate)
+
+| Flow | File | When |
+|------|------|------|
+| **First-run welcome onboarding** (the 5 pages below) | `presentation/screens/welcome/WelcomeOnboardingScreen.kt` | First app start, BEFORE auth — ends in "Konto erstellen" / login |
+| **Post-auth permission setup** | `presentation/screens/onboarding/OnboardingScreen.kt` + ViewModel | After auth, walks the user through granting overlay / accessibility / usage-stats |
+
+Permission granting ALSO happens later at challenge creation: the pre-flight
+`MissingPermissions` gate + `AccessibilityDisclosureDialog` (Play prominent disclosure) route
+each missing permission to its grant flow — see `docs/05` and `docs/02`.
+
+## First-run Welcome Onboarding (`WelcomeOnboardingScreen`)
 
 ### When shown
 Only on first app start.
@@ -29,7 +40,8 @@ Debug reset: ProfileScreen Debug Panel → "Reset Onboarding"
 
 Screen 1 — Willkommen:
 - Logo: 72dp, #00C853, white checkmark SVG, border-radius 20dp
-- App name: "De" #000 + "tox" #00C853, 32sp Poppins Bold
+- App name wordmark: "Finite" + accent "." (the dot marks where the scrolling ends —
+  `WelcomeOnboardingScreen.kt`), 32sp Poppins Bold
 - RotatingStatCard: 3 stats cycling every 2 seconds with fadeIn/fadeOut (300ms).
   Stats: '4,2 Stunden' / '96 Mal' / '63 Tage'. Dot indicators below.
 - CTA card: "Nimm dein Leben zurück 💪"
@@ -56,7 +68,7 @@ Screen 4 — Berechtigungen:
 - Each row shows ✅ when permission granted (check onResume)
 - Privacy note: green card "Deine Daten bleiben auf deinem Gerät"
 - On Huawei: extra dialog for battery optimization
-  "Einstellungen → Apps → Detox → Akku → Keine Einschränkungen"
+  ("Einstellungen → Apps → Finite → Akku …" — see `permission_huawei_battery_description`)
 - Button: "Berechtigungen aktivieren"
   → REQUEST_OVERLAY: Settings.ACTION_MANAGE_OVERLAY_PERMISSION
   → REQUEST_ACCESSIBILITY: Settings.ACTION_ACCESSIBILITY_SETTINGS

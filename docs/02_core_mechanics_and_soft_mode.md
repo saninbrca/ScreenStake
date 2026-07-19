@@ -1,7 +1,7 @@
 # 02 — Core Mechanics & Soft Mode
 > **Scope:** Conscious Opens (the anti-cheat core), Soft Mode rules, all Overlay logic, Daily Evaluation, Streak tracking, Dashboard display.
 > **When to load:** Any work on overlays, AccessibilityService, DailyLog, DailyEvaluationWorker, Dashboard, or Soft Mode challenge creation.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 ---
 
@@ -34,9 +34,9 @@ This means:
 | Motivation | Streak-based |
 | Fail condition | Limit exceeded (opens or time) |
 | End date | Optional — can be open-ended forever |
-| Apps per challenge | 1 app per active challenge (Solo + Group combined) |
+| Apps per challenge | A challenge may block MULTIPLE apps (`selectedApps: Set`); but each APP may be in only ONE active challenge (Solo + Group combined) |
 
-**Check before creating a new challenge:** Query ALL active challenges (Solo + Group) and verify the selected app is not already being tracked. This check must happen in `CreateChallengeUseCase`.
+**Check before creating a new challenge:** Query ALL active challenges (Solo + Group) and verify none of the selected apps is already being tracked (per-package "busy" state in the wizard; guard in `CreateChallengeUseCase`).
 
 ---
 
@@ -49,7 +49,60 @@ This means:
 | `DAILY_BUDGET` | User selects session duration each time they open |
 | `TIME_WINDOW_ONLY` | App blocked outside specific time windows (no opens counted) |
 
-**Usage Schedule:** Time range + day-of-week selection. Configured via Bottom Sheet in challenge creation wizard (Step 5 of 7).
+**Usage Schedule:** Time range + day-of-week selection. Configured via Bottom Sheet on the wizard's schedule step (internal step 5 — skipped entirely on the block-only path, see "Creation Wizard — paths & gates" below).
+
+---
+
+## Creation Wizard — paths & gates (2026-07 restructure)
+
+`ChallengeCreationViewModel` / `ChallengeCreationScreen`. The internal step ids 1..7 are stable
+content keys (the screen's `when(step)` switch and `canGoNext()` key on them); which ids are
+VISIBLE depends on the path.
+
+### `visibleSteps(state)` — path-dependent step list (pure function, unit-tested)
+```kotlin
+internal fun visibleSteps(state: ChallengeCreationState): List<Int> = when {
+    state.activeTab == 1 -> listOf(1, 2, 6, 7)            // block-only (Website tab): 4 steps
+    state.limitType == LimitType.TIME_WINDOW -> listOf(1, 2, 3, 5, 6, 7)  // 6 steps
+    else -> listOf(1, 2, 3, 4, 5, 6, 7)                   // full app path: 7 steps
+}
+```
+- **Apps tab:** all steps; TIME_WINDOW skips the step-4 value picker (window configured on step 5).
+- **Block-only path (Website tab — custom domains and/or adult):** the challenge is a 24/7 hard
+  block, so BOTH minute-limit steps (3+4) AND the schedule step (5) are skipped.
+- `goNext`/`goBack` walk this list (nearest visible neighbour); the "Schritt X von Y" counter is
+  the position in it.
+
+### Step-2 gate — tab-aware "must block something" (`step2HasValidBlockingSource`)
+```kotlin
+when (state.activeTab) {
+    0 -> state.selectedApps.isNotEmpty() &&
+         state.selectedApps.none { conflictingPackages.containsKey(it) }   // Apps tab
+    else -> state.manualDomains.isNotEmpty() || state.blockAdultContent    // Website tab
+}
+```
+Deliberately **tab-aware, NOT a union of both tabs** (the pre-2026-07-16 union gate let a
+"blocks nothing" website challenge through: leftover app selection satisfied the gate, but the
+Website-tab submit discards `selectedApps`). Backstop: `CreateChallengeUseCase` fails a WEBSITE
+challenge with no domains and adult off. Tab-switching does NOT clear selections.
+
+### Adult-block exclusivity (step 2)
+Adult-block and app selection are mutually exclusive; neither direction clears silently:
+- Turning adult ON with apps selected → confirmation dialog (`showAdultExclusiveDialog`).
+- Tapping an app while adult is ON → mirrored dialog (`pendingAdultAppPackage`).
+
+### Pre-flight enforcement-permission gate (`createChallenge()`, Soft AND Hard)
+Runs FIRST — before the root check, the Hard payment branch, and any persistence. Missing
+permission ⇒ `MissingPermissions(needsUsage, needsAccessibility, needsOverlay)` dialog, nothing
+created. Overlay is required when anything consumes it: app blocking, custom domains, **or
+adult-block** (since 2026-07-18 — the about:blank redirect needs SYSTEM_ALERT_WINDOW). Full
+mapping + routing: `docs/05` "Pre-flight enforcement-permission gate".
+
+### Duplicate adult-block gate (`createChallenge()`)
+The 133k adult list is enforced by ONE global flag, so a second adult-ONLY challenge would block
+nothing new. Adult-only (adult on, no apps, no domains) + ANY active challenge with
+`blockAdultContent` ⇒ abort with `challenge_error_duplicate_adult_block`. Only ACTIVE challenges
+count; DB-read errors fail OPEN (never lock creation out).
 
 ---
 
@@ -167,15 +220,10 @@ val params = WindowManager.LayoutParams(
 // CORRECT:
 Handler(Looper.getMainLooper()).post { overlayManager.showOverlay(...) }
 
-// 3. Pre-cache overlay layouts in AppDetectionAccessibilityService.onCreate()
-//    Only update dynamic content before showing — NEVER re-inflate
-private lateinit var sessionIntentionView: View
-private lateinit var limitExceededView: View
-override fun onCreate() {
-    sessionIntentionView = LayoutInflater.from(this)
-        .inflate(R.layout.session_intention, null)
-    // update text/data just before showOverlay(), never reinflate
-}
+// 3. Overlays are COMPOSE, not XML: OverlayManager builds a ComposeView
+//    (createSessionComposeView) and attaches it to the WindowManager with the
+//    params above. There is no XML layout inflation and no pre-inflated view
+//    cache — the composable content is passed per overlay type.
 ```
 
 ### Overlay Inventory
@@ -429,10 +477,26 @@ Challenge outcomes trigger dedicated result surfaces:
 
 | Outcome | Surface | Trigger |
 |---------|---------|---------|
-| Soft Mode COMPLETED | `ChallengeSuccessDialog` (dismissible Dialog on Dashboard) | `DailyEvaluationWorker` detects all days done |
+| Soft Mode COMPLETED | `ChallengeSuccessDialog` (dismissible Dialog on Dashboard) | `DailyEvaluationWorker` OR the on-app-open `SettleEndedSoftChallengesUseCase` backstop (see below) |
 | Hard Mode COMPLETED | `ChallengeSuccessDialog` (money-refund variant) | `DailyEvaluationWorker` after Stripe refund succeeds |
-| Soft Mode FAILED | `SoftFailResultScreen` | `DailyEvaluationWorker` detects limit exceeded |
-| Hard Mode FAILED | `HardModeFailOverlay` on Dashboard | `DailyEvaluationWorker` after Stripe capture |
+| Soft Mode FAILED (intra-day limit breach) | `SoftFailResultScreen` | `OverlayManager` soft-fail / `DailyEvaluationWorker` |
+| ANY FAILED (worker / permission loss / abandon) | unified RED `ChallengeFailedDialog` on Dashboard (names the challenge + human-readable `failReason`) | `DashboardViewModel` detects an unshown FAILED row |
+
+*(The old fullscreen `HardModeFailOverlay`, `HardModeFailScreen`, and `SoftModeSuccessOverlay`
+no longer exist — success and failure both surface as Dashboard dialogs.)*
+
+### On-app-open Soft completion backstop — `SettleEndedSoftChallengesUseCase` (2026-07-16)
+
+Solo Soft completion previously happened ONLY in the periodic `DailyEvaluationWorker`, which EMUI
+throttles — plus the endDate=23:59:59.999 wrinkle meant the 23:59 run needed a next-day cycle.
+The backstop runs in-process on every Dashboard load (`DashboardViewModel.loadStats()`, before
+the dialog checks):
+- Strictly SOFT-only and money-free: `mode==SOFT && stripePaymentIntentId==null &&
+  groupChallengeId==null`; **open-ended challenges (`DateUtils.isOpenEnded`) are never completed**.
+- Reuses the worker's exact trigger `DateUtils.hasReachedEnd(start, end, now)` (worker + backstop
+  both route through it, so the two paths cannot diverge).
+- FAILED iff today's DailyLog has `limitExceeded`, else COMPLETED — an additional net, never a
+  worker replacement.
 
 **`ChallengeSuccessDialog` (May 2026 — replaces both success overlays):** the old fullscreen
 `SoftModeSuccessOverlay` and `HardModeSuccessOverlay` blocked the entire Dashboard, could not be
@@ -445,9 +509,12 @@ and count-up stat animations. An X button and a "Zurück zum Dashboard" link bot
 
 - `DashboardViewModel` exposes `successDialogState: StateFlow<SuccessDialogState?>` (replaced the
   separate `completedChallenge` + `completedSoftChallenge` flows) plus `dismissSuccessDialog()`.
-- **Show guard:** SharedPreferences `"win_shown_{challengeId}"` in the `"detox_win_popup"` file is
-  the primary guard (checked before setting state); the DB `completionShown` flag is also marked on
-  dismiss as belt-and-suspenders. Prevents re-showing the dialog after dismissal.
+- **Show guard (2026-07-18):** SharedPreferences `"win_shown_{challengeId}"` (file
+  `"detox_win_popup"`) + the DB `completionShown` flag are both marked **ON SHOW** (not on
+  dismiss) — a process death between show and dismiss could otherwise re-pop the dialog. The
+  dialog also **names the completed challenge** and offers a "Zum Verlauf" History CTA
+  (`success_dialog_cta_history`). The RED `ChallengeFailedDialog` marks `completionShown`
+  on show the same way.
 - `DailyLogRepository.getLogsForChallengeOnce()` added for one-shot stat reads.
 
 `SoftFailResultScreen` was previously dead code (worker called it but no navigation path existed).
@@ -578,13 +645,10 @@ Hard Mode stake: min 5 (€), max 100 (€)
 
 ### Next Button — App/Website Selection Step
 
-The "Weiter" / "Next" button in the App/Website selection step is enabled if ANY selection
-exists across BOTH tabs (Apps OR Websites), not just the currently active tab.
-
-Previously: only checked the active tab → button stayed disabled if user selected only in
-the other tab.
-Fix: `canGoNext()` checks `selectedApps.isNotEmpty() || selectedDomains.isNotEmpty()` (union
-of both tabs regardless of which tab is currently shown).
+The step-2 "Weiter" gate is **tab-aware** (`step2HasValidBlockingSource`) — the ACTIVE tab must
+have a real blocking source that will actually be persisted at submit. See "Creation Wizard —
+paths & gates" above. (The old union-of-both-tabs behavior was a bug — it allowed a
+blocks-nothing challenge — and was removed 2026-07-16.)
 
 ---
 

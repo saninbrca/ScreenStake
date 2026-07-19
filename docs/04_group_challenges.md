@@ -1,7 +1,7 @@
 # 04 — Group Challenges
 > **Scope:** Group Challenge creation, minimum requirements, Firestore data structure, sync patterns, Taunt feature, winner payout flow.
 > **When to load:** Any work on Group Challenges, Friends tab, leaderboard, `GroupChallengeFirestoreService`, `GroupChallengeDao`, or payout system.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 > ⚠️ **Disabled at launch:** Group Challenges ship **OFF** for launch via the remote flag
 > `config/app.groupChallengeEnabled = false` (gates NEW group creation/entry only; the code fallback
@@ -22,8 +22,8 @@
 | Minimum duration | **3 days** |
 | Maximum duration | **30 days** |
 | Maximum participants | **20** (fixed) |
-| Who can start | Creator only (manual start, no auto-start) |
-| Start date | Optional — creator starts manually |
+| Who can start | Creator (manual) — OR automatic once an optional scheduled start date passes |
+| Start date | Optional (`startDateEnabled`/`startDateMs` in the create wizard); when set, `GroupChallengeAutoStartWorker` (24h periodic, scheduled in `DetoxApplication`) starts due WAITING groups |
 | Auto-cancel condition | < 2 participants when creator tries to start → refund all |
 | App fee | **10%** of failed participants' money |
 | Winner payout | Manual SEPA transfer by founder |

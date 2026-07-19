@@ -3,6 +3,10 @@
 > **Scope:** Read-only audit of release/build, secrets, Stripe, manifest, Firestore rules, Sentry,
 > workers, versioning, flags, and DSGVO. **No code changes were made.**
 > **Date:** 2026-06-18 · **Branch:** `fix/worker-limit-detection-sessions-budget`
+> **⚠️ 2026-07-19 note:** the 2026-07-07 soft-mode-only launch DECISION (`MONEY_FEATURES_ENABLED`
+> build floor, release=false — see `docs/13`) supersedes the urgency of blocker **B1**: the first
+> release takes no real money, so the Stripe live-switch is only required before money features are
+> re-enabled. The rest of this file is a dated snapshot — read it as of its date.
 > **Severity legend:** 🔴 BLOCKER · 🟡 SHOULD-FIX · 🟢 NICE / verified-OK
 
 ---

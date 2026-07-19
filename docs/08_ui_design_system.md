@@ -2,7 +2,19 @@
 > **Scope:** Colors, typography, components, overlay design, screen designs.
 > **When to load:** Any UI work — screens, overlays, components, animations.
 > **Never load for:** Business logic, Stripe, Cloud Functions, permissions.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
+
+---
+
+> ## ⚠️ Implementation is TOKEN-BASED, not hardcoded hex (Phase 2 theming migration)
+> The hex values in this file are the **light-mode design values**. In code, screens resolve
+> colors from the theme: `detoxColors` slots (`ui/theme/SemanticColors.kt`, provided by
+> `DetoxTheme`), `colorScheme`, and the design-fixed constant sets `DetoxAlertColors` /
+> `DetoxCelebrationColors` / `DetoxAvatarPalette` / `DetoxPodiumColors` (`IdentityColors.kt`).
+> A raw `Color(0x…)` in `presentation/` is a bug unless it is on the documented exemption list.
+> **Canonical migration record (slot mappings, exemption list, approved consolidations, open
+> inconsistencies): `docs/design_inconsistencies.md`.** Overlays are ALWAYS dark (frozen — they
+> do not follow the theme); the light-mode values below otherwise have dark counterparts per slot.
 
 ---
 
@@ -107,10 +119,12 @@ Button remains same size, disabled (prevents double tap)
 ## Wizard header & step transitions
 
 Location: `ChallengeCreationScreen.kt` → `WizardHeader` + the step `AnimatedContent`.
-- **Progress bar:** "Schritt X von 7" with a `LinearProgressIndicator` (2dp, #00C853 on #E0E0E5).
-  The fraction is `currentStep / totalSteps` (unchanged); the **rendered** value is animated via
+- **Progress bar:** "Schritt X von Y" with a `LinearProgressIndicator` (2dp, accent on outline).
+  X/Y come from the position in `visibleSteps(state)` — the step list is **path-dependent**
+  (Apps tab = 7 steps; TIME_WINDOW = 6; block-only Website path = 4 — see docs/02 "Creation
+  Wizard — paths & gates"). The **rendered** value is animated via
   `animateFloatAsState(tween(300, LinearOutSlowInEasing))` so the fill glides between steps instead of
-  jumping. (TIME_WINDOW renumbers to 6 effective steps — computation untouched.)
+  jumping.
 - **Step content transition:** `AnimatedContent` slide (direction by step delta) + fade, both pinned to
   `tween(300, LinearOutSlowInEasing)` so the bar fill and the content move together. No change to step
   order/count/navigation — animation only.
@@ -436,7 +450,8 @@ Group card:
 ## History Screen (Verlauf)
 
 ### List view (`HistoryScreen`)
-Card background hardcoded #FFFFFF (not `MaterialTheme.colorScheme.surface`).
+Theme-resolved (screen sits on `colorScheme.background` with theme-token cards — see
+`design_inconsistencies.md` #3 for the History list-vs-detail shell difference).
 - App name: 17sp Bold, color #000.
 - Date: 12sp, color #8E8E93.
 - Right side: **two stacked badges** (Column):
@@ -543,8 +558,10 @@ Pill-shaped (fully rounded corners), no dividers between app rows.
 - Row is NOT tappable
 
 ### Websites Tab
-- Feature cards (Instagram Reels, YouTube Shorts, etc.): platform app icon with red 8dp badge
-- Adult Content card: "18+" red circle icon — always at top of the list
+- Content: **custom-domain entry + the Adult Content card only** (the partial-block feature
+  cards — Instagram Reels, YouTube Shorts, etc. — were REMOVED from the wizard).
+- Adult Content card: "18+" red circle icon — always at top of the list. Adult-block is
+  exclusive with app selection (mirrored confirmation dialogs — docs/02).
 - Pill tab switcher: a white indicator slides between "Apps" and "Websites" (animated offset, no elevation — replaced the old per-tab drop shadow). Tab labels use line icons (apps grid / globe), NOT emoji.
 
 ---
@@ -555,7 +572,7 @@ iOS-style solid red card on Dashboard when any required permission is missing.
 
 | Property | Value |
 |----------|-------|
-| Background | #FF3B30 (solid red) |
+| Background | `DetoxAlertColors.Red` (#D32F2F, solid — Batch 7 unified both permission alarms on this design-fixed red; an alarm never softens in dark mode) |
 | Border radius | 12dp |
 | Padding | 16dp |
 | Elevation | 0 (no shadow) |
@@ -580,20 +597,23 @@ challenges exist (Success state only). CTA navigates to `Settings.ACTION_ACCESSI
 Dismissible `Dialog {}` shown on top of the Dashboard (other cards stay visible behind the scrim) —
 replaces the old fullscreen success overlays. Handles both modes from one composable.
 - **Soft Mode:** time-saved card. **Hard Mode:** money-refund card (€ back + 20% fee line).
+- **Names the completed challenge** in the copy and offers a "Zum Verlauf" History CTA
+  (`success_dialog_cta_history`) alongside "Neue Challenge starten".
 - Canvas confetti, staggered phase reveals (0 / 300 / 600 / 900 ms), count-up stat animations.
-- Dismiss: an **X** button and a "Zurück zum Dashboard" link both dismiss; "Neue Challenge starten"
-  navigates to the wizard.
-- Show guard: SharedPreferences `"win_shown_{challengeId}"` (file `"detox_win_popup"`); DB
-  `completionShown` flag marked on dismiss (belt-and-suspenders).
+- Dismiss: an **X** button and a "Zurück zum Dashboard" link both dismiss.
+- Show guard (2026-07-18): SharedPreferences `"win_shown_{challengeId}"` (file `"detox_win_popup"`)
+  AND the DB `completionShown` flag are both marked **ON SHOW** (not on dismiss) — process death
+  between show and dismiss can no longer re-pop the dialog.
 
-## Hard Mode Fail Screen — `HardModeFailScreen` (route `hard_mode_fail/{challengeId}`)
+## Fail Dialog — `ChallengeFailedDialog` (Dashboard dialog)
 
-Dark fullscreen (`#0A0A0A`, `isAppearanceLightStatusBars = false`) — for the manual "Aufgeben" quit
-path (the auto-fail / limit-exceeded path still uses the Dashboard `HardModeFailOverlay`).
-- 💸 icon, "Challenge verloren." title (red period).
-- White money card showing the captured stake `€X,XX` (formatted from integer cents — never rounds up).
-- Encouragement line.
-- Primary: "Zurück zum Dashboard" (white bg, black text, 54dp). Text link: "Neue Challenge starten".
+The unified RED loss surface for ALL fail paths (worker limit-exceeded, permission loss,
+abandon) — the old fullscreen `HardModeFailOverlay` and the `HardModeFailScreen` route no longer
+exist. Lives in `presentation/screens/dashboard/ChallengeFailedDialog.kt` (shared visuals in
+`ResultDialogComponents.kt`, same layout family as the WIN dialog).
+- Names the failed challenge + a human-readable `failReason` (Room `failReason` column, UX-only).
+- `completionShown` marked ON SHOW (same guard pattern as the WIN dialog; the two gate on
+  mutually exclusive terminal states).
 
 ## System Screens (`presentation/screens/system/`) — see docs/13
 

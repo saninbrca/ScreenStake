@@ -1,7 +1,7 @@
 # 05 — Huawei & Permissions
 > **Scope:** All Huawei-specific constraints, 24h permission monitoring system, AccessibilityService rules, FLAG_SECURE overlay requirements, Adult Content blocking.
 > **When to load:** Any work on notifications, auth, AccessibilityService, overlay permissions, permission monitoring, adult content filtering, or anything that might behave differently on Huawei.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 ---
 
@@ -219,8 +219,12 @@ isAdultBlock variant) whose "Zurück" only dismisses.
 goHome (GLOBAL_ACTION_HOME) is the FALLBACK only: used when overlay
 permission is missing (no background-activity-launch exemption — the VIEW
 intent would be silently dropped) or startActivity throws.
-Overlay is skipped gracefully if SYSTEM_ALERT_WINDOW is missing
-(adult-only challenges are exempt from the overlay pre-flight gate).
+Adult-block REQUIRES overlay permission at creation (pre-flight gate,
+2026-07-18): needsOverlay includes blockAdultContent, because the
+about:blank redirect needs SYSTEM_ALERT_WINDOW as its background-activity-
+launch exemption AND the explanation overlay needs it to draw. The goHome
+fallback is DEFENSIVE only — it covers a user revoking the permission
+AFTER the challenge started, never a supported configuration.
 ```
 
 > **DECISION (2026-07-17): NO blanket incognito blocking.** The former incognito
@@ -243,21 +247,33 @@ Overlay is skipped gracefully if SYSTEM_ALERT_WINDOW is missing
 //    adult blocking; a canary check ["pornhub.com" must be present] now prevents it)
 // Loaded at service start: bundled assets list MERGED with the updated file (union —
 // updates only ever ADD coverage), cached in HashSet<String>
+// Self-heal (AdultDomains.loadDomains): an existing updated file whose header
+// contains "OISD Small" (the old wrong-list worker bug) is DELETED on load, so
+// poisoned devices recover on the next service start without waiting a month.
 
-// Subdomain matching:
-fun isDomainBlocked(url: String): Boolean {
-    val host = Uri.parse(url).host ?: return false
-    return blockedAdultDomains.any { domain ->
-        host == domain || host.endsWith(".$domain")
+// Subdomain matching (AdultDomains.hostMatches — dot-boundary HashSet walk):
+// checks the host itself, then every dot-boundary suffix, each as an O(1)
+// HashSet lookup — O(label count), NOT an O(list size) scan, and never a bare
+// substring match:
+private fun hostMatches(rawHost: String): Boolean {
+    val host = rawHost.lowercase().trim('.')
+    if (domains.contains(host)) return true
+    var remaining = host
+    while (remaining.contains('.')) {
+        remaining = remaining.substringAfter('.')
+        if (domains.contains(remaining)) return true
     }
-    // "www.pornhub.com" matches "pornhub.com" ✅
+    return false
 }
+// "de.pornhub.com" matches "pornhub.com" ✅
+// "notpornhub.com" / "pornhub.com.evil.com" do NOT match ✅ (pinned by AdultDomainsMatchTest)
 
-// On match (2s cooldown):
+// On match (2s cooldown + dismissal-anchored suppression, see below):
 // 1. Toast R.string.adult_block_toast ("🔞 Von Finite blockiert")
 // 2. emitAdultBlocked(host) → OverlayManager.showAdultBlockedOverlay
 //    (WebsiteBlockedOverlay isAdultBlock=true, over the browser's neutral page;
-//     "Zurück" only dismisses; skipped without overlay permission)
+//     "Zurück" only dismisses; skipped gracefully only in the DEFENSIVE
+//     revoked-mid-challenge case — creation requires the permission)
 // 3. redirectToNeutralPage(browserPackage):
 //    - ONE GLOBAL_ACTION_BACK (pop adult page from visible history; never iterated)
 //    - VIEW intent "about:blank" + setPackage(browser) + NEW_TASK → browser fronts
@@ -276,6 +292,35 @@ fun isDomainBlocked(url: String): Boolean {
 // Address-bar text is scheme-less ("example.com") ⇒ normalized to
 // "https://example.com" before Uri.parse(), otherwise host is null (no match).
 ```
+
+### Dismissal-anchored re-detect suppression (2026-07-18)
+
+The 2s detection cooldown is anchored to the ORIGINAL detection, so after the user read the
+block overlay for longer than 2s and dismissed it, the very next `WINDOW_CONTENT_CHANGED`
+(address bar still on the blocked URL until the about:blank redirect lands) re-fired the block
+and the overlay popped right back. Fix: a second, DISMISSAL-anchored guard.
+
+- `OverlayManager` calls `TrackedAppEventBus.markBlockOverlayDismissed(target)` when a
+  website/adult block overlay is dismissed (`target` = host for adult, matched domain for custom).
+- The detection path (`checkBrowserUrl`, both adult and custom branches) checks
+  `TrackedAppEventBus.isBlockRedetectSuppressed(target)` FIRST and skips re-firing while the
+  same target's overlay was dismissed < 2s ago (`BLOCK_DISMISS_SUPPRESS_MS`).
+- Per-target and short-lived: a different blocked page, or a genuine re-visit after the window,
+  blocks normally. This is a UX guard, not a bypass — the page itself is already being redirected.
+
+### Pre-flight enforcement-permission gate (challenge creation)
+
+`ChallengeCreationViewModel.createChallenge()` refuses to create ANY challenge (Soft or Hard,
+before the root check / payment / save) while an enforcement permission is missing — a challenge
+without them would silently block nothing. UiState `MissingPermissions(needsUsage,
+needsAccessibility, needsOverlay)` renders a dialog naming each missing permission with a grant
+action (accessibility routes through the `AccessibilityDisclosureDialog` prominent disclosure).
+
+- **Usage stats** — always required.
+- **Accessibility** — always required (sole trigger for app blocking AND browser URL reading).
+- **Overlay** — required when anything consumes it: the challenge blocks apps, OR
+  `computeBlockedDomains()` is non-empty, OR `blockAdultContent` is on (since 2026-07-18 —
+  the about:blank redirect's BAL exemption + the explanation overlay both need it).
 
 ### Browser URL Bar Detection
 
@@ -301,8 +346,8 @@ Huawei users need extra guidance due to aggressive battery optimization:
 Step 1: Request SYSTEM_ALERT_WINDOW (overlay) permission
 Step 2: Request PACKAGE_USAGE_STATS permission
 Step 3: Enable AccessibilityService (deep-link to settings)
-Step 4 (Huawei only): Guide user to disable battery optimization for Detox
-    → "Einstellungen → Apps → Detox → Akku → Keine Einschränkungen"
+Step 4 (Huawei only): Guide user to disable battery optimization for Finite
+    → "Einstellungen → Apps → Finite → Akku → Keine Einschränkungen"
 Step 5: Verify all permissions granted → show green checkmarks
 ```
 
@@ -407,7 +452,7 @@ object HapticManager {
 □ Overlays → Handler(Looper.getMainLooper()).post { } (never coroutines)
 □ Overlays → FLAG_SECURE always set
 □ Services → PermissionCheckWorker as 15min watchdog backup
-□ Battery optimization → guide user in onboarding to whitelist Detox
+□ Battery optimization → guide user in onboarding to whitelist Finite
 □ Test → always verify on real Huawei hardware, not just emulator
 ```
 

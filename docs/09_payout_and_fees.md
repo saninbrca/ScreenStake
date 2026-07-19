@@ -2,7 +2,7 @@
 > **Scope:** All payout logic, fee calculations, Stripe flows, IBAN setup.
 > **When to load:** Any work on payouts, ProfileScreen payout section,
 > cancelOrRefundPayment, completeGroupChallenge, Redemption Challenge payouts.
-> _Last verified: 2026-06-22 (commit e287b79)_
+> _Last verified: 2026-07-19 (commit 4b54701)_
 
 ---
 
@@ -41,6 +41,10 @@ val refundAmount = floor(amountCents * 0.80).toInt()
 DailyEvaluationWorker completion paths (TIME_BUDGET, TIME/SESSIONS, "already evaluated today")
 gate the status update on `cancelOrRefundPayment` returning success. A failed refund leaves the
 challenge ACTIVE for the next worker cycle.
+
+**Pre-settlement server check:** before ANY client-side capture/refund, the workers consult
+`ChallengeSettlementGuard` (PROCEED/SKIP) so a server-settled challenge is never double-settled —
+see `docs/03`.
 
 Cloud Function (cancelOrRefundPayment) — **server-side validated** (non-redemption path):
 

@@ -94,6 +94,14 @@ android {
         // so they can't leak into the Android 13+ per-app language picker.
         localeFilters += listOf("en", "de")
     }
+    lint {
+        // EN/DE string parity is a hard invariant (CLAUDE.md "Localization & Dark Mode").
+        // ExtraTranslation = key exists only in values-de/ → ResourceNotFoundException CRASH
+        // on every non-German device. MissingTranslation = key exists only in values/ →
+        // German users silently see English. Both fail the build, never just warn.
+        error += "ExtraTranslation"
+        error += "MissingTranslation"
+    }
 }
 
 

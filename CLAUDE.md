@@ -66,6 +66,13 @@
 * **Strings:** All user-facing strings MUST be in `res/values/strings.xml`.
 * **Logic:** Use `Result<T>` for Repository/UseCase outputs.
 
+## 4b. Localization & Dark Mode (ENFORCED — every UI change)
+> Lint fails the build on EN/DE key drift (`ExtraTranslation`/`MissingTranslation` = error in `app/build.gradle.kts`). The rest is on you — check before calling any UI work done:
+1. **NEVER hardcode user-visible text** in Kotlin/Compose — every string goes in `strings.xml`, used via `stringResource`/`getString`. Only exceptions: `BuildConfig.DEBUG`-gated debug panels, product names ("Finite", "Soft Mode", "Hard Mode"), language-neutral symbols/emoji.
+2. **Every new string goes in BOTH** `values/strings.xml` (EN) **and** `values-de/strings.xml` (DE) — SAME key, IDENTICAL positional placeholders (`%1$s` style, never bare `%s`). `translatable="false"` entries live ONLY in `values/`.
+3. **NEVER use raw color literals** (`Color(0xFF…)`) in UI code — use theme tokens (`detoxColors` slots, `IdentityColors`, semantic colors) so dark mode works. Only the exemptions documented in `docs/design_inconsistencies.md` ("Documented literal-exemption list") may use literals.
+4. **Check every new/changed screen in BOTH light and dark mode** before it counts as done.
+
 ## 5. Workflow (Documentation Access)
 * **IMPORTANT:** This file contains only technical rules. 
 * For ANY information regarding Business Logic, Feature Details, or App Rules, you **MUST** look into the `docs/` folder.

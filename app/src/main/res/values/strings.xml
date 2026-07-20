@@ -1272,6 +1272,19 @@
     <string name="detail_info_session_dur_val">%1$d minutes</string>
     <string name="detail_info_started">Started</string>
     <string name="detail_info_ends">Ends</string>
+    <string name="detail_info_time_window">Time window</string>
+    <string name="detail_info_time_window_range" translatable="false">%1$s – %2$s</string>
+    <string name="detail_info_time_window_always">Always active</string>
+    <string name="detail_info_active_days">Active days</string>
+    <string name="detail_info_active_days_every_day">Every day</string>
+    <string name="detail_motivation_section">YOUR MOTIVATION</string>
+    <string name="weekday_short_mon">Mon</string>
+    <string name="weekday_short_tue">Tue</string>
+    <string name="weekday_short_wed">Wed</string>
+    <string name="weekday_short_thu">Thu</string>
+    <string name="weekday_short_fri">Fri</string>
+    <string name="weekday_short_sat">Sat</string>
+    <string name="weekday_short_sun">Sun</string>
     <string name="detail_info_success_rate">Success rate</string>
     <string name="detail_info_success_rate_val" translatable="false">%1$d%%</string>
     <string name="detail_limit_sessions_val">%1$d opens / day</string>

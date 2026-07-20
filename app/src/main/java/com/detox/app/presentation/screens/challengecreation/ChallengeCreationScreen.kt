@@ -98,6 +98,10 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
+import com.detox.app.presentation.components.SCHEDULE_WEEKDAYS
+import com.detox.app.presentation.components.activeDaysSummary
+import com.detox.app.presentation.components.timeWindowSummary
+import com.detox.app.presentation.components.weekdayShortLabel
 import com.detox.app.presentation.components.TimeSpinnerPicker
 import com.detox.app.presentation.util.pressScaleFeedback
 import com.detox.app.ui.theme.detoxColors
@@ -944,12 +948,6 @@ private fun Step4LimitValues(
 
 // ── Step 5: Schedule ──────────────────────────────────────────────────────────
 
-private val ALL_DAYS   = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
-private val DAY_LABELS = mapOf(
-    "MON" to "Mo", "TUE" to "Di", "WED" to "Mi",
-    "THU" to "Do", "FRI" to "Fr", "SAT" to "Sa", "SUN" to "So",
-)
-
 private fun parseTime(time: String): Pair<Int, Int> =
     if (time.length != 5) 0 to 0
     else runCatching { time.split(":").let { it[0].toInt() to it[1].toInt() } }.getOrDefault(0 to 0)
@@ -1094,7 +1092,7 @@ private fun Step5Schedule(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                ALL_DAYS.forEach { day ->
+                SCHEDULE_WEEKDAYS.forEach { day ->
                     val isSelected = activeDays.contains(day)
                     val dayBg by animateColorAsState(
                         targetValue = if (isSelected) MaterialTheme.colorScheme.primary else detoxColors.insetSurface,
@@ -1113,7 +1111,7 @@ private fun Step5Schedule(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = DAY_LABELS[day] ?: day,
+                            text = weekdayShortLabel(day),
                             fontSize = 12.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                             color = dayText,
@@ -1412,6 +1410,21 @@ private fun Step7Confirm(
                     )
                 }
                 SummaryDividerRow(stringResource(R.string.wizard_review_limit_label), limitLabel)
+                // Time window + weekdays — same wording as the detail screen (ScheduleSummary
+                // helpers). Block path is 24/7 by definition, so the rows are suppressed there.
+                if (!isBlockPath) {
+                    SummaryDividerRow(
+                        stringResource(R.string.detail_info_time_window),
+                        timeWindowSummary(
+                            state.scheduleStart.takeIf { it.length == 5 },
+                            state.scheduleEnd.takeIf { it.length == 5 },
+                        ),
+                    )
+                    SummaryDividerRow(
+                        stringResource(R.string.detail_info_active_days),
+                        activeDaysSummary(state.activeDays),
+                    )
+                }
                 SummaryDividerRow(stringResource(R.string.wizard_review_duration_label), durationLabel, isLast = true)
             }
         }

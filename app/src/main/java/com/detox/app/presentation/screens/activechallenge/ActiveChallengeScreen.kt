@@ -75,6 +75,8 @@ import com.detox.app.R
 import com.detox.app.domain.model.Challenge
 import com.detox.app.presentation.components.AppIconImage
 import com.detox.app.presentation.components.FaviconImage
+import com.detox.app.presentation.components.activeDaysSummary
+import com.detox.app.presentation.components.timeWindowSummary
 import com.detox.app.presentation.components.websiteDisplayName
 import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.ChallengeMode
@@ -715,10 +717,16 @@ private fun ActiveChallengeContent(
         }
 
         // ── Card 3: Info list ─────────────────────────────────────────────────
+        // Block-path challenges (Website/Adult) reuse TIME_WINDOW as a 24/7 sentinel with
+        // limitValueMinutes=0 and a null schedule — their limit reads "always blocked" and
+        // the window/weekday rows are suppressed (they would render empty values).
+        val isBlockPath = challenge.blockingType == BlockingType.WEBSITE
         DetoxCard {
             Column {
                 // Limit
-                val limitVal = when (challenge.limitType) {
+                val limitVal = if (isBlockPath) {
+                    stringResource(R.string.wizard_review_always_blocked)
+                } else when (challenge.limitType) {
                     LimitType.SESSIONS ->
                         stringResource(
                             R.string.detail_limit_sessions_val,
@@ -744,6 +752,33 @@ private fun ActiveChallengeContent(
                             R.string.detail_info_session_dur_val,
                             challenge.sessionDurationMinutes
                         )
+                    )
+                }
+
+                // Time window + active weekdays (APP path only). A null schedule means
+                // "always active" / empty days mean "every day" — never blank values.
+                if (!isBlockPath) {
+                    InfoDivider()
+                    InfoRow(
+                        label = stringResource(R.string.detail_info_time_window),
+                        value = timeWindowSummary(
+                            challenge.scheduleStartTime,
+                            challenge.scheduleEndTime
+                        )
+                    )
+                    InfoDivider()
+                    InfoRow(
+                        label = stringResource(R.string.detail_info_active_days),
+                        value = activeDaysSummary(challenge.activeDays)
+                    )
+                }
+
+                // Adult-content block (Website/Adult path only; APP path never carries it)
+                if (challenge.blockAdultContent) {
+                    InfoDivider()
+                    InfoRow(
+                        label = stringResource(R.string.adult_block_display_name),
+                        value = stringResource(R.string.wizard_review_adult_active)
                     )
                 }
 
@@ -778,6 +813,27 @@ private fun ActiveChallengeContent(
                 InfoRow(
                     label = stringResource(R.string.detail_info_ends),
                     value = endDateStr ?: stringResource(R.string.active_challenge_no_end_date)
+                )
+            }
+        }
+
+        // ── DEINE MOTIVATION section (user's own words, only when set) ───────
+        val motivation = challenge.customMotivation?.trim().orEmpty()
+        if (motivation.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.detail_motivation_section),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(600),
+                color = detoxColors.subtext,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            )
+            DetoxCard {
+                Text(
+                    text = motivation,
+                    fontSize = 14.sp,
+                    fontStyle = FontStyle.Italic,
+                    color = detoxColors.label,
+                    modifier = Modifier.padding(16.dp)
                 )
             }
         }

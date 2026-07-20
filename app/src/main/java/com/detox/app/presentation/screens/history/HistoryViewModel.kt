@@ -9,8 +9,12 @@ import com.detox.app.util.DateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -25,8 +29,31 @@ data class HistoryStats(
 data class SoloChallengeHistory(
     val entity: ChallengeEntity,
     val stats: HistoryStats?,    // null for FAILED entries
-    val durationDays: Int
+    val durationDays: Int,
+    /** Sort key only — never displayed. See [effectiveEndDate]. */
+    val effectiveEndDate: Long
 )
+
+/** Status filter for the history list. */
+enum class HistoryFilter { ALL, COMPLETED, FAILED }
+
+/**
+ * When a challenge actually finished, safe for open-ended ("Kein Enddatum") challenges. Fixed-end
+ * challenges use their real [endMs]. Open-ended challenges carry a ~100-year sentinel end date
+ * ([DateUtils.isOpenEnded]) that must NEVER be used as a sort key — abandoning one leaves the
+ * sentinel in place, which would pin the entry to the top of a newest-first list forever. For
+ * those we return the last tracked DailyLog date (same signal [openEndedSafeDurationDays] uses),
+ * falling back to [startMs] when no log exists.
+ */
+internal fun effectiveEndDate(
+    startMs: Long,
+    endMs: Long,
+    logs: List<DailyLogEntity>
+): Long = if (DateUtils.isOpenEnded(startMs, endMs)) {
+    logs.maxOfOrNull { it.date } ?: startMs
+} else {
+    endMs
+}
 
 /**
  * Duration in days for a finished solo challenge, safe for open-ended ("Kein Enddatum") challenges.
@@ -50,11 +77,30 @@ class HistoryViewModel @Inject constructor(
     private val database: DetoxDatabase,
 ) : ViewModel() {
 
-    private val _entries = MutableStateFlow<List<SoloChallengeHistory>>(emptyList())
-    val entries: StateFlow<List<SoloChallengeHistory>> = _entries.asStateFlow()
+    private val _allEntries = MutableStateFlow<List<SoloChallengeHistory>>(emptyList())
+
+    private val _filter = MutableStateFlow(HistoryFilter.ALL)
+    val filter: StateFlow<HistoryFilter> = _filter.asStateFlow()
+
+    /** True once at least one finished challenge exists, regardless of the active filter. */
+    val hasAnyEntries: StateFlow<Boolean> = _allEntries.map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val entries: StateFlow<List<SoloChallengeHistory>> =
+        combine(_allEntries, _filter) { all, filter ->
+            when (filter) {
+                HistoryFilter.ALL -> all
+                HistoryFilter.COMPLETED -> all.filter { it.entity.status == "completed" }
+                HistoryFilter.FAILED -> all.filter { it.entity.status == "failed" }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch(Dispatchers.IO) { load() }
+    }
+
+    fun setFilter(filter: HistoryFilter) {
+        _filter.value = filter
     }
 
     private suspend fun load() {
@@ -63,9 +109,14 @@ class HistoryViewModel @Inject constructor(
             val logs = database.dailyLogDao().getLogsForChallengeOnce(entity.id)
             val durationDays = openEndedSafeDurationDays(entity.startDate, entity.endDate, logs)
             val stats = if (entity.status == "completed") computeStats(entity, logs, durationDays) else null
-            SoloChallengeHistory(entity, stats, durationDays)
-        }
-        _entries.value = result
+            SoloChallengeHistory(
+                entity = entity,
+                stats = stats,
+                durationDays = durationDays,
+                effectiveEndDate = effectiveEndDate(entity.startDate, entity.endDate, logs)
+            )
+        }.sortedByDescending { it.effectiveEndDate } // newest-finished first, sentinel-safe
+        _allEntries.value = result
         Timber.d("HistoryViewModel: loaded ${result.size} entries")
     }
 

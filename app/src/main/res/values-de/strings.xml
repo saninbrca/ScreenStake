@@ -1392,6 +1392,9 @@
     <string name="verlauf_filter_won">Gewonnen</string>
     <string name="verlauf_filter_eliminated">Ausgeschieden</string>
     <string name="verlauf_filter_abandoned">Abgebrochen</string>
+    <string name="verlauf_filter_completed">Geschafft</string>
+    <string name="verlauf_filter_failed">Fehlgeschlagen</string>
+    <string name="verlauf_filter_empty">Keine Challenges für diesen Filter</string>
 
     <!-- Verlauf Screen — status badges -->
     <string name="verlauf_badge_won">✓ Gewonnen</string>

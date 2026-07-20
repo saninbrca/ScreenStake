@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +59,8 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = hiltViewModel()
 ) {
     val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val filter by viewModel.filter.collectAsStateWithLifecycle()
+    val hasAnyEntries by viewModel.hasAnyEntries.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -83,7 +86,7 @@ fun HistoryScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        if (entries.isEmpty()) {
+        if (!hasAnyEntries) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -99,24 +102,95 @@ fun HistoryScreen(
                 )
             }
         } else {
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 24.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(innerPadding)
             ) {
-                items(entries, key = { it.entity.id }) { entry ->
-                    HistoryRow(
-                        entry = entry,
-                        onClick = { onChallengeClick(entry.entity.id) }
-                    )
+                HistoryFilterSelector(
+                    selected = filter,
+                    onSelect = viewModel::setFilter
+                )
+                if (entries.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.verlauf_filter_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 8.dp,
+                            bottom = 24.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(entries, key = { it.entity.id }) { entry ->
+                            HistoryRow(
+                                entry = entry,
+                                onClick = { onChallengeClick(entry.entity.id) }
+                            )
+                        }
+                    }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * iOS-style segmented control for the status filter, mirroring the Settings theme-mode selector
+ * (insetSurface track, cardBackground selected segment) — all theme tokens, dark-mode safe.
+ */
+@Composable
+private fun HistoryFilterSelector(selected: HistoryFilter, onSelect: (HistoryFilter) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+            .background(detoxColors.insetSurface, RoundedCornerShape(8.dp))
+            .padding(2.dp)
+    ) {
+        HistoryFilter.entries.forEach { filter ->
+            val isSelected = filter == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .then(
+                        if (isSelected) {
+                            Modifier.background(detoxColors.cardBackground, RoundedCornerShape(6.dp))
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clickable { onSelect(filter) }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(
+                        when (filter) {
+                            HistoryFilter.ALL -> R.string.verlauf_filter_all
+                            HistoryFilter.COMPLETED -> R.string.verlauf_filter_completed
+                            HistoryFilter.FAILED -> R.string.verlauf_filter_failed
+                        }
+                    ),
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (isSelected) detoxColors.label else detoxColors.subtext
+                )
             }
         }
     }

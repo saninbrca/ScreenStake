@@ -1409,6 +1409,9 @@
     <string name="verlauf_filter_won">Won</string>
     <string name="verlauf_filter_eliminated">Eliminated</string>
     <string name="verlauf_filter_abandoned">Abandoned</string>
+    <string name="verlauf_filter_completed">Completed</string>
+    <string name="verlauf_filter_failed">Failed</string>
+    <string name="verlauf_filter_empty">No challenges match this filter</string>
 
     <!-- Verlauf Screen — status badges -->
     <string name="verlauf_badge_won">✓ Won</string>

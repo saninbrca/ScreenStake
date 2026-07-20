@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.detox.app.R
 import com.detox.app.data.local.db.entity.ChallengeEntity
+import com.detox.app.presentation.components.activeDaysSummary
+import com.detox.app.presentation.components.timeWindowSummary
 import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.DateUtils
 import java.text.SimpleDateFormat
@@ -267,6 +270,26 @@ private fun DetailContent(
             )
         }
 
+        // Card 5 — Motivation (user's own words, only when set)
+        val motivation = entity.customMotivation?.trim().orEmpty()
+        if (motivation.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.detail_motivation_section),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(600),
+                color = detoxColors.subtext,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            )
+            DetailCard {
+                Text(
+                    text = motivation,
+                    fontSize = 14.sp,
+                    fontStyle = FontStyle.Italic,
+                    color = detoxColors.label,
+                )
+            }
+        }
+
         Spacer(Modifier.height(4.dp))
     }
 }
@@ -420,15 +443,51 @@ private fun InfoList(
     startStr: String,
     endStr: String,
 ) {
-    val limitText = when (entity.limitType) {
+    // Same path rule as ActiveChallengeScreen: block-path challenges (Website/Adult)
+    // carry "time_window" only as a 24/7 sentinel with a null schedule — their limit
+    // reads "always blocked" and the window/weekday rows are suppressed.
+    val isBlockPath = entity.blockingType == "website"
+    val limitText = if (isBlockPath) {
+        stringResource(R.string.wizard_review_always_blocked)
+    } else when (entity.limitType) {
         "sessions"    -> stringResource(R.string.history_detail_limit_sessions, entity.limitValueSessions ?: 0)
         "time"        -> stringResource(R.string.history_detail_limit_time, entity.limitValueMinutes)
         "time_budget" -> stringResource(R.string.history_detail_limit_budget, entity.dailyBudgetMinutes ?: 0)
+        "time_window" -> stringResource(R.string.detail_limit_window_val)
         else          -> entity.limitType
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         InfoRow(label = stringResource(R.string.history_detail_info_limit), value = limitText)
+        if (!isBlockPath && entity.limitType == "sessions") {
+            HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
+            InfoRow(
+                label = stringResource(R.string.detail_info_session_dur),
+                value = stringResource(R.string.detail_info_session_dur_val, entity.sessionDurationMinutes),
+            )
+        }
+        if (!isBlockPath) {
+            val activeDays = entity.activeDays
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                ?: emptyList()
+            HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
+            InfoRow(
+                label = stringResource(R.string.detail_info_time_window),
+                value = timeWindowSummary(entity.scheduleStartTime, entity.scheduleEndTime),
+            )
+            HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
+            InfoRow(
+                label = stringResource(R.string.detail_info_active_days),
+                value = activeDaysSummary(activeDays),
+            )
+        }
+        if (entity.blockAdultContent == 1) {
+            HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
+            InfoRow(
+                label = stringResource(R.string.adult_block_display_name),
+                value = stringResource(R.string.wizard_review_adult_active),
+            )
+        }
         HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
         InfoRow(label = stringResource(R.string.history_detail_info_started), value = startStr)
         HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)

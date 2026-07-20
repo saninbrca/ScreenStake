@@ -536,7 +536,11 @@
     <string name="soft_fail_dialog_cancel">Nein, zurück</string>
 
     <!-- Soft Mode fail result screen -->
-    <string name="soft_fail_result_title">Du hast %1$d Tage durchgehalten! 💪</string>
+    <plurals name="soft_fail_result_title_days">
+        <item quantity="one">Du hast %1$d Tag durchgehalten! 💪</item>
+        <item quantity="other">Du hast %1$d Tage durchgehalten! 💪</item>
+    </plurals>
+    <string name="soft_fail_result_title_zero">Schon am ersten Tag vorbei – das passiert. Der nächste Versuch zählt.</string>
     <string name="soft_fail_result_subtitle">Möchtest du eine neue Challenge starten?</string>
     <string name="soft_fail_result_new_challenge">Neue Challenge 🚀</string>
     <string name="soft_fail_result_home">Zur Startseite</string>
@@ -735,8 +739,14 @@
     <string name="success_dialog_title_main">Challenge geschafft</string>
     <string name="success_dialog_subtitle">Du hast %1$d Tage durchgehalten. Bewusst, nicht reflexartig.</string>
     <string name="success_dialog_streak_badge">🔥 Streak %1$d Tage</string>
-    <string name="success_dialog_time_label">ZEIT ZURÜCKGEWONNEN</string>
-    <string name="success_dialog_time_subtext">≈ ein ganzer Arbeitstag zurück in dein Leben</string>
+    <string name="success_dialog_days_label">DURCHGEHALTEN</string>
+    <plurals name="success_dialog_days_value">
+        <item quantity="one">%1$d Tag</item>
+        <item quantity="other">%1$d Tage</item>
+    </plurals>
+    <string name="success_dialog_avg_minutes">Ø %1$d von %2$d Min. pro Tag</string>
+    <string name="success_dialog_avg_sessions">Ø %1$s von %2$d Sessions pro Tag</string>
+    <string name="success_dialog_block_subtext">komplett blockiert – ohne Ausnahme</string>
     <string name="success_dialog_money_label">EINSATZ ZURÜCKGEBUCHT</string>
     <string name="success_dialog_money_fee">App-Gebühr (20%%): -%1$s</string>
     <string name="success_dialog_stat_days">Tage\ndurchgehalten</string>

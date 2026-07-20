@@ -46,6 +46,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,7 +64,9 @@ import com.detox.app.ui.theme.PoppinsFamily
 import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.DateUtils
 import kotlinx.coroutines.delay
+import java.util.Locale
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private data class Particle(
@@ -86,6 +89,7 @@ fun ChallengeSuccessDialog(
     onStartNewChallenge: () -> Unit,
     onViewHistory: () -> Unit
 ) {
+    val resources = LocalContext.current.resources
     val totalConsciousOpens = allLogs.sumOf { it.consciousOpens }
 
     val totalUsedMinutes: Double = when (challenge.limitType) {
@@ -103,15 +107,42 @@ fun ChallengeSuccessDialog(
     }
 
     val totalBudgetMinutes = challenge.durationDays * budgetMinutesPerDay
-    val savedMinutes = (totalBudgetMinutes - totalUsedMinutes).coerceAtLeast(0.0)
-    val savedHours = savedMinutes / 60.0
 
+    // Hard-branch-only figure (kept unchanged there). The Soft branch no longer shows it: it is a
+    // capped unused-allowance share, structurally ~99 for winners and for every block-only challenge.
     val reductionPercent = if (totalBudgetMinutes > 0) {
         ((1.0 - totalUsedMinutes / totalBudgetMinutes) * 100).toInt().coerceIn(0, 99)
     } else 0
 
     val refundEuros = floor((challenge.amountCents ?: 0) * 0.80) / 100.0
     val feeEuros = ((challenge.amountCents ?: 0) / 100.0) - refundEuros
+
+    // ── Soft branch: honest per-day average, denominator = CALENDAR days ──────────────────────
+    // Days without a DailyLog row are zero-usage days (rows only exist when the app was used or
+    // the nightly worker ran), so averaging over the calendar duration counts them as 0 — never
+    // divide by allLogs.size. TIME_WINDOW has no usage limit at all → no average is shown.
+    val softAvgText: String? = when (challenge.limitType) {
+        LimitType.TIME -> stringResource(
+            R.string.success_dialog_avg_minutes,
+            (allLogs.sumOf { it.totalMinutes }.toDouble() / challenge.durationDays).roundToInt(),
+            challenge.limitValueMinutes
+        )
+        LimitType.TIME_BUDGET -> stringResource(
+            R.string.success_dialog_avg_minutes,
+            (allLogs.sumOf { it.budgetUsedMs }.toDouble() / 60_000.0 / challenge.durationDays).roundToInt(),
+            challenge.dailyBudgetMinutes ?: challenge.limitValueMinutes
+        )
+        LimitType.SESSIONS -> stringResource(
+            R.string.success_dialog_avg_sessions,
+            String.format(Locale.getDefault(), "%.1f", totalConsciousOpens.toDouble() / challenge.durationDays),
+            challenge.limitValueSessions ?: 1
+        )
+        LimitType.TIME_WINDOW -> null
+    }
+    // Conscious opens are only tracked by the intention/budget overlays — structurally ~0 for
+    // TIME and TIME_WINDOW challenges, so the stat is hidden there.
+    val showOpensStat = challenge.limitType == LimitType.SESSIONS ||
+        challenge.limitType == LimitType.TIME_BUDGET
 
     // Animation phase flags
     var phase1Visible by remember { mutableStateOf(false) }
@@ -130,7 +161,6 @@ fun ChallengeSuccessDialog(
     }
 
     // Count-up animations
-    val mainStatAnim = remember { Animatable((savedHours * 0.5).toFloat()) }
     val refundAnim = remember { Animatable((refundEuros * 0.5).toFloat()) }
     val opensAnim = remember { Animatable(0f) }
     val reductionAnim = remember { Animatable(0f) }
@@ -138,13 +168,20 @@ fun ChallengeSuccessDialog(
 
     LaunchedEffect(phase2Visible) {
         if (phase2Visible) {
-            mainStatAnim.animateTo(savedHours.toFloat(), tween(800, easing = FastOutSlowInEasing))
             refundAnim.animateTo(refundEuros.toFloat(), tween(800, easing = FastOutSlowInEasing))
+        }
+    }
+    LaunchedEffect(phase2Visible) {
+        // Soft branch: the days hero sits in the phase-2 card, so its count-up starts with the card.
+        if (phase2Visible && challenge.mode != ChallengeMode.HARD) {
+            daysAnim.animateTo(challenge.durationDays.toFloat(), tween(600, easing = FastOutSlowInEasing))
         }
     }
     LaunchedEffect(phase3Visible) {
         if (phase3Visible) {
-            daysAnim.animateTo(challenge.durationDays.toFloat(), tween(600, easing = FastOutSlowInEasing))
+            if (challenge.mode == ChallengeMode.HARD) {
+                daysAnim.animateTo(challenge.durationDays.toFloat(), tween(600, easing = FastOutSlowInEasing))
+            }
             opensAnim.animateTo(totalConsciousOpens.toFloat(), tween(600, easing = FastOutSlowInEasing))
             reductionAnim.animateTo(reductionPercent.toFloat(), tween(600, easing = FastOutSlowInEasing))
         }
@@ -256,22 +293,25 @@ fun ChallengeSuccessDialog(
                             color = detoxColors.subtext,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        // Streak badge
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50.dp))
-                                .background(detoxColors.cardBackground)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50.dp))
-                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.success_dialog_streak_badge, streak),
-                                fontFamily = PoppinsFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = detoxColors.success
-                            )
+                        // Streak badge — OPEN-ENDED challenges only. On a fixed-end win the streak
+                        // is redundant (a win means every day was clean → streak == duration).
+                        if (challenge.isOpenEndedChallenge && streak > 0) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50.dp))
+                                    .background(detoxColors.cardBackground)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50.dp))
+                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.success_dialog_streak_badge, streak),
+                                    fontFamily = PoppinsFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = detoxColors.success
+                                )
+                            }
                         }
                     }
                 }
@@ -309,10 +349,44 @@ fun ChallengeSuccessDialog(
                                 fontSize = 12.sp,
                                 color = detoxColors.subtext
                             )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(top = 12.dp),
+                                thickness = 0.5.dp,
+                                color = detoxColors.divider
+                            )
+
+                            // Phase 3: 3-column stats (Hard Mode row, unchanged)
+                            AnimatedVisibility(
+                                visible = phase3Visible,
+                                enter = fadeIn(tween(300))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    StatColumn(
+                                        value = daysAnim.value.toInt().toString(),
+                                        label = stringResource(R.string.success_dialog_stat_days),
+                                        valueColor = detoxColors.label
+                                    )
+                                    StatColumn(
+                                        value = opensAnim.value.toInt().toString(),
+                                        label = stringResource(R.string.success_dialog_stat_opens),
+                                        valueColor = detoxColors.label
+                                    )
+                                    StatColumn(
+                                        value = "${reductionAnim.value.toInt()}%",
+                                        label = stringResource(R.string.success_dialog_stat_reduction),
+                                        valueColor = detoxColors.success
+                                    )
+                                }
+                            }
                         } else {
-                            // Soft Mode: time saved card
+                            // Soft Mode: calendar-duration hero + the one honestly varying stat.
                             Text(
-                                text = stringResource(R.string.success_dialog_time_label),
+                                text = stringResource(R.string.success_dialog_days_label),
                                 fontFamily = PoppinsFamily,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -320,55 +394,50 @@ fun ChallengeSuccessDialog(
                                 letterSpacing = 0.8.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
+                            val animatedDays = daysAnim.value.toInt()
                             Text(
-                                text = "%.1f Std.".format(mainStatAnim.value).replace('.', ','),
+                                text = resources.getQuantityString(
+                                    R.plurals.success_dialog_days_value, animatedDays, animatedDays
+                                ),
                                 fontFamily = PoppinsFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 36.sp,
                                 color = detoxColors.success
                             )
                             Spacer(modifier = Modifier.height(4.dp))
+                            // Limit-based paths: Ø actual usage vs the daily limit. Block-only /
+                            // schedule paths have no usage limit — no usage figure is invented.
                             Text(
-                                text = stringResource(R.string.success_dialog_time_subtext),
+                                text = softAvgText ?: stringResource(R.string.success_dialog_block_subtext),
                                 fontFamily = PoppinsFamily,
                                 fontSize = 12.sp,
                                 color = detoxColors.subtext,
                                 textAlign = TextAlign.Center
                             )
-                        }
 
-                        HorizontalDivider(
-                            modifier = Modifier.padding(top = 12.dp),
-                            thickness = 0.5.dp,
-                            color = detoxColors.divider
-                        )
-
-                        // Phase 3: 3-column stats
-                        AnimatedVisibility(
-                            visible = phase3Visible,
-                            enter = fadeIn(tween(300))
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                StatColumn(
-                                    value = daysAnim.value.toInt().toString(),
-                                    label = stringResource(R.string.success_dialog_stat_days),
-                                    valueColor = detoxColors.label
+                            if (showOpensStat) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(top = 12.dp),
+                                    thickness = 0.5.dp,
+                                    color = detoxColors.divider
                                 )
-                                StatColumn(
-                                    value = opensAnim.value.toInt().toString(),
-                                    label = stringResource(R.string.success_dialog_stat_opens),
-                                    valueColor = detoxColors.label
-                                )
-                                StatColumn(
-                                    value = "${reductionAnim.value.toInt()}%",
-                                    label = stringResource(R.string.success_dialog_stat_reduction),
-                                    valueColor = detoxColors.success
-                                )
+                                AnimatedVisibility(
+                                    visible = phase3Visible,
+                                    enter = fadeIn(tween(300))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 12.dp),
+                                        horizontalArrangement = Arrangement.SpaceEvenly
+                                    ) {
+                                        StatColumn(
+                                            value = opensAnim.value.toInt().toString(),
+                                            label = stringResource(R.string.success_dialog_stat_opens),
+                                            valueColor = detoxColors.label
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -430,15 +499,21 @@ fun ChallengeSuccessDialog(
             }
 }
 
+/** Resolves `endDate` to a timestamp, handling both timestamp and legacy day-offset formats. */
+private val Challenge.resolvedEndDate: Long
+    get() = if (endDate > 1_700_000_000_000L) endDate
+    else startDate + (endDate * DateUtils.MILLIS_PER_DAY)
+
+/** True when this challenge uses the open-ended (~100-year) sentinel end date. */
+private val Challenge.isOpenEndedChallenge: Boolean
+    get() = DateUtils.isOpenEnded(startDate, resolvedEndDate)
+
 /** Computes `durationDays` from a Challenge, handling both timestamp and day-offset endDate formats. */
 private val Challenge.durationDays: Int
     get() {
-        val resolvedEnd = if (endDate > 1_700_000_000_000L) endDate
-        else startDate + (endDate * DateUtils.MILLIS_PER_DAY)
         // Open-ended challenges carry a ~100-year sentinel end date — never render that span as a
         // day count (was surfacing as a huge "N Tage"). Clamp to days-elapsed-so-far. (Open-ended
         // challenges are not completed by the worker/backstop, so reaching this dialog is defensive.)
-        val effectiveEnd = if (DateUtils.isOpenEnded(startDate, resolvedEnd)) System.currentTimeMillis()
-        else resolvedEnd
+        val effectiveEnd = if (isOpenEndedChallenge) System.currentTimeMillis() else resolvedEndDate
         return ((effectiveEnd - startDate) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(1)
     }

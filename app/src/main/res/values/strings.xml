@@ -539,7 +539,11 @@
     <string name="soft_fail_dialog_cancel">No, go back</string>
 
     <!-- Soft Mode fail result screen -->
-    <string name="soft_fail_result_title">You held out for %1$d days! 💪</string>
+    <plurals name="soft_fail_result_title_days">
+        <item quantity="one">You held out for %1$d day! 💪</item>
+        <item quantity="other">You held out for %1$d days! 💪</item>
+    </plurals>
+    <string name="soft_fail_result_title_zero">Over on day one — that happens. The next attempt counts.</string>
     <string name="soft_fail_result_subtitle">Want to start a new challenge?</string>
     <string name="soft_fail_result_new_challenge">New challenge 🚀</string>
     <string name="soft_fail_result_home">Go home</string>
@@ -741,8 +745,14 @@
     <string name="success_dialog_title_dot" translatable="false">.</string>
     <string name="success_dialog_subtitle">You held out for %1$d days. Consciously, not on reflex.</string>
     <string name="success_dialog_streak_badge">🔥 Streak %1$d days</string>
-    <string name="success_dialog_time_label">TIME RECLAIMED</string>
-    <string name="success_dialog_time_subtext">≈ a full workday back in your life</string>
+    <string name="success_dialog_days_label">HELD OUT</string>
+    <plurals name="success_dialog_days_value">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <string name="success_dialog_avg_minutes">Ø %1$d of %2$d min per day</string>
+    <string name="success_dialog_avg_sessions">Ø %1$s of %2$d sessions per day</string>
+    <string name="success_dialog_block_subtext">fully blocked – no exceptions</string>
     <string name="success_dialog_money_label">STAKE REFUNDED</string>
     <string name="success_dialog_money_fee">App fee (20%%): -%1$s</string>
     <string name="success_dialog_stat_days">days\nheld out</string>

@@ -496,10 +496,10 @@ fun MainScreen(
                     navArgument("challengeId") { type = NavType.StringType },
                     navArgument("streak") { type = NavType.IntType },
                 )
-            ) { backStackEntry ->
-                val streak = backStackEntry.arguments?.getInt("streak") ?: 0
+            ) {
+                // The {streak} route arg is intentionally unused: the screen's ViewModel derives
+                // CALENDAR days survived from Room (the emitted streak is a gap-blind log-row count).
                 SoftFailResultScreen(
-                    daysHeld = streak,
                     onNewChallenge = {
                         navController.navigate("challenge_creation") {
                             popUpTo(BottomNavTab.Dashboard.route) { inclusive = false }

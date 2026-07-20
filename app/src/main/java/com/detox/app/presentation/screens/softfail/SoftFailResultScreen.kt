@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -28,12 +29,12 @@ import com.detox.app.presentation.screens.dashboard.failReasonStringRes
 
 @Composable
 fun SoftFailResultScreen(
-    daysHeld: Int,
     onNewChallenge: () -> Unit,
     onHome: () -> Unit,
     viewModel: SoftFailResultViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val resources = LocalContext.current.resources
 
     Scaffold { padding ->
         Column(
@@ -44,12 +45,20 @@ fun SoftFailResultScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(
-                text = stringResource(R.string.soft_fail_result_title, daysHeld),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            )
+            // Calendar days survived (never a log-row count). A day-1 fail gets its own copy —
+            // a flexed "0 days! 💪" would be absurd.
+            uiState.daysSurvived?.let { days ->
+                Text(
+                    text = if (days > 0) {
+                        resources.getQuantityString(R.plurals.soft_fail_result_title_days, days, days)
+                    } else {
+                        stringResource(R.string.soft_fail_result_title_zero)
+                    },
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+            }
 
             uiState.appDisplayName?.let { name ->
                 Spacer(modifier = Modifier.height(8.dp))

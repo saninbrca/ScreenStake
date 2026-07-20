@@ -42,7 +42,6 @@ import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.presentation.components.BlockingScreenOverlay
 import com.detox.app.presentation.components.BudgetSelectionOverlay
-import com.detox.app.presentation.components.GroupChallengeFailOverlay
 import com.detox.app.presentation.components.HardModeLockoutOverlay
 import com.detox.app.presentation.components.LimitExceededOverlay
 import com.detox.app.presentation.components.SessionIntentionOverlay

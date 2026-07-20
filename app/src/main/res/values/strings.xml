@@ -933,11 +933,6 @@
     <string name="group_detail_time_label">%1$d/%2$d min</string>
 
     <!-- Group Challenge Fail Overlay -->
-    <string name="group_fail_overlay_title">😔 You didn\'t make it through the group challenge</string>
-    <string name="group_fail_overlay_money">€%1$d has been charged</string>
-    <string name="group_fail_overlay_message">Your friends are still playing — check their progress</string>
-    <string name="group_fail_overlay_leaderboard">View leaderboard</string>
-    <string name="group_fail_overlay_home">Go home</string>
 
     <!-- Profile — History section -->
     <string name="profile_history_title">History</string>

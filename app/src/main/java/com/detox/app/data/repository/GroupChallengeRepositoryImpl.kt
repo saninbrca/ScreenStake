@@ -198,7 +198,10 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 appPackageNames = groupChallenge.appPackageNames.joinToString(","),
                 sessionDurationMinutes = groupChallenge.sessionDurationMinutes,
                 groupChallengeId = groupChallenge.groupId,
-                blockedDomains = groupChallenge.blockedDomains.joinToString(",").ifEmpty { null }
+                blockedDomains = groupChallenge.blockedDomains.joinToString(",").ifEmpty { null },
+                // Mirror adult-block into the local enforcement challenge so UsageTrackingService's
+                // adult flag fires for Group exactly as it does for Solo/Hard.
+                blockAdultContent = if (groupChallenge.blockAdultContent) 1 else 0
             )
             // Use UPDATE if the challenge row already exists so SQLite never runs DELETE+INSERT.
             // INSERT OR REPLACE would DELETE the old ChallengeEntity first, triggering the FK
@@ -407,6 +410,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             blockedDomains = blockedDomains
                 ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
                 ?: emptyList(),
+            blockAdultContent = blockAdultContent != 0,
             authorizationExpiresAt = authorizationExpiresAt,
         )
     }
@@ -444,6 +448,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             status = status.name.lowercase(),
             participantsJson = array.toString(),
             blockedDomains = blockedDomains.joinToString(",").ifEmpty { null },
+            blockAdultContent = if (blockAdultContent) 1 else 0,
             authorizationExpiresAt = authorizationExpiresAt,
         )
     }

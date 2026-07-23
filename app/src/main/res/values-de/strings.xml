@@ -1454,6 +1454,8 @@
     <string name="group_leave_dialog_confirm">Verlassen</string>
     <string name="group_leave_dialog_cancel">Abbrechen</string>
 
+    <string name="group_quit_capture_failed">Dein Einsatz konnte nicht abgebucht werden — du bist weiterhin in der Challenge. Prüfe deine Zahlungsmethode und versuche es erneut.</string>
+
     <string name="group_delete_button">Challenge löschen</string>
     <string name="group_delete_dialog_title">Challenge löschen?</string>
     <string name="group_delete_dialog_body">Alle %1$d Teilnehmer erhalten ihren Einsatz vollständig zurück.</string>

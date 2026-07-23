@@ -302,7 +302,17 @@ class GroupChallengeDetailViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     Timber.e(e, "GroupDetailVM: quitChallenge failed for group %s", groupId)
-                    _quitState.value = QuitState.Error(ErrorMessages.from(context, e))
+                    // Capture gate (failParticipant CF): the stake could not be collected, so
+                    // the server deliberately left the participant ACTIVE. Say that plainly —
+                    // a generic error would leave the user unsure whether they are still in.
+                    val code = e.message.orEmpty()
+                    _quitState.value = if (
+                        code.contains("capture_failed") || code.contains("capture_not_possible")
+                    ) {
+                        QuitState.Error(context.getString(R.string.group_quit_capture_failed))
+                    } else {
+                        QuitState.Error(ErrorMessages.from(context, e))
+                    }
                 }
         }
     }

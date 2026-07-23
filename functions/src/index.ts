@@ -841,27 +841,65 @@ export const failParticipant = functions.runWith({ maxInstances: 10 }).region(RE
     const gc = doc.data()!;
     const participants = parseParticipants(gc["participants"]);
 
+    const failedParticipant = participants.find((p) => p["userId"] === failedUserId);
+    if (!failedParticipant) throw new HttpError(404, "You are not a participant of this challenge.");
+
+    // Idempotency: a previous run already captured the stake and wrote the status.
+    if (failedParticipant["status"] === "failed") {
+      functions.logger.info("failParticipant: already failed (idempotent)", { groupId, userId: failedUserId });
+      res.json({ success: true, alreadyFailed: true });
+      return;
+    }
+
+    // ── CAPTURE GATE (invariants #1 / #6) ──────────────────────────────────────
+    // The status write below runs ONLY after the stake is confirmed captured. Every
+    // non-captured outcome throws, leaving the participant "active" and returning a
+    // machine-readable error code. NEVER write "failed" for money we did not collect:
+    // completeGroupChallenge sums a failed participant's amountCents into failedPot
+    // and pays it to the winners via transfers.create — an uncaptured forfeit would
+    // pay out cash that was never taken in.
+    const paymentIntentId = failedParticipant["paymentIntentId"] as string | undefined;
+    if (paymentIntentId) {
+      let pi: Stripe.PaymentIntent;
+      try {
+        pi = await getStripe().paymentIntents.retrieve(paymentIntentId);
+      } catch (e) {
+        functions.logger.error("failParticipant: PI retrieve failed — participant stays active", { groupId, userId: failedUserId, error: e });
+        throw new HttpError(502, "capture_failed");
+      }
+
+      if (pi.status === "requires_capture") {
+        let captured: Stripe.PaymentIntent;
+        try {
+          captured = await getStripe().paymentIntents.capture(pi.id);
+        } catch (e) {
+          functions.logger.error("failParticipant: capture failed — participant stays active", { groupId, userId: failedUserId, error: e });
+          throw new HttpError(502, "capture_failed");
+        }
+        if (captured.status !== "succeeded") {
+          functions.logger.error("failParticipant: capture returned a non-succeeded status — participant stays active", { groupId, userId: failedUserId, piStatus: captured.status });
+          throw new HttpError(502, "capture_failed");
+        }
+        functions.logger.info("failParticipant: payment captured", { groupId, userId: failedUserId });
+      } else if (pi.status === "succeeded") {
+        // PI was already captured when creator started the challenge — stake is collected.
+        functions.logger.info("failParticipant: PI already captured at challenge start, skipping", { groupId, userId: failedUserId });
+      } else {
+        // canceled / requires_payment_method / processing / … — nothing is collected and
+        // nothing can be collected now. Refuse rather than forfeit an uncollected stake.
+        functions.logger.error("failParticipant: PI not capturable — participant stays active", { groupId, userId: failedUserId, piStatus: pi.status });
+        throw new HttpError(409, "capture_not_possible");
+      }
+    } else {
+      // PI-less legacy participant: there is no stake to collect, so there is nothing to
+      // gate on. This is the one documented no-capture "failed" write (invariant #6).
+      functions.logger.warn("failParticipant: participant has no paymentIntentId — failing without capture (legacy)", { groupId, userId: failedUserId });
+    }
+
+    // Reached only on a confirmed capture (or the PI-less legacy case above).
     const updatedParticipants = participants.map((p) =>
       p["userId"] === failedUserId ? { ...p, status: "failed", failedAt: Date.now() } : p
     );
-
-    const failedParticipant = participants.find((p) => p["userId"] === failedUserId);
-    if (failedParticipant?.["paymentIntentId"]) {
-      try {
-        const pi = await getStripe().paymentIntents.retrieve(failedParticipant["paymentIntentId"] as string);
-        if (pi.status === "requires_capture") {
-          await getStripe().paymentIntents.capture(pi.id);
-          functions.logger.info("failParticipant: payment captured", { groupId, userId: failedUserId });
-        } else if (pi.status === "succeeded") {
-          // PI was already captured when creator started the challenge — no action needed.
-          functions.logger.info("failParticipant: PI already captured at challenge start, skipping", { groupId, userId: failedUserId });
-        } else {
-          functions.logger.warn("failParticipant: unexpected PI status", { groupId, userId: failedUserId, piStatus: pi.status });
-        }
-      } catch (e) {
-        functions.logger.error("failParticipant: capture failed", { groupId, userId: failedUserId, error: e });
-      }
-    }
 
     await docRef.update({ participants: updatedParticipants });
     functions.logger.info("failParticipant: participant failed", { groupId, userId: failedUserId });

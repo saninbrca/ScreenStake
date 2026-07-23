@@ -1470,6 +1470,8 @@
     <string name="group_leave_dialog_confirm">Leave</string>
     <string name="group_leave_dialog_cancel">Cancel</string>
 
+    <string name="group_quit_capture_failed">Your stake could not be charged, so you are still in the challenge. Check your payment method and try again.</string>
+
     <string name="group_delete_button">Delete challenge</string>
     <string name="group_delete_dialog_title">Delete challenge?</string>
     <string name="group_delete_dialog_body">All %1$d participants will get their stake fully refunded.</string>

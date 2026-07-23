@@ -1194,25 +1194,38 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
       const updatedParticipants = await Promise.all(participants.map(async (p) => {
         const userId = p["userId"] as string;
         const pid = p["paymentIntentId"] as string;
+        // ── PAYOUT GATE ──────────────────────────────────────────────────────
+        // Only a confirmed Stripe release lets us record this participant as paid.
+        // A PI-less legacy participant never staked anything, so nothing is owed
+        // and there is nothing to gate on (preserves the previous payload exactly).
+        let stakeReturned = !pid;
         if (pid) {
           try {
             const pi = await getStripe().paymentIntents.retrieve(pid);
             functions.logger.info("completeGroupChallenge: nobody-failed PI status", { groupId, userId, pid, piStatus: pi.status });
             if (pi.status === "requires_capture") {
               await getStripe().paymentIntents.cancel(pid);
+              stakeReturned = true;
               functions.logger.info("completeGroupChallenge: nobody-failed PI cancelled (full cancel)", { groupId, userId, pid });
             } else if (pi.status === "succeeded") {
               await getStripe().refunds.create({ payment_intent: pid });
+              stakeReturned = true;
               functions.logger.info("completeGroupChallenge: nobody-failed PI full-refunded", { groupId, userId, pid });
             } else {
-              functions.logger.warn("completeGroupChallenge: nobody-failed PI in unexpected status — skipping Stripe op", { groupId, userId, pid, piStatus: pi.status });
+              functions.logger.error("completeGroupChallenge: nobody-failed PI in unexpected status — payout OWED, participant NOT recorded as paid", { groupId, userId, pid, piStatus: pi.status });
             }
           } catch (e) {
-            functions.logger.error("completeGroupChallenge: full refund failed", { groupId, userId, error: e });
+            functions.logger.error("completeGroupChallenge: full refund failed — payout OWED, participant NOT recorded as paid", { groupId, userId, error: e });
           }
         }
-        return { ...p, status: "completed", payoutStatus: "completed", finalPayout: p["amountCents"] ?? buyInCents };
+        const stake = (p["amountCents"] as number) ?? buyInCents;
+        if (!stakeReturned) {
+          return { ...p, status: "completed", payoutStatus: "refund_failed", finalPayout: 0, payoutOwedCents: stake };
+        }
+        return { ...p, status: "completed", payoutStatus: "completed", finalPayout: stake };
       }));
+      const unpaidNobodyFailed = (updatedParticipants as Record<string, unknown>[])
+        .filter((p) => p["payoutStatus"] === "refund_failed");
       await docRef.update({
         status: "completed",
         completedAt: Date.now(),
@@ -1221,9 +1234,21 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
         prizePerWinner: 0,
         nobodyFailed: true,
         participants: updatedParticipants,
+        // Doc-level mirror of the per-participant gate: Firestore cannot query inside
+        // array elements, so this is what makes an owed payout FINDABLE afterwards
+        // (groupChallenges where payoutIncomplete == true).
+        payoutIncomplete: unpaidNobodyFailed.length > 0,
+        payoutFailedUserIds: unpaidNobodyFailed.map((p) => p["userId"]),
       });
+      if (unpaidNobodyFailed.length > 0) {
+        functions.logger.error("completeGroupChallenge: settled with UNPAID participants — manual payout required", {
+          groupId,
+          unpaidCount: unpaidNobodyFailed.length,
+          unpaidUserIds: unpaidNobodyFailed.map((p) => p["userId"]),
+        });
+      }
       functions.logger.info("completeGroupChallenge: completed (nobody failed)", { groupId });
-      res.json({ success: true, nobodyFailed: true });
+      res.json({ success: true, nobodyFailed: true, payoutIncomplete: unpaidNobodyFailed.length > 0 });
       return;
     }
 
@@ -1268,6 +1293,11 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
       functions.logger.info("completeGroupChallenge: processing winner stake refund (80%)", {
         groupId, userId, participantStake, stakeRefund,
       });
+      // ── PAYOUT GATE ────────────────────────────────────────────────────────
+      // The winner is recorded as paid ONLY if the 80% stake refund actually went
+      // through. A PI-less legacy winner has no stake to return, so nothing is owed
+      // and the payload is unchanged from before.
+      let stakeRefunded = !pid;
       if (pid) {
         try {
           const pi = await getStripe().paymentIntents.retrieve(pid);
@@ -1280,16 +1310,32 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
             await getStripe().refunds.create({ payment_intent: pid, amount: stakeRefund });
             functions.logger.info("completeGroupChallenge: winner PI partial-refunded (already captured)", { groupId, userId, stakeRefund });
           }
+          stakeRefunded = true;
         } catch (e) {
-          functions.logger.error("completeGroupChallenge: stake refund failed", { groupId, userId, error: e });
+          functions.logger.error("completeGroupChallenge: stake refund failed — payout OWED, winner NOT recorded as paid", { groupId, userId, error: e });
         }
       }
 
       const displayName = (p["displayName"] as string) ?? "";
 
+      /**
+       * Folds the stake-refund outcome into the bonus-side result. When the 80% stake
+       * refund did not go through, the winner is NEVER recorded as paid: the payout
+       * status becomes "refund_failed" and the unreturned stake is recorded as owed,
+       * with finalPayout counting only money that actually moved.
+       *
+       * The bonus branches below (Connect lookup, transfer, pendingPayouts fallback)
+       * are unchanged — a pending bonus is still written to pendingPayouts either way,
+       * so the bonus keeps its own independent record.
+       */
+      const settle = (payoutStatus: string, bonusCents: number) =>
+        stakeRefunded
+          ? { ...p, status: "success", payoutStatus, finalPayout: stakeRefund + bonusCents }
+          : { ...p, status: "success", payoutStatus: "refund_failed", finalPayout: bonusCents, payoutOwedCents: stakeRefund };
+
       // No bonus pot to distribute — stake refund only
       if (perWinnerBonus <= 0) {
-        return { ...p, status: "success", payoutStatus: "completed", finalPayout: stakeRefund };
+        return settle("completed", 0);
       }
 
       // Look up connected account
@@ -1318,7 +1364,7 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
         try { await writePendingPayout(); } catch (e) {
           functions.logger.error("completeGroupChallenge: pendingPayout write failed", { groupId, userId, error: e });
         }
-        return { ...p, status: "success", payoutStatus: "pending_payout", finalPayout: stakeRefund + perWinnerBonus };
+        return settle("pending_payout", perWinnerBonus);
       }
 
       // Verify payouts are enabled before transferring
@@ -1326,7 +1372,7 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
         const account = await getStripe().accounts.retrieve(connectedAccountId);
         if (!account.payouts_enabled) {
           await writePendingPayout();
-          return { ...p, status: "success", payoutStatus: "pending_payout", finalPayout: stakeRefund + perWinnerBonus };
+          return settle("pending_payout", perWinnerBonus);
         }
 
         await getStripe().transfers.create({
@@ -1348,14 +1394,17 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
           }
         }, { merge: true });
 
-        return { ...p, status: "success", payoutStatus: "completed", finalPayout: stakeRefund + perWinnerBonus };
+        return settle("completed", perWinnerBonus);
       } catch (e) {
         functions.logger.error("completeGroupChallenge: transfer failed", { groupId, userId, error: e });
         // Fall back to pending so money isn't lost
         try { await writePendingPayout(); } catch (_) { /* best effort */ }
-        return { ...p, status: "success", payoutStatus: "pending_payout", finalPayout: stakeRefund + perWinnerBonus };
+        return settle("pending_payout", perWinnerBonus);
       }
     }));
+
+    const unpaidWinners = (updatedParticipants as Record<string, unknown>[])
+      .filter((p) => p["payoutStatus"] === "refund_failed");
 
     await docRef.update({
       status: "completed",
@@ -1365,7 +1414,20 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
       prizePerWinner: perWinnerBonus,
       nobodyFailed: false,
       participants: updatedParticipants,
+      // Doc-level mirror of the per-winner gate: Firestore cannot query inside array
+      // elements, so this is what makes an owed payout FINDABLE afterwards
+      // (groupChallenges where payoutIncomplete == true).
+      payoutIncomplete: unpaidWinners.length > 0,
+      payoutFailedUserIds: unpaidWinners.map((p) => p["userId"]),
     });
+
+    if (unpaidWinners.length > 0) {
+      functions.logger.error("completeGroupChallenge: settled with UNPAID winners — manual payout required", {
+        groupId,
+        unpaidCount: unpaidWinners.length,
+        unpaidUserIds: unpaidWinners.map((p) => p["userId"]),
+      });
+    }
 
     // Counter: the 10% Group Challenge fee on the failed-participants pot is service revenue.
     await bumpCounters({ totalRevenueCents: appFee });

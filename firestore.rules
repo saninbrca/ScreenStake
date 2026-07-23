@@ -140,18 +140,22 @@ service cloud.firestore {
     // in the blocked list so the sync continues to work.
     match /groupChallenges/{groupId} {
       allow read: if request.auth != null;
+      // 'payoutIncomplete' / 'payoutFailedUserIds' are the settlement liability markers
+      // written by completeGroupChallenge when a refund/transfer did not go through.
+      // They are Cloud-Function-only: a client must never be able to clear a record of
+      // money the service still owes.
       allow create: if request.auth != null
         && !request.resource.data.keys().hasAny([
           'status', 'startDate', 'endDate', 'completedAt',
           'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
-          'authorizationExpiresAt'
+          'authorizationExpiresAt', 'payoutIncomplete', 'payoutFailedUserIds'
         ]);
       allow update: if request.auth != null
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny([
             'status', 'startDate', 'endDate', 'completedAt',
             'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
-            'authorizationExpiresAt'
+            'authorizationExpiresAt', 'payoutIncomplete', 'payoutFailedUserIds'
           ]);
       allow delete: if false;
 

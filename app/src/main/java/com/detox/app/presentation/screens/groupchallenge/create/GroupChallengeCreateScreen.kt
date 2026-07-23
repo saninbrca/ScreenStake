@@ -1,15 +1,18 @@
 package com.detox.app.presentation.screens.groupchallenge.create
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,10 +28,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,7 +43,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PlainTooltip
@@ -63,12 +67,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -78,8 +79,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.LimitType
+import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
+import com.detox.app.presentation.components.WIZARD_TRANSITION_MS
+import com.detox.app.presentation.components.WizardFeeBreakdownCard
+import com.detox.app.presentation.components.WizardHeader
+import com.detox.app.presentation.components.WizardLimitTypeCard
+import com.detox.app.presentation.components.WizardMissingPermissionRow
+import com.detox.app.presentation.components.WizardSummaryDividerRow
+import com.detox.app.presentation.components.WizardTransitionEasing
+import com.detox.app.presentation.components.WizardWaiverCheckboxRow
+import com.detox.app.presentation.components.formatEuroCents
 import com.detox.app.presentation.util.pressScaleFeedback
 import com.detox.app.ui.theme.detoxColors
 import com.detox.app.util.HapticManager
@@ -97,13 +108,6 @@ import java.util.Locale
 
 private val GCardShape      = RoundedCornerShape(16.dp)
 private val GBtnShape       = RoundedCornerShape(14.dp)
-
-// Placeholder — keeps existing review logic working
-val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
-    "Social Media" to listOf("facebook.com", "instagram.com", "twitter.com"),
-    "Video Streaming" to listOf("youtube.com", "netflix.com"),
-    "News" to listOf("nytimes.com", "cnn.com"),
-)
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -165,18 +169,121 @@ fun GroupChallengeCreateScreen(
         if (formState.currentStep == 1) onBack() else viewModel.goBack()
     }
 
+    // ── Adult-block exclusivity dialogs (both directions, no silent clearing) — mirrors Solo/Hard ──
+    if (formState.showAdultExclusiveDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAdultExclusiveDialog,
+            title = { Text(stringResource(R.string.adult_exclusive_dialog_title)) },
+            text = { Text(stringResource(R.string.adult_exclusive_dialog_body)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmAdultExclusive) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAdultExclusiveDialog) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_dismiss))
+                }
+            },
+        )
+    }
+
+    if (formState.pendingAdultAppPackage != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAppOverAdultDialog,
+            title = { Text(stringResource(R.string.adult_exclusive_dialog_title)) },
+            text = { Text(stringResource(R.string.adult_exclusive_app_dialog_body)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmAppOverAdult) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAppOverAdultDialog) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_dismiss))
+                }
+            },
+        )
+    }
+
+    // ── Pre-flight permission gate (mirrors Solo/Hard) ────────────────────────
+    val permissionContext = LocalContext.current
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    if (showAccessibilityDisclosure) {
+        AccessibilityDisclosureDialog(
+            onAccept = {
+                showAccessibilityDisclosure = false
+                permissionContext.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+            onDismiss = { showAccessibilityDisclosure = false },
+        )
+    }
+
+    (uiState as? GroupCreateUiState.MissingPermissions)?.let { missing ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPermissionDialog,
+            title = { Text(stringResource(R.string.challenge_permission_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.challenge_permission_dialog_body))
+                    if (missing.needsUsage) {
+                        WizardMissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_usage),
+                            onGrant = {
+                                permissionContext.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            },
+                        )
+                    }
+                    if (missing.needsAccessibility) {
+                        WizardMissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_accessibility),
+                            onGrant = { showAccessibilityDisclosure = true },
+                        )
+                    }
+                    if (missing.needsOverlay) {
+                        WizardMissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_overlay),
+                            onGrant = {
+                                permissionContext.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${permissionContext.packageName}"),
+                                    )
+                                )
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPermissionDialog) {
+                    Text(stringResource(R.string.challenge_permission_dialog_cancel))
+                }
+            },
+        )
+    }
+
     val isLoading = uiState is GroupCreateUiState.Loading || uiState is GroupCreateUiState.AwaitingPayment
 
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = detoxColors.screenBackground,
+        // Resolves LocalContentColor (ripples + default text) — the static Black
+        // default is invisible on the dark background.
+        contentColor = detoxColors.label,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             SnackbarHost(snackbarHostState)
 
-            GWizardHeader(
-                currentStep = formState.currentStep,
-                totalSteps = GROUP_WIZARD_TOTAL_STEPS,
+            // Block-only (Websites tab) skips step 2, so the displayed "Step X of Y" counter is the
+            // position within the path's visible-step list — never a visibly missing number.
+            val steps = visibleGroupSteps(formState)
+            val displayedTotal = steps.size
+            val displayedStep = (steps.indexOf(formState.currentStep) + 1).coerceAtLeast(1)
+
+            WizardHeader(
+                currentStep = displayedStep,
+                totalSteps = displayedTotal,
                 onBack = {
                     if (formState.currentStep == 1) onBack() else viewModel.goBack()
                 },
@@ -186,8 +293,12 @@ fun GroupChallengeCreateScreen(
                 targetState = formState.currentStep,
                 transitionSpec = {
                     val dir = if (targetState > initialState) 1 else -1
-                    (slideInHorizontally { it * dir } + fadeIn()) togetherWith
-                            (slideOutHorizontally { -it * dir } + fadeOut())
+                    // ~300ms ease-out, synced with the WizardHeader progress-bar animation so the
+                    // bar fill and the step content move together.
+                    (slideInHorizontally(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing)) { it * dir } +
+                            fadeIn(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing))) togetherWith
+                            (slideOutHorizontally(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing)) { -it * dir } +
+                                    fadeOut(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing)))
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -221,6 +332,7 @@ fun GroupChallengeCreateScreen(
                     )
                     3 -> GStep3LimitAndDuration(
                         formState = formState,
+                        isBlockOnly = formState.activeTab == 1,
                         onUpdateLimitMinutes = viewModel::setLimitValueMinutes,
                         onUpdateLimitSessions = viewModel::setLimitValueSessions,
                         onUpdateSessionDuration = viewModel::setSessionMinutes,
@@ -244,6 +356,7 @@ fun GroupChallengeCreateScreen(
                     )
                     6 -> GStep6Review(
                         formState = formState,
+                        isBlockOnly = formState.activeTab == 1,
                         isLoading = isLoading,
                         onCreateChallenge = viewModel::createChallenge,
                     )
@@ -285,49 +398,6 @@ fun GroupChallengeCreateScreen(
     }
 }
 
-// ── Wizard header ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun GWizardHeader(
-    currentStep: Int,
-    totalSteps: Int,
-    onBack: () -> Unit,
-) {
-    val progress = currentStep.toFloat() / totalSteps.toFloat()
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.wizard_back),
-                    tint = detoxColors.label,
-                )
-            }
-            Text(
-                text = stringResource(R.string.wizard_step_progress, currentStep, totalSteps),
-                fontSize = 13.sp,
-                color = detoxColors.subtext,
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.width(48.dp))
-        }
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(2.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.outlineVariant,
-        )
-    }
-}
-
 // ── Step 2: Limit type ────────────────────────────────────────────────────────
 
 @Composable
@@ -339,8 +409,8 @@ private fun GStep2LimitType(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = stringResource(R.string.wizard_limit_type_title),
@@ -355,25 +425,30 @@ private fun GStep2LimitType(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        GGroupLimitTypeCard(
-            iconBg = detoxColors.softOrangeBg,
-            iconContent = { Text("⏱", fontSize = 18.sp) },
+        // Same cards, icons and hue-per-option as Solo/Hard step 3. TIME_WINDOW is absent by
+        // design: the group wizard has no schedule step, so a time window has nowhere to be set.
+        WizardLimitTypeCard(
+            icon = Icons.Outlined.Schedule,
+            iconTint = detoxColors.softPurpleIcon,
+            iconBg = detoxColors.softPurpleBg,
             title = stringResource(R.string.wizard_limit_time_title),
             description = stringResource(R.string.wizard_limit_time_desc),
             isSelected = selected == LimitType.TIME,
             onClick = { onSelect(LimitType.TIME) },
         )
-        GGroupLimitTypeCard(
-            iconBg = detoxColors.softBlueBg,
-            iconContent = { Text("🔢", fontSize = 18.sp) },
+        WizardLimitTypeCard(
+            icon = Icons.Outlined.TouchApp,
+            iconTint = detoxColors.softGreenIcon,
+            iconBg = detoxColors.softGreenBg,
             title = stringResource(R.string.wizard_limit_sessions_title),
             description = stringResource(R.string.wizard_limit_sessions_desc),
             isSelected = selected == LimitType.SESSIONS,
             onClick = { onSelect(LimitType.SESSIONS) },
         )
-        GGroupLimitTypeCard(
-            iconBg = detoxColors.softPurpleBg,
-            iconContent = { Text("💰", fontSize = 18.sp) },
+        WizardLimitTypeCard(
+            icon = Icons.Outlined.HourglassTop,
+            iconTint = detoxColors.softOrangeIcon,
+            iconBg = detoxColors.softOrangeBg,
             title = stringResource(R.string.wizard_limit_budget_title),
             description = stringResource(R.string.wizard_limit_budget_desc),
             isSelected = selected == LimitType.TIME_BUDGET,
@@ -382,148 +457,93 @@ private fun GStep2LimitType(
     }
 }
 
-@Composable
-private fun GGroupLimitTypeCard(
-    iconBg: Color,
-    iconContent: @Composable () -> Unit,
-    title: String,
-    description: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-) {
-    val borderColor = if (isSelected) detoxColors.accent else detoxColors.cardBorder
-    val borderWidth = if (isSelected) 2.dp else 0.5.dp
-    val bgColor = if (isSelected) detoxColors.selectedSurface else detoxColors.cardBackground
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(GCardShape)
-            .background(bgColor)
-            .border(borderWidth, borderColor, GCardShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(iconBg),
-                contentAlignment = Alignment.Center,
-            ) {
-                iconContent()
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = detoxColors.label,
-                )
-                Text(
-                    text = description,
-                    fontSize = 13.sp,
-                    color = detoxColors.subtext,
-                )
-            }
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = detoxColors.accent,
-                    modifier = Modifier.size(20.dp),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clip(RoundedCornerShape(50))
-                        .border(1.5.dp, detoxColors.subtext, RoundedCornerShape(50)),
-                )
-            }
-        }
-    }
-}
-
 // ── Step 3: Limit value + duration ────────────────────────────────────────────
 
 @Composable
 private fun GStep3LimitAndDuration(
     formState: GroupCreateFormState,
+    isBlockOnly: Boolean,
     onUpdateLimitMinutes: (Int) -> Unit,
     onUpdateLimitSessions: (Int) -> Unit,
     onUpdateSessionDuration: (Int) -> Unit,
     onUpdateDailyBudget: (Int) -> Unit,
     onUpdateDuration: (Int) -> Unit,
 ) {
+    // Group merges Solo's step 4 (limit values) and step 6 (duration) into one step, but each
+    // section is styled exactly like its Solo counterpart: 22sp/16sp headings and pickers sitting
+    // bare on the screen background, never boxed in a card.
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.wizard_set_limit_title),
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = detoxColors.label,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
+        // Block-only (Websites/adult) is a 24/7 hard block with no minute limit, so the limit picker
+        // is hidden — this step configures only the duration.
+        if (!isBlockOnly) {
+            Text(
+                text = stringResource(R.string.wizard_set_limit_title),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = detoxColors.label,
+            )
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(GCardShape)
-                .background(detoxColors.cardBackground)
-                .border(0.5.dp, detoxColors.cardBorder, GCardShape)
-                .padding(16.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                when (formState.limitType) {
-                    LimitType.TIME -> DetoxHorizontalPicker(
+            when (formState.limitType) {
+                LimitType.TIME -> {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    DetoxHorizontalPicker(
                         values = (5..120).toList(),
                         selectedValue = formState.limitValueMinutes.coerceIn(5, 120),
                         onValueChange = onUpdateLimitMinutes,
                         unit = stringResource(R.string.wizard_set_limit_minutes_unit),
+                        surfaceColor = detoxColors.screenBackground,
                     )
-                    LimitType.SESSIONS -> {
-                        DetoxHorizontalPicker(
-                            values = (1..20).toList(),
-                            selectedValue = formState.limitValueSessions.coerceAtMost(20),
-                            onValueChange = onUpdateLimitSessions,
-                            unit = stringResource(R.string.wizard_set_limit_opens_unit),
-                        )
-                        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
-                        Text(
-                            text = stringResource(R.string.wizard_set_limit_session_label),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = detoxColors.subtext,
-                        )
-                        DetoxHorizontalPicker(
-                            values = (1..30).toList(),
-                            selectedValue = formState.sessionMinutes.coerceAtMost(30),
-                            onValueChange = onUpdateSessionDuration,
-                            unit = stringResource(R.string.wizard_set_limit_session_unit),
-                        )
-                    }
-                    LimitType.TIME_BUDGET -> DetoxHorizontalPicker(
+                }
+
+                LimitType.SESSIONS -> {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    DetoxHorizontalPicker(
+                        values = (1..20).toList(),
+                        selectedValue = formState.limitValueSessions.coerceAtMost(20),
+                        onValueChange = onUpdateLimitSessions,
+                        unit = stringResource(R.string.wizard_set_limit_opens_unit),
+                        surfaceColor = detoxColors.screenBackground,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(R.string.wizard_set_limit_session_label),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = detoxColors.label,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    DetoxHorizontalPicker(
+                        values = (1..30).toList(),
+                        selectedValue = formState.sessionMinutes.coerceAtMost(30),
+                        onValueChange = onUpdateSessionDuration,
+                        unit = stringResource(R.string.wizard_set_limit_session_unit),
+                        surfaceColor = detoxColors.screenBackground,
+                    )
+                }
+
+                LimitType.TIME_BUDGET -> {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    DetoxHorizontalPicker(
                         values = (5..120).toList(),
                         selectedValue = formState.dailyBudgetMinutes.coerceIn(5, 120),
                         onValueChange = onUpdateDailyBudget,
                         unit = stringResource(R.string.wizard_set_limit_budget_unit),
+                        surfaceColor = detoxColors.screenBackground,
                     )
-                    else -> Unit
                 }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+                else -> Unit
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = detoxColors.divider)
+        }
 
         Text(
             text = stringResource(R.string.wizard_duration_title),
@@ -532,21 +552,13 @@ private fun GStep3LimitAndDuration(
             color = detoxColors.label,
         )
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(GCardShape)
-                .background(detoxColors.cardBackground)
-                .border(0.5.dp, detoxColors.cardBorder, GCardShape)
-                .padding(16.dp),
-        ) {
-            DetoxHorizontalPicker(
-                values = (3..30).toList(),
-                selectedValue = formState.durationDays.coerceIn(3, 30),
-                onValueChange = onUpdateDuration,
-                unit = "Tage",
-            )
-        }
+        DetoxHorizontalPicker(
+            values = (3..30).toList(),
+            selectedValue = formState.durationDays.coerceIn(3, 30),
+            onValueChange = onUpdateDuration,
+            unit = stringResource(R.string.wizard_duration_days_unit),
+            surfaceColor = detoxColors.screenBackground,
+        )
     }
 }
 
@@ -562,7 +574,7 @@ private fun GStep4BuyIn(
     // Remote-controlled buy-in range (config/app) with hardcoded €10–€50 fallback.
     val safeMin = buyInMin.coerceAtLeast(1)
     val safeMax = buyInMax.coerceAtLeast(safeMin)
-    val estimatedPot = buyIn * 20
+    val estimatedPot = buyIn * GROUP_MAX_PARTICIPANTS
 
     Column(
         modifier = Modifier
@@ -839,19 +851,20 @@ private fun GStep5StartDateAndBonus(
 @Composable
 private fun GStep6Review(
     formState: GroupCreateFormState,
+    isBlockOnly: Boolean,
     isLoading: Boolean,
     onCreateChallenge: () -> Unit,
 ) {
     val sdf = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
-    val estimatedPot = formState.buyInEuros * 20
+    val estimatedPot = formState.buyInEuros * GROUP_MAX_PARTICIPANTS
     var waiverChecked by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = stringResource(R.string.group_wizard_review_title),
@@ -861,6 +874,8 @@ private fun GStep6Review(
         )
 
         // ── Summary card ────────────────────────────────────────────────────
+        // Rows, labels and value formats are the same as Solo's step 7; only the
+        // group-specific rows (stake, start, bonus, players, pot) are additional.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -869,63 +884,79 @@ private fun GStep6Review(
                 .border(0.5.dp, detoxColors.cardBorder, GCardShape),
         ) {
             Column {
-                GSummaryDividerRow(
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.wizard_review_mode_label),
                     value = stringResource(R.string.wizard_review_mode_group),
                     isFirst = true,
                 )
-                val appSummary = if (formState.packageNames.size == 1) formState.displayName
-                    else "${formState.displayName} +${formState.packageNames.size - 1}"
-                GSummaryDividerRow(
-                    label = stringResource(R.string.wizard_review_apps_label),
-                    value = appSummary,
-                )
-                val checkedDomains = formState.domainToggles.entries
-                    .filter { it.value }
-                    .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
-                val allBlockedDomains = (checkedDomains + formState.manualDomains).distinct()
-                if (allBlockedDomains.isNotEmpty()) {
-                    GSummaryDividerRow(
-                        label = "+ Websites",
-                        value = allBlockedDomains.take(3).joinToString(", ") +
-                                if (allBlockedDomains.size > 3) " +${allBlockedDomains.size - 3}" else "",
+                // Block-only path (Websites/adult): the target row lists the domains (or the adult
+                // label for adult-only) and the limit row reads "always blocked" — 24/7 hard block.
+                val targetNames = if (isBlockOnly) formState.manualDomains else formState.packageNames
+                val targetLabel = if (isBlockOnly) stringResource(R.string.wizard_review_blocked_label)
+                    else stringResource(R.string.wizard_review_apps_label)
+                val targetValue = when {
+                    isBlockOnly && targetNames.isEmpty() -> stringResource(R.string.adult_block_display_name)
+                    isBlockOnly && targetNames.size == 1 -> targetNames[0]
+                    isBlockOnly && targetNames.size == 2 -> targetNames[0] + ", " + targetNames[1]
+                    isBlockOnly -> stringResource(
+                        R.string.wizard_review_apps_overflow_format,
+                        targetNames[0], targetNames[1], targetNames.size - 2,
+                    )
+                    // App path: the form only carries the first app's display name, so a single
+                    // app shows its name and more than one falls back to the count.
+                    targetNames.size == 1 && formState.displayName.isNotBlank() -> formState.displayName
+                    else -> stringResource(R.string.wizard_review_apps_count, targetNames.size)
+                }
+                WizardSummaryDividerRow(label = targetLabel, value = targetValue)
+                if (isBlockOnly && formState.blockAdultContent && targetNames.isNotEmpty()) {
+                    WizardSummaryDividerRow(
+                        label = stringResource(R.string.adult_block_display_name),
+                        value = stringResource(R.string.wizard_review_adult_active),
                     )
                 }
-                val limitSummary = when (formState.limitType) {
-                    LimitType.TIME -> "${formState.limitValueMinutes} Min / Tag"
-                    LimitType.SESSIONS -> "${formState.limitValueSessions} Öffnungen / Tag"
-                    LimitType.TIME_BUDGET -> "${formState.dailyBudgetMinutes} Min Budget"
-                    else -> "—"
-                }
-                GSummaryDividerRow(
+                val limitValue = if (isBlockOnly) stringResource(R.string.wizard_review_always_blocked)
+                    else when (formState.limitType) {
+                        LimitType.TIME -> stringResource(
+                            R.string.wizard_review_limit_time_format, formState.limitValueMinutes,
+                        )
+                        LimitType.SESSIONS -> stringResource(
+                            R.string.wizard_review_limit_sessions_format,
+                            formState.limitValueSessions, formState.sessionMinutes,
+                        )
+                        LimitType.TIME_BUDGET -> stringResource(
+                            R.string.wizard_review_limit_budget_format, formState.dailyBudgetMinutes,
+                        )
+                        else -> "—"
+                    }
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.wizard_review_limit_label),
-                    value = limitSummary,
+                    value = limitValue,
                 )
-                GSummaryDividerRow(
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.wizard_review_duration_label),
-                    value = "${formState.durationDays} Tage",
+                    value = stringResource(R.string.wizard_review_days_format, formState.durationDays),
                 )
-                GSummaryDividerRow(
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_einsatz_label),
                     value = stringResource(R.string.group_wizard_review_einsatz_value, formState.buyInEuros),
                 )
-                GSummaryDividerRow(
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_start_label),
                     value = if (formState.startDateEnabled && formState.startDateMs > 0L)
                         sdf.format(Date(formState.startDateMs))
                     else stringResource(R.string.group_wizard_review_start_manual),
                 )
-                GSummaryDividerRow(
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_bonus_label),
                     value = if (formState.bonusEnabled)
                         stringResource(R.string.group_wizard_review_bonus_on)
                     else stringResource(R.string.group_wizard_review_bonus_off),
                 )
-                GSummaryDividerRow(
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_max_players_label),
-                    value = "20",
+                    value = GROUP_MAX_PARTICIPANTS.toString(),
                 )
-                GSummaryDividerRow(
+                WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_pot_label),
                     value = stringResource(R.string.group_wizard_review_pot_value, estimatedPot),
                     valueColor = detoxColors.accent,
@@ -938,22 +969,32 @@ private fun GStep6Review(
             val buyInCents = formState.buyInEuros * 100
             val refundCents = (buyInCents * 80) / 100      // Math.floor of 80%
             val feeCents = buyInCents - refundCents          // remainder = 20%
-            GFeeBreakdownCard(
-                buyInValue = gFormatEuroCents(buyInCents),
+            WizardFeeBreakdownCard(
+                stakeLabel = stringResource(R.string.fee_your_buyin),
+                stakeValue = formatEuroCents(buyInCents),
+                // The 80% is not guaranteed for a group — it is a possible prize share. That
+                // caveat is an asterisk on the value plus a footnote line under the rows, NOT
+                // prose appended to the money value itself.
                 refundValue = stringResource(
-                    R.string.fee_value_format, gFormatEuroCents(refundCents), 80,
-                ) + " " + stringResource(R.string.fee_return_on_success_group_note),
+                    R.string.fee_value_format_footnote, formatEuroCents(refundCents), 80,
+                ),
                 feeValue = stringResource(
-                    R.string.fee_value_format, gFormatEuroCents(feeCents), 20,
+                    R.string.fee_value_format, formatEuroCents(feeCents), 20,
+                ),
+                notes = listOf(
+                    stringResource(R.string.fee_return_on_success_group_note),
+                    stringResource(R.string.fee_group_no_loser_note),
                 ),
             )
         }
 
         // ── Withdrawal-rights waiver (FAGG § 18) ────────────────────────────
-        GWaiverCheckboxRow(
+        WizardWaiverCheckboxRow(
             checked = waiverChecked,
             onToggle = { waiverChecked = !waiverChecked },
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         // ── Create button ───────────────────────────────────────────────────
         val context = LocalContext.current
@@ -964,7 +1005,8 @@ private fun GStep6Review(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp),
+                .height(54.dp)
+                .pressScaleFeedback(),
             // Legal gate: the waiver must be ticked before the buy-in payment starts.
             enabled = !isLoading && waiverChecked,
             shape = GBtnShape,
@@ -989,152 +1031,5 @@ private fun GStep6Review(
                 )
             }
         }
-    }
-}
-
-// ── Fee breakdown card + withdrawal-rights waiver (FAGG § 18) ─────────────────
-
-/** Formats integer cents as a German money string, e.g. 800 → "€8,00". */
-private fun gFormatEuroCents(cents: Int): String =
-    "€%d,%02d".format(cents / 100, cents % 100)
-
-@Composable
-private fun GFeeBreakdownCard(
-    buyInValue: String,
-    refundValue: String,
-    feeValue: String,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(GCardShape)
-            .background(detoxColors.cardBackground)
-            .border(0.5.dp, detoxColors.cardBorder, GCardShape),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.fee_overview_title).uppercase(),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = detoxColors.subtext,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            GFeeRow(stringResource(R.string.fee_your_buyin), buyInValue, detoxColors.label)
-            HorizontalDivider(
-                color = detoxColors.divider,
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(vertical = 10.dp),
-            )
-            GFeeRow(stringResource(R.string.fee_return_on_success), refundValue, detoxColors.success)
-            HorizontalDivider(
-                color = detoxColors.divider,
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(vertical = 10.dp),
-            )
-            GFeeRow(stringResource(R.string.fee_service_fee), feeValue, detoxColors.subtext)
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = stringResource(R.string.fee_group_no_loser_note),
-                fontSize = 12.sp,
-                color = detoxColors.subtext,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-            )
-        }
-    }
-}
-
-@Composable
-private fun GFeeRow(label: String, value: String, valueColor: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = label, fontSize = 14.sp, color = detoxColors.label, modifier = Modifier.weight(1f))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = valueColor,
-            textAlign = TextAlign.End,
-        )
-    }
-}
-
-@Composable
-private fun GWaiverCheckboxRow(
-    checked: Boolean,
-    onToggle: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggle() }
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Box(
-            modifier = Modifier
-                .padding(top = 1.dp)
-                .size(22.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (checked) detoxColors.accent else detoxColors.cardBackground)
-                .border(
-                    width = 1.5.dp,
-                    color = if (checked) detoxColors.accent else MaterialTheme.colorScheme.outlineVariant,
-                    shape = RoundedCornerShape(6.dp),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (checked) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = stringResource(R.string.withdrawal_waiver_text),
-            fontSize = 14.sp,
-            color = detoxColors.label,
-        )
-    }
-}
-
-// ── Shared summary row with divider ──────────────────────────────────────────
-
-@Composable
-private fun GSummaryDividerRow(
-    label: String,
-    value: String,
-    valueColor: Color = detoxColors.label,
-    isFirst: Boolean = false,
-) {
-    if (!isFirst) {
-        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            color = detoxColors.subtext,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = valueColor,
-        )
     }
 }

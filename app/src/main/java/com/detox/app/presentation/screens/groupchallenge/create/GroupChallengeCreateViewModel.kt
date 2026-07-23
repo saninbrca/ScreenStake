@@ -1,6 +1,7 @@
 package com.detox.app.presentation.screens.groupchallenge.create
 
 import android.content.Context
+import android.provider.Settings
 import com.detox.app.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +17,7 @@ import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
 import com.detox.app.util.ErrorMessages
+import com.detox.app.util.PermissionUtils
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,7 +31,21 @@ import timber.log.Timber
 import javax.inject.Inject
 
 const val GROUP_WIZARD_TOTAL_STEPS = 6
-private const val MAX_PARTICIPANTS = 20
+/** Group cap — also drives the review-step "max players" row and the estimated-pot maths. */
+const val GROUP_MAX_PARTICIPANTS = 20
+
+/**
+ * Ordered list of visible step ids for the current wizard path (mirrors Solo/Hard's [visibleSteps]).
+ * Internal ids stay stable (the screen's `when(step)` keys on them); only membership changes:
+ *  - Apps tab (activeTab == 0): all steps.
+ *  - Block-only (Websites tab — custom domains and/or adult): a 24/7 hard block, so the limit-type
+ *    step (2) is skipped. Step 3 stays for the duration picker but renders duration-only.
+ *
+ * [GroupChallengeCreateViewModel.goNext]/[goBack] walk this list and the header counter is the
+ * position in it — pure so it is unit-testable.
+ */
+internal fun visibleGroupSteps(state: GroupCreateFormState): List<Int> =
+    if (state.activeTab == 1) listOf(1, 3, 4, 5, 6) else listOf(1, 2, 3, 4, 5, 6)
 
 data class GroupCreateFormState(
     val currentStep: Int = 1,
@@ -43,6 +59,11 @@ data class GroupCreateFormState(
     val manualDomains: List<String> = emptyList(),
     val manualDomainError: String? = null,
     val blockAdultContent: Boolean = false,
+    // Step 1 — adult-block exclusivity dialogs (mirror Solo/Hard; no silent clearing either direction)
+    /** True while the "adult ON would remove your selected apps" dialog is shown. */
+    val showAdultExclusiveDialog: Boolean = false,
+    /** Package tapped on the Apps tab while adult-block is ON; non-null shows the mirrored dialog. */
+    val pendingAdultAppPackage: String? = null,
     // Step 2 — limit type
     val limitType: LimitType? = null,
     // Step 3 — limit value + duration
@@ -73,6 +94,17 @@ sealed interface GroupCreateUiState {
     data class AwaitingPayment(val clientSecret: String) : GroupCreateUiState
     data class Created(val groupId: String, val code: String) : GroupCreateUiState
     data class Error(val message: String) : GroupCreateUiState
+
+    /**
+     * Pre-flight enforcement-permission gate result (mirrors Solo/Hard): at least one flagged
+     * permission is missing, so no PaymentIntent was created. The screen shows a dialog naming each
+     * missing permission and routes the user to grant it.
+     */
+    data class MissingPermissions(
+        val needsUsage: Boolean,
+        val needsAccessibility: Boolean,
+        val needsOverlay: Boolean,
+    ) : GroupCreateUiState
 }
 
 @HiltViewModel
@@ -139,6 +171,18 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun updateActiveTab(tab: Int) = _formState.update { it.copy(activeTab = tab, manualDomainError = null) }
 
     fun toggleApp(packageName: String) {
+        // Adult-block is exclusive with apps (mirror Solo/Hard): adding an app while adult is ON needs
+        // an explicit choice via the mirrored dialog. Removing is allowed defensively (unreachable while
+        // adult is ON, since adult implies no selected apps).
+        val current = _formState.value
+        if (current.blockAdultContent && !current.packageNames.contains(packageName)) {
+            _formState.update { it.copy(pendingAdultAppPackage = packageName) }
+            return
+        }
+        applyToggleApp(packageName)
+    }
+
+    private fun applyToggleApp(packageName: String) {
         val current = _formState.value.packageNames.toMutableList()
         if (current.contains(packageName)) {
             current.remove(packageName)
@@ -159,6 +203,16 @@ class GroupChallengeCreateViewModel @Inject constructor(
             )
         }
     }
+
+    /** Mirrored exclusivity dialog: user chose the app over adult-block. */
+    fun confirmAppOverAdult() {
+        val pkg = _formState.value.pendingAdultAppPackage ?: return
+        _formState.update { it.copy(blockAdultContent = false, pendingAdultAppPackage = null) }
+        applyToggleApp(pkg)
+    }
+
+    /** Mirrored exclusivity dialog: keep adult-block, don't add the app. */
+    fun dismissAppOverAdultDialog() = _formState.update { it.copy(pendingAdultAppPackage = null) }
 
     fun toggleDomain(packageName: String) {
         _formState.update {
@@ -196,8 +250,29 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun removeManualDomain(domain: String) =
         _formState.update { it.copy(manualDomains = it.manualDomains - domain) }
 
-    fun updateBlockAdultContent(enabled: Boolean) =
+    fun updateBlockAdultContent(enabled: Boolean) {
+        // Adult-block is exclusive with apps (mirror Solo/Hard): enabling it while apps are selected needs
+        // an explicit choice — never silently clear the selection. Disabling is always free.
+        if (enabled && _formState.value.packageNames.isNotEmpty()) {
+            _formState.update { it.copy(showAdultExclusiveDialog = true) }
+            return
+        }
         _formState.update { it.copy(blockAdultContent = enabled) }
+    }
+
+    /** Exclusivity dialog: user confirmed — clear the selected apps, enable adult-block. */
+    fun confirmAdultExclusive() = _formState.update {
+        it.copy(
+            packageNames = emptyList(),
+            domainToggles = emptyMap(),
+            displayName = "",
+            blockAdultContent = true,
+            showAdultExclusiveDialog = false,
+        )
+    }
+
+    /** Exclusivity dialog: user declined — keep the apps, adult-block stays OFF. */
+    fun dismissAdultExclusiveDialog() = _formState.update { it.copy(showAdultExclusiveDialog = false) }
 
     fun computeBlockedDomains(): List<String> {
         val s = _formState.value
@@ -245,24 +320,29 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     // ── Navigation ──────────────────────────────────────────────────────────────
 
+    // Navigation walks [visibleGroupSteps] (nearest visible neighbour), so the block-only path's
+    // skipped step 2 needs no special case. Internal indices stay 1..6 as content identifiers; the
+    // screen derives the displayed counter from the same list.
     fun goNext() {
-        val step = _formState.value.currentStep
-        if (step < GROUP_WIZARD_TOTAL_STEPS && validateCurrentStep()) {
-            _formState.update { it.copy(currentStep = it.currentStep + 1) }
-        }
+        val s = _formState.value
+        if (!validateCurrentStep()) return
+        val next = visibleGroupSteps(s).firstOrNull { it > s.currentStep } ?: return
+        _formState.update { it.copy(currentStep = next) }
     }
 
     fun goBack() {
-        val step = _formState.value.currentStep
-        if (step > 1) {
-            _formState.update { it.copy(currentStep = it.currentStep - 1) }
-        }
+        val s = _formState.value
+        val prev = visibleGroupSteps(s).lastOrNull { it < s.currentStep } ?: return
+        _formState.update { it.copy(currentStep = prev) }
     }
 
     fun canGoNext(): Boolean {
         val s = _formState.value
         return when (s.currentStep) {
-            1 -> s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() || s.blockAdultContent
+            // Tab-aware source gate (mirrors Solo's step2HasValidBlockingSource): Apps tab needs an app;
+            // Websites tab needs a domain or adult-block.
+            1 -> if (s.activeTab == 0) s.packageNames.isNotEmpty()
+                 else s.manualDomains.isNotEmpty() || s.blockAdultContent
             2 -> s.limitType != null
             3 -> s.durationError == null && s.durationDays >= 3
             4 -> s.buyInEuros >= 10
@@ -306,22 +386,121 @@ class GroupChallengeCreateViewModel @Inject constructor(
      * Sets [GroupCreateUiState.AwaitingPayment] to trigger PaymentSheet in the Screen.
      * Does NOT write to Firestore.
      */
+    // ── Submission derivation ────────────────────────────────────────────────────
+
+    /** The block/limit fields as actually persisted for the current path (single source for BOTH the
+     *  payment-init and the doc-create step so they can't drift — mirrors Solo's submissionFields). */
+    private data class GroupSubmission(
+        val appPackageNames: List<String>,
+        val limitType: LimitType,
+        val limitValueMinutes: Int,
+        val limitValueSessions: Int?,
+        val blockedDomains: List<String>,
+        val blockAdultContent: Boolean,
+    )
+
+    /**
+     * Block-only paths (Websites tab) skip the limit-type step, so any chosen limit is dropped here:
+     * the canonical "always blocked, no minute limit" shape is TIME_WINDOW with 0 minutes and no
+     * sessions, plus the adult flag. The APP path in turn NEVER carries the adult flag — adult-block
+     * is exclusive with apps, and this is the submit-side guarantee behind the Step-1 dialogs. The APP
+     * path also discards nothing on the Websites side (single primary source).
+     */
+    private fun submission(s: GroupCreateFormState): GroupSubmission {
+        if (s.activeTab == 1) {
+            return GroupSubmission(
+                appPackageNames = emptyList(),
+                limitType = LimitType.TIME_WINDOW,
+                limitValueMinutes = 0,
+                limitValueSessions = null,
+                blockedDomains = computeBlockedDomains(),
+                blockAdultContent = s.blockAdultContent,
+            )
+        }
+        val limitType = s.limitType ?: LimitType.TIME
+        return GroupSubmission(
+            appPackageNames = s.packageNames,
+            limitType = limitType,
+            limitValueMinutes = when (limitType) {
+                LimitType.TIME -> s.limitValueMinutes
+                LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
+                else -> s.limitValueMinutes
+            },
+            limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+            blockedDomains = computeBlockedDomains(),
+            blockAdultContent = false,
+        )
+    }
+
+    /** Display name for the persisted challenge — block-only uses the first domain or the adult label. */
+    private fun submissionDisplayName(s: GroupCreateFormState): String =
+        if (s.activeTab == 1) s.manualDomains.firstOrNull()
+            ?: context.getString(R.string.adult_block_display_name)
+        else s.displayName
+
     fun createChallenge() {
         val s = _formState.value
+        val sub = submission(s)
+        // Pre-flight permission gate (mirrors Solo/Hard's createChallenge): never authorize a buy-in
+        // payment while an enforcement permission is off — the challenge would silently block nothing.
+        // Aborts BEFORE any PaymentIntent is created. Overlay is required when something consumes it:
+        // app blocking, custom-domain blocking, or adult blocking.
+        val blocksApps = sub.appPackageNames.isNotEmpty()
+        val missing = GroupCreateUiState.MissingPermissions(
+            needsUsage = !usageStatsRepository.hasUsageStatsPermission(),
+            needsAccessibility = !PermissionUtils.isAccessibilityServiceEnabled(context),
+            needsOverlay = (blocksApps || sub.blockedDomains.isNotEmpty() || sub.blockAdultContent) &&
+                !Settings.canDrawOverlays(context),
+        )
+        if (missing.needsUsage || missing.needsAccessibility || missing.needsOverlay) {
+            Timber.w(
+                "GroupChallengeCreateVM: createChallenge blocked — missing permissions: usage=%s accessibility=%s overlay=%s",
+                missing.needsUsage, missing.needsAccessibility, missing.needsOverlay,
+            )
+            _uiState.value = missing
+            return
+        }
+        // Duplicate adult-block gate (mirrors Solo): the 133k adult list is one global flag, so a second
+        // adult-only challenge blocks nothing new. Only ACTIVE challenges count; ANY active adult-block
+        // matches (solo or group — group adult-blocks surface as local mirror challenges). Fail-open.
+        val adultOnly = sub.blockAdultContent && !blocksApps && sub.blockedDomains.isEmpty()
+        if (adultOnly) {
+            _uiState.value = GroupCreateUiState.Loading
+            viewModelScope.launch {
+                val hasActiveAdultBlock = challengeRepository.getActiveChallengesList()
+                    .getOrElse { emptyList() }
+                    .any { it.blockAdultContent }
+                if (hasActiveAdultBlock) {
+                    Timber.w("GroupChallengeCreateVM: blocked — active adult-block challenge already exists")
+                    _uiState.value = GroupCreateUiState.Error(
+                        context.getString(R.string.challenge_error_duplicate_adult_block)
+                    )
+                } else {
+                    initiatePaymentFlow(s, sub)
+                }
+            }
+            return
+        }
+        initiatePaymentFlow(s, sub)
+    }
+
+    /** Closes the missing-permissions dialog without creating anything. */
+    fun dismissPermissionDialog() {
+        _uiState.value = GroupCreateUiState.Idle
+    }
+
+    private fun initiatePaymentFlow(s: GroupCreateFormState, sub: GroupSubmission) {
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
-            val limitType = s.limitType ?: LimitType.TIME
             val result = createGroupChallengeUseCase.initiatePayment(
-                appPackageNames = s.packageNames,
+                appPackageNames = sub.appPackageNames,
                 buyInCents = s.buyInEuros * 100,
                 durationDays = s.durationDays,
-                limitType = limitType,
-                limitValueMinutes = when (limitType) {
-                    LimitType.TIME -> s.limitValueMinutes
-                    LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
-                    else -> s.limitValueMinutes
-                },
-                limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+                limitType = sub.limitType,
+                limitValueMinutes = sub.limitValueMinutes,
+                limitValueSessions = sub.limitValueSessions,
+                blockedDomains = sub.blockedDomains,
+                blockAdultContent = sub.blockAdultContent,
             )
             result.fold(
                 onSuccess = { paymentData ->
@@ -357,28 +536,25 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 ?: context.getString(R.string.display_name_fallback)
         } ?: context.getString(R.string.display_name_fallback)
 
+        val sub = submission(s)
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
-            val limitType = s.limitType ?: LimitType.TIME
             val result = createGroupChallengeUseCase(
                 creatorUserId = userId,
                 creatorDisplayName = creatorName,
-                appPackageNames = s.packageNames,
-                appDisplayName = s.displayName,
-                limitType = limitType,
-                limitValueMinutes = when (limitType) {
-                    LimitType.TIME -> s.limitValueMinutes
-                    LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
-                    else -> s.limitValueMinutes
-                },
-                limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+                appPackageNames = sub.appPackageNames,
+                appDisplayName = submissionDisplayName(s),
+                limitType = sub.limitType,
+                limitValueMinutes = sub.limitValueMinutes,
+                limitValueSessions = sub.limitValueSessions,
                 sessionDurationMinutes = s.sessionMinutes,
                 durationDays = s.durationDays,
                 buyInCents = s.buyInEuros * 100,
-                maxParticipants = MAX_PARTICIPANTS,
+                maxParticipants = GROUP_MAX_PARTICIPANTS,
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
-                blockedDomains = computeBlockedDomains(),
+                blockedDomains = sub.blockedDomains,
+                blockAdultContent = sub.blockAdultContent,
                 groupId = pd.groupId,
                 code = pd.code,
                 paymentIntentId = pd.paymentIntentId,

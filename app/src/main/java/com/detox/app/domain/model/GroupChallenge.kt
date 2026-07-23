@@ -21,6 +21,8 @@ data class GroupChallenge(
     val status: GroupChallengeStatus,
     val participants: List<Participant>,
     val blockedDomains: List<String> = emptyList(),
+    /** When true, the 133k-domain adult blocklist is enforced (global flag, mirrors Solo/Hard). */
+    val blockAdultContent: Boolean = false,
     /** Bonus transferred to each winner in cents (set after completion). */
     val perWinnerBonus: Int = 0,
     /** Unix ms when the 5-day authorization window expires. 0 = not set (legacy). */

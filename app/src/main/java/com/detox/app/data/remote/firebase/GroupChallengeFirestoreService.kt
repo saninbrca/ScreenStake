@@ -365,6 +365,7 @@ class GroupChallengeFirestoreService @Inject constructor(
         // Denormalised list for Firestore array-contains queries
         "participantUserIds" to participants.map { it.userId },
         "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
+        "blockAdultContent" to blockAdultContent,
         "authorizationExpiresAt" to authorizationExpiresAt.takeIf { it > 0L }
     )
 
@@ -448,6 +449,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                 blockedDomains = (d["blockedDomains"] as? String)
                     ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
                     ?: emptyList(),
+                blockAdultContent = d["blockAdultContent"] as? Boolean ?: false,
                 authorizationExpiresAt = (d["authorizationExpiresAt"] as? Long) ?: 0L,
             )
         } catch (e: Exception) {

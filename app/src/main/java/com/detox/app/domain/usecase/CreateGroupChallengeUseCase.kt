@@ -47,9 +47,16 @@ class CreateGroupChallengeUseCase @Inject constructor(
         limitType: LimitType,
         limitValueMinutes: Int,
         limitValueSessions: Int?,
+        blockedDomains: List<String> = emptyList(),
+        blockAdultContent: Boolean = false,
     ): Result<CreateGroupChallengePaymentData> {
-        if (appPackageNames.isEmpty()) {
-            return Result.failure(IllegalArgumentException("Select at least one app to block."))
+        // Accept ANY valid blocking source (app OR website OR adult-block) — mirrors Solo/Hard, which
+        // allow website- and adult-only challenges. Input validation only; no PaymentIntent line below
+        // is reordered or altered.
+        if (appPackageNames.isEmpty() && blockedDomains.isEmpty() && !blockAdultContent) {
+            return Result.failure(
+                IllegalArgumentException("Select at least one app, website, or adult-block.")
+            )
         }
         if (durationDays !in 3..365) {
             return Result.failure(IllegalArgumentException("Duration must be between 3 and 365 days."))
@@ -114,6 +121,7 @@ class CreateGroupChallengeUseCase @Inject constructor(
         startDateMs: Long,
         bonusEnabled: Boolean,
         blockedDomains: List<String> = emptyList(),
+        blockAdultContent: Boolean = false,
         groupId: String,
         code: String,
         paymentIntentId: String,
@@ -139,7 +147,9 @@ class CreateGroupChallengeUseCase @Inject constructor(
             "endDate" to endDateMs,
             "bonusEnabled" to bonusEnabled,
             "status" to "waiting",
-            "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null }
+            "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
+            // Spread into the group doc by createGroupChallenge CF (no capture/settlement touched).
+            "blockAdultContent" to blockAdultContent
         )
 
         val cfResult = cloudFunctionsService.createGroupChallenge(groupId, code, groupDataMap, paymentIntentId)

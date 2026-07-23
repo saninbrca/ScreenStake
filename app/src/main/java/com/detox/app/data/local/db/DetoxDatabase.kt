@@ -21,7 +21,7 @@ import com.detox.app.data.local.db.entity.PendingHardChallengeEntity
         GroupChallengeEntity::class,
         PendingHardChallengeEntity::class
     ],
-    version = 27,
+    version = 28,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -456,6 +456,20 @@ abstract class DetoxDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
                 Timber.d("DB migration 26→27: created pending_hard_challenges table")
+            }
+        }
+
+        /**
+         * Adds the blockAdultContent column to group_challenges so adult-block enforces for Group
+         * challenges exactly like Solo/Hard. Default 0 (off) for existing rows.
+         * group_challenges is NOT a money table — no capture/settlement data touched.
+         */
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE group_challenges ADD COLUMN blockAdultContent INTEGER NOT NULL DEFAULT 0"
+                )
+                Timber.d("DB migration 27→28: added blockAdultContent column to group_challenges")
             }
         }
 

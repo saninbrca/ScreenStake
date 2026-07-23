@@ -1,63 +1,11 @@
 package com.detox.app.domain.usecase
 
 import com.detox.app.domain.model.AppUsageInfo
+import com.detox.app.domain.model.NeverBlockablePackages
 import com.detox.app.domain.model.ProofOfAddictionResult
 import com.detox.app.domain.repository.UsageStatsRepository
 import java.text.Collator
 import javax.inject.Inject
-
-/**
- * Static backstop deny-list of package prefixes — system utilities never worth blocking.
- * Kept intentionally narrow so browsers, messengers, and social apps are never accidentally
- * excluded. The PRIMARY safety guard against blocking critical apps is the dynamic, OEM-agnostic
- * set from [UsageStatsRepository.getNeverBlockablePackages] (home/dialer/SMS/IME/settings/self);
- * this prefix list only catches obvious non-user-facing system packages the dynamic pass may miss.
- */
-private val EXCLUDED_PACKAGE_PREFIXES = listOf(
-    "com.detox.app",                    // this app itself
-    "com.android.phone",                // Phone dialer
-    "com.android.contacts",             // Contacts
-    "com.android.settings",             // Settings
-    "com.android.camera",               // AOSP Camera
-    "com.android.systemui",             // System UI
-    "com.android.inputmethod",          // Keyboard
-    "com.google.android.inputmethod",   // Gboard
-    "com.google.android.gms",           // Play Services
-    "com.google.android.gsf",           // Google Services Framework
-    "com.android.launcher",             // Launcher
-    "com.google.android.launcher",
-    "com.sec.android.app.launcher",
-    "com.miui.home",
-    "com.oneplus.launcher",
-    "com.huawei.android.launcher",
-    "com.android.providers",            // Content providers
-    "com.android.server",
-    "com.android.shell",
-    "com.android.bluetooth",
-    "com.android.nfc",
-    "com.android.wifi",
-    "com.android.calculator",
-    "com.android.calendar",
-    "com.android.clock",
-    "com.android.deskclock",
-    "com.google.android.deskclock",
-    "com.android.mms",                  // SMS (stock)
-    "com.android.messaging",
-    "com.android.dialer",
-    "com.android.music",
-    "com.android.gallery",
-    "com.android.email",
-    "com.android.packageinstaller",
-    "android",
-    "com.google.android.packageinstaller",
-    // OEM system utilities / device managers (launchable but never sensible block targets).
-    "com.google.android.setupwizard",
-    "com.android.provision",
-    "com.huawei.systemmanager",         // Huawei Optimizer / Phone Manager
-    "com.miui.securitycenter",          // MIUI Security
-    "com.coloros.safecenter",           // ColorOS / Oppo / Realme
-    "com.samsung.android.lool",         // Samsung Device Care
-)
 
 /**
  * Source of truth for the app picker. Enumerates EVERY user-launchable app (opened or not),
@@ -111,12 +59,17 @@ class GetAddictiveAppsUseCase @Inject constructor(
 
     /**
      * True if [packageName] may appear in the picker. Excludes the dynamically-resolved critical
-     * apps first (launcher/dialer/SMS/IME/settings/self) — the hard guarantee that a user can never
-     * trap their device — then the static system-utility prefixes.
+     * apps first (launcher/dialer/SMS/IME/settings/alarm/self) — the hard guarantee that a user can
+     * never trap their device — then the static system-utility prefixes in
+     * [NeverBlockablePackages].
+     *
+     * Pick-time filtering is only the first of two layers: the same critical set is re-consulted at
+     * enforcement time (`CriticalPackageResolver.isNeverBlockable`), so a package that becomes
+     * critical AFTER a challenge was created is still never blocked.
      */
     private fun shouldInclude(packageName: String, neverBlockable: Set<String>): Boolean {
         if (packageName in neverBlockable) return false
-        if (EXCLUDED_PACKAGE_PREFIXES.any { packageName.startsWith(it) }) return false
+        if (NeverBlockablePackages.matchesExcludedPrefix(packageName)) return false
         return true
     }
 }

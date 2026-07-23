@@ -75,6 +75,44 @@ class GetAddictiveAppsUseCaseTest {
     }
 
     @Test
+    fun `OEM clock apps are filtered out by the static fallback prefixes`() = runTest {
+        // Regression guard: before the alarm-role fix these were selectable and blockable, so a
+        // user could block their own alarm clock. The dynamic ACTION_SHOW_ALARMS / ACTION_SET_ALARM
+        // resolver is the primary defense; these prefixes must still catch them when it misses,
+        // which is what this test pins (neverBlockable is deliberately empty here).
+        stub(
+            launchable = listOf(
+                InstalledAppInfo("com.huawei.deskclock", "Uhr"),              // P30 test device
+                InstalledAppInfo("com.sec.android.app.clockpackage", "Clock"), // Samsung
+                InstalledAppInfo("com.coloros.alarmclock", "Clock"),           // Oppo / Realme
+                InstalledAppInfo("com.android.BBKClock", "Clock"),             // vivo
+                InstalledAppInfo("com.instagram.android", "Instagram"),
+            ),
+            neverBlockable = emptySet(),
+        )
+
+        val apps = useCase().getOrThrow().trackableApps.map { it.packageName }
+
+        assertEquals(listOf("com.instagram.android"), apps)
+    }
+
+    @Test
+    fun `dynamically resolved alarm package is filtered out`() = runTest {
+        // An OEM clock matching no prefix at all — only the dynamic alarm-role resolver catches it.
+        stub(
+            launchable = listOf(
+                InstalledAppInfo("com.unknownoem.myclock", "Clock"),
+                InstalledAppInfo("com.tiktok", "TikTok"),
+            ),
+            neverBlockable = setOf("com.unknownoem.myclock"),
+        )
+
+        val apps = useCase().getOrThrow().trackableApps.map { it.packageName }
+
+        assertEquals(listOf("com.tiktok"), apps)
+    }
+
+    @Test
     fun `list populates even with no usage data (usage access off)`() = runTest {
         stub(
             launchable = listOf(

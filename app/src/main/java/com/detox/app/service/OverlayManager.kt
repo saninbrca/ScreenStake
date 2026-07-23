@@ -24,6 +24,7 @@ import com.detox.app.R
 import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.data.system.CriticalPackageResolver
 import com.detox.app.di.ApplicationScope
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
@@ -81,6 +82,7 @@ class OverlayManager @Inject constructor(
     private val firebaseAuthService: FirebaseAuthService,
     private val cloudFunctionsService: CloudFunctionsService,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
+    private val criticalPackageResolver: CriticalPackageResolver,
     @ApplicationScope private val appScope: CoroutineScope,
 ) {
 
@@ -336,6 +338,15 @@ class OverlayManager @Inject constructor(
     private suspend fun handleAppOpen(packageName: String, scope: CoroutineScope) {
         val tEnter = android.os.SystemClock.elapsedRealtime()
         Timber.d("Blocking chain: handleAppOpen entered pkg=$packageName")
+
+        // Defense in depth: the AccessibilityService already guards its two emit sites, but this is
+        // the single funnel for EVERY app-open event, whatever its source. A package holding a
+        // critical role right now (dialer/SMS/IME/launcher/settings/alarm) is never overlaid.
+        // Suppression only — the tracked set and challenge data are deliberately left untouched.
+        if (criticalPackageResolver.isNeverBlockable(packageName)) {
+            Timber.w("OverlayManager: $packageName currently holds a critical role — no overlay")
+            return
+        }
         // Authoritative daily reset: clear stale yesterday state before any read/write below.
         ensureDailyStateFresh()
         if (isOverlayVisible) {

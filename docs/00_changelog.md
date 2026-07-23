@@ -21,6 +21,50 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-24 — App picker: dynamic alarm/clock role + enforcement-time critical-package guard
+
+Two gaps found in a read-only audit of the rebuilt app picker.
+
+**1. Clock/alarm apps were blockable.** The static prefix list only covered AOSP/Google clocks,
+so `com.huawei.deskclock` (our P30 test device), `com.sec.android.app.clockpackage`,
+`com.coloros.alarmclock` and every other OEM clock could be selected and blocked — a user could
+block their own alarm clock and then not dismiss a ringing alarm. Fixed by resolving the alarm
+role DYNAMICALLY (`AlarmClock.ACTION_SHOW_ALARMS` + `ACTION_SET_ALARM` via
+`queryIntentActivities`, so it is OEM-agnostic), exactly like the dialer/SMS/IME roles already
+were. Known OEM clock prefixes were ADDED as a fallback for clocks declaring neither intent.
+`<queries>` entries for both alarm actions added to the manifest so resolution does not depend on
+the clock having a launcher icon. Nothing was removed from the deny-list.
+
+**2. DECISION — the never-blockable set is now consulted at ENFORCEMENT time, not only at pick
+time.** Previously `AppDetectionAccessibilityService` did a plain `trackedPackages.contains()`
+with two hardcoded exclusions (self, systemui) and `OverlayManager` had no package check at all,
+so the picker filter was the entire protection — and it is only a snapshot. A user who changed
+their default dialer/SMS/keyboard AFTER creating a challenge would keep enforcing against a now
+critical package. New `CriticalPackageResolver` (`data/system/`) is the single source of truth for
+both layers; `UsageStatsRepositoryImpl.getNeverBlockablePackages()` delegates to it.
+
+Guard placement is deliberate: at the two tracked-package sites in the service, NOT at the top of
+`onAccessibilityEvent` — launcher packages are in the critical set and the home-detection branch
+must still see them to dismiss a visible overlay. Plus `OverlayManager.handleAppOpen` as the
+single funnel for every app-open event.
+
+The guard SUPPRESSES ONLY — it never mutates `trackedPackages` or challenge data, because the
+tracked set feeds limit evaluation, which decides Hard/Group success/failure and therefore gates
+money. Suppression is also correctly reversible: change the default back and blocking resumes.
+
+**Fail-safe contract (never reverse):** a failed role lookup must never make a critical app
+blockable. Three layers — (1) static prefixes checked first, independent of any runtime lookup;
+(2) per-role `runCatching`, so one failing role never loses the others; (3) a failed/empty
+resolution never overwrites a good cache and is never cached as authoritative — with no usable set
+at all, `isNeverBlockable()` returns TRUE (treat as critical → do not block) rather than falling
+through to blocking. Perf: cached set behind `@Volatile` + 5-min TTL, pre-warmed off the main
+thread in `onServiceConnected()`, so the steady-state per-event cost is a HashSet lookup.
+
+Debug-only Timber log lists every package the alarm resolver excludes — `ACTION_SET_ALARM` can be
+claimed by assistant/search apps, and we do not want to silently make a genuine time-sink
+un-blockable. **Not yet verified on the P30**; if the log shows a non-clock app, propose a narrow
+carve-out rather than shipping the over-exclusion.
+
 ### 2026-07-19 — Localization Phase 3: per-app language picker (Android 13+)
 
 Added `res/xml/locales_config.xml` (en, de) + `android:localeConfig` on the application tag,

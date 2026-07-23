@@ -37,6 +37,18 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!--
+            Clock / alarm role resolution (CriticalPackageResolver): the alarm app must never be
+            blockable. A clock with a launcher icon is already visible via the query above, but
+            declaring the alarm intents explicitly means resolution does not depend on that
+            coincidence — an OEM clock without a launcher entry still resolves.
+        -->
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
     </queries>
 
     <application

@@ -9,14 +9,34 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import com.detox.app.R
+import com.detox.app.data.system.CriticalPackageResolver
 import com.detox.app.domain.model.AdultDomains
+import dagger.hilt.android.AndroidEntryPoint
 import io.sentry.Breadcrumb
 import io.sentry.Sentry
 import io.sentry.SentryLevel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Calendar
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class AppDetectionAccessibilityService : AccessibilityService() {
+
+    /**
+     * Enforcement-time guard against blocking critical apps. The picker's deny-list is only a
+     * snapshot taken when the picker loaded — a package that has since become the user's default
+     * dialer, SMS app, keyboard, launcher or clock would otherwise still be enforced against.
+     * Consulted here so that never happens regardless of how a package entered the tracked set.
+     */
+    @Inject
+    lateinit var criticalPackageResolver: CriticalPackageResolver
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var lastDetectedPackage: String? = null
 
@@ -99,6 +119,9 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         private val allowedPackages = java.util.concurrent.ConcurrentHashMap<String, Long>()
         private const val ALLOW_DURATION_MS = 5_000L
 
+        /** Min gap between two "critical package suppressed" reports for the same package. */
+        private const val CRITICAL_LOG_THROTTLE_MS = 60_000L
+
         fun allowTemporarily(packageName: String) {
             allowedPackages[packageName] =
                 android.os.SystemClock.elapsedRealtime() + ALLOW_DURATION_MS
@@ -122,6 +145,9 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // Pre-warm the critical-package cache off the main thread so the enforcement guard is a
+        // plain set lookup by the time the first accessibility event arrives.
+        serviceScope.launch { criticalPackageResolver.warmCache() }
         Timber.d("AppDetectionAccessibilityService connected")
         Sentry.addBreadcrumb(Breadcrumb().apply {
             category = "AccessibilityService"
@@ -162,6 +188,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             val trackedPackages = TrackedAppEventBus.trackedPackages.value
             if (trackedPackages.contains(packageName) &&
+                !isCriticalNow(packageName) &&
                 packageName != lastForegroundPackage &&
                 !TrackedAppEventBus.overlayVisible.value &&
                 !isCurrentlyAllowed(packageName) &&
@@ -246,6 +273,11 @@ class AppDetectionAccessibilityService : AccessibilityService() {
 
         val trackedPackages = TrackedAppEventBus.trackedPackages.value
         if (trackedPackages.contains(packageName)) {
+            // Runtime guard — deliberately placed HERE, not at the top of the method: launcher
+            // packages are part of the critical set and the home-detection branch above must still
+            // see them to dismiss a visible overlay.
+            if (isCriticalNow(packageName)) return
+
             Timber.d("Package matched: $packageName")
             Timber.d("isOverlayVisible=${TrackedAppEventBus.overlayVisible.value}")
             Timber.d("failedPackagesToday=${TrackedAppEventBus.failedPackagesToday.value}")
@@ -312,6 +344,41 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             Timber.d("Overlay shown directly over $packageName (no home action)")
             TrackedAppEventBus.emitAppOpen(packageName)
         }
+    }
+
+    // ── Runtime critical-package guard ───────────────────────────────────────
+
+    /** Last time each package was reported as critical, to keep logging out of the hot path. */
+    private val criticalReportedAt = mutableMapOf<String, Long>()
+
+    /**
+     * True if [packageName] currently holds a critical role and must NOT be blocked, even though it
+     * is in the tracked set. The tracked set is deliberately left untouched: it feeds limit
+     * evaluation, which in Hard Mode and Group challenges decides success/failure and therefore
+     * gates money. This guard does exactly one thing — suppress the block — so that if the user
+     * later changes their default back, blocking correctly resumes.
+     *
+     * Fails safe: [CriticalPackageResolver.isNeverBlockable] returns true when role resolution has
+     * never succeeded, so a broken lookup suppresses blocking rather than falling through to it.
+     */
+    private fun isCriticalNow(packageName: String): Boolean {
+        if (!criticalPackageResolver.isNeverBlockable(packageName)) return false
+
+        val now = System.currentTimeMillis()
+        val lastReported = criticalReportedAt[packageName] ?: 0L
+        if (now - lastReported > CRITICAL_LOG_THROTTLE_MS) {
+            criticalReportedAt[packageName] = now
+            Timber.w(
+                "Runtime guard: $packageName is tracked but currently holds a critical role " +
+                    "(dialer/SMS/IME/launcher/settings/alarm) — suppressing block"
+            )
+            Sentry.addBreadcrumb(Breadcrumb().apply {
+                category = "CriticalPackageGuard"
+                message = "Suppressed block for critical package $packageName"
+                level = SentryLevel.WARNING
+            })
+        }
+        return true
     }
 
     // ── URL extraction & domain matching ─────────────────────────────────────
@@ -536,6 +603,11 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         }
 
         return true
+    }
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     override fun onInterrupt() {

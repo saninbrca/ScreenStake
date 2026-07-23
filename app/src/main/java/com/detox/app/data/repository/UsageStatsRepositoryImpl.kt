@@ -8,10 +8,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
-import android.provider.Settings
-import android.provider.Telephony
-import android.telecom.TelecomManager
-import android.view.inputmethod.InputMethodManager
+import com.detox.app.data.system.CriticalPackageResolver
 import com.detox.app.domain.model.AppDailyUsage
 import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.InstalledAppInfo
@@ -28,7 +25,8 @@ import javax.inject.Singleton
 class UsageStatsRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val usageStatsManager: UsageStatsManager,
-    private val packageManager: PackageManager
+    private val packageManager: PackageManager,
+    private val criticalPackageResolver: CriticalPackageResolver,
 ) : UsageStatsRepository {
 
     companion object {
@@ -120,56 +118,13 @@ class UsageStatsRepositoryImpl @Inject constructor(
                 .distinctBy { it.packageName }
         }
 
+    /**
+     * Delegates to [CriticalPackageResolver] — the SAME resolver the accessibility/overlay layer
+     * consults at enforcement time, so pick time and enforcement can never disagree about what is
+     * critical (and both pick up the alarm/clock role).
+     */
     override suspend fun getNeverBlockablePackages(): Set<String> =
-        withContext(Dispatchers.IO) {
-            val result = mutableSetOf<String>()
-
-            // This app itself.
-            result += context.packageName
-
-            // Home / launcher app(s).
-            runCatching {
-                val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                packageManager.queryIntentActivities(home, 0).forEach {
-                    it.activityInfo?.packageName?.let(result::add)
-                }
-            }
-
-            // Default dialer (+ whatever resolves ACTION_DIAL).
-            runCatching {
-                (context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager)
-                    ?.defaultDialerPackage?.let(result::add)
-            }
-            runCatching {
-                packageManager.resolveActivity(Intent(Intent.ACTION_DIAL), 0)
-                    ?.activityInfo?.packageName?.let(result::add)
-            }
-
-            // Default SMS app.
-            runCatching {
-                Telephony.Sms.getDefaultSmsPackage(context)?.let(result::add)
-            }
-
-            // Active input method(s) — blocking the keyboard would lock the user out of typing.
-            runCatching {
-                (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
-                    ?.enabledInputMethodList
-                    ?.forEach { it.packageName?.let(result::add) }
-            }
-            runCatching {
-                Settings.Secure.getString(
-                    context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD
-                )?.substringBefore('/')?.takeIf { it.isNotBlank() }?.let(result::add)
-            }
-
-            // Settings app.
-            runCatching {
-                packageManager.resolveActivity(Intent(Settings.ACTION_SETTINGS), 0)
-                    ?.activityInfo?.packageName?.let(result::add)
-            }
-
-            result
-        }
+        criticalPackageResolver.getNeverBlockablePackages()
 
     override suspend fun getUsageByPackage(days: Int): Map<String, Pair<Long, Int>> =
         withContext(Dispatchers.IO) {

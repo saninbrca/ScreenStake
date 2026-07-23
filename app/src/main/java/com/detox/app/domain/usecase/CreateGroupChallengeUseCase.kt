@@ -114,6 +114,7 @@ class CreateGroupChallengeUseCase @Inject constructor(
         startDateMs: Long,
         bonusEnabled: Boolean,
         blockedDomains: List<String> = emptyList(),
+        blockAdultContent: Boolean = false,
         groupId: String,
         code: String,
         paymentIntentId: String,
@@ -139,7 +140,9 @@ class CreateGroupChallengeUseCase @Inject constructor(
             "endDate" to endDateMs,
             "bonusEnabled" to bonusEnabled,
             "status" to "waiting",
-            "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null }
+            "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
+            // Spread into the group doc by createGroupChallenge CF (no capture/settlement touched).
+            "blockAdultContent" to blockAdultContent
         )
 
         val cfResult = cloudFunctionsService.createGroupChallenge(groupId, code, groupDataMap, paymentIntentId)

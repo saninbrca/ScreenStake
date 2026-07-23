@@ -379,6 +379,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
                 blockedDomains = computeBlockedDomains(),
+                blockAdultContent = s.blockAdultContent,
                 groupId = pd.groupId,
                 code = pd.code,
                 paymentIntentId = pd.paymentIntentId,

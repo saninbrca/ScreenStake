@@ -901,9 +901,12 @@
     <string name="settings_privacy_policy">Privacy Policy</string>
     <string name="settings_terms_of_service">Terms of Service</string>
     <string name="settings_impressum">Legal Notice</string>
-    <string name="url_datenschutz" translatable="false">https://saninbrca.github.io/finite-legal/datenschutz.html</string>
-    <string name="url_agb" translatable="false">https://saninbrca.github.io/finite-legal/agb.html</string>
-    <string name="url_impressum" translatable="false">https://saninbrca.github.io/finite-legal/impressum.html</string>
+    <!-- Legal page URLs — locale-varying: English pages here, German in values-de/.
+         Deliberately left translatable (the target page differs per locale), so both
+         files must declare all three keys — lint enforces the parity. -->
+    <string name="url_privacy">https://saninbrca.github.io/finite-legal/privacy.html</string>
+    <string name="url_terms">https://saninbrca.github.io/finite-legal/terms.html</string>
+    <string name="url_imprint">https://saninbrca.github.io/finite-legal/imprint.html</string>
     <string name="settings_export_data">Export data</string>
     <string name="settings_export_data_subtitle">Download as JSON</string>
     <string name="settings_delete_all_data">Delete all data</string>

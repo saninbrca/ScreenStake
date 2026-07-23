@@ -212,9 +212,15 @@ fun GroupChallengeCreateScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             SnackbarHost(snackbarHostState)
 
+            // Block-only (Websites tab) skips step 2, so the displayed "Step X of Y" counter is the
+            // position within the path's visible-step list — never a visibly missing number.
+            val steps = visibleGroupSteps(formState)
+            val displayedTotal = steps.size
+            val displayedStep = (steps.indexOf(formState.currentStep) + 1).coerceAtLeast(1)
+
             GWizardHeader(
-                currentStep = formState.currentStep,
-                totalSteps = GROUP_WIZARD_TOTAL_STEPS,
+                currentStep = displayedStep,
+                totalSteps = displayedTotal,
                 onBack = {
                     if (formState.currentStep == 1) onBack() else viewModel.goBack()
                 },
@@ -259,6 +265,7 @@ fun GroupChallengeCreateScreen(
                     )
                     3 -> GStep3LimitAndDuration(
                         formState = formState,
+                        isBlockOnly = formState.activeTab == 1,
                         onUpdateLimitMinutes = viewModel::setLimitValueMinutes,
                         onUpdateLimitSessions = viewModel::setLimitValueSessions,
                         onUpdateSessionDuration = viewModel::setSessionMinutes,
@@ -282,6 +289,7 @@ fun GroupChallengeCreateScreen(
                     )
                     6 -> GStep6Review(
                         formState = formState,
+                        isBlockOnly = formState.activeTab == 1,
                         isLoading = isLoading,
                         onCreateChallenge = viewModel::createChallenge,
                     )
@@ -492,6 +500,7 @@ private fun GGroupLimitTypeCard(
 @Composable
 private fun GStep3LimitAndDuration(
     formState: GroupCreateFormState,
+    isBlockOnly: Boolean,
     onUpdateLimitMinutes: (Int) -> Unit,
     onUpdateLimitSessions: (Int) -> Unit,
     onUpdateSessionDuration: (Int) -> Unit,
@@ -505,63 +514,67 @@ private fun GStep3LimitAndDuration(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = stringResource(R.string.wizard_set_limit_title),
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = detoxColors.label,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
+        // Block-only (Websites/adult) is a 24/7 hard block with no minute limit, so the limit picker
+        // is hidden — this step configures only the duration.
+        if (!isBlockOnly) {
+            Text(
+                text = stringResource(R.string.wizard_set_limit_title),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = detoxColors.label,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(GCardShape)
-                .background(detoxColors.cardBackground)
-                .border(0.5.dp, detoxColors.cardBorder, GCardShape)
-                .padding(16.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                when (formState.limitType) {
-                    LimitType.TIME -> DetoxHorizontalPicker(
-                        values = (5..120).toList(),
-                        selectedValue = formState.limitValueMinutes.coerceIn(5, 120),
-                        onValueChange = onUpdateLimitMinutes,
-                        unit = stringResource(R.string.wizard_set_limit_minutes_unit),
-                    )
-                    LimitType.SESSIONS -> {
-                        DetoxHorizontalPicker(
-                            values = (1..20).toList(),
-                            selectedValue = formState.limitValueSessions.coerceAtMost(20),
-                            onValueChange = onUpdateLimitSessions,
-                            unit = stringResource(R.string.wizard_set_limit_opens_unit),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(GCardShape)
+                    .background(detoxColors.cardBackground)
+                    .border(0.5.dp, detoxColors.cardBorder, GCardShape)
+                    .padding(16.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when (formState.limitType) {
+                        LimitType.TIME -> DetoxHorizontalPicker(
+                            values = (5..120).toList(),
+                            selectedValue = formState.limitValueMinutes.coerceIn(5, 120),
+                            onValueChange = onUpdateLimitMinutes,
+                            unit = stringResource(R.string.wizard_set_limit_minutes_unit),
                         )
-                        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
-                        Text(
-                            text = stringResource(R.string.wizard_set_limit_session_label),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = detoxColors.subtext,
+                        LimitType.SESSIONS -> {
+                            DetoxHorizontalPicker(
+                                values = (1..20).toList(),
+                                selectedValue = formState.limitValueSessions.coerceAtMost(20),
+                                onValueChange = onUpdateLimitSessions,
+                                unit = stringResource(R.string.wizard_set_limit_opens_unit),
+                            )
+                            HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                            Text(
+                                text = stringResource(R.string.wizard_set_limit_session_label),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = detoxColors.subtext,
+                            )
+                            DetoxHorizontalPicker(
+                                values = (1..30).toList(),
+                                selectedValue = formState.sessionMinutes.coerceAtMost(30),
+                                onValueChange = onUpdateSessionDuration,
+                                unit = stringResource(R.string.wizard_set_limit_session_unit),
+                            )
+                        }
+                        LimitType.TIME_BUDGET -> DetoxHorizontalPicker(
+                            values = (5..120).toList(),
+                            selectedValue = formState.dailyBudgetMinutes.coerceIn(5, 120),
+                            onValueChange = onUpdateDailyBudget,
+                            unit = stringResource(R.string.wizard_set_limit_budget_unit),
                         )
-                        DetoxHorizontalPicker(
-                            values = (1..30).toList(),
-                            selectedValue = formState.sessionMinutes.coerceAtMost(30),
-                            onValueChange = onUpdateSessionDuration,
-                            unit = stringResource(R.string.wizard_set_limit_session_unit),
-                        )
+                        else -> Unit
                     }
-                    LimitType.TIME_BUDGET -> DetoxHorizontalPicker(
-                        values = (5..120).toList(),
-                        selectedValue = formState.dailyBudgetMinutes.coerceIn(5, 120),
-                        onValueChange = onUpdateDailyBudget,
-                        unit = stringResource(R.string.wizard_set_limit_budget_unit),
-                    )
-                    else -> Unit
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         Text(
             text = stringResource(R.string.wizard_duration_title),
@@ -877,6 +890,7 @@ private fun GStep5StartDateAndBonus(
 @Composable
 private fun GStep6Review(
     formState: GroupCreateFormState,
+    isBlockOnly: Boolean,
     isLoading: Boolean,
     onCreateChallenge: () -> Unit,
 ) {
@@ -912,33 +926,58 @@ private fun GStep6Review(
                     value = stringResource(R.string.wizard_review_mode_group),
                     isFirst = true,
                 )
-                val appSummary = if (formState.packageNames.size == 1) formState.displayName
-                    else "${formState.displayName} +${formState.packageNames.size - 1}"
-                GSummaryDividerRow(
-                    label = stringResource(R.string.wizard_review_apps_label),
-                    value = appSummary,
-                )
-                val checkedDomains = formState.domainToggles.entries
-                    .filter { it.value }
-                    .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
-                val allBlockedDomains = (checkedDomains + formState.manualDomains).distinct()
-                if (allBlockedDomains.isNotEmpty()) {
+                // Block-only path (Websites/adult): the target row lists the domains (or the adult label
+                // for adult-only) and the limit row reads "always blocked" — 24/7 hard block.
+                if (isBlockOnly) {
+                    val blockedTargets = formState.manualDomains
+                    val targetValue = when {
+                        blockedTargets.isEmpty() -> stringResource(R.string.adult_block_display_name)
+                        else -> blockedTargets.take(3).joinToString(", ") +
+                                if (blockedTargets.size > 3) " +${blockedTargets.size - 3}" else ""
+                    }
                     GSummaryDividerRow(
-                        label = "+ Websites",
-                        value = allBlockedDomains.take(3).joinToString(", ") +
-                                if (allBlockedDomains.size > 3) " +${allBlockedDomains.size - 3}" else "",
+                        label = stringResource(R.string.wizard_review_blocked_label),
+                        value = targetValue,
+                    )
+                    if (formState.blockAdultContent && blockedTargets.isNotEmpty()) {
+                        GSummaryDividerRow(
+                            label = stringResource(R.string.adult_block_display_name),
+                            value = stringResource(R.string.wizard_review_adult_active),
+                        )
+                    }
+                    GSummaryDividerRow(
+                        label = stringResource(R.string.wizard_review_limit_label),
+                        value = stringResource(R.string.wizard_review_always_blocked),
+                    )
+                } else {
+                    val appSummary = if (formState.packageNames.size == 1) formState.displayName
+                        else "${formState.displayName} +${formState.packageNames.size - 1}"
+                    GSummaryDividerRow(
+                        label = stringResource(R.string.wizard_review_apps_label),
+                        value = appSummary,
+                    )
+                    val checkedDomains = formState.domainToggles.entries
+                        .filter { it.value }
+                        .flatMap { APP_DOMAIN_MAP[it.key] ?: emptyList() }
+                    val allBlockedDomains = (checkedDomains + formState.manualDomains).distinct()
+                    if (allBlockedDomains.isNotEmpty()) {
+                        GSummaryDividerRow(
+                            label = "+ Websites",
+                            value = allBlockedDomains.take(3).joinToString(", ") +
+                                    if (allBlockedDomains.size > 3) " +${allBlockedDomains.size - 3}" else "",
+                        )
+                    }
+                    val limitSummary = when (formState.limitType) {
+                        LimitType.TIME -> "${formState.limitValueMinutes} Min / Tag"
+                        LimitType.SESSIONS -> "${formState.limitValueSessions} Öffnungen / Tag"
+                        LimitType.TIME_BUDGET -> "${formState.dailyBudgetMinutes} Min Budget"
+                        else -> "—"
+                    }
+                    GSummaryDividerRow(
+                        label = stringResource(R.string.wizard_review_limit_label),
+                        value = limitSummary,
                     )
                 }
-                val limitSummary = when (formState.limitType) {
-                    LimitType.TIME -> "${formState.limitValueMinutes} Min / Tag"
-                    LimitType.SESSIONS -> "${formState.limitValueSessions} Öffnungen / Tag"
-                    LimitType.TIME_BUDGET -> "${formState.dailyBudgetMinutes} Min Budget"
-                    else -> "—"
-                }
-                GSummaryDividerRow(
-                    label = stringResource(R.string.wizard_review_limit_label),
-                    value = limitSummary,
-                )
                 GSummaryDividerRow(
                     label = stringResource(R.string.wizard_review_duration_label),
                     value = "${formState.durationDays} Tage",

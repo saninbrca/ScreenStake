@@ -47,9 +47,16 @@ class CreateGroupChallengeUseCase @Inject constructor(
         limitType: LimitType,
         limitValueMinutes: Int,
         limitValueSessions: Int?,
+        blockedDomains: List<String> = emptyList(),
+        blockAdultContent: Boolean = false,
     ): Result<CreateGroupChallengePaymentData> {
-        if (appPackageNames.isEmpty()) {
-            return Result.failure(IllegalArgumentException("Select at least one app to block."))
+        // Accept ANY valid blocking source (app OR website OR adult-block) — mirrors Solo/Hard, which
+        // allow website- and adult-only challenges. Input validation only; no PaymentIntent line below
+        // is reordered or altered.
+        if (appPackageNames.isEmpty() && blockedDomains.isEmpty() && !blockAdultContent) {
+            return Result.failure(
+                IllegalArgumentException("Select at least one app, website, or adult-block.")
+            )
         }
         if (durationDays !in 3..365) {
             return Result.failure(IllegalArgumentException("Duration must be between 3 and 365 days."))

@@ -31,6 +31,19 @@ import javax.inject.Inject
 const val GROUP_WIZARD_TOTAL_STEPS = 6
 private const val MAX_PARTICIPANTS = 20
 
+/**
+ * Ordered list of visible step ids for the current wizard path (mirrors Solo/Hard's [visibleSteps]).
+ * Internal ids stay stable (the screen's `when(step)` keys on them); only membership changes:
+ *  - Apps tab (activeTab == 0): all steps.
+ *  - Block-only (Websites tab — custom domains and/or adult): a 24/7 hard block, so the limit-type
+ *    step (2) is skipped. Step 3 stays for the duration picker but renders duration-only.
+ *
+ * [GroupChallengeCreateViewModel.goNext]/[goBack] walk this list and the header counter is the
+ * position in it — pure so it is unit-testable.
+ */
+internal fun visibleGroupSteps(state: GroupCreateFormState): List<Int> =
+    if (state.activeTab == 1) listOf(1, 3, 4, 5, 6) else listOf(1, 2, 3, 4, 5, 6)
+
 data class GroupCreateFormState(
     val currentStep: Int = 1,
     // Step 1 — app/website selection
@@ -293,24 +306,29 @@ class GroupChallengeCreateViewModel @Inject constructor(
 
     // ── Navigation ──────────────────────────────────────────────────────────────
 
+    // Navigation walks [visibleGroupSteps] (nearest visible neighbour), so the block-only path's
+    // skipped step 2 needs no special case. Internal indices stay 1..6 as content identifiers; the
+    // screen derives the displayed counter from the same list.
     fun goNext() {
-        val step = _formState.value.currentStep
-        if (step < GROUP_WIZARD_TOTAL_STEPS && validateCurrentStep()) {
-            _formState.update { it.copy(currentStep = it.currentStep + 1) }
-        }
+        val s = _formState.value
+        if (!validateCurrentStep()) return
+        val next = visibleGroupSteps(s).firstOrNull { it > s.currentStep } ?: return
+        _formState.update { it.copy(currentStep = next) }
     }
 
     fun goBack() {
-        val step = _formState.value.currentStep
-        if (step > 1) {
-            _formState.update { it.copy(currentStep = it.currentStep - 1) }
-        }
+        val s = _formState.value
+        val prev = visibleGroupSteps(s).lastOrNull { it < s.currentStep } ?: return
+        _formState.update { it.copy(currentStep = prev) }
     }
 
     fun canGoNext(): Boolean {
         val s = _formState.value
         return when (s.currentStep) {
-            1 -> s.packageNames.isNotEmpty() || s.manualDomains.isNotEmpty() || s.blockAdultContent
+            // Tab-aware source gate (mirrors Solo's step2HasValidBlockingSource): Apps tab needs an app;
+            // Websites tab needs a domain or adult-block.
+            1 -> if (s.activeTab == 0) s.packageNames.isNotEmpty()
+                 else s.manualDomains.isNotEmpty() || s.blockAdultContent
             2 -> s.limitType != null
             3 -> s.durationError == null && s.durationDays >= 3
             4 -> s.buyInEuros >= 10
@@ -354,22 +372,72 @@ class GroupChallengeCreateViewModel @Inject constructor(
      * Sets [GroupCreateUiState.AwaitingPayment] to trigger PaymentSheet in the Screen.
      * Does NOT write to Firestore.
      */
+    // ── Submission derivation ────────────────────────────────────────────────────
+
+    /** The block/limit fields as actually persisted for the current path (single source for BOTH the
+     *  payment-init and the doc-create step so they can't drift — mirrors Solo's submissionFields). */
+    private data class GroupSubmission(
+        val appPackageNames: List<String>,
+        val limitType: LimitType,
+        val limitValueMinutes: Int,
+        val limitValueSessions: Int?,
+        val blockedDomains: List<String>,
+        val blockAdultContent: Boolean,
+    )
+
+    /**
+     * Block-only paths (Websites tab) skip the limit-type step, so any chosen limit is dropped here:
+     * the canonical "always blocked, no minute limit" shape is TIME_WINDOW with 0 minutes and no
+     * sessions, plus the adult flag. The APP path in turn NEVER carries the adult flag — adult-block
+     * is exclusive with apps, and this is the submit-side guarantee behind the Step-1 dialogs. The APP
+     * path also discards nothing on the Websites side (single primary source).
+     */
+    private fun submission(s: GroupCreateFormState): GroupSubmission {
+        if (s.activeTab == 1) {
+            return GroupSubmission(
+                appPackageNames = emptyList(),
+                limitType = LimitType.TIME_WINDOW,
+                limitValueMinutes = 0,
+                limitValueSessions = null,
+                blockedDomains = computeBlockedDomains(),
+                blockAdultContent = s.blockAdultContent,
+            )
+        }
+        val limitType = s.limitType ?: LimitType.TIME
+        return GroupSubmission(
+            appPackageNames = s.packageNames,
+            limitType = limitType,
+            limitValueMinutes = when (limitType) {
+                LimitType.TIME -> s.limitValueMinutes
+                LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
+                else -> s.limitValueMinutes
+            },
+            limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+            blockedDomains = computeBlockedDomains(),
+            blockAdultContent = false,
+        )
+    }
+
+    /** Display name for the persisted challenge — block-only uses the first domain or the adult label. */
+    private fun submissionDisplayName(s: GroupCreateFormState): String =
+        if (s.activeTab == 1) s.manualDomains.firstOrNull()
+            ?: context.getString(R.string.adult_block_display_name)
+        else s.displayName
+
     fun createChallenge() {
         val s = _formState.value
+        val sub = submission(s)
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
-            val limitType = s.limitType ?: LimitType.TIME
             val result = createGroupChallengeUseCase.initiatePayment(
-                appPackageNames = s.packageNames,
+                appPackageNames = sub.appPackageNames,
                 buyInCents = s.buyInEuros * 100,
                 durationDays = s.durationDays,
-                limitType = limitType,
-                limitValueMinutes = when (limitType) {
-                    LimitType.TIME -> s.limitValueMinutes
-                    LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
-                    else -> s.limitValueMinutes
-                },
-                limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+                limitType = sub.limitType,
+                limitValueMinutes = sub.limitValueMinutes,
+                limitValueSessions = sub.limitValueSessions,
+                blockedDomains = sub.blockedDomains,
+                blockAdultContent = sub.blockAdultContent,
             )
             result.fold(
                 onSuccess = { paymentData ->
@@ -405,29 +473,25 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 ?: context.getString(R.string.display_name_fallback)
         } ?: context.getString(R.string.display_name_fallback)
 
+        val sub = submission(s)
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
-            val limitType = s.limitType ?: LimitType.TIME
             val result = createGroupChallengeUseCase(
                 creatorUserId = userId,
                 creatorDisplayName = creatorName,
-                appPackageNames = s.packageNames,
-                appDisplayName = s.displayName,
-                limitType = limitType,
-                limitValueMinutes = when (limitType) {
-                    LimitType.TIME -> s.limitValueMinutes
-                    LimitType.TIME_BUDGET -> s.dailyBudgetMinutes
-                    else -> s.limitValueMinutes
-                },
-                limitValueSessions = if (limitType == LimitType.SESSIONS) s.limitValueSessions else null,
+                appPackageNames = sub.appPackageNames,
+                appDisplayName = submissionDisplayName(s),
+                limitType = sub.limitType,
+                limitValueMinutes = sub.limitValueMinutes,
+                limitValueSessions = sub.limitValueSessions,
                 sessionDurationMinutes = s.sessionMinutes,
                 durationDays = s.durationDays,
                 buyInCents = s.buyInEuros * 100,
                 maxParticipants = MAX_PARTICIPANTS,
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
-                blockedDomains = computeBlockedDomains(),
-                blockAdultContent = s.blockAdultContent,
+                blockedDomains = sub.blockedDomains,
+                blockAdultContent = sub.blockAdultContent,
                 groupId = pd.groupId,
                 code = pd.code,
                 paymentIntentId = pd.paymentIntentId,

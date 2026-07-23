@@ -1,5 +1,8 @@
 package com.detox.app.presentation.screens.groupchallenge.create
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -79,6 +82,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.LimitType
+import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.util.pressScaleFeedback
@@ -198,6 +202,63 @@ fun GroupChallengeCreateScreen(
             dismissButton = {
                 TextButton(onClick = viewModel::dismissAppOverAdultDialog) {
                     Text(stringResource(R.string.adult_exclusive_dialog_dismiss))
+                }
+            },
+        )
+    }
+
+    // ── Pre-flight permission gate (mirrors Solo/Hard) ────────────────────────
+    val permissionContext = LocalContext.current
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    if (showAccessibilityDisclosure) {
+        AccessibilityDisclosureDialog(
+            onAccept = {
+                showAccessibilityDisclosure = false
+                permissionContext.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            },
+            onDismiss = { showAccessibilityDisclosure = false },
+        )
+    }
+
+    (uiState as? GroupCreateUiState.MissingPermissions)?.let { missing ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPermissionDialog,
+            title = { Text(stringResource(R.string.challenge_permission_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.challenge_permission_dialog_body))
+                    if (missing.needsUsage) {
+                        GMissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_usage),
+                            onGrant = {
+                                permissionContext.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            },
+                        )
+                    }
+                    if (missing.needsAccessibility) {
+                        GMissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_accessibility),
+                            onGrant = { showAccessibilityDisclosure = true },
+                        )
+                    }
+                    if (missing.needsOverlay) {
+                        GMissingPermissionRow(
+                            name = stringResource(R.string.challenge_permission_overlay),
+                            onGrant = {
+                                permissionContext.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${permissionContext.packageName}"),
+                                    )
+                                )
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissPermissionDialog) {
+                    Text(stringResource(R.string.challenge_permission_dialog_cancel))
                 }
             },
         )
@@ -371,6 +432,25 @@ private fun GWizardHeader(
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.outlineVariant,
         )
+    }
+}
+
+// ── Missing-permission row (mirrors Solo/Hard) ────────────────────────────────
+
+@Composable
+private fun GMissingPermissionRow(name: String, onGrant: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "• $name",
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onGrant) {
+            Text(stringResource(R.string.challenge_permission_grant))
+        }
     }
 }
 

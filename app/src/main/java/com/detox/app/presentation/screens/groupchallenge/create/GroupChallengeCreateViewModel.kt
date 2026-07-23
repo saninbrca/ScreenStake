@@ -1,6 +1,7 @@
 package com.detox.app.presentation.screens.groupchallenge.create
 
 import android.content.Context
+import android.provider.Settings
 import com.detox.app.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +17,7 @@ import com.detox.app.domain.usecase.GetAddictiveAppsUseCase
 import com.detox.app.presentation.screens.challengecreation.APP_DOMAIN_MAP
 import com.detox.app.presentation.screens.challengecreation.AppListState
 import com.detox.app.util.ErrorMessages
+import com.detox.app.util.PermissionUtils
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -91,6 +93,17 @@ sealed interface GroupCreateUiState {
     data class AwaitingPayment(val clientSecret: String) : GroupCreateUiState
     data class Created(val groupId: String, val code: String) : GroupCreateUiState
     data class Error(val message: String) : GroupCreateUiState
+
+    /**
+     * Pre-flight enforcement-permission gate result (mirrors Solo/Hard): at least one flagged
+     * permission is missing, so no PaymentIntent was created. The screen shows a dialog naming each
+     * missing permission and routes the user to grant it.
+     */
+    data class MissingPermissions(
+        val needsUsage: Boolean,
+        val needsAccessibility: Boolean,
+        val needsOverlay: Boolean,
+    ) : GroupCreateUiState
 }
 
 @HiltViewModel
@@ -427,6 +440,55 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun createChallenge() {
         val s = _formState.value
         val sub = submission(s)
+        // Pre-flight permission gate (mirrors Solo/Hard's createChallenge): never authorize a buy-in
+        // payment while an enforcement permission is off — the challenge would silently block nothing.
+        // Aborts BEFORE any PaymentIntent is created. Overlay is required when something consumes it:
+        // app blocking, custom-domain blocking, or adult blocking.
+        val blocksApps = sub.appPackageNames.isNotEmpty()
+        val missing = GroupCreateUiState.MissingPermissions(
+            needsUsage = !usageStatsRepository.hasUsageStatsPermission(),
+            needsAccessibility = !PermissionUtils.isAccessibilityServiceEnabled(context),
+            needsOverlay = (blocksApps || sub.blockedDomains.isNotEmpty() || sub.blockAdultContent) &&
+                !Settings.canDrawOverlays(context),
+        )
+        if (missing.needsUsage || missing.needsAccessibility || missing.needsOverlay) {
+            Timber.w(
+                "GroupChallengeCreateVM: createChallenge blocked — missing permissions: usage=%s accessibility=%s overlay=%s",
+                missing.needsUsage, missing.needsAccessibility, missing.needsOverlay,
+            )
+            _uiState.value = missing
+            return
+        }
+        // Duplicate adult-block gate (mirrors Solo): the 133k adult list is one global flag, so a second
+        // adult-only challenge blocks nothing new. Only ACTIVE challenges count; ANY active adult-block
+        // matches (solo or group — group adult-blocks surface as local mirror challenges). Fail-open.
+        val adultOnly = sub.blockAdultContent && !blocksApps && sub.blockedDomains.isEmpty()
+        if (adultOnly) {
+            _uiState.value = GroupCreateUiState.Loading
+            viewModelScope.launch {
+                val hasActiveAdultBlock = challengeRepository.getActiveChallengesList()
+                    .getOrElse { emptyList() }
+                    .any { it.blockAdultContent }
+                if (hasActiveAdultBlock) {
+                    Timber.w("GroupChallengeCreateVM: blocked — active adult-block challenge already exists")
+                    _uiState.value = GroupCreateUiState.Error(
+                        context.getString(R.string.challenge_error_duplicate_adult_block)
+                    )
+                } else {
+                    initiatePaymentFlow(s, sub)
+                }
+            }
+            return
+        }
+        initiatePaymentFlow(s, sub)
+    }
+
+    /** Closes the missing-permissions dialog without creating anything. */
+    fun dismissPermissionDialog() {
+        _uiState.value = GroupCreateUiState.Idle
+    }
+
+    private fun initiatePaymentFlow(s: GroupCreateFormState, sub: GroupSubmission) {
         _uiState.value = GroupCreateUiState.Loading
         viewModelScope.launch {
             val result = createGroupChallengeUseCase.initiatePayment(

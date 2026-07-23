@@ -1539,6 +1539,7 @@
 
     <!-- Wizard Step 6 — Duration -->
     <string name="wizard_duration_title">Challenge-Dauer</string>
+    <string name="wizard_duration_days_unit">Tage</string>
 
     <!-- Wizard Step 7 — Review -->
     <string name="wizard_review_title">Überprüfen &amp; starten</string>

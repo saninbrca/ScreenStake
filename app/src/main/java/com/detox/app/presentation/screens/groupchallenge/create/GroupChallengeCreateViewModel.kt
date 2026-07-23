@@ -31,7 +31,8 @@ import timber.log.Timber
 import javax.inject.Inject
 
 const val GROUP_WIZARD_TOTAL_STEPS = 6
-private const val MAX_PARTICIPANTS = 20
+/** Group cap — also drives the review-step "max players" row and the estimated-pot maths. */
+const val GROUP_MAX_PARTICIPANTS = 20
 
 /**
  * Ordered list of visible step ids for the current wizard path (mirrors Solo/Hard's [visibleSteps]).
@@ -549,7 +550,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 sessionDurationMinutes = s.sessionMinutes,
                 durationDays = s.durationDays,
                 buyInCents = s.buyInEuros * 100,
-                maxParticipants = MAX_PARTICIPANTS,
+                maxParticipants = GROUP_MAX_PARTICIPANTS,
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
                 blockedDomains = sub.blockedDomains,

@@ -1558,6 +1558,7 @@
 
     <!-- Wizard Step 6 — Duration -->
     <string name="wizard_duration_title">Challenge duration</string>
+    <string name="wizard_duration_days_unit">days</string>
 
     <!-- Wizard Step 7 — Review -->
     <string name="wizard_review_title">Review &amp; start</string>
@@ -1601,6 +1602,8 @@
     <string name="fee_return_on_success">Back on success</string>
     <string name="fee_service_fee">Service fee</string>
     <string name="fee_value_format" translatable="false">%1$s (%2$d%%)</string>
+    <!-- Same as fee_value_format plus the asterisk that points at fee_return_on_success_group_note. -->
+    <string name="fee_value_format_footnote" translatable="false">%1$s (%2$d%%)*</string>
     <string name="fee_return_on_success_group_note">*possible prize share</string>
     <string name="fee_group_no_loser_note">For groups with no losers: 100%% back</string>
     <string name="withdrawal_waiver_text">I agree that the challenge starts immediately and that I thereby waive my right of withdrawal under § 18 FAGG.</string>

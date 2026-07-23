@@ -9,7 +9,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -41,7 +40,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CalendarToday
@@ -56,8 +54,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -98,6 +94,15 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
+import com.detox.app.presentation.components.WIZARD_TRANSITION_MS
+import com.detox.app.presentation.components.WizardFeeBreakdownCard
+import com.detox.app.presentation.components.WizardHeader
+import com.detox.app.presentation.components.WizardLimitTypeCard
+import com.detox.app.presentation.components.WizardMissingPermissionRow
+import com.detox.app.presentation.components.WizardSummaryDividerRow
+import com.detox.app.presentation.components.WizardTransitionEasing
+import com.detox.app.presentation.components.WizardWaiverCheckboxRow
+import com.detox.app.presentation.components.formatEuroCents
 import com.detox.app.presentation.components.SCHEDULE_WEEKDAYS
 import com.detox.app.presentation.components.activeDaysSummary
 import com.detox.app.presentation.components.timeWindowSummary
@@ -244,7 +249,7 @@ fun ChallengeCreationScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.challenge_permission_dialog_body))
                     if (missing.needsUsage) {
-                        MissingPermissionRow(
+                        WizardMissingPermissionRow(
                             name = stringResource(R.string.challenge_permission_usage),
                             onGrant = {
                                 context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -252,13 +257,13 @@ fun ChallengeCreationScreen(
                         )
                     }
                     if (missing.needsAccessibility) {
-                        MissingPermissionRow(
+                        WizardMissingPermissionRow(
                             name = stringResource(R.string.challenge_permission_accessibility),
                             onGrant = { showAccessibilityDisclosure = true },
                         )
                     }
                     if (missing.needsOverlay) {
-                        MissingPermissionRow(
+                        WizardMissingPermissionRow(
                             name = stringResource(R.string.challenge_permission_overlay),
                             onGrant = {
                                 context.startActivity(
@@ -329,10 +334,10 @@ fun ChallengeCreationScreen(
                     val direction = if (targetState > initialState) 1 else -1
                     // ~300ms ease-out, synced with the WizardHeader progress-bar animation so the
                     // bar fill and the step content move together.
-                    (slideInHorizontally(animationSpec = tween(300, easing = LinearOutSlowInEasing)) { it * direction } +
-                            fadeIn(animationSpec = tween(300, easing = LinearOutSlowInEasing))) togetherWith
-                            (slideOutHorizontally(animationSpec = tween(300, easing = LinearOutSlowInEasing)) { -it * direction } +
-                                    fadeOut(animationSpec = tween(300, easing = LinearOutSlowInEasing)))
+                    (slideInHorizontally(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing)) { it * direction } +
+                            fadeIn(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing))) togetherWith
+                            (slideOutHorizontally(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing)) { -it * direction } +
+                                    fadeOut(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing)))
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -437,58 +442,6 @@ fun ChallengeCreationScreen(
                 }
             }
         }
-    }
-}
-
-// ── Wizard header ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun WizardHeader(
-    currentStep: Int,
-    totalSteps: Int,
-    onBack: () -> Unit,
-) {
-    // Progress fraction is unchanged (currentStep/totalSteps); only the RENDERED value is animated
-    // so the bar fills smoothly between steps instead of jumping (~300ms ease-out).
-    val progress = currentStep.toFloat() / totalSteps.toFloat()
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(durationMillis = 300, easing = LinearOutSlowInEasing),
-        label = "wizard_progress",
-    )
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.wizard_back),
-                    tint = detoxColors.label,
-                )
-            }
-            Text(
-                text = stringResource(R.string.wizard_step_progress, currentStep, totalSteps),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Normal,
-                color = detoxColors.subtext,
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.width(48.dp))
-        }
-        LinearProgressIndicator(
-            progress = { animatedProgress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(2.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.outlineVariant,
-        )
     }
 }
 
@@ -726,7 +679,7 @@ private fun Step3LimitType(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
-        LimitTypeCard(
+        WizardLimitTypeCard(
             icon = Icons.Outlined.Schedule,
             iconTint = detoxColors.softPurpleIcon,
             iconBg = detoxColors.softPurpleBg,
@@ -735,7 +688,7 @@ private fun Step3LimitType(
             isSelected = selected == LimitType.TIME,
             onClick = { onSelect(LimitType.TIME) },
         )
-        LimitTypeCard(
+        WizardLimitTypeCard(
             icon = Icons.Outlined.TouchApp,
             iconTint = detoxColors.softGreenIcon,
             iconBg = detoxColors.softGreenBg,
@@ -744,7 +697,7 @@ private fun Step3LimitType(
             isSelected = selected == LimitType.SESSIONS,
             onClick = { onSelect(LimitType.SESSIONS) },
         )
-        LimitTypeCard(
+        WizardLimitTypeCard(
             icon = Icons.Outlined.HourglassTop,
             iconTint = detoxColors.softOrangeIcon,
             iconBg = detoxColors.softOrangeBg,
@@ -753,7 +706,7 @@ private fun Step3LimitType(
             isSelected = selected == LimitType.TIME_BUDGET,
             onClick = { onSelect(LimitType.TIME_BUDGET) },
         )
-        LimitTypeCard(
+        WizardLimitTypeCard(
             icon = Icons.Outlined.CalendarToday,
             iconTint = detoxColors.softBlueIcon,
             iconBg = detoxColors.softBlueBg,
@@ -762,98 +715,6 @@ private fun Step3LimitType(
             isSelected = selected == LimitType.TIME_WINDOW,
             onClick = { onSelect(LimitType.TIME_WINDOW) },
         )
-    }
-}
-
-@Composable
-private fun LimitTypeCard(
-    icon: ImageVector,
-    iconTint: Color,
-    iconBg: Color,
-    title: String,
-    description: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-) {
-    val borderColor by animateColorAsState(
-        targetValue = if (isSelected) detoxColors.accent else detoxColors.cardBorder,
-        animationSpec = tween(150), label = "limit_border_color",
-    )
-    val borderWidth by animateDpAsState(
-        targetValue = if (isSelected) 2.dp else 0.5.dp,
-        animationSpec = tween(150), label = "limit_border_width",
-    )
-    val bgColor by animateColorAsState(
-        targetValue = if (isSelected) detoxColors.selectedSurface else detoxColors.cardBackground,
-        animationSpec = tween(150), label = "limit_bg",
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressScaleFeedback()
-            .clip(CardShape)
-            .background(bgColor)
-            .border(borderWidth, borderColor, CardShape)
-            .clickable(onClick = onClick)
-            .padding(14.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(iconBg),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = detoxColors.label,
-                )
-                Text(
-                    text = description,
-                    fontSize = 13.sp,
-                    color = detoxColors.subtext,
-                    maxLines = 2,
-                )
-            }
-            Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                val checkScale by animateFloatAsState(
-                    targetValue = if (isSelected) 1f else 0f,
-                    animationSpec = tween(150), label = "limit_check",
-                )
-                if (!isSelected) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .background(detoxColors.cardBackground)
-                            .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = detoxColors.accent,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
-                )
-            }
-        }
     }
 }
 
@@ -1313,7 +1174,7 @@ private fun Step6Duration(
                 values = (minDays..90).toList(),
                 selectedValue = state.durationDays.coerceIn(minDays, 90),
                 onValueChange = onUpdateDuration,
-                unit = "Tage",
+                unit = stringResource(R.string.wizard_duration_days_unit),
                 surfaceColor = detoxColors.screenBackground,
             )
         }
@@ -1401,31 +1262,31 @@ private fun Step7Confirm(
                 val durationLabel = if (state.noEndDate) stringResource(R.string.challenge_no_end_date)
                     else stringResource(R.string.wizard_review_days_format, state.durationDays)
 
-                SummaryDividerRow(stringResource(R.string.wizard_review_mode_label), modeLabel, isFirst = true)
-                SummaryDividerRow(targetLabel, appsLabel)
+                WizardSummaryDividerRow(stringResource(R.string.wizard_review_mode_label), modeLabel, isFirst = true)
+                WizardSummaryDividerRow(targetLabel, appsLabel)
                 if (isBlockPath && state.blockAdultContent && state.manualDomains.isNotEmpty()) {
-                    SummaryDividerRow(
+                    WizardSummaryDividerRow(
                         stringResource(R.string.adult_block_display_name),
                         stringResource(R.string.wizard_review_adult_active),
                     )
                 }
-                SummaryDividerRow(stringResource(R.string.wizard_review_limit_label), limitLabel)
+                WizardSummaryDividerRow(stringResource(R.string.wizard_review_limit_label), limitLabel)
                 // Time window + weekdays — same wording as the detail screen (ScheduleSummary
                 // helpers). Block path is 24/7 by definition, so the rows are suppressed there.
                 if (!isBlockPath) {
-                    SummaryDividerRow(
+                    WizardSummaryDividerRow(
                         stringResource(R.string.detail_info_time_window),
                         timeWindowSummary(
                             state.scheduleStart.takeIf { it.length == 5 },
                             state.scheduleEnd.takeIf { it.length == 5 },
                         ),
                     )
-                    SummaryDividerRow(
+                    WizardSummaryDividerRow(
                         stringResource(R.string.detail_info_active_days),
                         activeDaysSummary(state.activeDays),
                     )
                 }
-                SummaryDividerRow(stringResource(R.string.wizard_review_duration_label), durationLabel, isLast = true)
+                WizardSummaryDividerRow(stringResource(R.string.wizard_review_duration_label), durationLabel)
             }
         }
 
@@ -1441,7 +1302,7 @@ private fun Step7Confirm(
             val refundCents = (stakeCents * 80) / 100      // Math.floor of 80%
             val feeCents = stakeCents - refundCents          // remainder = 20%
 
-            FeeBreakdownCard(
+            WizardFeeBreakdownCard(
                 stakeLabel = stringResource(R.string.fee_your_stake),
                 stakeValue = formatEuroCents(stakeCents),
                 refundValue = stringResource(
@@ -1452,12 +1313,12 @@ private fun Step7Confirm(
                 ),
             )
 
-            WaiverCheckboxRow(
+            WizardWaiverCheckboxRow(
                 checked = waiverChecked,
                 onToggle = { waiverChecked = !waiverChecked },
             )
 
-            WaiverCheckboxRow(
+            WizardWaiverCheckboxRow(
                 checked = forfeitChecked,
                 onToggle = { forfeitChecked = !forfeitChecked },
                 label = stringResource(R.string.uninstall_forfeit_consent_text),
@@ -1617,182 +1478,3 @@ private fun MotivationField(
     }
 }
 
-@Composable
-private fun SummaryDividerRow(
-    label: String,
-    value: String,
-    isFirst: Boolean = false,
-    isLast: Boolean = false,
-) {
-    if (!isFirst) {
-        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            color = detoxColors.subtext,
-        )
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = detoxColors.label,
-        )
-    }
-}
-
-// ── Fee breakdown card + withdrawal-rights waiver (FAGG § 18) ──────────────────
-
-/** Formats integer cents as a German money string, e.g. 800 → "€8,00". */
-private fun formatEuroCents(cents: Int): String =
-    "€%d,%02d".format(cents / 100, cents % 100)
-
-// detoxColors.label (#333333) folded into detoxColors.label; detoxColors.success into success —
-// deliberate consolidations, see docs/design_inconsistencies.md.
-
-@Composable
-private fun FeeBreakdownCard(
-    stakeLabel: String,
-    stakeValue: String,
-    refundValue: String,
-    feeValue: String,
-    note: String? = null,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(CardShape)
-            .background(detoxColors.cardBackground)
-            .border(0.5.dp, detoxColors.cardBorder, CardShape),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.fee_overview_title).uppercase(),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = detoxColors.subtext,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            FeeRow(stakeLabel, stakeValue, detoxColors.label)
-            HorizontalDivider(
-                color = detoxColors.divider,
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(vertical = 10.dp),
-            )
-            FeeRow(stringResource(R.string.fee_return_on_success), refundValue, detoxColors.success)
-            HorizontalDivider(
-                color = detoxColors.divider,
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(vertical = 10.dp),
-            )
-            FeeRow(stringResource(R.string.fee_service_fee), feeValue, detoxColors.subtext)
-            if (note != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = note,
-                    fontSize = 12.sp,
-                    color = detoxColors.subtext,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FeeRow(label: String, value: String, valueColor: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = label, fontSize = 14.sp, color = detoxColors.label)
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = valueColor,
-        )
-    }
-}
-
-@Composable
-private fun WaiverCheckboxRow(
-    checked: Boolean,
-    onToggle: () -> Unit,
-    label: String = stringResource(R.string.withdrawal_waiver_text),
-) {
-    val boxBg by animateColorAsState(
-        targetValue = if (checked) detoxColors.accent else detoxColors.cardBackground,
-        animationSpec = tween(150), label = "waiver_bg",
-    )
-    val boxBorder by animateColorAsState(
-        targetValue = if (checked) detoxColors.accent else MaterialTheme.colorScheme.outlineVariant,
-        animationSpec = tween(150), label = "waiver_border",
-    )
-    val checkScale by animateFloatAsState(
-        targetValue = if (checked) 1f else 0f,
-        animationSpec = tween(150), label = "waiver_check",
-    )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggle() }
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Box(
-            modifier = Modifier
-                .padding(top = 1.dp)
-                .size(22.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(boxBg)
-                .border(
-                    width = 1.5.dp,
-                    color = boxBorder,
-                    shape = RoundedCornerShape(6.dp),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier
-                    .size(16.dp)
-                    .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            color = detoxColors.label,
-        )
-    }
-}
-
-// ── Missing-permission dialog row ─────────────────────────────────────────────
-
-@Composable
-private fun MissingPermissionRow(name: String, onGrant: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "• $name",
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onGrant) {
-            Text(stringResource(R.string.challenge_permission_grant))
-        }
-    }
-}

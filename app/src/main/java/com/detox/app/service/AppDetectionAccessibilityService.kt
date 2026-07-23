@@ -322,7 +322,9 @@ class AppDetectionAccessibilityService : AccessibilityService() {
      *     On match: toast + send user home immediately, then emit
      *     [TrackedAppEventBus.emitAdultBlocked] so OverlayManager explains the block.
      *  2. Custom blocked domains ([TrackedAppEventBus.blockedDomains]) — always checked.
-     *     On match: emit [TrackedAppEventBus.emitUrlBlocked] to show the challenge overlay.
+     *     On match: emit [TrackedAppEventBus.emitUrlBlocked] to show the challenge overlay,
+     *     then [redirectToNeutralPage] — same enforcement as the adult path, so the blocked
+     *     page does not stay resumed beneath the overlay. Freed domains skip both.
      */
     private fun checkBrowserUrl(packageName: String) {
         val url = extractUrl(packageName) ?: return
@@ -369,9 +371,9 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             if (matchedCustom != null) {
                 if (!TrackedAppEventBus.freedDomainsToday.value.contains(matchedCustom)) {
                     // Dismissal-anchored suppression: the user just closed this domain's
-                    // block overlay; the page is only foregrounded until goHome() lands.
-                    // The 2s cooldown below can't cover this — it anchors to the ORIGINAL
-                    // detection, which is >2s old whenever the overlay was read.
+                    // block overlay; the page is only foregrounded until the about:blank
+                    // redirect lands. The 2s cooldown below can't cover this — it anchors
+                    // to the ORIGINAL detection, which is >2s old whenever the overlay was read.
                     if (TrackedAppEventBus.isBlockRedetectSuppressed(matchedCustom)) {
                         Timber.d("Custom block: overlay for $matchedCustom just dismissed — suppressing re-trigger")
                         return
@@ -382,6 +384,9 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                         lastBlockedTimeMs = now
                         Timber.d("Custom blocked domain=$matchedCustom detected in browser=$packageName url=$url")
                         TrackedAppEventBus.emitUrlBlocked(matchedCustom)
+                        // Same enforcement as the adult path: without this the blocked tab
+                        // stays RESUMED under the overlay and is revealed again on dismiss.
+                        redirectToNeutralPage(packageName)
                     }
                 }
                 // Full domain takes priority — don't also fire partial block for same URL
@@ -427,7 +432,8 @@ class AppDetectionAccessibilityService : AccessibilityService() {
     // ── Actions ───────────────────────────────────────────────────────────────
 
     /**
-     * Primary adult-block action: fronts [browserPackage] on about:blank in a new
+     * Primary block action for BOTH the adult and the custom-domain path: fronts
+     * [browserPackage] on about:blank in a new
      * tab, demoting the adult tab to background (Chrome pauses its media). The user
      * stays in the browser and the re-block loop is broken by construction — no
      * adult URL remains in the foreground to re-trigger detection. about:blank

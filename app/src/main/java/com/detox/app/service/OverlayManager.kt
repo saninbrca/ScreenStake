@@ -1052,6 +1052,13 @@ class OverlayManager @Inject constructor(
 
     // ── Website blocking overlay ───────────────────────────────────────────────
 
+    /**
+     * Custom blocked-domain overlay: shown AFTER the AccessibilityService redirected the
+     * browser to about:blank (same enforcement as the adult path). "Zurück" therefore only
+     * DISMISSES — the user stays in the browser on the neutral page. Kicking home here would
+     * rely on a background startActivity(HOME), which API 29+ can silently drop, revealing
+     * the blocked page again.
+     */
     private suspend fun showWebsiteBlockedOverlay(domain: String) {
         if (currentOverlayView != null) return
 
@@ -1067,10 +1074,7 @@ class OverlayManager @Inject constructor(
         val motivationText = blockingChallenge?.customMotivation?.takeIf { it.isNotBlank() }
 
         val composeView = createSessionComposeView(
-            onBack = {
-                dismissOverlay()
-                goHome()
-            }
+            onBack = { dismissOverlay("website_back") }
         ) {
             DetoxTheme(darkTheme = true) {
                 com.detox.app.presentation.components.WebsiteBlockedOverlay(
@@ -1078,10 +1082,7 @@ class OverlayManager @Inject constructor(
                     challengeName = blockingChallenge?.appDisplayName,
                     streak = streak,
                     motivationText = motivationText,
-                    onGoBack = {
-                        dismissOverlay()
-                        goHome()
-                    }
+                    onGoBack = { dismissOverlay("website_dismiss") }
                 )
             }
         }
@@ -1091,7 +1092,7 @@ class OverlayManager @Inject constructor(
 
     /**
      * Adult-content block: shown AFTER the AccessibilityService has already redirected
-     * the browser to about:blank (unlike custom domains, the adult page must never
+     * the browser to about:blank (same as custom domains — the blocked page must never
      * stay resumed in the foreground). Appears over the browser's neutral page;
      * "Zurück" only DISMISSES — the user stays in the browser, which is the point
      * of the redirect (no home-kick). No bypass — adult blocking has no

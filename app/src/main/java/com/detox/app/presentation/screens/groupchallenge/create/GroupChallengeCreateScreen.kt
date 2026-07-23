@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -163,6 +164,43 @@ fun GroupChallengeCreateScreen(
 
     BackHandler {
         if (formState.currentStep == 1) onBack() else viewModel.goBack()
+    }
+
+    // ── Adult-block exclusivity dialogs (both directions, no silent clearing) — mirrors Solo/Hard ──
+    if (formState.showAdultExclusiveDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAdultExclusiveDialog,
+            title = { Text(stringResource(R.string.adult_exclusive_dialog_title)) },
+            text = { Text(stringResource(R.string.adult_exclusive_dialog_body)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmAdultExclusive) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAdultExclusiveDialog) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_dismiss))
+                }
+            },
+        )
+    }
+
+    if (formState.pendingAdultAppPackage != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAppOverAdultDialog,
+            title = { Text(stringResource(R.string.adult_exclusive_dialog_title)) },
+            text = { Text(stringResource(R.string.adult_exclusive_app_dialog_body)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmAppOverAdult) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAppOverAdultDialog) {
+                    Text(stringResource(R.string.adult_exclusive_dialog_dismiss))
+                }
+            },
+        )
     }
 
     val isLoading = uiState is GroupCreateUiState.Loading || uiState is GroupCreateUiState.AwaitingPayment

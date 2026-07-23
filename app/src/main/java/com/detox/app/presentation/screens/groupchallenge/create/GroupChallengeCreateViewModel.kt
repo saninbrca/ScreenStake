@@ -43,6 +43,11 @@ data class GroupCreateFormState(
     val manualDomains: List<String> = emptyList(),
     val manualDomainError: String? = null,
     val blockAdultContent: Boolean = false,
+    // Step 1 — adult-block exclusivity dialogs (mirror Solo/Hard; no silent clearing either direction)
+    /** True while the "adult ON would remove your selected apps" dialog is shown. */
+    val showAdultExclusiveDialog: Boolean = false,
+    /** Package tapped on the Apps tab while adult-block is ON; non-null shows the mirrored dialog. */
+    val pendingAdultAppPackage: String? = null,
     // Step 2 — limit type
     val limitType: LimitType? = null,
     // Step 3 — limit value + duration
@@ -139,6 +144,18 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun updateActiveTab(tab: Int) = _formState.update { it.copy(activeTab = tab, manualDomainError = null) }
 
     fun toggleApp(packageName: String) {
+        // Adult-block is exclusive with apps (mirror Solo/Hard): adding an app while adult is ON needs
+        // an explicit choice via the mirrored dialog. Removing is allowed defensively (unreachable while
+        // adult is ON, since adult implies no selected apps).
+        val current = _formState.value
+        if (current.blockAdultContent && !current.packageNames.contains(packageName)) {
+            _formState.update { it.copy(pendingAdultAppPackage = packageName) }
+            return
+        }
+        applyToggleApp(packageName)
+    }
+
+    private fun applyToggleApp(packageName: String) {
         val current = _formState.value.packageNames.toMutableList()
         if (current.contains(packageName)) {
             current.remove(packageName)
@@ -159,6 +176,16 @@ class GroupChallengeCreateViewModel @Inject constructor(
             )
         }
     }
+
+    /** Mirrored exclusivity dialog: user chose the app over adult-block. */
+    fun confirmAppOverAdult() {
+        val pkg = _formState.value.pendingAdultAppPackage ?: return
+        _formState.update { it.copy(blockAdultContent = false, pendingAdultAppPackage = null) }
+        applyToggleApp(pkg)
+    }
+
+    /** Mirrored exclusivity dialog: keep adult-block, don't add the app. */
+    fun dismissAppOverAdultDialog() = _formState.update { it.copy(pendingAdultAppPackage = null) }
 
     fun toggleDomain(packageName: String) {
         _formState.update {
@@ -196,8 +223,29 @@ class GroupChallengeCreateViewModel @Inject constructor(
     fun removeManualDomain(domain: String) =
         _formState.update { it.copy(manualDomains = it.manualDomains - domain) }
 
-    fun updateBlockAdultContent(enabled: Boolean) =
+    fun updateBlockAdultContent(enabled: Boolean) {
+        // Adult-block is exclusive with apps (mirror Solo/Hard): enabling it while apps are selected needs
+        // an explicit choice — never silently clear the selection. Disabling is always free.
+        if (enabled && _formState.value.packageNames.isNotEmpty()) {
+            _formState.update { it.copy(showAdultExclusiveDialog = true) }
+            return
+        }
         _formState.update { it.copy(blockAdultContent = enabled) }
+    }
+
+    /** Exclusivity dialog: user confirmed — clear the selected apps, enable adult-block. */
+    fun confirmAdultExclusive() = _formState.update {
+        it.copy(
+            packageNames = emptyList(),
+            domainToggles = emptyMap(),
+            displayName = "",
+            blockAdultContent = true,
+            showAdultExclusiveDialog = false,
+        )
+    }
+
+    /** Exclusivity dialog: user declined — keep the apps, adult-block stays OFF. */
+    fun dismissAdultExclusiveDialog() = _formState.update { it.copy(showAdultExclusiveDialog = false) }
 
     fun computeBlockedDomains(): List<String> {
         val s = _formState.value

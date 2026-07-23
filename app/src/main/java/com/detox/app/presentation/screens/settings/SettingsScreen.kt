@@ -517,7 +517,7 @@ fun SettingsScreen(
                     showChevron = true,
                     onClick = {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_datenschutz)))
+                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_privacy)))
                         )
                     }
                 )
@@ -528,7 +528,7 @@ fun SettingsScreen(
                     showChevron = true,
                     onClick = {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_agb)))
+                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_terms)))
                         )
                     }
                 )
@@ -539,7 +539,7 @@ fun SettingsScreen(
                     showChevron = true,
                     onClick = {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_impressum)))
+                            Intent(Intent.ACTION_VIEW, Uri.parse(context.getString(R.string.url_imprint)))
                         )
                     }
                 )

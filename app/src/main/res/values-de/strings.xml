@@ -896,9 +896,9 @@
     <string name="settings_terms_of_service">Nutzungsbedingungen</string>
     <string name="settings_impressum">Impressum</string>
     <!-- Legal page URLs — German pages; the English equivalents live in values/. -->
-    <string name="url_datenschutz">https://saninbrca.github.io/finite-legal/datenschutz.html</string>
-    <string name="url_agb">https://saninbrca.github.io/finite-legal/agb.html</string>
-    <string name="url_impressum">https://saninbrca.github.io/finite-legal/impressum.html</string>
+    <string name="url_privacy">https://saninbrca.github.io/finite-legal/datenschutz.html</string>
+    <string name="url_terms">https://saninbrca.github.io/finite-legal/agb.html</string>
+    <string name="url_imprint">https://saninbrca.github.io/finite-legal/impressum.html</string>
     <string name="settings_export_data">Daten exportieren</string>
     <string name="settings_export_data_subtitle">Als JSON herunterladen</string>
     <string name="settings_delete_all_data">Alle Daten löschen</string>

@@ -506,7 +506,7 @@ private fun RegisterForm(
             label = stringResource(R.string.auth_consent_agb),
             enabled = !isLoading,
             linkText = stringResource(R.string.auth_consent_agb_link),
-            linkUrl = stringResource(R.string.url_agb)
+            linkUrl = stringResource(R.string.url_terms)
         )
         ConsentRow(
             checked = consentDatenschutz,
@@ -514,7 +514,7 @@ private fun RegisterForm(
             label = stringResource(R.string.auth_consent_datenschutz),
             enabled = !isLoading,
             linkText = stringResource(R.string.auth_consent_datenschutz_link),
-            linkUrl = stringResource(R.string.url_datenschutz)
+            linkUrl = stringResource(R.string.url_privacy)
         )
         ConsentRow(
             checked = consentAge18,

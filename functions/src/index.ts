@@ -45,7 +45,9 @@ function getStripe(): Stripe {
 // ── Auth helper ────────────────────────────────────────────────────────────────
 
 class HttpError extends Error {
-  constructor(public readonly status: number, message: string) {
+  // `code` is an optional machine-readable token (e.g. "join_rejected_full") the
+  // client maps to a localized message instead of string-matching the English text.
+  constructor(public readonly status: number, message: string, public readonly code?: string) {
     super(message);
   }
 }
@@ -66,7 +68,7 @@ async function requireAuth(req: functions.https.Request): Promise<string> {
 
 function handleError(tag: string, e: unknown, res: functions.Response): void {
   if (e instanceof HttpError) {
-    res.status(e.status).json({ error: e.message });
+    res.status(e.status).json(e.code ? { error: e.message, code: e.code } : { error: e.message });
   } else {
     functions.logger.error(`${tag} error`, e);
     res.status(500).json({ error: "Internal server error." });
@@ -564,6 +566,46 @@ export const createGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
   } catch (e) { handleError("createGroupChallenge", e, res); }
 });
 
+// ── Join reservation protocol ─────────────────────────────────────────────────
+// A join is reserve-then-pay: joinGroupChallenge takes a slot reservation in a
+// transaction BEFORE the PaymentIntent exists, so the routine rejections (full,
+// already started) cost nothing. The reservation doc at
+// groupChallenges/{groupId}/joinReservations/{userId} (deterministic id — one per
+// user per group) is also the FIRST server-side record of the PI id, which is what
+// lets sweepStaleJoinReservations cancel holds abandoned mid-PaymentSheet.
+// Same 15-min stamp pattern as the pendingPayouts claim token (CLAIM_TTL_MS):
+// expiresAt gates the slot, sweepingAt is the sweep's claim stamp, startLockAt on
+// the group doc fences joiners out while startGroupChallenge is capturing.
+const RESERVATION_TTL_MS = 15 * 60 * 1000;
+const START_LOCK_TTL_MS = 15 * 60 * 1000;
+
+function isStartLockFresh(startLockAt: unknown): boolean {
+  return typeof startLockAt === "number" && Date.now() - startLockAt < START_LOCK_TTL_MS;
+}
+
+// Statuses in which paymentIntents.cancel is allowed (releases the hold / kills the
+// intent). "processing"/"succeeded" are NOT cancellable; "canceled" is already done.
+const CANCELLABLE_PI_STATUSES = ["requires_payment_method", "requires_confirmation", "requires_action", "requires_capture"];
+
+// Best-effort hold release: retrieve → cancel if cancellable. Never throws.
+// Returns true when the PI is confirmed released (cancelled now or already canceled).
+async function releasePaymentIntentBestEffort(tag: string, paymentIntentId: string, ctx: Record<string, unknown>): Promise<boolean> {
+  try {
+    const pi = await getStripe().paymentIntents.retrieve(paymentIntentId);
+    if (CANCELLABLE_PI_STATUSES.includes(pi.status)) {
+      await getStripe().paymentIntents.cancel(paymentIntentId);
+      functions.logger.info(`${tag}: PI cancelled — hold released`, { ...ctx, paymentIntentId });
+      return true;
+    }
+    if (pi.status === "canceled") return true;
+    functions.logger.warn(`${tag}: PI not cancellable`, { ...ctx, paymentIntentId, piStatus: pi.status });
+    return false;
+  } catch (e) {
+    functions.logger.error(`${tag}: PI cancel failed`, { ...ctx, paymentIntentId, error: e });
+    return false;
+  }
+}
+
 // ── joinGroupChallenge ─────────────────────────────────────────────────────────
 
 export const joinGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
@@ -575,34 +617,91 @@ export const joinGroupChallenge = functions.runWith({ maxInstances: 10 }).region
 
     const db = admin.firestore();
     const docRef = db.collection("groupChallenges").doc(groupId);
-    const doc = await docRef.get();
-    if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+    const myReservationRef = docRef.collection("joinReservations").doc(userId);
 
-    const gc = doc.data()!;
-    if (gc["status"] !== "waiting") throw new HttpError(412, "This challenge is no longer accepting players.");
+    // Phase 1 — transactional slot reservation, BEFORE any money exists. Capacity
+    // counts participants + live (unexpired) reservations of OTHER users, so N
+    // concurrent joiners at the boundary serialize instead of all passing.
+    let buyInCents = 500;
+    let previousPaymentIntentId: string | null = null;
+    await db.runTransaction(async (tx) => {
+      const doc = await tx.get(docRef);
+      if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+      const gc = doc.data()!;
+      if (gc["status"] !== "waiting") throw new HttpError(412, "This challenge is no longer accepting players.", "join_rejected_started");
+      if (isStartLockFresh(gc["startLockAt"])) throw new HttpError(412, "This challenge is no longer accepting players.", "join_rejected_started");
 
-    const participantIds: string[] = gc["participantUserIds"] ?? [];
-    if (participantIds.includes(userId)) throw new HttpError(409, "You have already joined this challenge.");
-    if (participantIds.length >= (gc["maxParticipants"] ?? 5)) throw new HttpError(429, "This challenge is full.");
+      const participantIds: string[] = gc["participantUserIds"] ?? [];
+      if (participantIds.includes(userId)) throw new HttpError(409, "You have already joined this challenge.");
 
-    const startDate: number = typeof gc["startDate"] === "number"
-      ? gc["startDate"]
-      : (gc["startDate"] as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
-    if (startDate && startDate <= Date.now()) throw new HttpError(412, "The join window for this challenge has closed.");
+      const startDate: number = typeof gc["startDate"] === "number"
+        ? gc["startDate"]
+        : (gc["startDate"] as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
+      if (startDate && startDate <= Date.now()) throw new HttpError(412, "The join window for this challenge has closed.");
 
-    const buyInCents: number = gc["buyInCents"] ?? 500;
+      const reservations = await tx.get(docRef.collection("joinReservations"));
+      const now = Date.now();
+      const liveOthers = reservations.docs
+        .filter((d) => d.id !== userId && ((d.data()["expiresAt"] as number) ?? 0) > now)
+        .length;
+      if (participantIds.length + liveOthers >= (gc["maxParticipants"] ?? 5)) {
+        throw new HttpError(429, "This challenge is full.", "join_rejected_full");
+      }
 
-    const customerId = await getOrCreateStripeCustomer(userId);
-    const paymentIntent = await getStripe().paymentIntents.create({
-      amount: buyInCents,
-      currency: "eur",
-      customer: customerId,
-      capture_method: "manual",
-      metadata: { userId, groupId, displayName: displayName ?? "Anonymous", type: "group_challenge_buy_in" },
-      description: `Detox Group Challenge buy-in — ${groupId}`,
+      // A retry overwrites the caller's own reservation; remember its PI (if any)
+      // so the abandoned hold is released below instead of orphaned until the sweep.
+      const prev = reservations.docs.find((d) => d.id === userId);
+      previousPaymentIntentId = (prev?.data()?.["paymentIntentId"] as string | undefined) ?? null;
+
+      buyInCents = (gc["buyInCents"] as number) ?? 500;
+      tx.set(myReservationRef, {
+        userId,
+        displayName: displayName ?? "Anonymous",
+        reservedAt: now,
+        expiresAt: now + RESERVATION_TTL_MS,
+        paymentIntentId: null,
+      });
     });
 
-    functions.logger.info("joinGroupChallenge: payment intent created", { groupId, userId });
+    if (previousPaymentIntentId) {
+      await releasePaymentIntentBestEffort("joinGroupChallenge", previousPaymentIntentId, { groupId, userId, reason: "rejoin_superseded" });
+    }
+
+    // Phase 2 — money. The slot is held; create the PI, then record its id on the
+    // reservation so the sweep can always find the hold.
+    let paymentIntent: Stripe.PaymentIntent;
+    try {
+      const customerId = await getOrCreateStripeCustomer(userId);
+      paymentIntent = await getStripe().paymentIntents.create({
+        amount: buyInCents,
+        currency: "eur",
+        customer: customerId,
+        capture_method: "manual",
+        metadata: { userId, groupId, displayName: displayName ?? "Anonymous", type: "group_challenge_buy_in" },
+        description: `Detox Group Challenge buy-in — ${groupId}`,
+      });
+    } catch (e) {
+      // No money exists — release the slot (TTL covers a failed delete) and rethrow.
+      try { await myReservationRef.delete(); } catch (de) {
+        functions.logger.warn("joinGroupChallenge: reservation delete after PI-create failure failed — TTL will expire it", { groupId, userId, error: de });
+      }
+      throw e;
+    }
+
+    try {
+      await myReservationRef.update({ paymentIntentId: paymentIntent.id });
+    } catch (e) {
+      // The reservation doc is the only server-side record the sweep reads — if the
+      // PI id can't be recorded there, release the hold and fail the join (money-safe).
+      functions.logger.error("joinGroupChallenge: failed to record PI on reservation — releasing hold", { groupId, userId, error: e });
+      await releasePaymentIntentBestEffort("joinGroupChallenge", paymentIntent.id, { groupId, userId, reason: "pi_record_failed" });
+      try { await myReservationRef.delete(); } catch (de) {
+        functions.logger.warn("joinGroupChallenge: reservation delete failed — TTL will expire it", { groupId, userId, error: de });
+      }
+      throw new HttpError(500, "Failed to prepare the join. Your card was not charged.");
+    }
+
+    functions.logger.info("joinGroupChallenge: slot reserved + payment intent created", { groupId, userId });
     res.json({ paymentIntentId: paymentIntent.id, clientSecret: paymentIntent.client_secret, isImmediateCapture: false });
   } catch (e) { handleError("joinGroupChallenge", e, res); }
 });
@@ -625,23 +724,11 @@ export const confirmGroupJoin = functions.runWith({ maxInstances: 10 }).region(R
 
     const db = admin.firestore();
     const docRef = db.collection("groupChallenges").doc(groupId);
-    const doc = await docRef.get();
-    if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+    const myReservationRef = docRef.collection("joinReservations").doc(userId);
 
-    const gc = doc.data()!;
-
-    // Idempotency: user already in — payment was confirmed, just return success.
-    const participantIds: string[] = gc["participantUserIds"] ?? [];
-    if (participantIds.includes(userId)) {
-      functions.logger.info("confirmGroupJoin: already joined (idempotent)", { groupId, userId });
-      res.json({ success: true, alreadyJoined: true });
-      return;
-    }
-
-    if (gc["status"] !== "waiting") throw new HttpError(412, "This challenge is no longer accepting players.");
-    if (participantIds.length >= (gc["maxParticipants"] ?? 5)) throw new HttpError(429, "This challenge is full.");
-
-    // Verify the PaymentIntent belongs to this user and group and is paid.
+    // Verify the PaymentIntent belongs to this user and group and is paid. These
+    // throws deliberately do NOT release the hold: on a metadata mismatch the PI is
+    // not the caller's to cancel, and on an invalid status there is no hold.
     const paymentIntent = await getStripe().paymentIntents.retrieve(paymentIntentId);
     if (paymentIntent.metadata.userId !== userId) throw new HttpError(403, "Payment intent does not belong to this user.");
     if (paymentIntent.metadata.groupId !== groupId) throw new HttpError(403, "Payment intent does not belong to this group.");
@@ -651,24 +738,79 @@ export const confirmGroupJoin = functions.runWith({ maxInstances: 10 }).region(R
       throw new HttpError(402, `Payment not completed. Status: ${paymentIntent.status}`);
     }
 
-    const buyInCents: number = gc["buyInCents"] ?? 500;
-    const displayName: string = paymentIntent.metadata.displayName ?? "Anonymous";
+    // Transactional convert: reservation → participant. Definitive rejections are
+    // RETURNED (not thrown) so the hold can be released outside the transaction
+    // before responding — Stripe calls never run inside a transaction.
+    type Rejection = { status: number; code: string; message: string };
+    const rejected = await db.runTransaction(async (tx): Promise<Rejection | "already" | null> => {
+      const doc = await tx.get(docRef);
+      if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+      const gc = doc.data()!;
 
-    await docRef.update({
-      participants: admin.firestore.FieldValue.arrayUnion({
-        userId,
-        displayName,
-        paymentIntentId,
-        amountCents: buyInCents,
-        status: "active",
-        opensToday: 0,
-        timeUsedMinutes: 0,
-        joinedAt: Date.now(),
-        // Anti-cheat: deviceId for multi-account detection (empty string if client omitted it).
-        deviceId: deviceId ?? "",
-      }),
-      participantUserIds: admin.firestore.FieldValue.arrayUnion(userId),
+      // Idempotency: user already in — payment was confirmed, just return success.
+      const participantIds: string[] = gc["participantUserIds"] ?? [];
+      if (participantIds.includes(userId)) return "already";
+
+      if (gc["status"] !== "waiting" || isStartLockFresh(gc["startLockAt"])) {
+        return { status: 412, code: "join_rejected_started", message: "This challenge is no longer accepting players." };
+      }
+      if (participantIds.length >= (gc["maxParticipants"] ?? 5)) {
+        return { status: 429, code: "join_rejected_full", message: "This challenge is full." };
+      }
+
+      // Convert ONLY a live reservation. A missing doc means the sweep released the
+      // hold (docs are deleted only AFTER a confirmed PI cancel); a fresh sweepingAt
+      // means the sweep owns it right now. An expired-but-present, unswept
+      // reservation still converts — grace for slow PaymentSheet sessions.
+      const reservation = await tx.get(myReservationRef);
+      const sweepingAt = (reservation.data()?.["sweepingAt"] as number) ?? 0;
+      if (!reservation.exists || (sweepingAt && Date.now() - sweepingAt < RESERVATION_TTL_MS)) {
+        return { status: 412, code: "join_rejected_expired", message: "Your join session expired. Please try again." };
+      }
+
+      const buyInCents: number = (gc["buyInCents"] as number) ?? 500;
+      const displayName: string = paymentIntent.metadata.displayName ?? "Anonymous";
+
+      tx.update(docRef, {
+        participants: admin.firestore.FieldValue.arrayUnion({
+          userId,
+          displayName,
+          paymentIntentId,
+          amountCents: buyInCents,
+          status: "active",
+          opensToday: 0,
+          timeUsedMinutes: 0,
+          joinedAt: Date.now(),
+          // Anti-cheat: deviceId for multi-account detection (empty string if client omitted it).
+          deviceId: deviceId ?? "",
+        }),
+        participantUserIds: admin.firestore.FieldValue.arrayUnion(userId),
+      });
+      tx.delete(myReservationRef);
+      return null;
     });
+
+    if (rejected === "already") {
+      functions.logger.info("confirmGroupJoin: already joined (idempotent)", { groupId, userId });
+      res.json({ success: true, alreadyJoined: true });
+      return;
+    }
+
+    if (rejected) {
+      // Post-authorization rejection: release the hold FIRST, then tell the client
+      // (holdReleased lets the UI say plainly that no money was taken). The
+      // reservation doc is deleted ONLY after a confirmed release — it is the
+      // sweep's record of the hold, and the sweep retries the cancel otherwise.
+      const released = await releasePaymentIntentBestEffort("confirmGroupJoin", paymentIntentId, { groupId, userId, reason: rejected.code });
+      if (released) {
+        try { await myReservationRef.delete(); } catch (de) {
+          functions.logger.warn("confirmGroupJoin: reservation delete after rejection failed — TTL/sweep will clear it", { groupId, userId, error: de });
+        }
+      }
+      functions.logger.info("confirmGroupJoin: rejected after authorization", { groupId, userId, code: rejected.code, released });
+      res.status(rejected.status).json({ error: rejected.message, code: rejected.code, holdReleased: released });
+      return;
+    }
 
     functions.logger.info("confirmGroupJoin: participant added", { groupId, userId });
     res.json({ success: true });
@@ -699,7 +841,26 @@ export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
       return;
     }
 
-    const participants = parseParticipants<{ userId: string; displayName: string; paymentIntentId: string }>(gc["participants"]);
+    // Fence joiners while we capture: transactionally stamp startLockAt (both join
+    // CFs reject while it is fresh) and take the participant snapshot from the SAME
+    // transactional read — a joiner confirmed after this commit is rejected, one
+    // confirmed before it is in the snapshot, so the capture loop misses nobody.
+    // Deliberately NOT checked here: a creator retry re-stamps a stale lock, and a
+    // stranded lock only blocks joining for START_LOCK_TTL_MS, never start itself.
+    const lockedGc = await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(docRef);
+      if (!fresh.exists) throw new HttpError(404, "Group challenge not found.");
+      const data = fresh.data()!;
+      if (data["status"] === "waiting") tx.update(docRef, { startLockAt: Date.now() });
+      return data;
+    });
+    if (lockedGc["status"] !== "waiting") {
+      functions.logger.info("startGroupChallenge: already status=" + lockedGc["status"] + " (post-lock)", { groupId });
+      res.json({ status: lockedGc["status"] });
+      return;
+    }
+
+    const participants = parseParticipants<{ userId: string; displayName: string; paymentIntentId: string }>(lockedGc["participants"]);
 
     if (participants.length < 2) {
       for (const p of participants) {
@@ -712,7 +873,7 @@ export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
           functions.logger.error("startGroupChallenge: cancel failed for <2 participants", { groupId, userId: p.userId, error: e });
         }
       }
-      await docRef.update({ status: "cancelled" });
+      await docRef.update({ status: "cancelled", startLockAt: admin.firestore.FieldValue.delete() });
       functions.logger.info("startGroupChallenge: cancelled (< 2 participants)", { groupId, participants: participants.length });
       res.json({ status: "cancelled" });
       return;
@@ -723,6 +884,9 @@ export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
       const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
       if (pi.status !== "requires_capture") {
         functions.logger.warn("startGroupChallenge: payment not ready", { groupId, userId: p.userId, piStatus: pi.status });
+        try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
+          functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
+        }
         res.status(400).json({
           error: "payment_not_ready",
           message: `Payment for ${p.displayName} is not ready. Their authorization may have expired.`,
@@ -745,6 +909,9 @@ export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
             functions.logger.error("startGroupChallenge: rollback refund failed", { piId, error: re });
           }
         }
+        try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
+          functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
+        }
         res.status(500).json({ error: "capture_failed", message: "Failed to capture a payment. All captured payments have been refunded." });
         return;
       }
@@ -762,7 +929,7 @@ export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
       participants: participants.length,
     });
 
-    await docRef.update({ status: "active", startDate, endDate });
+    await docRef.update({ status: "active", startDate, endDate, startLockAt: admin.firestore.FieldValue.delete() });
     functions.logger.info("startGroupChallenge: activated", { groupId, participants: participants.length, startDate, endDate });
     res.json({ status: "active" });
   } catch (e) { handleError("startGroupChallenge", e, res); }
@@ -1052,6 +1219,66 @@ export const leaveGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
     res.json({ success: true, amountCents });
   } catch (e) { handleError("leaveGroupChallenge", e, res); }
 });
+
+// ── sweepStaleJoinReservations ────────────────────────────────────────────────
+// Hourly safety net for the reserve-then-pay join protocol: cancels the Stripe
+// hold of every reservation that expired without converting (abandoned
+// PaymentSheet, app killed mid-join, failed post-rejection cancel) and deletes
+// the doc. Mirrors the claimPendingPayouts claim pattern: a transactional
+// sweepingAt stamp claims the doc (confirmGroupJoin refuses to convert a doc
+// with a fresh stamp, so sweep and convert serialize on the reservation), and a
+// crashed sweep's stale stamp is re-opened by a later run after RESERVATION_TTL_MS.
+// Stripe before Firestore: the doc is deleted ONLY after the PI is confirmed
+// released (cancelled / already canceled / never recorded). A PI in any other
+// state (processing/succeeded — should be impossible for a never-converted
+// reservation) parks the doc and logs loudly for manual review.
+// FAIL-SAFE: capacity counting ignores expired reservations, so a dead sweep can
+// never block joins — worst case a hold lives until Stripe's ~7-day auto-expiry.
+// Not config-gated: cancelling an uncaptured authorization is strictly
+// user-favorable (same reasoning as expireGroupChallenge).
+
+export const sweepStaleJoinReservations = functions.region(REGION)
+  .pubsub.schedule("every 1 hours")
+  .onRun(async () => {
+    const db = admin.firestore();
+    const snap = await db.collectionGroup("joinReservations").where("expiresAt", "<", Date.now()).get();
+    let released = 0;
+    let skipped = 0;
+    let parked = 0;
+    for (const doc of snap.docs) {
+      const groupId = doc.ref.parent.parent?.id ?? "?";
+      const userId = doc.id;
+      try {
+        // Claim the doc; skip if a live sweep run owns it or it was refreshed/converted.
+        const claimed = await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(doc.ref);
+          if (!fresh.exists) return null;
+          const d = fresh.data()!;
+          const sweepingAt = (d["sweepingAt"] as number) ?? 0;
+          if (sweepingAt && Date.now() - sweepingAt < RESERVATION_TTL_MS) return null;
+          if (((d["expiresAt"] as number) ?? 0) >= Date.now()) return null;
+          tx.update(doc.ref, { sweepingAt: Date.now() });
+          return d;
+        });
+        if (!claimed) { skipped++; continue; }
+
+        const piId = (claimed["paymentIntentId"] as string | null) ?? null;
+        const piReleased = piId
+          ? await releasePaymentIntentBestEffort("sweepStaleJoinReservations", piId, { groupId, userId })
+          : true; // no PI ever recorded — nothing to release
+        if (!piReleased) {
+          functions.logger.error("sweepStaleJoinReservations: PI not releasable — doc parked for review (stamp re-opens after TTL)", { groupId, userId, paymentIntentId: piId });
+          parked++;
+          continue;
+        }
+        await doc.ref.delete();
+        released++;
+      } catch (e) {
+        functions.logger.error("sweepStaleJoinReservations: sweep failed for doc — stamp re-opens after TTL", { groupId, userId, error: e });
+      }
+    }
+    functions.logger.info("sweepStaleJoinReservations: done", { candidates: snap.size, released, skipped, parked });
+  });
 
 // ── deleteGroupChallenge ───────────────────────────────────────────────────────
 // Creator deletes a WAITING challenge → cancels ALL participant PIs → 100% refund each.

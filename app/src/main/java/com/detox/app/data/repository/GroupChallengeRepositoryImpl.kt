@@ -305,11 +305,11 @@ class GroupChallengeRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updateParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) {
-        firestoreService.updateParticipantTimeUsed(groupId, userId, timeUsedMinutes)
+        firestoreService.setParticipantTimeUsed(groupId, userId, timeUsedMinutes)
     }
 
-    override suspend fun incrementParticipantOpensToday(groupId: String, userId: String) {
-        firestoreService.incrementParticipantOpensToday(groupId, userId)
+    override suspend fun setParticipantOpensToday(groupId: String, userId: String, opensToday: Int) {
+        firestoreService.setParticipantOpensToday(groupId, userId, opensToday)
     }
 
     override suspend fun markParticipantFailedLocally(groupId: String, userId: String) {

@@ -9,17 +9,37 @@ import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.model.Taunt
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import java.util.Calendar
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Mutable per-participant leaderboard stats, stored in the CLIENT-WRITABLE
+ * `groupChallenges/{groupId}/participants/{uid}` sub-collection (each user may write
+ * only their own doc; rules whitelist exactly these fields — no money field can ever
+ * live here). The parent doc's `participants` array keeps identity/money/status and
+ * is Cloud-Function-only. Fields are nullable because the two write paths (opens vs
+ * time) merge independently and a doc may carry only one of them at first.
+ */
+data class ParticipantStats(
+    val opensToday: Int? = null,
+    val timeUsedMinutes: Int? = null,
+    /** [DateUtils.todayKey] of the day the stats refer to — enables a later reader-side daily reset. */
+    val dateKey: Long? = null,
+)
 
 @Singleton
 class GroupChallengeFirestoreService @Inject constructor(
@@ -69,14 +89,25 @@ class GroupChallengeFirestoreService @Inject constructor(
                 groupId, snapshot.exists()
             )
             snapshot.takeIf { it.exists() }?.toGroupChallenge()
+                ?.let { it.withStats(fetchParticipantStats(groupId)) }
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeFirestore: fetchGroupChallengeById failed groupId=%s", groupId)
             null
         }
     }
 
-    /** Real-time Firestore snapshot listener for a single group challenge. */
-    fun observeGroupChallenge(groupId: String): Flow<GroupChallenge?> = callbackFlow {
+    /**
+     * Real-time listener for a single group challenge, with per-participant stats from the
+     * `participants` sub-collection merged into [GroupChallenge.participants] — downstream
+     * readers keep consuming `Participant.opensToday`/`timeUsedMinutes` unchanged.
+     */
+    fun observeGroupChallenge(groupId: String): Flow<GroupChallenge?> =
+        combine(observeGroupChallengeDoc(groupId), observeParticipantStats(groupId)) { gc, stats ->
+            gc?.withStats(stats)
+        }
+
+    /** Raw parent-doc listener (array stats only — pre-merge). */
+    private fun observeGroupChallengeDoc(groupId: String): Flow<GroupChallenge?> = callbackFlow {
         val registration = collection.document(groupId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -94,10 +125,111 @@ class GroupChallengeFirestoreService @Inject constructor(
         awaitClose { registration.remove() }
     }
 
+    // ── Per-participant stats sub-collection ────────────────────────────────────
+
+    private fun statsRef(groupId: String) = collection.document(groupId).collection("participants")
+
+    /**
+     * Live map of userId → [ParticipantStats] for a group. Errors emit an empty map
+     * (readers fall back to the parent array's frozen values) instead of closing the
+     * flow, so the parent-doc listener stays alive.
+     */
+    fun observeParticipantStats(groupId: String): Flow<Map<String, ParticipantStats>> = callbackFlow {
+        val registration = statsRef(groupId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Timber.e(error, "GroupChallengeFirestore: observeParticipantStats error %s", groupId)
+                    trySend(emptyMap())
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.documents?.associate { it.id to it.toParticipantStats() } ?: emptyMap())
+            }
+        awaitClose { registration.remove() }
+    }
+
+    /** One-shot stats fetch — same fallback contract as [observeParticipantStats]. */
+    suspend fun fetchParticipantStats(groupId: String): Map<String, ParticipantStats> = try {
+        statsRef(groupId).get().await()
+            .documents.associate { it.id to it.toParticipantStats() }
+    } catch (e: Exception) {
+        Timber.e(e, "GroupChallengeFirestore: fetchParticipantStats failed %s", groupId)
+        emptyMap()
+    }
+
+    /**
+     * ABSOLUTE write of the caller's own conscious-opens count for today. Merge-writes
+     * only the user's own stat doc — never the parent doc, never another participant.
+     * The value is today's count (from the overlay's per-day counter / Room DailyLog),
+     * stamped with [DateUtils.todayKey] so a reader-side daily reset can slot in later.
+     */
+    suspend fun setParticipantOpensToday(groupId: String, userId: String, opensToday: Int) {
+        try {
+            statsRef(groupId).document(userId)
+                .set(
+                    mapOf(
+                        "opensToday" to opensToday,
+                        "dateKey" to DateUtils.todayKey(),
+                        "updatedAt" to System.currentTimeMillis(),
+                    ),
+                    SetOptions.merge()
+                )
+                .await()
+            Timber.d("Group opensToday set: %s user=%s opens=%d", groupId, userId, opensToday)
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeFirestore: setParticipantOpensToday failed groupId=%s uid=%s", groupId, userId)
+        }
+    }
+
+    /** ABSOLUTE write of the caller's own time-used minutes — same contract as [setParticipantOpensToday]. */
+    suspend fun setParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) {
+        try {
+            statsRef(groupId).document(userId)
+                .set(
+                    mapOf(
+                        "timeUsedMinutes" to timeUsedMinutes,
+                        "dateKey" to DateUtils.todayKey(),
+                        "updatedAt" to System.currentTimeMillis(),
+                    ),
+                    SetOptions.merge()
+                )
+                .await()
+            Timber.d("Leaderboard time set: groupId=%s userId=%s time=%d", groupId, userId, timeUsedMinutes)
+        } catch (e: Exception) {
+            Timber.e(e, "GroupChallengeFirestore: setParticipantTimeUsed failed groupId=%s uid=%s", groupId, userId)
+        }
+    }
+
+    private fun DocumentSnapshot.toParticipantStats(): ParticipantStats = ParticipantStats(
+        opensToday = getLong("opensToday")?.toInt(),
+        timeUsedMinutes = getLong("timeUsedMinutes")?.toInt(),
+        dateKey = getLong("dateKey"),
+    )
+
+    /**
+     * Overlays sub-collection stats onto the parent array's participants. A stat-doc value
+     * overrides the array value when present; the array value (frozen at its last legacy
+     * write, or the CF's initial 0) is the fallback — this is the whole transition story
+     * for in-flight and completed challenges.
+     */
+    private fun GroupChallenge.withStats(stats: Map<String, ParticipantStats>): GroupChallenge {
+        if (stats.isEmpty()) return this
+        return copy(
+            participants = participants.map { p ->
+                val s = stats[p.userId] ?: return@map p
+                p.copy(
+                    opensToday = s.opensToday ?: p.opensToday,
+                    timeUsedMinutes = s.timeUsedMinutes ?: p.timeUsedMinutes,
+                )
+            }
+        )
+    }
+
     /**
      * Real-time listener for all group challenges where [userId] is the creator
-     * or a participant. Combines two Firestore snapshot listeners and deduplicates.
+     * or a participant. Combines two Firestore snapshot listeners and deduplicates,
+     * then overlays live per-participant stats from the sub-collection.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun observeUserGroupChallenges(userId: String): Flow<List<GroupChallenge>> {
         val asCreator = callbackFlow {
             val reg = collection.whereEqualTo("creatorUserId", userId)
@@ -123,8 +255,30 @@ class GroupChallengeFirestoreService @Inject constructor(
                 }
             awaitClose { reg.remove() }
         }
-        return combine(asCreator, asParticipant) { a, b ->
+        val raw = combine(asCreator, asParticipant) { a, b ->
             (a + b).distinctBy { it.groupId }
+        }
+        // Overlay live sub-collection stats for ACTIVE/COMPLETED groups so the Room mirror
+        // (computeGroupRank, dashboard card, FriendsHub sort) stays fresh — stat writes no
+        // longer touch the parent doc, so the parent listeners alone would go stale.
+        // flatMapLatest restarts the stat listeners on parent emissions, which are rare
+        // after this move (status changes, joins). WAITING groups have no stats yet.
+        return raw.flatMapLatest { challenges ->
+            val statTargets = challenges.filter {
+                it.status == GroupChallengeStatus.ACTIVE || it.status == GroupChallengeStatus.COMPLETED
+            }
+            if (statTargets.isEmpty()) {
+                flowOf(challenges)
+            } else {
+                combine(
+                    statTargets.map { gc ->
+                        observeParticipantStats(gc.groupId).map { stats -> gc.groupId to stats }
+                    }
+                ) { pairs ->
+                    val statsByGroup = pairs.toMap()
+                    challenges.map { gc -> statsByGroup[gc.groupId]?.let { gc.withStats(it) } ?: gc }
+                }
+            }
         }
     }
 
@@ -147,6 +301,12 @@ class GroupChallengeFirestoreService @Inject constructor(
             (asCreator + asParticipant)
                 .distinctBy { it.groupId }
                 .sortedByDescending { it.startDate }
+                .map { gc ->
+                    // One-shot stats overlay for the statuses whose stats are rendered.
+                    if (gc.status == GroupChallengeStatus.ACTIVE || gc.status == GroupChallengeStatus.COMPLETED) {
+                        gc.withStats(fetchParticipantStats(gc.groupId))
+                    } else gc
+                }
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeFirestore: fetchUserGroupChallenges failed uid=%s", userId)
             emptyList()
@@ -180,58 +340,6 @@ class GroupChallengeFirestoreService @Inject constructor(
             Timber.d("Leaderboard updated: userId=$userId opens=$opensToday time=$timeUsedMinutes")
         } catch (e: Exception) {
             Timber.e(e, "GroupChallengeFirestore: updateParticipantStats failed groupId=%s uid=%s", groupId, userId)
-        }
-    }
-
-    /**
-     * Updates only timeUsedMinutes for a participant, leaving opensToday untouched.
-     * Used by the 60-second leaderboard polling in UsageTrackingService.
-     */
-    suspend fun updateParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) {
-        try {
-            val docRef = collection.document(groupId)
-            val snapshot = docRef.get().await()
-            val rawParticipants = parseRawParticipants(snapshot.get("participants"))
-            if (rawParticipants.isEmpty()) return
-            val index = rawParticipants.indexOfFirst { (it["userId"] as? String) == userId }
-            if (index < 0) return
-            val updated = rawParticipants.toMutableList()
-            updated[index] = updated[index].toMutableMap().apply {
-                put("timeUsedMinutes", timeUsedMinutes.toLong())
-            }
-            docRef.update("participants", updated).await()
-            Timber.d("Leaderboard time updated: groupId=$groupId userId=$userId time=$timeUsedMinutes")
-        } catch (e: Exception) {
-            Timber.e(e, "GroupChallengeFirestore: updateParticipantTimeUsed failed groupId=%s uid=%s", groupId, userId)
-        }
-    }
-
-    /**
-     * Increments opensToday by 1 for the given participant by reading the full participants array,
-     * patching the matching entry, and writing the entire array back. This avoids dot-notation
-     * partial updates that cause Firestore snapshots to return incomplete participant objects.
-     */
-    suspend fun incrementParticipantOpensToday(groupId: String, userId: String) {
-        try {
-            val docRef = collection.document(groupId)
-            val snapshot = docRef.get().await()
-            val rawParticipants = parseRawParticipants(snapshot.get("participants"))
-            if (rawParticipants.isEmpty()) return
-            val index = rawParticipants.indexOfFirst { (it["userId"] as? String) == userId }
-            if (index < 0) {
-                Timber.w("GroupChallengeFirestore: incrementParticipantOpensToday — userId=$userId not found in group=$groupId")
-                return
-            }
-            val updated = rawParticipants.toMutableList()
-            val current = updated[index]
-            val currentOpens = (current["opensToday"] as? Long)?.toInt() ?: 0
-            updated[index] = current.toMutableMap().apply {
-                put("opensToday", (currentOpens + 1).toLong())
-            }
-            docRef.update("participants", updated).await()
-            Timber.d("Group opensToday incremented: $groupId user=$userId")
-        } catch (e: Exception) {
-            Timber.e(e, "GroupChallengeFirestore: incrementParticipantOpensToday failed groupId=%s uid=%s", groupId, userId)
         }
     }
 

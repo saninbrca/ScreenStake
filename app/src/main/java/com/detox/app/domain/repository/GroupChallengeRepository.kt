@@ -68,16 +68,19 @@ interface GroupChallengeRepository {
     suspend fun updateParticipantStats(groupId: String, userId: String, opensToday: Int, timeUsedMinutes: Int)
 
     /**
-     * Updates only timeUsedMinutes for [userId] in the Firestore leaderboard.
-     * Does NOT touch opensToday. Used by background polling in UsageTrackingService.
+     * ABSOLUTE write of [userId]'s own timeUsedMinutes to their stat doc in the
+     * `participants` sub-collection (never the parent doc's array). Does NOT touch
+     * opensToday. Used by background polling in UsageTrackingService.
      */
     suspend fun updateParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int)
 
     /**
-     * Atomically increments [userId]'s opensToday by 1 in the Firestore document.
-     * Must only be called when the user consciously taps "Ja, öffnen" in the overlay.
+     * ABSOLUTE write of [userId]'s own conscious-opens count for today to their stat doc
+     * in the `participants` sub-collection. [opensToday] is today's count (the overlay's
+     * per-day counter) — never a blind increment. Must only be called when the user
+     * consciously taps "Ja, öffnen" in the overlay.
      */
-    suspend fun incrementParticipantOpensToday(groupId: String, userId: String)
+    suspend fun setParticipantOpensToday(groupId: String, userId: String, opensToday: Int)
 
     /**
      * Updates the local [GroupChallengeEntity] to mark [userId]'s participant status as "failed",

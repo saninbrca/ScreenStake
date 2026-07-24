@@ -528,12 +528,15 @@ class OverlayManager @Inject constructor(
                         // Keep in-memory event bus in sync so AccessibilityService can check synchronously
                         TrackedAppEventBus.incrementGroupSessionOpens(challenge.appPackageName ?: "")
 
-                        // Atomically increment opensToday in Firestore — only on conscious "Ja, öffnen" tap
+                        // Write TODAY's absolute opens count to the user's own stat doc in the
+                        // participants sub-collection — only on conscious "Ja, öffnen" tap.
+                        // Absolute (newCount is today's counter), never a blind increment: the
+                        // leaderboard value is daily-scoped by construction.
                         challenge.groupChallengeId?.let { groupId ->
                             val uid = firebaseAuthService.currentUserId()
                             if (uid != null) {
                                 scope.launch {
-                                    groupChallengeRepository.incrementParticipantOpensToday(groupId, uid)
+                                    groupChallengeRepository.setParticipantOpensToday(groupId, uid, newCount)
                                 }
                             }
                         }

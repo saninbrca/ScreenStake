@@ -403,33 +403,29 @@ class GroupChallengeDetailViewModel @Inject constructor(
             )
 
             if (hasIban && gc.perWinnerBonus > 0 && participant != null) {
-                writePayoutRequest(gc, participant, uid)
+                requestPayoutForWin(gc)
             }
         }
     }
 
-    private suspend fun writePayoutRequest(gc: GroupChallenge, participant: Participant, uid: String) {
-        runCatching {
-            val userDoc = firestore.collection("users").document(uid).get().await()
-            val iban = userDoc.getString("payoutIban") ?: return
-            val payoutName = userDoc.getString("payoutName") ?: ""
-            val displayName = firebaseAuthService.currentUser()?.displayName ?: ""
-            firestore.collection("payoutRequests").add(
-                mapOf(
-                    "userId" to uid,
-                    "displayName" to displayName,
-                    "iban" to iban,
-                    "payoutName" to payoutName,
-                    "amountCents" to gc.perWinnerBonus,
-                    "groupId" to gc.groupId,
-                    "status" to "pending",
-                    "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+    /**
+     * Files the manual SEPA payout request for an IBAN winner via the requestGroupPayout Cloud
+     * Function. The amount is derived server-side from the pendingPayouts ledger — the client no
+     * longer writes payoutRequests or supplies an amount. Best-effort: the win dialog already
+     * confirms the win, so a failure here is logged only (idempotent, retriable from Profile).
+     * A user with working Stripe Connect is rejected server-side (use_connect) and paid automatically.
+     */
+    private suspend fun requestPayoutForWin(gc: GroupChallenge) {
+        cloudFunctionsService.requestGroupPayout(gc.groupId)
+            .onSuccess { result ->
+                Timber.d(
+                    "GroupDetailVM: payout request filed for groupId=%s (requested=%d, amount=%d)",
+                    gc.groupId, result.requested, result.amountCents
                 )
-            ).await()
-            Timber.d("GroupDetailVM: payoutRequest written for uid=%s groupId=%s amount=%d", uid, gc.groupId, gc.perWinnerBonus)
-        }.onFailure { e ->
-            Timber.e(e, "GroupDetailVM: writePayoutRequest failed for groupId=%s", gc.groupId)
-        }
+            }
+            .onFailure { e ->
+                Timber.w(e, "GroupDetailVM: requestGroupPayout failed for groupId=%s — retriable from Profile", gc.groupId)
+            }
     }
 
     fun dismissWinDialog() { _winDialogInfo.value = null }

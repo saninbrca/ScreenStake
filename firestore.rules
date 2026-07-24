@@ -194,19 +194,19 @@ service cloud.firestore {
     }
 
     // ── Payout requests ───────────────────────────────────────────────────────
-    // User can create their own request (no status/paidAt on creation).
-    // Updates are Cloud-Function/admin-only (marking as paid/rejected).
+    // Created EXCLUSIVELY by the requestGroupPayout Cloud Function via Admin SDK.
+    // The client can never create one directly — it could otherwise set an arbitrary
+    // amountCents on a doc the founder pays out manually. The amount is derived
+    // server-side from the users/{uid}/pendingPayouts ledger. Admin marks paid/rejected.
     match /payoutRequests/{requestId} {
       // A user reads their own requests; the admin may read/list ALL of them
       // (the dashboard queries the whole collection with no userId filter).
       allow read: if request.auth != null
         && (resource.data.userId == request.auth.uid
             || request.auth.token.email == "sanin.brica@gmail.com");
-      allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid
-        && (!request.resource.data.keys().hasAny(['paidAt']))
-        && (!request.resource.data.keys().hasAny(['status'])
-            || request.resource.data.status == "pending");
+      // Cloud-Function-only (Admin SDK bypasses rules). No client create — the amount
+      // must never be client-determined.
+      allow create: if false;
       // Admin marks requests paid/rejected from the dashboard. Clients can't.
       allow update: if request.auth.token.email == "sanin.brica@gmail.com";
       allow delete: if false;

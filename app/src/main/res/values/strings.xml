@@ -1171,6 +1171,11 @@
     <string name="payout_date_expected">Expected by: %1$s</string>
     <string name="payout_prize_pending_iban_note">Prize share is transferred once your IBAN is added</string>
 
+    <!-- Payout request (manual SEPA) — Cloud Function result messages -->
+    <string name="payout_request_use_connect">Your winnings go straight to your connected bank account — no request needed.</string>
+    <string name="payout_request_none">You have no payout waiting to be requested.</string>
+    <string name="payout_request_iban_missing">Add your IBAN first, then you can request your payout.</string>
+
     <!-- Redemption Challenge -->
     <string name="redemption_banner_title">Comeback challenge available</string>
     <string name="redemption_banner_body">You have a chance to win back €%1$d</string>

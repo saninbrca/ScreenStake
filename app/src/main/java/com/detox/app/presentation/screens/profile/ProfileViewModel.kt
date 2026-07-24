@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.detox.app.BuildConfig
+import com.detox.app.R
 import com.detox.app.data.local.db.DetoxDatabase
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.DailyLogEntity
@@ -275,41 +276,28 @@ class ProfileViewModel @Inject constructor(
         // Money-floor guard: never file a payout request when money features are gated off,
         // even if a stale UI event slips through. Server flags resume control when re-enabled.
         if (!FeatureFlags.moneyEnabled) return
-        val uid = firebaseAuth.currentUser?.uid ?: return
-        val balance = _pendingBalance.value ?: return
-        val ibanInfo = _ibanData.value ?: return
         if (_payoutRequestState.value is PayoutRequestState.Loading) return
         _payoutRequestState.value = PayoutRequestState.Loading
         viewModelScope.launch {
-            runCatching {
-                val batch = firestore.batch()
-                balance.groups.forEach { group ->
-                    val pendingRef = firestore.collection("users").document(uid)
-                        .collection("pendingPayouts").document(group.groupId)
-                    batch.update(pendingRef, "status", "requested")
-                    val requestRef = firestore.collection("payoutRequests").document()
-                    batch.set(
-                        requestRef,
-                        mapOf(
-                            "userId" to uid,
-                            "displayName" to ibanInfo.name,
-                            "payoutName" to ibanInfo.name,
-                            "iban" to ibanInfo.iban,
-                            "amountCents" to group.amountCents,
-                            "groupId" to group.groupId,
-                            "createdAt" to com.google.firebase.Timestamp.now(),
-                            "status" to "pending"
-                        )
-                    )
+            // The requestGroupPayout Cloud Function is the sole writer of payoutRequests: it derives
+            // the amount server-side from the pendingPayouts ledger, so the client never determines it.
+            cloudFunctionsService.requestGroupPayout(null)
+                .onSuccess {
+                    _pendingBalance.value = null
+                    fetchPendingBalance()
+                    _payoutRequestState.value = PayoutRequestState.Success
                 }
-                batch.commit().await()
-            }.onSuccess {
-                _pendingBalance.value = null
-                _payoutRequestState.value = PayoutRequestState.Success
-            }.onFailure { e ->
-                Timber.e(e, "requestPayout failed")
-                _payoutRequestState.value = PayoutRequestState.Error(ErrorMessages.from(context, e))
-            }
+                .onFailure { e ->
+                    Timber.e(e, "requestPayout failed")
+                    val code = e.message.orEmpty()
+                    val message = when {
+                        code.contains("use_connect") -> context.getString(R.string.payout_request_use_connect)
+                        code.contains("nothing_to_request") -> context.getString(R.string.payout_request_none)
+                        code.contains("iban_required") -> context.getString(R.string.payout_request_iban_missing)
+                        else -> ErrorMessages.from(context, e)
+                    }
+                    _payoutRequestState.value = PayoutRequestState.Error(message)
+                }
         }
     }
 

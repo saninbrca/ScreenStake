@@ -1161,6 +1161,11 @@
     <string name="payout_date_expected">Erwartet bis: %1$s</string>
     <string name="payout_prize_pending_iban_note">Gewinnanteil wird nach IBAN-Hinterlegung überwiesen</string>
 
+    <!-- Payout request (manual SEPA) — Cloud Function result messages -->
+    <string name="payout_request_use_connect">Dein Gewinn geht direkt auf dein verbundenes Bankkonto — keine Anfrage nötig.</string>
+    <string name="payout_request_none">Es steht keine Auszahlung zur Anforderung bereit.</string>
+    <string name="payout_request_iban_missing">Hinterlege zuerst deine IBAN, dann kannst du deine Auszahlung anfordern.</string>
+
     <!-- Redemption Challenge -->
     <string name="redemption_banner_title">Comeback Challenge verfügbar</string>
     <string name="redemption_banner_body">Du hast eine Chance €%1$d zurückzubekommen</string>

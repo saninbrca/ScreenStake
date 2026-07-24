@@ -316,6 +316,25 @@ class CloudFunctionsService @Inject constructor(
         Result.failure(e)
     }
 
+    data class PayoutRequestResult(val requested: Int, val amountCents: Int)
+
+    /**
+     * Files manual SEPA payout request(s) for the caller's owed group winnings. The server derives
+     * the amount from the pendingPayouts ledger — nothing here supplies it. Pass [groupId] to request
+     * a single group, or null to request all eligible pending winnings.
+     */
+    suspend fun requestGroupPayout(groupId: String? = null): Result<PayoutRequestResult> = try {
+        val body = if (groupId != null) mapOf("groupId" to groupId) else emptyMap()
+        val response = callFunction("requestGroupPayout", body)
+        val requested = (response["requested"] as? Number)?.toInt() ?: 0
+        val amountCents = (response["amountCents"] as? Number)?.toInt() ?: 0
+        Timber.d("requestGroupPayout: requested=%d amountCents=%d", requested, amountCents)
+        Result.success(PayoutRequestResult(requested, amountCents))
+    } catch (e: Exception) {
+        Timber.e(e, "requestGroupPayout failed")
+        Result.failure(e)
+    }
+
     suspend fun setupPayoutAccount(iban: String, accountHolderName: String, userId: String): Result<Unit> = try {
         callFunction(
             "createConnectedAccount",

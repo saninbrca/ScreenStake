@@ -1474,6 +1474,14 @@ export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).regio
       const payout = doc.data();
       const amount = payout.amount as number;
       const groupId = payout.groupId as string;
+      // Exactly-once guard: a doc already filed as a manual SEPA request (requestGroupPayout
+      // flipped it to "requested") must NOT also be paid via Connect. Skip it — never a
+      // second payout for the same owed win. Does not alter the transfer call or amount.
+      if (payout.status === "requested") {
+        functions.logger.info("claimPendingPayouts: skipping doc already requested via SEPA", { userId, groupId });
+        skipped += amount;
+        continue;
+      }
       try {
         await getStripe().transfers.create({
           amount,
@@ -1492,6 +1500,102 @@ export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).regio
 
     res.json({ transferred, skipped });
   } catch (e) { handleError("claimPendingPayouts", e, res); }
+});
+
+// ── requestGroupPayout ────────────────────────────────────────────────────────
+// SOLE writer of the payoutRequests collection (the founder's manual SEPA worklist).
+// The client can NEVER determine the amount: it is derived server-side from the
+// server-written users/{uid}/pendingPayouts ledger (which completeGroupChallenge wrote).
+// Exactly-once: the pendingPayouts doc is the single ledger entry per owed win, and it is
+// consumed by EITHER Connect (claimPendingPayouts) OR manual SEPA (here) — never both.
+
+export const requestGroupPayout = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const userId = await requireAuth(req);
+    await enforceRateLimit(userId, "requestGroupPayout", 30, HOUR_MS);
+    const { groupId } = req.body as { groupId?: string };
+
+    const db = admin.firestore();
+    const userDoc = await db.collection("users").doc(userId).get();
+    const userData = userDoc.data() ?? {};
+
+    const iban = (userData["payoutIban"] as string | undefined)?.trim();
+    const payoutName = (userData["payoutName"] as string | undefined)?.trim();
+    if (!iban || !payoutName) {
+      throw new HttpError(400, "iban_required");
+    }
+    const displayName = (userData["displayName"] as string | undefined) ?? payoutName;
+
+    // Connect exclusivity: a user who can receive automatic transfers is paid via Connect
+    // and must never also file a manual SEPA request for the same winnings (double-pay).
+    const connectedAccountId = userData["stripeConnectedAccountId"] as string | undefined;
+    if (connectedAccountId) {
+      try {
+        const account = await getStripe().accounts.retrieve(connectedAccountId);
+        if (account.payouts_enabled) {
+          throw new HttpError(409, "use_connect");
+        }
+      } catch (e) {
+        if (e instanceof HttpError) throw e;
+        functions.logger.warn("requestGroupPayout: connect account lookup failed — treating as no Connect", { userId, error: e });
+      }
+    }
+
+    // Amount source = server-written pendingPayouts ledger. NEVER the request body.
+    const pendingSnap = await db.collection("users").doc(userId).collection("pendingPayouts")
+      .where("status", "in", ["pending_account_setup", "ready_to_payout"]).get();
+    let pendingDocs = pendingSnap.docs;
+    if (groupId) pendingDocs = pendingDocs.filter((d) => d.data()["groupId"] === groupId);
+
+    if (pendingDocs.length === 0) {
+      throw new HttpError(409, "nothing_to_request");
+    }
+
+    // Idempotency: skip a group that already has a live (pending/requested/paid) request.
+    // Query by userId only (single-field, no composite index) and filter in code.
+    const existingSnap = await db.collection("payoutRequests").where("userId", "==", userId).get();
+    const liveRequestGroupIds = new Set(
+      existingSnap.docs
+        .filter((d) => ["pending", "requested", "paid"].includes(d.data()["status"] as string))
+        .map((d) => d.data()["groupId"] as string)
+    );
+
+    const batch = db.batch();
+    let requestedCount = 0;
+    let requestedTotal = 0;
+    for (const pd of pendingDocs) {
+      const pdData = pd.data();
+      const gId = pdData["groupId"] as string;
+      if (liveRequestGroupIds.has(gId)) continue;
+      const amountCents = pdData["amount"] as number;
+
+      const reqRef = db.collection("payoutRequests").doc();
+      batch.set(reqRef, {
+        userId,
+        displayName,
+        payoutName,
+        iban,
+        amountCents,
+        groupId: gId,
+        status: "pending",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      // Mark the ledger entry as consumed by the manual SEPA rail (claimPendingPayouts skips it).
+      batch.update(pd.ref, { status: "requested" });
+      requestedCount += 1;
+      requestedTotal += amountCents;
+    }
+
+    if (requestedCount === 0) {
+      // Everything eligible was already requested — idempotent success, nothing new filed.
+      res.json({ requested: 0, amountCents: 0, alreadyRequested: true });
+      return;
+    }
+
+    await batch.commit();
+    functions.logger.info("requestGroupPayout: filed manual payout request(s)", { userId, requestedCount, requestedTotal });
+    res.json({ requested: requestedCount, amountCents: requestedTotal });
+  } catch (e) { handleError("requestGroupPayout", e, res); }
 });
 
 // ── createConnectedAccount ────────────────────────────────────────────────────

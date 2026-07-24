@@ -1208,7 +1208,13 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
               stakeReturned = true;
               functions.logger.info("completeGroupChallenge: nobody-failed PI cancelled (full cancel)", { groupId, userId, pid });
             } else if (pi.status === "succeeded") {
-              await getStripe().refunds.create({ payment_intent: pid });
+              // Deterministic idempotency key: a settlement re-run (crash before the final
+              // status write) replays the original refund instead of erroring on the
+              // already-refunded PI and falsely marking this participant refund_failed.
+              await getStripe().refunds.create(
+                { payment_intent: pid },
+                { idempotencyKey: `refund_${groupId}_${userId}` },
+              );
               stakeReturned = true;
               functions.logger.info("completeGroupChallenge: nobody-failed PI full-refunded", { groupId, userId, pid });
             } else {
@@ -1302,12 +1308,24 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
         try {
           const pi = await getStripe().paymentIntents.retrieve(pid);
           functions.logger.info("completeGroupChallenge: winner PI status", { groupId, userId, pid, piStatus: pi.status });
+          // One deterministic idempotency key for BOTH branches: it is the same logical
+          // 80% stake refund, whichever branch a given run takes. A settlement re-run
+          // (which sees pi.status "succeeded" after the first run's capture) replays the
+          // original refund instead of failing on Stripe's refund cap (80%+80% > 100%)
+          // and falsely marking an already-refunded winner refund_failed/owed.
+          // The capture itself needs no key — the PI state machine already dedupes it.
           if (pi.status === "requires_capture") {
             await getStripe().paymentIntents.capture(pid);
-            await getStripe().refunds.create({ payment_intent: pid, amount: stakeRefund });
+            await getStripe().refunds.create(
+              { payment_intent: pid, amount: stakeRefund },
+              { idempotencyKey: `refund_${groupId}_${userId}` },
+            );
             functions.logger.info("completeGroupChallenge: winner PI captured-then-partial-refunded", { groupId, userId, stakeRefund });
           } else {
-            await getStripe().refunds.create({ payment_intent: pid, amount: stakeRefund });
+            await getStripe().refunds.create(
+              { payment_intent: pid, amount: stakeRefund },
+              { idempotencyKey: `refund_${groupId}_${userId}` },
+            );
             functions.logger.info("completeGroupChallenge: winner PI partial-refunded (already captured)", { groupId, userId, stakeRefund });
           }
           stakeRefunded = true;
@@ -1375,12 +1393,15 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
           return settle("pending_payout", perWinnerBonus);
         }
 
+        // Deterministic idempotency key: one prize transfer per winner per group, ever.
+        // A settlement re-run (crash after this transfer but before the final status
+        // write) replays the original transfer instead of paying the prize twice.
         await getStripe().transfers.create({
           amount: perWinnerBonus,
           currency: "eur",
           destination: connectedAccountId,
           description: `Prize for group challenge ${groupId}`,
-        });
+        }, { idempotencyKey: `prize_${groupId}_${userId}` });
         functions.logger.info(`Transfer sent to ${userId}: ${perWinnerBonus}`);
 
         // Record successful transfer on user doc
@@ -1504,34 +1525,44 @@ export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).regio
       // the doc, so a concurrent requestGroupPayout flip (or a parallel claim run) and
       // this claim serialize on the doc — exactly one rail can win it. The snapshot from
       // the collection read above is never trusted for the claim decision.
-      let priorStatus: string | null = null;
+      let claim: { priorStatus: string; claimKey: string } | null = null;
       try {
-        priorStatus = await db.runTransaction(async (tx) => {
+        claim = await db.runTransaction(async (tx) => {
           const fresh = await tx.get(doc.ref);
           if (!fresh.exists) return null;
           const data = fresh.data()!;
           if (!isLedgerClaimable(data)) return null;
-          tx.update(doc.ref, { status: "transferring", transferringAt: Date.now() });
-          return data["status"] as string;
+          // Stripe idempotency key for this doc's transfer: minted ONCE per claim
+          // generation (reused if already present). A lost-write reclaim therefore
+          // sends the SAME key and Stripe replays the original success instead of
+          // transferring twice. The key rotates ONLY on the revert path below, where
+          // the transfer is confirmed failed — so a genuine retry is never blocked
+          // by Stripe replaying the old failure.
+          const claimKey = (data["claimKey"] as string | undefined)
+            ?? `claim_${doc.id}_${Date.now()}`;
+          tx.update(doc.ref, { status: "transferring", transferringAt: Date.now(), claimKey });
+          return { priorStatus: data["status"] as string, claimKey };
         });
       } catch (e) {
         functions.logger.error("claimPendingPayouts: claim transaction failed", { userId, groupId, error: e });
       }
-      if (priorStatus === null) {
+      if (claim === null) {
         functions.logger.info("claimPendingPayouts: doc not claimable — skipping", { userId, groupId, status: payout.status });
         skipped += amount;
         continue;
       }
+      const priorStatus = claim.priorStatus;
 
       // Stripe call OUTSIDE the transaction — a transaction retry must never re-fire a
-      // transfer. The call itself (amount, destination, description) is unchanged.
+      // transfer. The call itself (amount, destination, description) is unchanged; the
+      // idempotency key only dedupes a retry of THIS claim generation.
       try {
         await getStripe().transfers.create({
           amount,
           currency: "eur",
           destination: accountId,
           description: `Detox Group Challenge winnings - ${groupId}`,
-        });
+        }, { idempotencyKey: claim.claimKey });
         transferred += amount;
         functions.logger.info(`Transfer sent to ${userId}: ${amount}`);
         try {
@@ -1553,12 +1584,15 @@ export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).regio
         skipped += amount;
         // Transfer confirmed FAILED (we are in its catch) — release the claim token so the
         // debt is immediately claimable again by either rail. Reverting to a claimable
-        // status is money-safe because no money moved.
+        // status is money-safe because no money moved. claimKey is deleted WITH the token:
+        // the failure is confirmed, so the next attempt must mint a fresh key and genuinely
+        // retry (Stripe replays results — including failures — under a reused key).
         try {
           const revertStatus = priorStatus === "transferring" ? "ready_to_payout" : priorStatus;
           await doc.ref.update({
             status: revertStatus,
             transferringAt: admin.firestore.FieldValue.delete(),
+            claimKey: admin.firestore.FieldValue.delete(),
           });
         } catch (revertErr) {
           // Doc stays "transferring" — NOT stranded: isLedgerClaimable re-opens it after

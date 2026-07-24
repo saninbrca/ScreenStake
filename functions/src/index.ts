@@ -1366,8 +1366,14 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
       }
 
       const writePendingPayout = async () => {
+        // Deterministic doc id: ONE ledger entry per group per user, ever. A settlement
+        // re-run (crash before the final status write) previously .add()ed a SECOND
+        // auto-ID doc for the same win — two docs, two claim keys, two transfers, each
+        // individually "idempotent". create() (not set()) so a re-run can also never
+        // RESET an entry that already advanced to "requested"/"transferring" back to a
+        // claimable state — already-exists lands in the caller's catch and is logged.
         await db.collection("users").doc(userId)
-          .collection("pendingPayouts").add({
+          .collection("pendingPayouts").doc(groupId).create({
             amount: perWinnerBonus,
             stakeRefundCents: stakeRefund,
             currency: "eur",

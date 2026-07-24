@@ -21,6 +21,47 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-24 — Group participants array: transactional merges everywhere (INVARIANT #28)
+
+Last piece of Phase 2. Six CFs (`cancelGroupChallenge`, `deleteGroupChallenge`,
+`expireGroupChallenge`, `leaveGroupChallenge`, `failParticipant`, `completeGroupChallenge`)
+wrote the `participants` array by in-memory full replacement — any write landing during their
+Stripe phase was silently erased. Worst case (audit finding): a `confirmGroupJoin` `arrayUnion`
+erased mid-flight → paid user in `participantUserIds` but missing from `participants`,
+invisible to settlement, hold neither captured nor cancelled.
+
+**DECISION — transactional merge, not arrayRemove+arrayUnion:** map entries are heterogeneous
+(creator entries lack `deviceId`, settled entries carry payout fields); an exact-match
+`arrayRemove` silently no-ops and the `arrayUnion` then duplicates the participant. Every CF
+array write now re-reads the doc in a `runTransaction` and merges by `userId`. Stripe calls
+stay strictly outside transactions; capture/refund/cancel semantics byte-identical.
+
+- cancel/delete/expire → shared `terminalizeWaitingGroupChallenge`: fence tx stamps
+  `startLockAt` (existing join fence, #27) + snapshots participants from the same read →
+  Stripe cancels → final tx merges `status:"refunded"` onto the fresh array.
+- leave → Stripe cancel, then tx filters the fresh array; `<2 → cancelled` from fresh count;
+  `participantUserIds` keeps string-array `arrayRemove` (invariant #21).
+- fail → capture gate unchanged; tx merge onto fresh entry; NEW pre-capture 409s:
+  `challenge_settled` (terminal doc), `settlement_in_progress` (fresh `settleLockAt`).
+- complete → NEW `settleLockAt` fence stamped transactionally with the settlement snapshot;
+  all payout math from that snapshot (amounts unchanged); final tx merges computed results;
+  `payoutIncomplete`/`payoutFailedUserIds` derived from the merged array; premature
+  `not_expired` call clears its own stamp. Concurrent settlements back off (money was already
+  idempotent via deterministic Stripe keys — this stops the array-write collision).
+
+**DECISION — fail-vs-settle residual accepted:** a self-fail entering before the fence can
+capture a stake settlement already classified as a winner's. User-favorable (loses 20% not
+100%), no money lost; both sides keep the `failed` record and log error-level
+`FAIL-VS-SETTLE CONFLICT` with groupId+userId — that log IS the resolution path (manual
+correction); per-participant claim tokens deliberately not added.
+
+`firestore.rules`: `settleLockAt` added to the group-doc CF-only deny list — **needs
+`firebase deploy --only firestore:rules`** in addition to the functions deploy.
+
+Known follow-up (pre-existing, untouched): when `leaveGroupChallenge` drops a waiting
+challenge below 2 and flips it to `cancelled`, the REMAINING creator's authorized PI is never
+explicitly cancelled — it dies via Stripe's ~7-day auth auto-expiry.
+
 ### 2026-07-24 — Group join integrity: reserve-then-pay protocol (INVARIANT #27)
 
 Phase 2 of the group money hardening. Two coupled defects: (1) a join rejected AFTER the

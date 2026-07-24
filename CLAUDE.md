@@ -34,6 +34,7 @@
 8. **Went-dark = forfeit:** `lastSeenAt` heartbeat; reconciliation forfeits as `device_dark`; FAIL-SAFE — missing/invalid grace ⇒ `MAX_SAFE_INTEGER` ⇒ never forfeit; triple-gated. (`docs/03`, `docs/13`)
 9. **Payout fee math uses `Math.floor`** — never round up. (`docs/09`)
 27. **Group join = reserve-then-pay:** PI created only AFTER the transactional `joinReservations` slot reservation records it; every post-authorization join rejection cancels the PI before responding; the sweep cancels Stripe first, deletes the doc after; `startLockAt` blocks ONLY joining, TTL-bounded. (`docs/04`)
+28. **Group participants array = transactional merge:** every CF write re-reads + merges by `userId` in a `runTransaction` — never in-memory full replacement, never map-entry arrayRemove/arrayUnion; Stripe stays outside the tx; cancel/delete/expire fence via `startLockAt`, settlement via `settleLockAt` (blocks ONLY `failParticipant`, TTL-bounded); fail-vs-settle keeps `failed` + logs `FAIL-VS-SETTLE CONFLICT`. (`docs/04`)
 
 **Data integrity & anti-cheat**
 10. **dailyLogs tamper-evidence:** `limitExceeded` never true→false; deletes CF-only (`allow delete: if false`). (`docs/10`)

@@ -53,7 +53,7 @@ It is Soft Mode + Stripe + Firestore participants sync.
 | Stripe per participant | ❌ | ❌ | ✅ separate PaymentIntent |
 | Stripe capture on fail | ❌ | ✅ | ✅ + 10% app fee |
 | Stripe refund on success | ❌ | ✅ | ✅ winners get losers' money |
-| Firestore participants sync | ❌ | ❌ | ✅ arrayRemove+arrayUnion |
+| Firestore participants sync | ❌ | ❌ | ✅ stats sub-collection (self-writable), array CF-only |
 | opensToday in participants | ❌ | ❌ | ✅ mirrored from DailyLog |
 | Leaderboard | ❌ | ❌ | ✅ real-time Firestore listener |
 | Taunt feature | ❌ | ❌ | ✅ |
@@ -283,18 +283,76 @@ payoutRequests/{requestId}/
 
 ## Critical Sync Pattern: opensToday Updates
 
-```kotlin
-// ⚠️ ALWAYS use arrayRemove + arrayUnion pattern for participant updates
-// NEVER use dot notation (.update("participants.$index.field")) → causes partial snapshots
+> ⚠️ **HISTORY:** the client used to mirror `opensToday`/`timeUsedMinutes` into the
+> `participants` ARRAY via `arrayRemove`+`arrayUnion`. That path is GONE: the array is
+> Cloud-Function-only in firestore.rules, and live leaderboard stats moved to the
+> client-writable **stats sub-collection**. Never resurrect client writes to the array.
 
-db.collection("groupChallenges").document(groupId)
-    .update(
-        "participants", FieldValue.arrayRemove(oldParticipant.toMap()),
-        "participants", FieldValue.arrayUnion(newParticipant.toMap())
-    )
+```
+groupChallenges/{groupId}/participants/{uid}     ← stats sub-collection (doc id == uid)
+    opensToday: Int          ← mirrored from DailyLog consciousOpens
+    timeUsedMinutes: Int     ← mirrored from DailyLog totalMinutes
+    dateKey: String
+    updatedAt: Long
 ```
 
-**Why:** Dot notation on array indices causes Firestore to return partial snapshots where the `participants` field is a Map instead of a List. This breaks the entire leaderboard. The `arrayRemove + arrayUnion` pattern is the only safe approach.
+- Each user writes ONLY their own doc (`request.auth.uid == participantId`); the rules
+  whitelist exactly these four fields, so the doc can never carry money/identity fields.
+- Readers (`GroupChallengeFirestoreService.observeParticipantStats`) merge the sub-collection
+  over the parent array's frozen `opensToday`/`timeUsedMinutes` values; on listener errors they
+  fall back to the array values instead of closing the flow.
+- Dot notation on array indices (`participants.$index.field`) remains forbidden everywhere
+  (invariant #21) — it causes partial snapshots where `participants` becomes a Map.
+
+---
+
+## Participants Array Write Protocol (CF-only, transactional merge — invariant #28)
+
+The `participants` array on the group doc carries identity + money + status
+(`paymentIntentId`, `amountCents`, `status`, payout fields). Every mutation is a Cloud
+Function running a **`runTransaction` that re-reads the doc and merges by `userId`** —
+NEVER an in-memory full-array replacement (it silently erases concurrent writes: the
+audit's worst case was a `confirmGroupJoin` `arrayUnion` erased mid-flight, leaving a
+PAID user in `participantUserIds` but missing from `participants`, invisible to
+settlement with a stranded hold). Map-entry `arrayRemove`+`arrayUnion` is also wrong
+here: it needs a byte-exact prior value, and entry shapes are heterogeneous (creator
+entries lack `deviceId`, settled entries carry payout fields) — a mismatch silently
+no-ops the remove and the union then duplicates the participant.
+
+Per function:
+- **`confirmGroupJoin`** — the only array ADD: `arrayUnion` of a brand-new entry inside
+  its convert transaction (correct use — a new map value cannot collide).
+- **`cancelGroupChallenge` / `deleteGroupChallenge` / `expireGroupChallenge`** — shared
+  `terminalizeWaitingGroupChallenge`: ① transaction stamps `startLockAt` (the existing
+  join fence, invariant #27) and takes the participant snapshot from the SAME read;
+  ② Stripe retrieve→cancel per participant OUTSIDE any transaction; ③ final transaction
+  merges `status:"refunded"` by `userId` onto the FRESH array and flips a still-waiting
+  doc to `cancelled`. A doc a concurrent start activated is left untouched and logged.
+- **`leaveGroupChallenge`** — Stripe cancel first (unchanged), then a transaction filters
+  the FRESH array by `userId`; the `<2 → cancelled` decision uses the fresh count.
+  `participantUserIds` keeps `FieldValue.arrayRemove` (string array — exact-match safe).
+- **`failParticipant`** — capture gate unchanged (Stripe outside transactions); the
+  status write is a transactional merge onto the fresh entry. Pre-capture guards: 409
+  `challenge_settled` on terminal docs, 409 `settlement_in_progress` while
+  `settleLockAt` is fresh.
+- **`completeGroupChallenge`** — stamps **`settleLockAt`** transactionally and takes the
+  settlement snapshot from the SAME read; ALL payout math + Stripe calls run from that
+  snapshot (amounts unchanged); the final write merges the computed results onto the
+  fresh array by `userId` and derives `payoutIncomplete`/`payoutFailedUserIds` from the
+  merged result. A premature `not_expired` call clears its own stamp.
+
+**`settleLockAt` scope (same discipline as `startLockAt`):** a stranded stamp blocks
+ONLY `failParticipant`, for at most 15 min (`SETTLE_LOCK_TTL_MS`) — never joining,
+leaving, start, cancellation, or a settlement re-run after the TTL. CF-only in rules.
+
+**FAIL-VS-SETTLE CONFLICT (accepted residual):** a self-fail that passed its fence check
+before settlement stamped the lock can capture a stake the settlement snapshot already
+classified as a winner's. No money is lost and the case favors the user (80% stake
+refund despite quitting, i.e. they lose 20% instead of everything). Both CFs keep the
+`failed` record, never overwrite the other side's result, and log
+`FAIL-VS-SETTLE CONFLICT` (error level, with `groupId` + `userId`) — grep for that
+string; manual correction is the resolution path. Per-participant claim tokens were
+deliberately NOT added for this.
 
 ---
 
@@ -311,14 +369,16 @@ users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
     updatedAt: Long
     (SetOptions.merge() always)
 
-### Target 2 — Participants Array (Group-specific)
-groupChallenges/{groupId}/participants[]/
+### Target 2 — Participant Stats Sub-collection (Group-specific)
+groupChallenges/{groupId}/participants/{uid}      ← sub-collection DOC, not the array
     opensToday: Int          ← mirrored from DailyLog consciousOpens
-    timeUsedMinutes: Int     ← participants-array field, mirrored from DailyLog totalMinutes
+    timeUsedMinutes: Int     ← mirrored from DailyLog totalMinutes
+    dateKey: String
+    updatedAt: Long
 
-SYNC RULE: When DailyLog is written → also update participants array.
-Use arrayRemove + arrayUnion pattern (NEVER dot notation).
-opensToday in participants must always match consciousOpens in DailyLog.
+SYNC RULE: When DailyLog is written → also merge-write the own stats sub-collection doc.
+The participants ARRAY is Cloud-Function-only (see "Participants Array Write Protocol").
+opensToday in the stats doc must always match consciousOpens in DailyLog.
 
 ### opensToday Sync — FIXED
 OverlayManager now reads `opensToday` from `TrackedAppEventBus.groupSessionInfos` (not stale Room DAO).
@@ -629,7 +689,7 @@ consciousOpens < limit → SessionIntentionOverlay (identical to Solo)
 On confirm:
 consciousOpens++ → Room (immediate)
 consciousOpens++ → Firestore dailyLogs (fire-and-forget)
-opensToday++ → Firestore participants array (arrayRemove+arrayUnion)
+opensToday++ → Firestore stats sub-collection doc (participants/{uid}, merge write)
 ↓
 consciousOpens >= limit → SessionLimitReachedOverlay ("Stark bleiben 💪" only)
 App stays blocked. Participant stays active. NO auto-fail.

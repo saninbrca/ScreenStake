@@ -1,6 +1,7 @@
 package com.detox.app.data.remote.firebase
 
 import com.detox.app.domain.model.PaymentIntentData
+import com.detox.app.util.CloudFunctionException
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -48,8 +49,11 @@ class CloudFunctionsService @Inject constructor(
                 if (!response.isSuccessful) {
                     val errorMsg = runCatching { JSONObject(text).optString("error", text) }
                         .getOrDefault(text)
-                    Timber.e("callFunction: HTTP %d from %s: %s", response.code, name, errorMsg)
-                    throw Exception(errorMsg)
+                    val errorCode = runCatching {
+                        JSONObject(text).optString("code").takeIf { it.isNotEmpty() }
+                    }.getOrNull()
+                    Timber.e("callFunction: HTTP %d from %s: %s (code=%s)", response.code, name, errorMsg, errorCode)
+                    throw CloudFunctionException(errorMsg, errorCode)
                 }
                 text
             }

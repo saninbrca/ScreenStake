@@ -105,6 +105,9 @@
     <string name="join_conflict_active_challenge">Du hast bereits eine aktive Challenge für „%1$s". Beende sie zuerst.</string>
     <string name="join_error_server_unreachable">Server nicht erreichbar. Bitte kontaktiere den Support.</string>
     <string name="join_error_confirm_failed">Deine Zahlung wurde empfangen, aber der Beitritt konnte nicht bestätigt werden. Bitte erneut versuchen.</string>
+    <string name="join_rejected_full_refunded">Diese Challenge war voll, bevor deine Zahlung abgeschlossen wurde. Die Reservierung auf deiner Karte wurde aufgehoben — es wurde kein Geld abgebucht.</string>
+    <string name="join_rejected_started_refunded">Diese Challenge nimmt keine neuen Teilnehmer mehr auf. Die Reservierung auf deiner Karte wurde aufgehoben — es wurde kein Geld abgebucht.</string>
+    <string name="join_rejected_expired_refunded">Deine Beitrittssitzung ist abgelaufen. Die Reservierung auf deiner Karte wurde aufgehoben — es wurde kein Geld abgebucht. Bitte versuche es erneut.</string>
     <string name="settings_delete_verify_failed">Challenges konnten nicht überprüft werden. Bitte versuche es erneut.</string>
     <string name="settings_delete_active_hard">Du hast eine aktive Hard-Mode-Challenge. Beende oder brich sie ab, bevor du dein Konto löschst.</string>
     <string name="settings_delete_failed">Konto-Löschung fehlgeschlagen: %1$s Bitte melde dich erneut an und versuche es noch einmal.</string>

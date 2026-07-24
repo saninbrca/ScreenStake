@@ -23,6 +23,13 @@ import timber.log.Timber
  */
 class UserFacingException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+/**
+ * A non-2xx Cloud Function response. [message] is the server's English `error` text
+ * (log/diagnostic only — NOT for display); [code] is the optional machine-readable
+ * token (e.g. "join_rejected_full") callers map to a localized string.
+ */
+class CloudFunctionException(message: String, val code: String? = null) : Exception(message)
+
 object ErrorMessages {
     fun from(context: Context, error: Throwable, fallback: Int = R.string.error_generic): String {
         Timber.e(error, "User-facing error mapped to a localized message")

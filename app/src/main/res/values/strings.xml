@@ -107,6 +107,9 @@
     <string name="join_conflict_active_challenge">You already have an active challenge for “%1$s”. Finish it first.</string>
     <string name="join_error_server_unreachable">Server unreachable. Please contact support.</string>
     <string name="join_error_confirm_failed">Your payment was received, but the join could not be confirmed. Please try again.</string>
+    <string name="join_rejected_full_refunded">This challenge filled up before your payment went through. The hold on your card has been released — no money was taken.</string>
+    <string name="join_rejected_started_refunded">This challenge is no longer accepting players. The hold on your card has been released — no money was taken.</string>
+    <string name="join_rejected_expired_refunded">Your join session expired. The hold on your card has been released — no money was taken. Please try joining again.</string>
     <string name="settings_delete_verify_failed">Couldn\'t verify your challenges. Please try again.</string>
     <string name="settings_delete_active_hard">You have an active Hard Mode challenge. Complete or cancel it before deleting your account.</string>
     <string name="settings_delete_failed">Account deletion failed: %1$s Please sign in again and retry.</string>

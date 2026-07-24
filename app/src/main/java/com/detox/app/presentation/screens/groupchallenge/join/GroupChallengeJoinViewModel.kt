@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.R
+import com.detox.app.util.CloudFunctionException
 import com.detox.app.util.ErrorMessages
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.PaymentIntentData
@@ -133,7 +134,16 @@ class GroupChallengeJoinViewModel @Inject constructor(
                     },
                     onFailure = { e ->
                         Timber.e(e, "GroupJoinVM: initiatePayment failed")
-                        _uiState.value = GroupJoinUiState.Error(ErrorMessages.from(context, e, R.string.error_payment))
+                        // Pre-payment rejections (slot reservation refused) — no money
+                        // existed yet, so the plain "full"/"started" copy is correct.
+                        val message = when ((e as? CloudFunctionException)?.code) {
+                            "join_rejected_full" ->
+                                context.getString(R.string.uc_join_full, groupChallenge.maxParticipants)
+                            "join_rejected_started" ->
+                                context.getString(R.string.uc_join_already_started)
+                            else -> ErrorMessages.from(context, e, R.string.error_payment)
+                        }
+                        _uiState.value = GroupJoinUiState.Error(message)
                     }
                 )
         }
@@ -174,6 +184,22 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     Timber.e(e, "GroupJoinVM: confirmJoin failed groupId=%s", awaiting.groupId)
+                    val rejectionRes = when ((e as? CloudFunctionException)?.code) {
+                        "join_rejected_full" -> R.string.join_rejected_full_refunded
+                        "join_rejected_started" -> R.string.join_rejected_started_refunded
+                        "join_rejected_expired" -> R.string.join_rejected_expired_refunded
+                        else -> null
+                    }
+                    if (rejectionRes != null) {
+                        // Definitive rejection — the server released the card hold before
+                        // responding. Terminal: no retry button, no held payment state.
+                        lastAwaitingPayment = null
+                        _uiState.value = GroupJoinUiState.Error(
+                            message = context.getString(rejectionRes),
+                            retryGroupChallenge = null
+                        )
+                        return@fold
+                    }
                     val msg = ErrorMessages.from(context, e)
                     when {
                         msg.contains("already", ignoreCase = true) -> {

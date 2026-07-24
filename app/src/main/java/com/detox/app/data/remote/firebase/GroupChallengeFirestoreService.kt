@@ -47,20 +47,6 @@ class GroupChallengeFirestoreService @Inject constructor(
 ) {
     private val collection get() = firestore.collection("groupChallenges")
 
-    /** Writes (creates or overwrites) a group challenge document. */
-    suspend fun saveGroupChallenge(groupChallenge: GroupChallenge) {
-        try {
-            collection.document(groupChallenge.groupId)
-                // Full create/overwrite — merge not needed (no update call-site; writes the whole doc).
-                .set(groupChallenge.toMap())
-                .await()
-            Timber.d("Firestore write result: ${groupChallenge.groupId}")
-            Timber.d("GroupChallengeFirestore: saved %s", groupChallenge.groupId)
-        } catch (e: Exception) {
-            Timber.e(e, "GroupChallengeFirestore: failed to save %s", groupChallenge.groupId)
-        }
-    }
-
     /** Looks up a group challenge by its 6-char invite code. */
     suspend fun fetchGroupChallengeByCode(code: String): GroupChallenge? {
         return try {
@@ -313,36 +299,6 @@ class GroupChallengeFirestoreService @Inject constructor(
         }
     }
 
-    /**
-     * Updates a single participant's opensToday and timeUsedMinutes in Firestore by
-     * reading the current participants array, patching the matching entry, and writing it back.
-     */
-    suspend fun updateParticipantStats(
-        groupId: String,
-        userId: String,
-        opensToday: Int,
-        timeUsedMinutes: Int
-    ) {
-        try {
-            val docRef = collection.document(groupId)
-            val snapshot = docRef.get().await()
-            val rawParticipants = parseRawParticipants(snapshot.get("participants"))
-            if (rawParticipants.isEmpty()) return
-            val updated = rawParticipants.map { p ->
-                if ((p["userId"] as? String) == userId) {
-                    p.toMutableMap().apply {
-                        put("opensToday", opensToday.toLong())
-                        put("timeUsedMinutes", timeUsedMinutes.toLong())
-                    }
-                } else p
-            }
-            docRef.update("participants", updated).await()
-            Timber.d("Leaderboard updated: userId=$userId opens=$opensToday time=$timeUsedMinutes")
-        } catch (e: Exception) {
-            Timber.e(e, "GroupChallengeFirestore: updateParticipantStats failed groupId=%s uid=%s", groupId, userId)
-        }
-    }
-
     // ── Taunts ──────────────────────────────────────────────────────────────────
 
     private fun tauntsRef(groupId: String) = collection.document(groupId).collection("taunts")
@@ -440,42 +396,6 @@ class GroupChallengeFirestoreService @Inject constructor(
     }
 
     // ── Mapping helpers ─────────────────────────────────────────────────────────
-
-    private fun GroupChallenge.toMap(): Map<String, Any?> = mapOf(
-        "groupId" to groupId,
-        "code" to code,
-        "creatorUserId" to creatorUserId,
-        "appPackageNames" to appPackageNames.joinToString(","),
-        "appDisplayName" to appDisplayName,
-        "limitType" to limitType.name.lowercase(),
-        "limitValueMinutes" to limitValueMinutes,
-        "limitValueSessions" to limitValueSessions,
-        "sessionDurationMinutes" to sessionDurationMinutes,
-        "durationDays" to durationDays,
-        "buyInCents" to buyInCents,
-        "maxParticipants" to maxParticipants,
-        "startDate" to startDate,
-        "endDate" to endDate,
-        "bonusEnabled" to bonusEnabled,
-        "status" to status.name.lowercase(),
-        "participants" to participants.map { p ->
-            mapOf(
-                "userId" to p.userId,
-                "displayName" to p.displayName,
-                "paymentIntentId" to p.paymentIntentId,
-                "amountCents" to p.amountCents,
-                "status" to p.status.name.lowercase(),
-                "opensToday" to p.opensToday,
-                "timeUsedMinutes" to p.timeUsedMinutes,
-                "joinedAt" to p.joinedAt
-            )
-        },
-        // Denormalised list for Firestore array-contains queries
-        "participantUserIds" to participants.map { it.userId },
-        "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
-        "blockAdultContent" to blockAdultContent,
-        "authorizationExpiresAt" to authorizationExpiresAt.takeIf { it > 0L }
-    )
 
     @Suppress("UNCHECKED_CAST")
     internal fun DocumentSnapshot.toGroupChallenge(): GroupChallenge? {

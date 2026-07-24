@@ -105,20 +105,6 @@ class GroupChallengeRepositoryImpl @Inject constructor(
     override suspend fun getGroupChallengeById(groupId: String): GroupChallenge? =
         groupChallengeDao.getById(groupId)?.toDomain()
 
-    override suspend fun saveGroupChallenge(groupChallenge: GroupChallenge): Result<Unit> {
-        return try {
-            groupChallengeDao.upsert(groupChallenge.toEntity())
-            appScope.launch {
-                firestoreService.saveGroupChallenge(groupChallenge)
-            }
-            Timber.d("GroupChallengeRepo: saved %s", groupChallenge.groupId)
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Timber.e(e, "GroupChallengeRepo: saveGroupChallenge failed")
-            Result.failure(e)
-        }
-    }
-
     override fun observeGroupChallenge(groupId: String): Flow<GroupChallenge?> =
         firestoreService.observeGroupChallenge(groupId)
             .onEach { gc ->
@@ -293,15 +279,6 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         val localId = "group_$groupId"
         val status = challengeDao.getChallengeById(localId)?.status
         return status == "completed" || status == "failed"
-    }
-
-    override suspend fun updateParticipantStats(
-        groupId: String,
-        userId: String,
-        opensToday: Int,
-        timeUsedMinutes: Int
-    ) {
-        firestoreService.updateParticipantStats(groupId, userId, opensToday, timeUsedMinutes)
     }
 
     override suspend fun updateParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) {

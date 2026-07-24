@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.Flow
 interface GroupChallengeRepository {
     fun getGroupChallenges(): Flow<List<GroupChallenge>>
     suspend fun getGroupChallengeById(groupId: String): GroupChallenge?
-    suspend fun saveGroupChallenge(groupChallenge: GroupChallenge): Result<Unit>
     fun observeGroupChallenge(groupId: String): Flow<GroupChallenge?>
     suspend fun fetchGroupChallengeByCode(code: String): Result<GroupChallenge?>
     /**
@@ -60,12 +59,6 @@ interface GroupChallengeRepository {
      * Should be called when the user logs out.
      */
     fun stopSyncing()
-
-    /**
-     * Updates [userId]'s opensToday and timeUsedMinutes in the Firestore document
-     * for real-time leaderboard display. Fire-and-forget — failures are logged only.
-     */
-    suspend fun updateParticipantStats(groupId: String, userId: String, opensToday: Int, timeUsedMinutes: Int)
 
     /**
      * ABSOLUTE write of [userId]'s own timeUsedMinutes to their stat doc in the

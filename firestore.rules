@@ -144,18 +144,25 @@ service cloud.firestore {
       // written by completeGroupChallenge when a refund/transfer did not go through.
       // They are Cloud-Function-only: a client must never be able to clear a record of
       // money the service still owes.
-      allow create: if request.auth != null
-        && !request.resource.data.keys().hasAny([
-          'status', 'startDate', 'endDate', 'completedAt',
-          'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
-          'authorizationExpiresAt', 'payoutIncomplete', 'payoutFailedUserIds'
-        ]);
+      //
+      // 'participants' / 'participantUserIds' / 'maxParticipants' / 'buyInCents' /
+      // 'creatorUserId' / 'code' are likewise Cloud-Function-only: the participants
+      // array carries identity + money + status (amountCents, paymentIntentId,
+      // payout fields), and every legitimate mutation of these goes through a CF
+      // (create/join/start/leave/fail/settle — all Admin SDK). Mutable leaderboard
+      // stats live in the client-writable `participants` SUB-collection below.
+      //
+      // Doc creation is CF-only too (createGroupChallenge, Admin SDK): no client
+      // path legitimately creates a group challenge document.
+      allow create: if false;
       allow update: if request.auth != null
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny([
             'status', 'startDate', 'endDate', 'completedAt',
             'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
-            'authorizationExpiresAt', 'payoutIncomplete', 'payoutFailedUserIds'
+            'authorizationExpiresAt', 'payoutIncomplete', 'payoutFailedUserIds',
+            'participants', 'participantUserIds', 'maxParticipants',
+            'buyInCents', 'creatorUserId', 'code'
           ]);
       allow delete: if false;
 
@@ -174,21 +181,22 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
-      // Participants sub-collection — future-proofing. Currently participants are
-      // stored as an embedded array, not a sub-collection. If ever migrated, these
-      // rules ensure each user can only write their own participant doc and cannot
-      // touch status/payout/Stripe fields.
+      // Participants sub-collection — LIVE: per-participant leaderboard stats
+      // ({opensToday, timeUsedMinutes, dateKey, updatedAt}), written by each user to
+      // their OWN doc only (doc id == uid). Whitelist, not blacklist: the doc CANNOT
+      // carry money/identity fields at all — those live in the parent doc's
+      // participants array, which is Cloud-Function-only. request.resource.data is
+      // the post-merge doc, so the field checks tolerate partial merge writes
+      // (opens-only or time-only) while still type-guarding whatever is present.
       match /participants/{participantId} {
         allow read: if request.auth != null;
-        allow create: if request.auth != null
-          && request.auth.uid == participantId;
-        allow update: if request.auth != null
+        allow create, update: if request.auth != null
           && request.auth.uid == participantId
-          && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny([
-              'status', 'payoutStatus', 'finalPayout',
-              'amountCents', 'paymentIntentId'
-            ]);
+          && request.resource.data.keys().hasOnly(['opensToday', 'timeUsedMinutes', 'dateKey', 'updatedAt'])
+          && (!('opensToday' in request.resource.data)
+              || (request.resource.data.opensToday is int && request.resource.data.opensToday >= 0))
+          && (!('timeUsedMinutes' in request.resource.data)
+              || (request.resource.data.timeUsedMinutes is int && request.resource.data.timeUsedMinutes >= 0));
         allow delete: if false;
       }
     }

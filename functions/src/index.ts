@@ -606,6 +606,92 @@ async function releasePaymentIntentBestEffort(tag: string, paymentIntentId: stri
   }
 }
 
+// ── Waiting-challenge terminalization (cancel / delete / expire) ──────────────
+// Shared protocol for the three CFs that end a WAITING challenge by cancelling
+// every participant hold. Replaces the old read → Stripe loop → whole-array
+// overwrite, whose final write silently erased anything that landed on the doc
+// during the Stripe loop — worst case a confirmGroupJoin arrayUnion, leaving a
+// PAID user present in participantUserIds but missing from participants
+// (invisible to settlement, hold neither captured nor cancelled).
+//
+// Phase 1 — fence + snapshot: one transaction stamps startLockAt (both join CFs
+//   reject while it is fresh — the same fence startGroupChallenge uses, and
+//   invariant #27 already scopes it to "blocks ONLY joining, TTL-bounded") and
+//   takes the participant snapshot from the SAME transactional read. A joiner
+//   confirmed before the stamp is in the snapshot (their hold is cancelled in
+//   phase 2); one confirmed after it is rejected by confirmGroupJoin, which
+//   releases the hold on its own rejection path.
+// Phase 2 — Stripe, OUTSIDE any transaction: retrieve → cancel per participant,
+//   same semantics as the previous per-function loops (a participant is marked
+//   released in every non-throwing branch, exactly as before).
+// Phase 3 — final transactional merge: re-read the doc and merge
+//   status:"refunded" onto the FRESH array by userId — a participant who left
+//   mid-flight stays gone, one whose release threw stays unmarked. Only a
+//   still-waiting doc is flipped to cancelled; a doc a concurrent terminalizer
+//   already cancelled still absorbs the refunded marks; a doc a concurrent
+//   start activated is left completely alone (start's preflight/rollback owns
+//   that money) and reported to the caller.
+async function terminalizeWaitingGroupChallenge(
+  tag: string,
+  db: FirebaseFirestore.Firestore,
+  docRef: FirebaseFirestore.DocumentReference,
+  groupId: string,
+): Promise<string> {
+  const fenced = await db.runTransaction(async (tx) => {
+    const fresh = await tx.get(docRef);
+    if (!fresh.exists) throw new HttpError(404, "Group challenge not found.");
+    const data = fresh.data()!;
+    if (data["status"] === "waiting") tx.update(docRef, { startLockAt: Date.now() });
+    return data;
+  });
+  if (fenced["status"] !== "waiting") return fenced["status"] as string;
+
+  const participants = parseParticipants<Participant>(fenced["participants"]);
+
+  const releasedUserIds = new Set<string>();
+  for (const p of participants) {
+    if (!p.paymentIntentId) continue;
+    try {
+      const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+      if (pi.status === "requires_capture") {
+        await getStripe().paymentIntents.cancel(p.paymentIntentId);
+        functions.logger.info(`${tag}: PI cancelled`, { groupId, userId: p.userId });
+      } else if (pi.status === "canceled") {
+        functions.logger.info(`${tag}: PI already cancelled (idempotent)`, { groupId, userId: p.userId });
+      } else {
+        functions.logger.warn(`${tag}: unexpected PI status`, { groupId, userId: p.userId, piStatus: pi.status });
+      }
+      releasedUserIds.add(p.userId);
+    } catch (e) {
+      functions.logger.error(`${tag}: PI cancel failed`, { groupId, userId: p.userId, error: e });
+    }
+  }
+
+  const outcome = await db.runTransaction(async (tx) => {
+    const fresh = await tx.get(docRef);
+    if (!fresh.exists) return "missing";
+    const data = fresh.data()!;
+    const status = data["status"] as string;
+    if (status !== "waiting" && status !== "cancelled") return status;
+    const freshParticipants = parseParticipants<Participant>(data["participants"]);
+    const merged = freshParticipants.map((p) =>
+      releasedUserIds.has(p.userId) ? { ...p, status: "refunded" } : p
+    );
+    const update: Record<string, unknown> = { participants: merged };
+    if (status === "waiting") {
+      update["status"] = "cancelled";
+      update["startLockAt"] = admin.firestore.FieldValue.delete();
+    }
+    tx.update(docRef, update);
+    return "cancelled";
+  });
+  if (outcome !== "cancelled") {
+    functions.logger.error(`${tag}: challenge changed state mid-terminalization — no write performed`, { groupId, outcome });
+  }
+  functions.logger.info(`${tag}: terminalization done`, { groupId, participants: participants.length, outcome });
+  return outcome;
+}
+
 // ── joinGroupChallenge ─────────────────────────────────────────────────────────
 
 export const joinGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
@@ -962,30 +1048,11 @@ export const cancelGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
       throw new HttpError(403, "Only the creator can cancel a group challenge.");
     }
 
-    const participants = parseParticipants<Participant>(gc["participants"]);
-
-    const updatedParticipants = [...participants];
-    for (let i = 0; i < updatedParticipants.length; i++) {
-      const p = updatedParticipants[i];
-      if (!p.paymentIntentId) continue;
-      try {
-        const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
-        if (pi.status === "requires_capture") {
-          await getStripe().paymentIntents.cancel(p.paymentIntentId);
-          functions.logger.info("cancelGroupChallenge: PI cancelled", { groupId, userId: p.userId });
-        } else if (pi.status === "canceled") {
-          functions.logger.info("cancelGroupChallenge: PI already cancelled (idempotent)", { groupId, userId: p.userId });
-        } else {
-          functions.logger.warn("cancelGroupChallenge: unexpected PI status", { groupId, userId: p.userId, piStatus: pi.status });
-        }
-        updatedParticipants[i] = { ...p, status: "refunded" };
-      } catch (e) {
-        functions.logger.error("cancelGroupChallenge: cancel failed", { groupId, userId: p.userId, error: e });
-      }
+    const finalStatus = await terminalizeWaitingGroupChallenge("cancelGroupChallenge", db, docRef, groupId);
+    if (finalStatus !== "cancelled") {
+      throw new HttpError(412, `Cannot cancel a challenge in status '${finalStatus}'.`);
     }
-
-    await docRef.update({ status: "cancelled", participants: updatedParticipants });
-    functions.logger.info("cancelGroupChallenge: cancelled", { groupId, participants: participants.length });
+    functions.logger.info("cancelGroupChallenge: cancelled", { groupId });
     res.json({ status: "cancelled" });
   } catch (e) { handleError("cancelGroupChallenge", e, res); }
 });
@@ -1117,31 +1184,11 @@ export const expireGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
       return;
     }
 
-    const participants = parseParticipants<Participant>(gc["participants"]);
-
-    const updatedParticipants = [...participants];
-    for (let i = 0; i < updatedParticipants.length; i++) {
-      const p = updatedParticipants[i];
-      if (!p.paymentIntentId) continue;
-      try {
-        const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
-        if (pi.status === "requires_capture") {
-          await getStripe().paymentIntents.cancel(p.paymentIntentId);
-          functions.logger.info("expireGroupChallenge: PI cancelled", { groupId, userId: p.userId });
-        } else if (pi.status === "canceled") {
-          functions.logger.info("expireGroupChallenge: PI already cancelled (idempotent)", { groupId, userId: p.userId });
-        } else {
-          functions.logger.warn("expireGroupChallenge: unexpected PI status", { groupId, userId: p.userId, piStatus: pi.status });
-        }
-        updatedParticipants[i] = { ...p, status: "refunded" };
-      } catch (e) {
-        functions.logger.error("expireGroupChallenge: PI cancel failed", { groupId, userId: p.userId, error: e });
-      }
+    const finalStatus = await terminalizeWaitingGroupChallenge("expireGroupChallenge", db, docRef, groupId);
+    if (finalStatus === "cancelled") {
+      functions.logger.info("expireGroupChallenge: expired and cancelled", { groupId });
     }
-
-    await docRef.update({ status: "cancelled", participants: updatedParticipants });
-    functions.logger.info("expireGroupChallenge: expired and cancelled", { groupId, participants: participants.length });
-    res.json({ status: "cancelled" });
+    res.json({ status: finalStatus });
   } catch (e) { handleError("expireGroupChallenge", e, res); }
 });
 
@@ -1307,37 +1354,14 @@ export const deleteGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
       throw new HttpError(403, "Nur der Ersteller kann die Challenge löschen.");
     }
 
-    const participants = parseParticipants<Participant>(gc["participants"]);
-
-    // 4. For each participant: cancel their PI — all Stripe work BEFORE Firestore write
-    const updatedParticipants = [...participants];
-    for (let i = 0; i < updatedParticipants.length; i++) {
-      const p = updatedParticipants[i];
-      if (!p.paymentIntentId) continue;
-      try {
-        const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
-        if (pi.status === "requires_capture") {
-          await getStripe().paymentIntents.cancel(p.paymentIntentId);
-          functions.logger.info("deleteGroupChallenge: PI cancelled", { groupId, userId: p.userId });
-        } else if (pi.status === "canceled") {
-          functions.logger.info("deleteGroupChallenge: PI already cancelled (idempotent)", { groupId, userId: p.userId });
-        } else {
-          functions.logger.warn("deleteGroupChallenge: unexpected PI status — skipping", { groupId, userId: p.userId, piStatus: pi.status });
-        }
-        updatedParticipants[i] = { ...p, status: "refunded" };
-      } catch (e) {
-        functions.logger.error("deleteGroupChallenge: PI cancel failed", { groupId, userId: p.userId, error: e });
-      }
+    // 4+5. Fence joiners, cancel every PI (Stripe BEFORE Firestore), then merge
+    // the refunded marks transactionally onto the fresh array.
+    const finalStatus = await terminalizeWaitingGroupChallenge("deleteGroupChallenge", db, docRef, groupId);
+    if (finalStatus !== "cancelled") {
+      throw new HttpError(400, "Du kannst nur eine wartende Challenge löschen.");
     }
 
-    // 5. Only after ALL Stripe cancels → update Firestore
-    await docRef.update({ status: "cancelled", participants: updatedParticipants });
-
-    functions.logger.info("deleteGroupChallenge: challenge deleted by creator", {
-      groupId,
-      creatorId: verifiedUserId,
-      participantCount: participants.length,
-    });
+    functions.logger.info("deleteGroupChallenge: challenge deleted by creator", { groupId, creatorId: verifiedUserId });
 
     res.json({ success: true });
   } catch (e) { handleError("deleteGroupChallenge", e, res); }

@@ -583,6 +583,19 @@ function isStartLockFresh(startLockAt: unknown): boolean {
   return typeof startLockAt === "number" && Date.now() - startLockAt < START_LOCK_TTL_MS;
 }
 
+// Settlement fence: completeGroupChallenge stamps settleLockAt transactionally
+// before its Stripe phase and takes the settlement snapshot from the same read;
+// failParticipant refuses (409) while the stamp is fresh, so a self-fail cannot
+// capture a stake underneath a settlement that already classified the winners.
+// Same TTL discipline as startLockAt: a stranded stamp (crashed settlement)
+// blocks ONLY failParticipant, for at most SETTLE_LOCK_TTL_MS — never joining,
+// leaving, cancellation, or a settlement re-run after the TTL.
+const SETTLE_LOCK_TTL_MS = 15 * 60 * 1000;
+
+function isSettleLockFresh(settleLockAt: unknown): boolean {
+  return typeof settleLockAt === "number" && Date.now() - settleLockAt < SETTLE_LOCK_TTL_MS;
+}
+
 // Statuses in which paymentIntents.cancel is allowed (releases the hold / kills the
 // intent). "processing"/"succeeded" are NOT cancellable; "canceled" is already done.
 const CANCELLABLE_PI_STATUSES = ["requires_payment_method", "requires_confirmation", "requires_action", "requires_capture"];
@@ -1085,6 +1098,19 @@ export const failParticipant = functions.runWith({ maxInstances: 10 }).region(RE
       return;
     }
 
+    // Settlement fence + terminal-state guard, BEFORE any Stripe capture: never
+    // collect a stake for a challenge that is settled/cancelled or that
+    // completeGroupChallenge is settling right now — its fenced snapshot has
+    // already classified winners/losers, and a capture landing underneath it is
+    // the fail-vs-settle conflict. 409 is retryable-after; the lock is TTL-bounded.
+    const gcStatus = gc["status"] as string;
+    if (gcStatus === "completed" || gcStatus === "cancelled") {
+      throw new HttpError(409, "challenge_settled");
+    }
+    if (isSettleLockFresh(gc["settleLockAt"])) {
+      throw new HttpError(409, "settlement_in_progress");
+    }
+
     // ── CAPTURE GATE (invariants #1 / #6) ──────────────────────────────────────
     // The status write below runs ONLY after the stake is confirmed captured. Every
     // non-captured outcome throws, leaving the participant "active" and returning a
@@ -1131,12 +1157,35 @@ export const failParticipant = functions.runWith({ maxInstances: 10 }).region(RE
     }
 
     // Reached only on a confirmed capture (or the PI-less legacy case above).
-    const updatedParticipants = participants.map((p) =>
-      p["userId"] === failedUserId ? { ...p, status: "failed", failedAt: Date.now() } : p
-    );
+    // Transactional merge onto the FRESH array: the old in-memory full replacement
+    // erased any write that landed during the Stripe capture — e.g. a concurrent
+    // self-fail of ANOTHER participant, or a settlement finishing underneath us.
+    const verdict = await db.runTransaction(async (tx) => {
+      const freshDoc = await tx.get(docRef);
+      if (!freshDoc.exists) throw new HttpError(404, "Group challenge not found.");
+      const freshParticipants = parseParticipants(freshDoc.data()!["participants"]);
+      const mine = freshParticipants.find((p) => p["userId"] === failedUserId);
+      if (!mine) return "missing" as const;
+      if (mine["status"] === "failed") return "already" as const;
+      if (mine["status"] !== "active") return "settled" as const;
+      const merged = freshParticipants.map((p) =>
+        p["userId"] === failedUserId ? { ...p, status: "failed", failedAt: Date.now() } : p
+      );
+      tx.update(docRef, { participants: merged });
+      return "failed" as const;
+    });
 
-    await docRef.update({ participants: updatedParticipants });
-    functions.logger.info("failParticipant: participant failed", { groupId, userId: failedUserId });
+    if (verdict === "settled" || verdict === "missing") {
+      // Photo finish: the stake WAS captured above, but settlement (or another
+      // writer) already recorded a different outcome for this participant. Do not
+      // overwrite that record — log the conflict for manual correction instead.
+      functions.logger.error(
+        "failParticipant: FAIL-VS-SETTLE CONFLICT — stake captured but participant record already settled; not overwritten, manual review required",
+        { groupId, userId: failedUserId, verdict, conflict: "fail_vs_settle" }
+      );
+    } else {
+      functions.logger.info("failParticipant: participant failed", { groupId, userId: failedUserId, verdict });
+    }
     res.json({ success: true });
   } catch (e) { handleError("failParticipant", e, res); }
 });
@@ -1407,12 +1456,41 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
       return;
     }
 
-    const participants = parseParticipants(gc["participants"]);
-    const buyInCents: number = (gc["buyInCents"] as number) ?? 0;
+    // ── SETTLEMENT FENCE ───────────────────────────────────────────────────────
+    // Stamp settleLockAt and take the settlement snapshot from the SAME
+    // transactional read. failParticipant refuses (409) while the stamp is fresh,
+    // so no stake can be captured underneath the winner/loser classification
+    // below. All payout math and Stripe calls run from THIS snapshot; the final
+    // write re-reads and merges (never blind-replaces) the array. A concurrent
+    // settlement run sees the fresh stamp and backs off; a crashed run's stamp
+    // expires after SETTLE_LOCK_TTL_MS and never blocks anything else.
+    const fence = await db.runTransaction(async (tx) => {
+      const freshDoc = await tx.get(docRef);
+      if (!freshDoc.exists) throw new HttpError(404, "Group challenge not found.");
+      const data = freshDoc.data()!;
+      if (data["status"] === "completed") return { data, verdict: "already" as const };
+      if (isSettleLockFresh(data["settleLockAt"])) return { data, verdict: "settling" as const };
+      tx.update(docRef, { settleLockAt: Date.now() });
+      return { data, verdict: "fenced" as const };
+    });
+    if (fence.verdict === "already") {
+      functions.logger.info("completeGroupChallenge: already completed (post-fence)", { groupId });
+      res.json({ success: true, reason: "already_completed" });
+      return;
+    }
+    if (fence.verdict === "settling") {
+      functions.logger.info("completeGroupChallenge: another settlement run holds the fence — backing off", { groupId });
+      res.json({ success: false, reason: "settlement_in_progress" });
+      return;
+    }
+    const gcSnap = fence.data;
 
-    const endDate: number = typeof gc["endDate"] === "number"
-      ? gc["endDate"]
-      : (gc["endDate"] as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
+    const participants = parseParticipants(gcSnap["participants"]);
+    const buyInCents: number = (gcSnap["buyInCents"] as number) ?? 0;
+
+    const endDate: number = typeof gcSnap["endDate"] === "number"
+      ? gcSnap["endDate"]
+      : (gcSnap["endDate"] as admin.firestore.Timestamp)?.toMillis?.() ?? 0;
     const now = Date.now();
     const expired = endDate > 0 && endDate <= now;
     const allFailed = participants.length > 0 && participants.every((p) => p["status"] === "failed");
@@ -1421,9 +1499,65 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
 
     if (!expired && !allFailed) {
       functions.logger.info("completeGroupChallenge: endDate not yet reached and not all participants failed — skipping", { groupId, endDate, now });
+      // Release the fence we just stamped — a premature call must not block
+      // failParticipant (or make a due settlement back off) for the whole TTL.
+      try { await docRef.update({ settleLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
+        functions.logger.warn("completeGroupChallenge: settle lock clear failed — TTL will release it", { groupId, error: le });
+      }
       res.json({ success: false, reason: "not_expired" });
       return;
     }
+
+    // Final settlement write, shared by both paths below: re-read the doc and
+    // merge the computed per-participant results onto the FRESH array by userId.
+    // A participant who flipped to "failed" during the Stripe phase (a fail that
+    // entered before the fence went up) keeps the failed record — money truth:
+    // their stake was captured — and is reported back for the loud conflict log.
+    // payoutIncomplete/payoutFailedUserIds are derived from the merged array so
+    // the stored doc stays self-consistent.
+    const commitSettlement = async (
+      computed: Record<string, unknown>[],
+      docFields: Record<string, unknown>,
+    ): Promise<{ conflictUserIds: string[]; unpaidUserIds: string[] }> => {
+      return await db.runTransaction(async (tx) => {
+        const freshDoc = await tx.get(docRef);
+        if (!freshDoc.exists) throw new HttpError(404, "Group challenge not found.");
+        const freshParticipants = parseParticipants(freshDoc.data()!["participants"]);
+        const byUser = new Map(computed.map((u) => [u["userId"] as string, u]));
+        const conflictUserIds: string[] = [];
+        const merged = freshParticipants.map((p) => {
+          const c = byUser.get(p["userId"] as string);
+          if (!c) return p; // not in the fenced snapshot — never erase an entry we didn't settle
+          if (p["status"] === "failed" && c["status"] !== "failed") {
+            conflictUserIds.push(p["userId"] as string);
+            return p;
+          }
+          return c;
+        });
+        const unpaidUserIds = (merged as Record<string, unknown>[])
+          .filter((p) => p["payoutStatus"] === "refund_failed")
+          .map((p) => p["userId"] as string);
+        tx.update(docRef, {
+          ...docFields,
+          participants: merged,
+          // Doc-level mirror of the per-participant gate: Firestore cannot query
+          // inside array elements, so this is what makes an owed payout FINDABLE
+          // afterwards (groupChallenges where payoutIncomplete == true).
+          payoutIncomplete: unpaidUserIds.length > 0,
+          payoutFailedUserIds: unpaidUserIds,
+          settleLockAt: admin.firestore.FieldValue.delete(),
+        });
+        return { conflictUserIds, unpaidUserIds };
+      });
+    };
+    const logSettlementConflicts = (conflictUserIds: string[]) => {
+      for (const conflictUserId of conflictUserIds) {
+        functions.logger.error(
+          "completeGroupChallenge: FAIL-VS-SETTLE CONFLICT — participant failed during settlement after being classified a winner; failed record kept, winner payout already computed from the fenced snapshot; manual review required",
+          { groupId, userId: conflictUserId, conflict: "fail_vs_settle" }
+        );
+      }
+    };
 
     // "active" = still in the challenge; "completed" = CF already marked them on a prior run.
     // Both statuses mean the participant did NOT fail — include both when counting winners.
@@ -1493,31 +1627,20 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
         }
         return { ...p, status: "completed", payoutStatus: "completed", finalPayout: stake };
       }));
-      const unpaidNobodyFailed = (updatedParticipants as Record<string, unknown>[])
-        .filter((p) => p["payoutStatus"] === "refund_failed");
-      await docRef.update({
-        status: "completed",
-        completedAt: Date.now(),
-        prizePool: 0,
-        appFee: 0,
-        prizePerWinner: 0,
-        nobodyFailed: true,
-        participants: updatedParticipants,
-        // Doc-level mirror of the per-participant gate: Firestore cannot query inside
-        // array elements, so this is what makes an owed payout FINDABLE afterwards
-        // (groupChallenges where payoutIncomplete == true).
-        payoutIncomplete: unpaidNobodyFailed.length > 0,
-        payoutFailedUserIds: unpaidNobodyFailed.map((p) => p["userId"]),
-      });
-      if (unpaidNobodyFailed.length > 0) {
+      const { conflictUserIds, unpaidUserIds } = await commitSettlement(
+        updatedParticipants as Record<string, unknown>[],
+        { status: "completed", completedAt: Date.now(), prizePool: 0, appFee: 0, prizePerWinner: 0, nobodyFailed: true },
+      );
+      logSettlementConflicts(conflictUserIds);
+      if (unpaidUserIds.length > 0) {
         functions.logger.error("completeGroupChallenge: settled with UNPAID participants — manual payout required", {
           groupId,
-          unpaidCount: unpaidNobodyFailed.length,
-          unpaidUserIds: unpaidNobodyFailed.map((p) => p["userId"]),
+          unpaidCount: unpaidUserIds.length,
+          unpaidUserIds,
         });
       }
       functions.logger.info("completeGroupChallenge: completed (nobody failed)", { groupId });
-      res.json({ success: true, nobodyFailed: true, payoutIncomplete: unpaidNobodyFailed.length > 0 });
+      res.json({ success: true, nobodyFailed: true, payoutIncomplete: unpaidUserIds.length > 0 });
       return;
     }
 
@@ -1693,29 +1816,17 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
       }
     }));
 
-    const unpaidWinners = (updatedParticipants as Record<string, unknown>[])
-      .filter((p) => p["payoutStatus"] === "refund_failed");
+    const { conflictUserIds, unpaidUserIds } = await commitSettlement(
+      updatedParticipants as Record<string, unknown>[],
+      { status: "completed", completedAt: Date.now(), prizePool: distributablePot, appFee, prizePerWinner: perWinnerBonus, nobodyFailed: false },
+    );
+    logSettlementConflicts(conflictUserIds);
 
-    await docRef.update({
-      status: "completed",
-      completedAt: Date.now(),
-      prizePool: distributablePot,
-      appFee,
-      prizePerWinner: perWinnerBonus,
-      nobodyFailed: false,
-      participants: updatedParticipants,
-      // Doc-level mirror of the per-winner gate: Firestore cannot query inside array
-      // elements, so this is what makes an owed payout FINDABLE afterwards
-      // (groupChallenges where payoutIncomplete == true).
-      payoutIncomplete: unpaidWinners.length > 0,
-      payoutFailedUserIds: unpaidWinners.map((p) => p["userId"]),
-    });
-
-    if (unpaidWinners.length > 0) {
+    if (unpaidUserIds.length > 0) {
       functions.logger.error("completeGroupChallenge: settled with UNPAID winners — manual payout required", {
         groupId,
-        unpaidCount: unpaidWinners.length,
-        unpaidUserIds: unpaidWinners.map((p) => p["userId"]),
+        unpaidCount: unpaidUserIds.length,
+        unpaidUserIds,
       });
     }
 

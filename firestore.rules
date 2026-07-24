@@ -157,6 +157,9 @@ service cloud.firestore {
       allow create: if false;
       // 'startLockAt' is the startGroupChallenge join fence (15-min TTL) — CF-only,
       // or a client could stamp it to block joins / clear it mid-capture.
+      // 'settleLockAt' is the completeGroupChallenge settlement fence (15-min TTL,
+      // blocks only failParticipant) — CF-only for the same reason: a client could
+      // stamp it to block self-fails or clear it mid-settlement.
       allow update: if request.auth != null
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny([
@@ -164,7 +167,7 @@ service cloud.firestore {
             'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
             'authorizationExpiresAt', 'payoutIncomplete', 'payoutFailedUserIds',
             'participants', 'participantUserIds', 'maxParticipants',
-            'buyInCents', 'creatorUserId', 'code', 'startLockAt'
+            'buyInCents', 'creatorUserId', 'code', 'startLockAt', 'settleLockAt'
           ]);
       allow delete: if false;
 

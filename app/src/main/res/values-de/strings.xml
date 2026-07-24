@@ -1690,6 +1690,13 @@
     <string name="group_stake_refunded">Dein Einsatz (€%1$d) wird zurückgebucht</string>
     <string name="connect_bank_account">Bankkonto verbinden</string>
     <string name="group_bonus_transfer">Bonus (€%1$d) wird auf dein Bankkonto überwiesen</string>
+
+    <!-- Payout failed (settlement refund/transfer did not go through — money still owed to a winner) -->
+    <string name="group_payout_failed_title">Auszahlung fehlgeschlagen</string>
+    <string name="group_payout_failed_body">Du hast gewonnen — aber die Auszahlung von %1$s konnte nicht gesendet werden. Dieser Betrag steht dir weiterhin zu.</string>
+    <string name="group_payout_failed_support">Bitte kontaktiere %1$s und wir lassen ihn dir zukommen.</string>
+    <string name="payout_status_failed">Auszahlung fehlgeschlagen — steht dir noch zu</string>
+
     <string name="notif_overlay_captured_body">Die Overlay-Berechtigung war zu lange deaktiviert. Dein Einsatz wurde eingezogen.</string>
 
     <!-- Broadcast message (admin → all users) -->

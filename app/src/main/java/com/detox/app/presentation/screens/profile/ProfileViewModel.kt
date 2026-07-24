@@ -108,7 +108,9 @@ data class PayoutChallengeInfo(
     val winnersCount: Int,
     val payoutStatus: String,
     val groupId: String?,
-    val endDateMs: Long = 0L
+    val endDateMs: Long = 0L,
+    /** Cents still owed when [payoutStatus] == "refund_failed" (settlement refund/transfer failed). */
+    val payoutOwedCents: Int = 0
 )
 
 data class PendingBalanceInfo(val groupId: String, val amountCents: Int)
@@ -456,7 +458,22 @@ class ProfileViewModel @Inject constructor(
                             .get().await()
                     }.getOrNull()
                     val hasPendingPrize = (pendingSnap?.isEmpty == false)
-                    val payoutStatus = if (hasPendingPrize) "pending_payout" else "refunded"
+
+                    // Settlement may have recorded this winner as "refund_failed" (a refund/transfer
+                    // that did not go through — money still owed). That is authoritative on the doc
+                    // and overrides the pending/refunded heuristic. Read the participant's real
+                    // payoutStatus + owed amount from the doc we already fetched.
+                    val myParticipantMap = (groupDoc?.get("participants") as? List<*>)
+                        ?.filterIsInstance<Map<*, *>>()
+                        ?.firstOrNull { (it["userId"] as? String) == uid }
+                    val serverPayoutStatus = myParticipantMap?.get("payoutStatus") as? String
+                    val payoutOwedCents = (myParticipantMap?.get("payoutOwedCents") as? Long)?.toInt() ?: 0
+
+                    val payoutStatus = when {
+                        serverPayoutStatus == "refund_failed" -> "refund_failed"
+                        hasPendingPrize -> "pending_payout"
+                        else -> "refunded"
+                    }
 
                     // Count winners from participants JSON
                     val winnersCount = countParticipantsByStatus(entity.participantsJson, "success")
@@ -481,7 +498,8 @@ class ProfileViewModel @Inject constructor(
                         winnersCount = winnersCount,
                         payoutStatus = payoutStatus,
                         groupId = entity.groupId,
-                        endDateMs = entity.endDate
+                        endDateMs = entity.endDate,
+                        payoutOwedCents = payoutOwedCents
                     )
                 }
             }

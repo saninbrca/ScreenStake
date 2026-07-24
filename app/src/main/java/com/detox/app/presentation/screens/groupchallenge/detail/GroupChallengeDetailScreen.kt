@@ -74,6 +74,7 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.presentation.components.formatEuroCents
 import com.detox.app.presentation.screens.activechallenge.DetoxCard
 import com.detox.app.ui.theme.DetoxAvatarPalette
 import com.detox.app.ui.theme.DetoxPodiumColors
@@ -1261,14 +1262,37 @@ private fun PayoutResultCard(
     val bonus = gc.perWinnerBonus
     val buyIn = participant.amountCents
     val isPending = participant.payoutStatus == "pending_payout"
+    // A settlement refund/transfer failed: the user WON but the money didn't reach them and
+    // is still owed. Render this as its own state — never the happy "refunded" path below.
+    val isRefundFailed = participant.payoutStatus == "refund_failed"
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isRefundFailed) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.tertiaryContainer
+        ),
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (isRefundFailed) {
+                // Owed = the server-recorded amount that failed to send; fall back to the winner's
+                // stake if an older doc has no owed figure.
+                val owedCents = participant.payoutOwedCents.takeIf { it > 0 } ?: buyIn
+                Text(
+                    text = stringResource(R.string.group_payout_failed_title),
+                    fontWeight = FontWeight.Bold,
+                    color = detoxColors.danger
+                )
+                Text(stringResource(R.string.group_payout_failed_body, formatEuroCents(owedCents)))
+                Text(
+                    text = stringResource(R.string.group_payout_failed_support, stringResource(R.string.support_email)),
+                    fontWeight = FontWeight.SemiBold,
+                    color = detoxColors.warningStrong
+                )
+                return@Column
+            }
             if (bonus > 0) {
                 Text(
                     text = stringResource(R.string.group_result_bonus, bonus / 100),
@@ -1389,18 +1413,45 @@ private fun AbrechnungGroupCard(
                     color = detoxColors.label
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.abrechnung_refunded),
-                    fontSize = 13.sp,
-                    color = detoxColors.accent
-                )
-                if (!nobodyFailed && prizePerWinner > 0 && payoutStatus == "pending_payout") {
-                    Spacer(modifier = Modifier.height(4.dp))
+                if (payoutStatus == "refund_failed") {
+                    // Won, but the payout failed to send — money still owed. Show it as its own
+                    // state with the owed amount and a support route, never as "refunded".
+                    val owedCents = myParticipant.payoutOwedCents.takeIf { it > 0 } ?: total
                     Text(
-                        text = stringResource(R.string.abrechnung_prize_pending_note),
+                        text = stringResource(R.string.group_payout_failed_title),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = detoxColors.danger
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.group_payout_failed_body, formatCents(owedCents)),
+                        fontSize = 13.sp,
+                        color = detoxColors.label
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.group_payout_failed_support,
+                            stringResource(R.string.support_email)
+                        ),
                         fontSize = 13.sp,
                         color = detoxColors.warningStrong
                     )
+                } else {
+                    Text(
+                        text = stringResource(R.string.abrechnung_refunded),
+                        fontSize = 13.sp,
+                        color = detoxColors.accent
+                    )
+                    if (!nobodyFailed && prizePerWinner > 0 && payoutStatus == "pending_payout") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.abrechnung_prize_pending_note),
+                            fontSize = 13.sp,
+                            color = detoxColors.warningStrong
+                        )
+                    }
                 }
             } else {
                 // ── FAIL ────────────────────────────────────────────────────

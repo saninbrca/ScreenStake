@@ -670,7 +670,11 @@ private fun PayoutChallengeCard(
 
             // Prize share row (group with losers only)
             if (payout.isGroup && !payout.nobodyFailed && payout.prizeShareCents > 0) {
-                val prizeStatus = if (payout.payoutStatus == "pending_payout") "⏳" else "✅"
+                val prizeStatus = when (payout.payoutStatus) {
+                    "pending_payout" -> "⏳"
+                    "refund_failed" -> "⚠️"
+                    else -> "✅"
+                }
                 PayoutRow(
                     label = stringResource(
                         R.string.payout_prize_share,
@@ -694,21 +698,42 @@ private fun PayoutChallengeCard(
             )
 
             // Status line
-            val statusText = if (payout.payoutStatus == "pending_payout") {
-                stringResource(R.string.payout_status_pending)
-            } else {
-                stringResource(R.string.payout_status_refunded)
+            val statusText = when (payout.payoutStatus) {
+                "pending_payout" -> stringResource(R.string.payout_status_pending)
+                "refund_failed" -> stringResource(R.string.payout_status_failed)
+                else -> stringResource(R.string.payout_status_refunded)
             }
             Text(
                 text = stringResource(R.string.payout_status, statusText),
                 style = MaterialTheme.typography.bodySmall,
-                color = if (payout.payoutStatus == "pending_payout")
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                else detoxColors.success
+                color = when (payout.payoutStatus) {
+                    "pending_payout" -> MaterialTheme.colorScheme.onSurfaceVariant
+                    "refund_failed" -> detoxColors.danger
+                    else -> detoxColors.success
+                }
             )
 
-            // Expected / confirmed date line
-            if (payout.endDateMs > 0L) {
+            // Payout-failed detail: the money is still owed — say so and route to support.
+            if (payout.payoutStatus == "refund_failed") {
+                val owedCents = payout.payoutOwedCents.takeIf { it > 0 }
+                    ?: (payout.stakeRefundCents + payout.prizeShareCents)
+                Text(
+                    text = stringResource(R.string.group_payout_failed_body, formatCents(owedCents)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = detoxColors.label
+                )
+                Text(
+                    text = stringResource(
+                        R.string.group_payout_failed_support,
+                        stringResource(R.string.support_email)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = detoxColors.warningStrong
+                )
+            }
+
+            // Expected / confirmed date line — suppressed for refund_failed (no date to promise).
+            if (payout.endDateMs > 0L && payout.payoutStatus != "refund_failed") {
                 val dateFormat = remember { SimpleDateFormat("d. MMM yyyy", Locale("de")) }
                 val expectedMs = remember(payout.endDateMs) {
                     DateUtils.addBusinessDays(payout.endDateMs, 5)

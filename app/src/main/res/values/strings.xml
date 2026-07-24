@@ -1716,6 +1716,13 @@
     <string name="group_stake_refunded">Your stake (€%1$d) is being refunded</string>
     <string name="connect_bank_account">Connect bank account</string>
     <string name="group_bonus_transfer">Your bonus (€%1$d) will be transferred to your bank account</string>
+
+    <!-- Payout failed (settlement refund/transfer did not go through — money still owed to a winner) -->
+    <string name="group_payout_failed_title">Payout couldn\'t be sent</string>
+    <string name="group_payout_failed_body">You won — but the payout of %1$s couldn\'t be sent. This amount is still owed to you.</string>
+    <string name="group_payout_failed_support">Please contact %1$s and we\'ll get it to you.</string>
+    <string name="payout_status_failed">Payout failed — still owed to you</string>
+
     <string name="notif_overlay_captured_body">The overlay permission was disabled for too long. Your stake has been charged.</string>
 
     <!-- Broadcast message (admin → all users) -->

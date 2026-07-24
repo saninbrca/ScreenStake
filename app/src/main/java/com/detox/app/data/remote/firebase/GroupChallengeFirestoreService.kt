@@ -402,6 +402,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                     joinedAt = (p["joinedAt"] as? Long) ?: 0L,
                     payoutStatus = p["payoutStatus"] as? String ?: "",
                     finalPayout = (p["finalPayout"] as? Long)?.toInt() ?: 0,
+                    payoutOwedCents = (p["payoutOwedCents"] as? Long)?.toInt() ?: 0,
                 )
             }
 

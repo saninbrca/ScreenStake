@@ -1437,6 +1437,31 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
   } catch (e) { handleError("completeGroupChallenge", e, res); }
 });
 
+// ── pendingPayouts claim protocol ─────────────────────────────────────────────
+// A pendingPayouts doc is the single ledger entry for one owed win. It is consumed
+// by EITHER Connect (claimPendingPayouts) OR manual SEPA (requestGroupPayout).
+// Both rails must win the doc via a transaction that re-reads it and checks
+// isLedgerClaimable — never a stale snapshot — so exactly one rail can act on it.
+//
+// "transferring" is the Connect rail's claim token, stamped with transferringAt.
+// It is NOT a terminal state: a token older than CLAIM_TTL_MS is treated as stale
+// (a failed revert or a crashed function) and becomes claimable again by either
+// rail, so a debt can never be stranded behind a token that only a successful
+// write could clear. The TTL is far beyond any function lifetime (v1 max 540 s).
+const CLAIM_TTL_MS = 15 * 60 * 1000;
+
+function isLedgerClaimable(data: FirebaseFirestore.DocumentData): boolean {
+  const status = data["status"] as string;
+  if (status === "pending_account_setup" || status === "ready_to_payout") return true;
+  if (status === "transferring") {
+    // Missing/invalid timestamp ⇒ treated as expired: the claim path always stamps
+    // one, so its absence means the token did not come from a live claim.
+    const at = (data["transferringAt"] as number) ?? 0;
+    return Date.now() - at > CLAIM_TTL_MS;
+  }
+  return false; // "requested" (SEPA rail owns it), "transferred", or unknown
+}
+
 // ── claimPendingPayouts ───────────────────────────────────────────────────────
 
 export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
@@ -1474,14 +1499,32 @@ export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).regio
       const payout = doc.data();
       const amount = payout.amount as number;
       const groupId = payout.groupId as string;
-      // Exactly-once guard: a doc already filed as a manual SEPA request (requestGroupPayout
-      // flipped it to "requested") must NOT also be paid via Connect. Skip it — never a
-      // second payout for the same owed win. Does not alter the transfer call or amount.
-      if (payout.status === "requested") {
-        functions.logger.info("claimPendingPayouts: skipping doc already requested via SEPA", { userId, groupId });
+
+      // Win the claim token ATOMICALLY before any money moves. The transaction re-reads
+      // the doc, so a concurrent requestGroupPayout flip (or a parallel claim run) and
+      // this claim serialize on the doc — exactly one rail can win it. The snapshot from
+      // the collection read above is never trusted for the claim decision.
+      let priorStatus: string | null = null;
+      try {
+        priorStatus = await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(doc.ref);
+          if (!fresh.exists) return null;
+          const data = fresh.data()!;
+          if (!isLedgerClaimable(data)) return null;
+          tx.update(doc.ref, { status: "transferring", transferringAt: Date.now() });
+          return data["status"] as string;
+        });
+      } catch (e) {
+        functions.logger.error("claimPendingPayouts: claim transaction failed", { userId, groupId, error: e });
+      }
+      if (priorStatus === null) {
+        functions.logger.info("claimPendingPayouts: doc not claimable — skipping", { userId, groupId, status: payout.status });
         skipped += amount;
         continue;
       }
+
+      // Stripe call OUTSIDE the transaction — a transaction retry must never re-fire a
+      // transfer. The call itself (amount, destination, description) is unchanged.
       try {
         await getStripe().transfers.create({
           amount,
@@ -1489,12 +1532,39 @@ export const claimPendingPayouts = functions.runWith({ maxInstances: 10 }).regio
           destination: accountId,
           description: `Detox Group Challenge winnings - ${groupId}`,
         });
-        await doc.ref.delete();
         transferred += amount;
         functions.logger.info(`Transfer sent to ${userId}: ${amount}`);
+        try {
+          await doc.ref.delete();
+        } catch (delErr) {
+          // Money already moved — the doc must NOT stay in a claimable (or TTL-expiring)
+          // state or a later claim would pay twice. Best effort: park it as "transferred"
+          // (non-claimable, keeps the record). If even that fails, the TTL will re-open
+          // the token — logged as the residual double-pay risk.
+          functions.logger.error("claimPendingPayouts: delete after successful transfer failed — parking as 'transferred'", { userId, groupId, error: delErr });
+          try {
+            await doc.ref.update({ status: "transferred", transferredAt: Date.now() });
+          } catch (parkErr) {
+            functions.logger.error("claimPendingPayouts: parking failed — doc stays 'transferring'; TTL will re-open it (POSSIBLE DOUBLE PAY, verify in Stripe)", { userId, groupId, amount, error: parkErr });
+          }
+        }
       } catch (e) {
         functions.logger.error("claimPendingPayouts: transfer failed", { userId, amount, error: e });
         skipped += amount;
+        // Transfer confirmed FAILED (we are in its catch) — release the claim token so the
+        // debt is immediately claimable again by either rail. Reverting to a claimable
+        // status is money-safe because no money moved.
+        try {
+          const revertStatus = priorStatus === "transferring" ? "ready_to_payout" : priorStatus;
+          await doc.ref.update({
+            status: revertStatus,
+            transferringAt: admin.firestore.FieldValue.delete(),
+          });
+        } catch (revertErr) {
+          // Doc stays "transferring" — NOT stranded: isLedgerClaimable re-opens it after
+          // CLAIM_TTL_MS, and retrying then is safe because this transfer failed.
+          functions.logger.error("claimPendingPayouts: revert failed — doc stays 'transferring'; TTL will re-open it", { userId, groupId, error: revertErr });
+        }
       }
     }
 
@@ -1542,9 +1612,11 @@ export const requestGroupPayout = functions.runWith({ maxInstances: 10 }).region
     }
 
     // Amount source = server-written pendingPayouts ledger. NEVER the request body.
+    // "transferring" is included so this rail can reclaim a STALE Connect claim token
+    // (isLedgerClaimable applies the TTL); fresh tokens are filtered out below.
     const pendingSnap = await db.collection("users").doc(userId).collection("pendingPayouts")
-      .where("status", "in", ["pending_account_setup", "ready_to_payout"]).get();
-    let pendingDocs = pendingSnap.docs;
+      .where("status", "in", ["pending_account_setup", "ready_to_payout", "transferring"]).get();
+    let pendingDocs = pendingSnap.docs.filter((d) => isLedgerClaimable(d.data()));
     if (groupId) pendingDocs = pendingDocs.filter((d) => d.data()["groupId"] === groupId);
 
     if (pendingDocs.length === 0) {
@@ -1560,39 +1632,60 @@ export const requestGroupPayout = functions.runWith({ maxInstances: 10 }).region
         .map((d) => d.data()["groupId"] as string)
     );
 
-    const batch = db.batch();
+    // One transaction PER ledger doc: the claim decision (re-read + isLedgerClaimable)
+    // and its consumption (flip to "requested" + create the payoutRequests doc) commit
+    // atomically, so a concurrent claimPendingPayouts run serializes on the doc and
+    // exactly one rail wins it. Per-doc (not one shared batch) also means one dead doc
+    // can no longer abort other groups' legitimate requests.
     let requestedCount = 0;
     let requestedTotal = 0;
     for (const pd of pendingDocs) {
-      const pdData = pd.data();
-      const gId = pdData["groupId"] as string;
+      const gId = pd.data()["groupId"] as string;
       if (liveRequestGroupIds.has(gId)) continue;
-      const amountCents = pdData["amount"] as number;
-
-      const reqRef = db.collection("payoutRequests").doc();
-      batch.set(reqRef, {
-        userId,
-        displayName,
-        payoutName,
-        iban,
-        amountCents,
-        groupId: gId,
-        status: "pending",
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      // Mark the ledger entry as consumed by the manual SEPA rail (claimPendingPayouts skips it).
-      batch.update(pd.ref, { status: "requested" });
-      requestedCount += 1;
-      requestedTotal += amountCents;
+      try {
+        const filedCents = await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(pd.ref);
+          if (!fresh.exists) return 0;
+          const data = fresh.data()!;
+          if (!isLedgerClaimable(data)) return 0;
+          const amountCents = data["amount"] as number;
+          const reqRef = db.collection("payoutRequests").doc();
+          tx.set(reqRef, {
+            userId,
+            displayName,
+            payoutName,
+            iban,
+            amountCents,
+            groupId: gId,
+            status: "pending",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          // Mark the ledger entry as consumed by the manual SEPA rail.
+          tx.update(pd.ref, {
+            status: "requested",
+            transferringAt: admin.firestore.FieldValue.delete(),
+          });
+          return amountCents;
+        });
+        if (filedCents > 0) {
+          requestedCount += 1;
+          requestedTotal += filedCents;
+        } else {
+          functions.logger.info("requestGroupPayout: doc no longer claimable — skipped", { userId, groupId: gId });
+        }
+      } catch (e) {
+        // This group's request failed; the ledger doc is untouched (transaction aborted)
+        // and stays claimable. Other groups continue.
+        functions.logger.error("requestGroupPayout: transaction failed for group", { userId, groupId: gId, error: e });
+      }
     }
 
     if (requestedCount === 0) {
-      // Everything eligible was already requested — idempotent success, nothing new filed.
+      // Everything eligible was already requested/claimed — idempotent success, nothing new filed.
       res.json({ requested: 0, amountCents: 0, alreadyRequested: true });
       return;
     }
 
-    await batch.commit();
     functions.logger.info("requestGroupPayout: filed manual payout request(s)", { userId, requestedCount, requestedTotal });
     res.json({ requested: requestedCount, amountCents: requestedTotal });
   } catch (e) { handleError("requestGroupPayout", e, res); }

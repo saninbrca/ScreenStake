@@ -1242,23 +1242,35 @@ export const leaveGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
     await getStripe().paymentIntents.cancel(paymentIntentId);
     functions.logger.info("leaveGroupChallenge: PI cancelled", { groupId, userId: verifiedUserId });
 
-    // 8. Only after Stripe cancel → update Firestore
-    const remainingParticipants = participants.filter((p) => p.userId !== verifiedUserId);
-    const newStatus = remainingParticipants.length < 2 ? "cancelled" : (gc["status"] as string);
-
-    const updateData: Record<string, unknown> = {
-      participants: remainingParticipants,
-      participantUserIds: admin.firestore.FieldValue.arrayRemove(verifiedUserId),
-    };
-    if (newStatus === "cancelled") {
-      updateData["status"] = "cancelled";
-    }
-    await docRef.update(updateData);
+    // 8. Only after Stripe cancel → transactional removal from the FRESH array.
+    // The old in-memory filter + full-array write erased anything that landed on
+    // the doc during the Stripe calls (worst case a confirmGroupJoin arrayUnion —
+    // a paid participant silently dropped), and decided the <2 → cancelled flip
+    // from a stale count. participantUserIds keeps arrayRemove (string array,
+    // invariant #21); the map-entry removal happens as a filter of the fresh read.
+    const newStatus = await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(docRef);
+      if (!fresh.exists) return "missing";
+      const data = fresh.data()!;
+      if (data["status"] !== "waiting") {
+        // A concurrent cancel/delete/expire terminalized the doc — the leaver's
+        // hold is released either way; keep the terminalizer's record untouched.
+        return data["status"] as string;
+      }
+      const freshParticipants = parseParticipants<Participant>(data["participants"]);
+      const remaining = freshParticipants.filter((p) => p.userId !== verifiedUserId);
+      const update: Record<string, unknown> = {
+        participants: remaining,
+        participantUserIds: admin.firestore.FieldValue.arrayRemove(verifiedUserId),
+      };
+      if (remaining.length < 2) update["status"] = "cancelled";
+      tx.update(docRef, update);
+      return remaining.length < 2 ? "cancelled" : "waiting";
+    });
 
     functions.logger.info("leaveGroupChallenge: participant removed", {
       groupId,
       userId: verifiedUserId,
-      remaining: remainingParticipants.length,
       newStatus,
     });
 

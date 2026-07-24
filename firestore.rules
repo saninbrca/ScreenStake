@@ -155,6 +155,8 @@ service cloud.firestore {
       // Doc creation is CF-only too (createGroupChallenge, Admin SDK): no client
       // path legitimately creates a group challenge document.
       allow create: if false;
+      // 'startLockAt' is the startGroupChallenge join fence (15-min TTL) — CF-only,
+      // or a client could stamp it to block joins / clear it mid-capture.
       allow update: if request.auth != null
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny([
@@ -162,7 +164,7 @@ service cloud.firestore {
             'prizePool', 'appFee', 'prizePerWinner', 'nobodyFailed',
             'authorizationExpiresAt', 'payoutIncomplete', 'payoutFailedUserIds',
             'participants', 'participantUserIds', 'maxParticipants',
-            'buyInCents', 'creatorUserId', 'code'
+            'buyInCents', 'creatorUserId', 'code', 'startLockAt'
           ]);
       allow delete: if false;
 
@@ -198,6 +200,15 @@ service cloud.firestore {
           && (!('timeUsedMinutes' in request.resource.data)
               || (request.resource.data.timeUsedMinutes is int && request.resource.data.timeUsedMinutes >= 0));
         allow delete: if false;
+      }
+
+      // Join reservations — the reserve-then-pay slot protocol (joinGroupChallenge /
+      // confirmGroupJoin / sweepStaleJoinReservations, all Admin SDK). A reservation
+      // carries the PaymentIntent id of an unconverted hold; a client write could
+      // block slots or orphan/steal a hold record. Default-deny would already apply
+      // (no match block = no access) — this is explicit documentation of intent.
+      match /joinReservations/{reservationUserId} {
+        allow read, write: if false;
       }
     }
 

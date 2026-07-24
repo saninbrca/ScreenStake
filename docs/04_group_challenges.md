@@ -127,17 +127,23 @@ App looks up groupChallenges where code == input
 Calls joinGroupChallenge Cloud Function
     {groupId, userId, displayName}
     ↓
-Cloud Function:
-    1. Validate: status == "waiting", participants < maxParticipants
+Cloud Function (reserve-then-pay, 2026-07-24):
+    1. TRANSACTION: validate status == "waiting", no fresh startLockAt, dedupe,
+       capacity = participants + live reservations of others < maxParticipants
+       → write groupChallenges/{groupId}/joinReservations/{userId}
+         {userId, displayName, reservedAt, expiresAt (+15 min), paymentIntentId: null}
     2. Create Stripe PaymentIntent (manual capture, amount = buyInCents)
-    3. Return clientSecret
+    3. Record the PI id on the reservation (fails → PI cancelled, join fails — money-safe)
+    4. Return clientSecret
     ↓
 Android: Stripe Payment Sheet → user pays
     ↓
 Calls confirmGroupJoin Cloud Function
     {groupId, userId, paymentIntentId}
     ↓
-Cloud Function: adds participant to participants array in Firestore
+Cloud Function: TRANSACTION converts reservation → participants array entry
+    (rejection AFTER authorization → PI cancelled FIRST, then
+     {error, code: join_rejected_full|started|expired, holdReleased} returned)
     ↓
 Participant appears in leaderboard in real-time
 ```
@@ -167,12 +173,32 @@ PaymentSheetResult.Failed:
 ```
 
 **confirmGroupJoin Cloud Function:**
-- Validates payment
-- Adds participant to `participants` array AND `participantUserIds`
+- Validates payment (PI ownership metadata + status), then a `runTransaction` converts the
+  join reservation into a participant: `arrayUnion` on `participants` AND `participantUserIds`
+  + delete of the reservation doc, atomically. Converts ONLY a live reservation (doc present,
+  no fresh `sweepingAt`); an expired-but-present reservation still converts if capacity allows.
 - Reads an optional `deviceId` (ANDROID_ID) from the body and stores it on the participant object
   for anti-cheat shared-device detection (`GroupChallengeJoinViewModel` passes it). See `docs/10`.
 - Returns `{success: true}` or `{success: true, alreadyJoined: true}`
+- **Post-authorization rejection releases the hold:** if the challenge started/cancelled, filled,
+  or the reservation is gone, the CF cancels the PI FIRST (best-effort, Stripe-before-Firestore;
+  the reservation doc is deleted only after a CONFIRMED release), then responds
+  `{error, code: "join_rejected_started"|"join_rejected_full"|"join_rejected_expired", holdReleased}`.
+  The client maps the code to localized "hold released — no money taken" copy, terminal (no retry).
 - Uses `onRequest` pattern (never `onCall`)
+
+**Join-integrity machinery (2026-07-24):**
+- **`joinReservations` sub-collection is CF-only** (explicit `allow read, write: if false`).
+- **`sweepStaleJoinReservations`** (hourly `pubsub.schedule`): collection-group query on
+  `expiresAt < now` (needs the `joinReservations.expiresAt` COLLECTION_GROUP index in
+  `firestore.indexes.json`), claims each doc with a transactional `sweepingAt` stamp
+  (claimPendingPayouts pattern, same 15-min TTL), cancels the PI, deletes the doc only after a
+  confirmed release. A dead sweep never blocks joins — capacity counting ignores expired
+  reservations; worst case a hold lives until Stripe's ~7-day auto-expiry.
+- **`startLockAt`** (group doc, CF-only): `startGroupChallenge` transactionally stamps it and
+  takes its participant snapshot from the SAME read before the capture pre-flight; both join CFs
+  reject while the stamp is fresh (15-min TTL). Cleared on every start exit path; a stranded lock
+  only ever blocks JOINING for the TTL — never start (creator retry re-stamps), leave, or settle.
 
 ---
 

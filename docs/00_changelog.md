@@ -21,6 +21,45 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-24 — Group join integrity: reserve-then-pay protocol (INVARIANT #27)
+
+Phase 2 of the group money hardening. Two coupled defects: (1) a join rejected AFTER the
+PaymentIntent was authorized (412/429 from `confirmGroupJoin`) never cancelled the PI — the hold
+sat on the card until Stripe's ~7-day expiry, and no cleanup path covered it because the user was
+never in `participants`; (2) the capacity check was get→update with no transaction, so N
+concurrent joiners at the boundary all passed and the cap was exceeded — routine at small caps.
+
+**DECISION — reserve-then-pay (both fixes in one protocol):**
+- `joinGroupChallenge`: transactional slot reservation
+  (`groupChallenges/{groupId}/joinReservations/{userId}`, deterministic id, 15-min `expiresAt`)
+  BEFORE the PI exists — capacity counts participants + live reservations, so routine rejections
+  (full/started) happen while no money exists. The PI id is recorded on the reservation (the first
+  server-side record of the PI); if it can't be recorded, the PI is cancelled and the join fails.
+- `confirmGroupJoin`: `runTransaction` converts a live reservation → participant (`arrayUnion`
+  unchanged) + deletes the reservation atomically. Definitive post-authorization rejections
+  (started/full/reservation-expired) cancel the PI FIRST, then return
+  `{error, code: join_rejected_*, holdReleased}`; the reservation doc is deleted only after a
+  CONFIRMED release (it is the sweep's record of the hold otherwise).
+- `sweepStaleJoinReservations` (hourly): claims expired reservations with a transactional
+  `sweepingAt` stamp (the `claimPendingPayouts` pattern, same 15-min TTL — sweep and convert
+  serialize on the doc), cancels the PI, deletes only after confirmed release. Also covers holds
+  abandoned mid-PaymentSheet (app killed), which previously NO path cleaned up. FAIL-SAFE: capacity
+  ignores expired reservations, so a dead sweep never blocks joins. Requires the
+  `joinReservations.expiresAt` COLLECTION_GROUP index (`firestore.indexes.json`).
+- `startGroupChallenge`: transactionally stamps `startLockAt` and takes its participant snapshot
+  from the SAME read before the capture pre-flight (closes the joiner-lands-mid-start race → no
+  active participant with an uncaptured PI); both join CFs reject while the stamp is fresh.
+  Cleared on all exit paths; a stranded lock blocks ONLY joining, for at most 15 min (creator
+  retry re-stamps; leave/settle never read it). Capture loop untouched.
+- Client: `CloudFunctionsService` parses the new `code` field → `CloudFunctionException`;
+  `GroupChallengeJoinViewModel` shows `join_rejected_*` as TERMINAL errors (no retry button,
+  payment state cleared) with EN/DE copy stating the hold was released and no money was taken.
+- Rules: `joinReservations` explicitly CF-only; `startLockAt` added to the group-doc
+  Cloud-Function-only field list. **Not live until rules + indexes + functions are deployed.**
+
+Untouched by design: payout math, settlement, and the whole-array `participants` overwrites in
+cancel/expire/leave (next step).
+
 ### 2026-07-24 — App picker: dynamic alarm/clock role + enforcement-time critical-package guard
 
 Two gaps found in a read-only audit of the rebuilt app picker.

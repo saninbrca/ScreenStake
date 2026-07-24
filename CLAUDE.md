@@ -33,6 +33,7 @@
 7. **Loss = retain the doc:** `updateChallengeStatus(FAILED, reason)` → `markChallengeFailed` CF writes `status`/`failReason`/`failedAt` in place (Admin SDK; client can't write `status`); `dailyLogs` preserved; never writes `payoutStatus` or touches Stripe. Room `failReason` is UX-only. (`docs/firestore-schema.md`, `docs/03`)
 8. **Went-dark = forfeit:** `lastSeenAt` heartbeat; reconciliation forfeits as `device_dark`; FAIL-SAFE — missing/invalid grace ⇒ `MAX_SAFE_INTEGER` ⇒ never forfeit; triple-gated. (`docs/03`, `docs/13`)
 9. **Payout fee math uses `Math.floor`** — never round up. (`docs/09`)
+27. **Group join = reserve-then-pay:** PI created only AFTER the transactional `joinReservations` slot reservation records it; every post-authorization join rejection cancels the PI before responding; the sweep cancels Stripe first, deletes the doc after; `startLockAt` blocks ONLY joining, TTL-bounded. (`docs/04`)
 
 **Data integrity & anti-cheat**
 10. **dailyLogs tamper-evidence:** `limitExceeded` never true→false; deletes CF-only (`allow delete: if false`). (`docs/10`)

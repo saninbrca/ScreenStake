@@ -256,7 +256,12 @@ class GroupChallengeDetailViewModel @Inject constructor(
                     val userId = firebaseAuthService.currentUserId()
                     if (currentGc != null && userId != null) {
                         val startDate = System.currentTimeMillis()
-                        val endDate = startDate + currentGc.durationDays.toLong() * DateUtils.MILLIS_PER_DAY
+                        // Invariant #18: endDate is 23:59:59.999 of the LAST day, never
+                        // now + N×86400000. Must match what startGroupChallenge just wrote
+                        // server-side (endOfDayMillis) — the raw-millis form put the local
+                        // mirror up to ~14 h past the server's value, so DailyEvaluationWorker
+                        // could skip a settlement trigger until the next snapshot healed it.
+                        val endDate = DateUtils.endOfDayMillis(startDate, currentGc.durationDays)
                         val activeGc = currentGc.copy(
                             status = GroupChallengeStatus.ACTIVE,
                             startDate = startDate,

@@ -440,8 +440,12 @@ class GroupChallengeFirestoreService @Inject constructor(
                 else -> System.currentTimeMillis()
             }
             val startDate = (d.get("startDate") as? Number)?.toLong() ?: createdAt
+            val durationDays = (d["durationDays"] as? Long)?.toInt() ?: 7
+            // Invariant #18: end-of-day, never startDate + N×86400000. Only reachable for a
+            // WAITING doc (startGroupChallenge always stamps endDate on activation), but the
+            // raw-millis form must not survive anywhere.
             val endDate = (d.get("endDate") as? Number)?.toLong()
-                ?: (startDate + 7L * DateUtils.MILLIS_PER_DAY)
+                ?: DateUtils.endOfDayMillis(startDate, durationDays)
 
             val now = System.currentTimeMillis()
             val progress = if (endDate > startDate) (now - startDate).toFloat() / (endDate - startDate).toFloat() else 0f
@@ -461,7 +465,7 @@ class GroupChallengeFirestoreService @Inject constructor(
                 limitValueMinutes = (d["limitValueMinutes"] as? Long)?.toInt() ?: 60,
                 limitValueSessions = (d["limitValueSessions"] as? Long)?.toInt(),
                 sessionDurationMinutes = (d["sessionDurationMinutes"] as? Long)?.toInt() ?: 5,
-                durationDays = (d["durationDays"] as? Long)?.toInt() ?: 7,
+                durationDays = durationDays,
                 buyInCents = (d["buyInCents"] as? Long)?.toInt() ?: 500,
                 // Deliberate fail-safe fallback, NOT the creation default (that is
                 // GroupParticipantLimits.DEFAULT = 20, chosen by the creator on step 4). It only

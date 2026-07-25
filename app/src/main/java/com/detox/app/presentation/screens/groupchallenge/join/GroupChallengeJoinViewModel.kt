@@ -11,6 +11,8 @@ import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.PaymentIntentData
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.usecase.JoinGroupChallengeUseCase
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -179,6 +181,9 @@ class GroupChallengeJoinViewModel @Inject constructor(
                 onSuccess = {
                     Timber.d("GroupJoinVM: join confirmed — groupId=%s", awaiting.groupId)
                     joinGroupChallengeUseCase.refreshCacheAfterJoin(awaiting.groupId)
+                    // Legal: persist the FAGG § 18 withdrawal-rights waiver the joiner ticked
+                    // before paying — same point in the flow as the creator's.
+                    logWithdrawalWaiver(awaiting.groupId)
                     lastAwaitingPayment = null
                     _uiState.value = GroupJoinUiState.JoinedSuccessfully(awaiting.groupId)
                 },
@@ -206,6 +211,7 @@ class GroupChallengeJoinViewModel @Inject constructor(
                             // Idempotency: user already added — treat as success
                             Timber.d("GroupJoinVM: 'already joined' → success groupId=%s", awaiting.groupId)
                             joinGroupChallengeUseCase.refreshCacheAfterJoin(awaiting.groupId)
+                            logWithdrawalWaiver(awaiting.groupId)
                             lastAwaitingPayment = null
                             _uiState.value = GroupJoinUiState.JoinedSuccessfully(awaiting.groupId)
                         }
@@ -252,5 +258,43 @@ class GroupChallengeJoinViewModel @Inject constructor(
         } else {
             _uiState.value = GroupJoinUiState.Idle
         }
+    }
+
+    /**
+     * "Change" on the collapsed code row — drops the resolved preview and returns to code
+     * entry. The screen only offers this in [GroupJoinUiState.Preview]; once a hold exists
+     * there is money in flight and the code is no longer the user's to change.
+     */
+    fun resetToCodeEntry() {
+        if (lastAwaitingPayment != null) return
+        _codeInput.value = ""
+        _uiState.value = GroupJoinUiState.Idle
+    }
+
+    /**
+     * Stores the joiner's explicit FAGG § 18 withdrawal-rights waiver consent.
+     *
+     * The creator's copy goes on the group document because the creator owns it; a joiner
+     * does not. The precedent that actually generalises is Solo's
+     * (`users/{uid}/challenges/{challengeId}`): the consent lives on a document the
+     * consenting user owns and only they can write. So the joiner's lands on their own user
+     * doc, keyed by group, as `groupWithdrawalWaivers.{groupId} = <ms>`.
+     *
+     * Deliberately NOT the group doc: its `withdrawalWaiverAccepted` is the CREATOR's single
+     * flag, and a joiner writing it would masquerade as the creator's consent. Deliberately
+     * NOT the participants array either — that is Cloud-Function-only (invariant #28), and
+     * routing consent through it would mean changing the join CFs.
+     *
+     * Fire-and-forget merge, mirroring both existing waiver writes. Nested-map merge, so
+     * one joiner's entry never clobbers another group's.
+     */
+    private fun logWithdrawalWaiver(groupId: String) {
+        val uid = firebaseAuthService.currentUserId() ?: return
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .set(
+                mapOf("groupWithdrawalWaivers" to mapOf(groupId to System.currentTimeMillis())),
+                SetOptions.merge(),
+            )
     }
 }

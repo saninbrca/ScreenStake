@@ -710,7 +710,6 @@
     <string name="group_create_summary_limit">Daily Limit</string>
     <string name="group_create_summary_duration">Duration</string>
     <string name="group_create_summary_buy_in">Buy-In Per Player</string>
-    <string name="join_group_entry_fee">Entry fee: €%1$d</string>
     <string name="group_create_summary_max_players">Max Players</string>
     <string name="group_create_share_button">Create &amp; Share Code</string>
     <string name="group_create_done_button">Done — Go to Friends</string>
@@ -719,27 +718,30 @@
 
     <!-- Group Challenge — Join flow -->
     <string name="join_group_title">Join challenge</string>
+    <string name="join_group_heading">Join a challenge</string>
     <string name="join_group_subtitle">Enter the 6-character code the creator shared with you.</string>
     <string name="join_group_code_label">Challenge code</string>
     <string name="join_group_lookup">Look up</string>
-    <string name="join_group_pay_button">Pay €%1$d &amp; Join</string>
     <string name="join_group_join_and_pay">Join now — pay €%1$d</string>
     <string name="join_group_confirming">Confirming your join…</string>
     <string name="join_group_retry">Error — try again</string>
-    <string name="join_group_joined_success">You\'ve joined the challenge! 🎉</string>
     <string name="join_group_payment_cancelled">Payment cancelled</string>
     <string name="join_group_payment_failed">Payment failed. Please try again.</string>
     <string name="group_create_payment_cancelled">Payment cancelled</string>
     <string name="group_create_payment_failed">Payment failed. Please try again.</string>
-    <string name="join_group_buy_in">€%1$d stake</string>
-    <string name="join_group_duration">%1$d days</string>
-    <string name="join_group_participants">%1$d/%2$d participants</string>
     <string name="join_group_creator">Created by %1$s</string>
-    <string name="join_group_start_manual">Started manually by the creator</string>
-    <string name="join_group_limit_sessions">Max %1$d opens per day</string>
-    <string name="join_group_limit_time">Max %1$d min per day</string>
-    <string name="join_group_limit_budget">Budget: %1$d min per day</string>
     <string name="join_group_limit_time_window">Time window restriction</string>
+    <!-- Join preview — the joiner sees the same summary the creator confirmed, so the
+         labels/formats are the shared wizard_review_* ones. Only the rows with no wizard
+         counterpart are defined here. -->
+    <string name="join_group_commit_title">What you\'re agreeing to</string>
+    <string name="join_group_code_entered">Code %1$s</string>
+    <string name="join_group_change_code">Change</string>
+    <string name="join_group_starts_label">Starts</string>
+    <string name="join_group_starts_manual">When the creator starts it</string>
+    <string name="join_group_players_label">Players</string>
+    <string name="join_group_players_value">%1$d of %2$d</string>
+    <string name="join_group_auth_deadline">If the challenge hasn\'t started by %1$s, the hold on your card is released and you are charged nothing.</string>
 
     <!-- Group Challenge — Detail / Leaderboard -->
     <string name="group_detail_title">Group Challenge</string>
@@ -1476,9 +1478,9 @@
     <string name="abrechnung_not_passed">Challenge not passed</string>
 
     <!-- Group Challenge Authorization Window -->
-    <string name="group_auth_days_remaining">⏳ %d days left to start</string>
-    <string name="group_auth_expires_tomorrow">⏳ Expires tomorrow!</string>
-    <string name="group_auth_expired">🔴 Expired</string>
+    <string name="group_auth_days_remaining">%1$d days left to start</string>
+    <string name="group_auth_expires_tomorrow">Expires tomorrow!</string>
+    <string name="group_auth_expired">Expired</string>
 
     <!-- Start — payment_not_ready dialog -->
     <string name="group_start_payment_not_ready_title">Can\'t start yet</string>

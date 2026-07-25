@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -809,12 +810,25 @@ private fun GroupHeaderCard(
                         else ->
                             Pair(stringResource(R.string.group_auth_days_remaining, daysLeft), detoxColors.subtext)
                     }
-                    Text(
-                        text = countdownText,
-                        fontSize = 13.sp,
-                        color = countdownColor,
-                        modifier = androidx.compose.ui.Modifier.padding(top = 4.dp)
-                    )
+                    // Icon, not the ⏳/🔴 the strings used to carry — emoji are not our
+                    // icon system, and the string is now shared with the join screen.
+                    Row(
+                        modifier = Modifier.padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.HourglassTop,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = countdownColor,
+                        )
+                        Text(
+                            text = countdownText,
+                            fontSize = 13.sp,
+                            color = countdownColor,
+                        )
+                    }
                 }
 
                 if (gc.creatorUserId == currentUserId) {

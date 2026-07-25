@@ -1343,12 +1343,18 @@
     <string name="group_detail_waiting_badge">⏳ WAITING</string>
     <string name="group_detail_remaining_days">%1$d days left</string>
     <string name="group_detail_duration_label">%1$d day challenge</string>
-    <string name="group_detail_gesamtpot_label">Total pot</string>
+    <!-- Live header stats. These replaced "Total pot" (which summed EVERY stake — but the pot is
+         only what dropouts left behind) and "Your winnings" (which showed the user's own stake
+         coming back, i.e. a refund). Both are derived from completeGroupChallenge's maths and
+         must keep naming the base they are relative to — that is what group_detail_stats_basis
+         below is for. Money values render via formatEuroCents, never cents/100: the post-fee
+         figures are rarely round and integer division silently under-reports them. -->
+    <string name="group_detail_to_split_label">To split</string>
     <string name="group_detail_teilnehmer_label">Participants</string>
-    <string name="group_detail_gewinn_label">Your winnings</string>
-    <string name="group_detail_pot_val" translatable="false">€%1$d</string>
+    <string name="group_detail_my_share_label">Your share</string>
     <string name="group_detail_participants_val" translatable="false">%1$d/%2$d</string>
-    <string name="group_detail_gewinn_val" translatable="false">€%1$d</string>
+    <string name="group_detail_stats_basis">As it stands — the pot only grows when someone drops out.</string>
+    <string name="group_detail_stats_basis_failed">You\'re out — your stake is lost.</string>
     <string name="group_detail_leaderboard_section">LEADERBOARD</string>
     <string name="group_detail_session_section">Your session today</string>
     <string name="group_detail_verbraucht_label">Used</string>

@@ -1312,9 +1312,13 @@
     <string name="group_detail_waiting_badge">⏳ WARTET</string>
     <string name="group_detail_remaining_days">Noch %1$d Tage</string>
     <string name="group_detail_duration_label">%1$d Tage Challenge</string>
-    <string name="group_detail_gesamtpot_label">Gesamtpot</string>
+    <!-- Ersetzt "Gesamtpot" (summierte ALLE Einsätze) und "Dein Gewinn" (der eigene Einsatz
+         zurück = Rückzahlung, kein Gewinn). Siehe values/strings.xml. -->
+    <string name="group_detail_to_split_label">Zu verteilen</string>
     <string name="group_detail_teilnehmer_label">Teilnehmer</string>
-    <string name="group_detail_gewinn_label">Dein Gewinn</string>
+    <string name="group_detail_my_share_label">Dein Anteil</string>
+    <string name="group_detail_stats_basis">Stand jetzt — der Pot wächst nur, wenn jemand ausscheidet.</string>
+    <string name="group_detail_stats_basis_failed">Du bist ausgeschieden — dein Einsatz ist verloren.</string>
     <string name="group_detail_leaderboard_section">LEADERBOARD</string>
     <string name="group_detail_session_section">Deine Session heute</string>
     <string name="group_detail_verbraucht_label">Verbraucht</string>

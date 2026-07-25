@@ -91,6 +91,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.floor
 import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -463,6 +464,7 @@ private fun GroupDetailContent(
                 endDateValid = endDateValid,
                 dateFmt = dateFmt,
                 isStarting = isStarting,
+                isCurrentUserFailed = isCurrentUserFailed,
                 isDeleting = isDeleting,
                 onStartChallenge = onStartChallenge,
                 onDelete = { showDeleteDialog = true },
@@ -655,6 +657,8 @@ private fun GroupHeaderCard(
     endDateValid: Boolean,
     dateFmt: SimpleDateFormat,
     isStarting: Boolean,
+    /** Drives the give-up branch of the stats row — an eliminated participant's share is 0. */
+    isCurrentUserFailed: Boolean,
     isDeleting: Boolean,
     onStartChallenge: () -> Unit,
     onDelete: () -> Unit,
@@ -711,23 +715,42 @@ private fun GroupHeaderCard(
             if (gc.status == GroupChallengeStatus.ACTIVE) {
                 HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
 
-                val totalPotCents = gc.participants.sumOf { it.amountCents }
+                // Mirrors `completeGroupChallenge` (functions/src/index.ts) — the same maths
+                // `maxPossibleWinCents` mirrors for the wizard's ceiling, but evaluated against the
+                // CURRENT standings instead of a full lobby of failures:
+                //   distributable = failedPot − floor(failedPot × 0.10)
+                //   winner        = floor(ownStake × 0.80) + distributable / winners
+                //   nobody failed = the `nobodyFailed` branch returns 100% of every stake
+                //   failed        = 0
+                // DISPLAY ONLY — nothing here settles anything and no Stripe/payout path reads it.
+                //
+                // This row used to show `sumOf { amountCents }` as "Gesamtpot" (every stake — but
+                // the pot is only what dropouts left behind, so with nobody failed it is €0, not
+                // the sum) and the raw buy-in as "Dein Gewinn" (the user's own stake coming back,
+                // which is a refund, not winnings). Both restated the stake and read as upside.
                 val activeCount = gc.participants.count { it.status == ParticipantStatus.ACTIVE }
-                val failedCents = gc.participants
+                val myStake = gc.participants.find { it.userId == currentUserId }
+                    ?.amountCents?.takeIf { it > 0 } ?: gc.buyInCents
+                val failedPotCents = gc.participants
                     .filter { it.status == ParticipantStatus.FAILED }
                     .sumOf { it.amountCents }
-                val prizePool = (failedCents * 0.9).toLong()
-                val myGewinnCents = if (failedCents > 0 && activeCount > 0) {
-                    (gc.buyInCents * 0.8).toLong() + prizePool / activeCount
-                } else gc.buyInCents.toLong()
+                val distributableCents = failedPotCents - floor(failedPotCents * 0.10).toInt()
+                // Settlement order: out first, then the nobody-failed branch, then the split.
+                val myShareCents = when {
+                    isCurrentUserFailed -> 0
+                    failedPotCents == 0 -> myStake
+                    activeCount > 0 ->
+                        floor(myStake * 0.80).toInt() + distributableCents / activeCount
+                    else -> 0
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     GroupStatColumn(
-                        label = stringResource(R.string.group_detail_gesamtpot_label),
-                        value = stringResource(R.string.group_detail_pot_val, totalPotCents / 100),
+                        label = stringResource(R.string.group_detail_to_split_label),
+                        value = formatEuroCents(distributableCents),
                         modifier = Modifier.weight(1f)
                     )
                     Box(
@@ -751,12 +774,26 @@ private fun GroupHeaderCard(
                             .background(detoxColors.divider)
                     )
                     GroupStatColumn(
-                        label = stringResource(R.string.group_detail_gewinn_label),
-                        value = stringResource(R.string.group_detail_gewinn_val, myGewinnCents / 100),
-                        valueColor = detoxColors.accent,
+                        label = stringResource(R.string.group_detail_my_share_label),
+                        value = formatEuroCents(myShareCents),
+                        // €0 in the green accent still reads as a win — an eliminated
+                        // participant's figure must not be dressed as one.
+                        valueColor = if (isCurrentUserFailed) detoxColors.subtext
+                            else detoxColors.accent,
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                // Names the base the figures are relative to, the way the wizard's "Bis zu"
+                // names its ceiling — without it "Zu verteilen €0,00" invites the wrong question.
+                Text(
+                    text = stringResource(
+                        if (isCurrentUserFailed) R.string.group_detail_stats_basis_failed
+                        else R.string.group_detail_stats_basis
+                    ),
+                    fontSize = 12.sp,
+                    color = detoxColors.subtext,
+                )
             }
 
             // WAITING: join code + share + player count + start button

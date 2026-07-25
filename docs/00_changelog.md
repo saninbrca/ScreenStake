@@ -21,6 +21,58 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-25 — Group Phase 5.1: join screen redesign
+
+No join Cloud Function, payout math or Stripe call touched. No Room migration, no rules
+change, no CF change.
+
+**FIXED — the join screen was the last group surface on raw Material 3.** Scaffold with an
+unthemed `TopAppBar`, `Card(surfaceVariant)` at 2dp elevation (the theme sets
+`surfaceTint = Transparent` precisely to kill tonal overlays), M3 typography and
+`colorScheme` roles throughout, and emoji standing in for icons (📋 ⏱ 👥 👤 🚀). Rebuilt on
+`detoxColors` + the existing public `DetoxCard`, with the top bar matching
+`GroupChallengeDetailScreen`. `WizardHeader` is deliberately NOT used — it is step-based and
+join is not a wizard.
+
+**FIXED — the preview under-reported what the joiner was paying for.** Verified against the
+parsed model, all five gaps were real: `blockedDomains` and `blockAdultContent` were never
+read (a websites-only group rendered a generic apps icon and no rules at all); the start row
+was hardcoded to "started manually by the creator" even when `startDate` carried a scheduled
+ms; `authorizationExpiresAt` was never shown; the max win was never shown; and SESSIONS
+dropped `sessionDurationMinutes`, so the creator confirmed "3x opens · 30 min" while the
+joiner saw only the open count. All now shown, plus the 80/20 own-stake breakdown via
+`WizardFeeBreakdownCard` and the pot figure via `maxPossibleWinCents`.
+
+**DECISION — the joiner's summary IS the creator's review step.** The rows are the wizard's
+`WizardSummaryDividerRow` with the shared `wizard_review_*` labels and formats, so both
+sides of a group challenge describe it identically and a change to one cannot drift from the
+other. Two states, and the second replaces the first: once a code resolves the entry form
+collapses to a "Code ABC123 / change" row, and "change" is offered only in `Preview` — once a
+hold exists the code is not the user's to change.
+
+**FIXED — the joiner had no FAGG § 18 withdrawal waiver.** The creator must tick
+`WizardWaiverCheckboxRow` before their button enables and their consent is recorded; the
+joiner paid with neither. Same component, same gate, directly above the pay button.
+(Landed inside the redesign commit rather than its own — the commit message does not mention
+it.)
+
+**DECISION — the joiner's waiver is stored on their OWN user doc.** New
+`users/{uid}.groupWithdrawalWaivers.{groupId} = <ms>`, the same dot-keyed-map shape as the
+existing `pendingPayouts_completed.{groupId}`. NOT the group doc: its
+`withdrawalWaiverAccepted` is the creator's single flag and a joiner writing it would
+masquerade as the creator's consent. NOT the participants array: that is CF-only
+(invariant #28) and routing consent through it would have meant changing the freshly
+hardened join CFs. The generalisable precedent is Solo's — consent lives on a document the
+consenting user owns and only they can write. Costs no rules change (owner update is already
+allowed, and the key is not on the blocked list) and no CF change.
+
+**NOTE — deferred deliberately.** The participant roster is NOT built here (count row only);
+`AvatarCircle`/`DuBadge` get extracted into shared components and `GroupParticipantRow` built
+once in the waiting-room phase, then adopted on the join preview. Three near-identical card
+composables now exist (`DetoxCard` public in ActiveChallengeScreen, `GroupDetoxCard` private
+in the detail screen, the wizard's inline `GCardShape` box) — consolidation is its own pass;
+this change added no fourth copy.
+
 ### 2026-07-25 — Group create wizard: display bugs + winner-bonus removal
 
 Five commits. No payout math, settlement amount or Stripe call touched. No Room migration

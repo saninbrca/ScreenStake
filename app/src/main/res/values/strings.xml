@@ -303,7 +303,7 @@
 
     <!-- 80% usage warning (legacy — kept for reference, superseded by 50/75/90 thresholds) -->
     <string name="notif_usage_80_title">Almost at your limit — %1$s</string>
-    <string name="notif_usage_80_body">You\'ve used 80%% of your daily limit. Stay strong!</string>
+    <string name="notif_usage_80_body" formatted="false">You\'ve used 80% of your daily limit. Stay strong!</string>
 
     <!-- Usage threshold warnings: 50 / 75 / 90 % -->
     <string name="notif_usage_50_title">⚠️ Halfway through your limit for %1$s</string>
@@ -386,7 +386,7 @@
     <string name="challenge_setup_mode_soft_label">Soft Mode</string>
     <string name="challenge_setup_mode_hard_label">Hard Mode</string>
     <string name="challenge_setup_amount_label">Amount at stake: €%1$d</string>
-    <string name="challenge_setup_hard_warning">Real money will be charged if you break your limit. 50%% goes to charity.</string>
+    <string name="challenge_setup_hard_warning" formatted="false">Real money will be charged if you break your limit. 50% goes to charity.</string>
     <string name="challenge_setup_processing_payment">Processing payment…</string>
 
     <!-- Active Challenge Screen -->
@@ -692,7 +692,7 @@
     <string name="group_create_start_date_hint">Pick a date…</string>
     <string name="group_create_bonus_label">Bonus for winner</string>
     <string name="group_create_bonus_info">What is the winner bonus?</string>
-    <string name="group_create_bonus_tooltip">The participant with the best performance (fewest opens / most time saved) receives an extra 10%% of the total pot. The app takes a 5%% fee.</string>
+    <string name="group_create_bonus_tooltip" formatted="false">The participant with the best performance (fewest opens / most time saved) receives an extra 10% of the total pot. The app takes a 5% fee.</string>
     <string name="group_create_next">Next — Review</string>
     <!-- Step 2 — Review -->
     <string name="group_create_code_label">Your Group Code</string>
@@ -1623,7 +1623,7 @@
     <!-- Same as fee_value_format plus the asterisk that points at fee_return_on_success_group_note. -->
     <string name="fee_value_format_footnote" translatable="false">%1$s (%2$d%%)*</string>
     <string name="fee_return_on_success_group_note">*possible prize share</string>
-    <string name="fee_group_no_loser_note">For groups with no losers: 100%% back</string>
+    <string name="fee_group_no_loser_note" formatted="false">For groups with no losers: 100% back</string>
     <string name="withdrawal_waiver_text">I agree that the challenge starts immediately and that I thereby waive my right of withdrawal under § 18 FAGG.</string>
     <string name="uninstall_forfeit_consent_text">If you uninstall or disable the app during an active challenge, you lose your stake.</string>
 
@@ -1646,14 +1646,14 @@
     <string name="group_wizard_start_date_section">Start date</string>
     <string name="group_wizard_start_date_placeholder">Pick a date…</string>
     <string name="group_wizard_bonus_label">Bonus for the winner</string>
-    <string name="group_wizard_bonus_tooltip">The best participant gets an extra 10%% from the pot. The app takes a 5%% fee.</string>
-    <string name="group_wizard_bonus_desc">The participant with the best performance gets an extra 10%% from the pot. The app takes a 5%% fee.</string>
+    <string name="group_wizard_bonus_tooltip" formatted="false">The best participant gets an extra 10% from the pot. The app takes a 5% fee.</string>
+    <string name="group_wizard_bonus_desc" formatted="false">The participant with the best performance gets an extra 10% from the pot. The app takes a 5% fee.</string>
 
     <!-- Group Wizard Step 6 — Review rows -->
     <string name="group_wizard_review_start_label">Start date</string>
     <string name="group_wizard_review_start_manual">Manual start</string>
     <string name="group_wizard_review_bonus_label">Winner bonus</string>
-    <string name="group_wizard_review_bonus_on">Enabled (10%% of the pot)</string>
+    <string name="group_wizard_review_bonus_on" formatted="false">Enabled (10% of the pot)</string>
     <string name="group_wizard_review_bonus_off">Disabled</string>
     <string name="group_wizard_review_max_players_label">Max players</string>
     <string name="group_wizard_review_pot_label">Most you could win</string>
@@ -1693,7 +1693,7 @@
     <string name="verlauf_stats_reduction_label">less time</string>
     <string name="verlauf_failed_ended">Challenge ended on %1$s</string>
     <string name="verlauf_hard_refund">💰 €%1$.2f refunded</string>
-    <string name="verlauf_hard_refund_fee">App fee (20%%) was withheld</string>
+    <string name="verlauf_hard_refund_fee" formatted="false">App fee (20%) was withheld</string>
     <string name="verlauf_hard_captured">💸 €%1$.2f charged</string>
     <string name="verlauf_hard_captured_reason">Challenge not passed</string>
     <string name="verlauf_start_again">Start again</string>

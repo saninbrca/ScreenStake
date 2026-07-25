@@ -58,7 +58,8 @@
     <string name="group_join_code">Beitritts-Code</string>
     <string name="content_description_share_code">Code teilen</string>
     <string name="group_joined_count">👥 %1$d/%2$d Spieler beigetreten%3$s</string>
-    <string name="group_minimum_players"> — mind. 2 zum Starten</string>
+    <!-- Quotes REQUIRED — they preserve the leading space (see values/strings.xml). -->
+    <string name="group_minimum_players">" — mind. 2 zum Starten"</string>
     <string name="group_buy_in_duration">Buy-in: €%1$d · %2$d Tage</string>
     <string name="group_status_live">🟢 LIVE</string>
     <string name="group_status_waiting">⏳ Warten</string>

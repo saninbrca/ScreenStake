@@ -68,7 +68,10 @@
     <string name="group_join_code">Join code</string>
     <string name="content_description_share_code">Share code</string>
     <string name="group_joined_count">👥 %1$d/%2$d players joined%3$s</string>
-    <string name="group_minimum_players"> — at least 2 to start</string>
+    <!-- Appended as %3$s of group_joined_count, so it carries its own leading space. The quotes
+         are REQUIRED: without them AAPT strips leading whitespace and the line renders as
+         "1/3 players joined— at least 2 to start". Do not remove them. -->
+    <string name="group_minimum_players">" — at least 2 to start"</string>
     <string name="group_buy_in_duration">Buy-in: €%1$d · %2$d days</string>
     <string name="group_status_live">🟢 LIVE</string>
     <string name="group_status_waiting">⏳ Waiting</string>

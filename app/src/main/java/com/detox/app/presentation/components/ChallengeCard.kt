@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -208,19 +209,28 @@ fun ChallengeCard(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
+                    // The app name owns a full-width line of its own. It used to share a Row with
+                    // both badges, and a Row measures its UNWEIGHTED children first — so the badges
+                    // took their full intrinsic width and the weighted name got whatever was left.
+                    // With the icon stack plus "SOFT MODE" and "Noch 7 Tage" that remainder is
+                    // ~100dp, which is where "youtu…", "Ta…" and "Booking…." came from. The name
+                    // identifies the card and must win; the badges drop to their own line below,
+                    // where their width no longer competes with it.
+                    AppNameLabel(
+                        packageNames = packageNames,
+                        appDisplayName = dailyStats.appDisplayName,
+                        modifier = Modifier.fillMaxWidth(),
+                        websiteDisplayText = websiteDisplayText
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AppNameLabel(
-                            packageNames = packageNames,
-                            appDisplayName = dailyStats.appDisplayName,
-                            modifier = Modifier.weight(1f),
-                            websiteDisplayText = websiteDisplayText
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
                         ModeBadge(dailyStats = dailyStats)
-                        Spacer(modifier = Modifier.width(4.dp))
                         DaysLeftBadge(
                             daysRemaining = dailyStats.daysRemaining,
                             isOpenEnded = dailyStats.isOpenEnded,

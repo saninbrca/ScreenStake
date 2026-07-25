@@ -333,19 +333,97 @@ payoutRequests/{requestId}/
 
 ```
 groupChallenges/{groupId}/participants/{uid}     ← stats sub-collection (doc id == uid)
+    ── daily slot (the value FOR the day named by the matching stamp) ──
     opensToday: Int          ← mirrored from DailyLog consciousOpens
     timeUsedMinutes: Int     ← mirrored from DailyLog totalMinutes
-    dateKey: String
+    exceededToday: Bool      ← that day blew the limit (DailyEvaluationWorker)
+    ── day stamps (Long, DateUtils.todayKey()) ──
+    opensDateKey / timeDateKey / exceededDateKey
+    dateKey                  ← legacy SHARED stamp, still written, read as fallback
+    ── cumulative (sum over all days STRICTLY BEFORE the matching stamp) ──
+    totalOpens / totalMinutes / exceededDays: Int
     updatedAt: Long
 ```
 
 - Each user writes ONLY their own doc (`request.auth.uid == participantId`); the rules
-  whitelist exactly these four fields, so the doc can never carry money/identity fields.
+  whitelist exactly these fields, so the doc can never carry money/identity fields.
 - Readers (`GroupChallengeFirestoreService.observeParticipantStats`) merge the sub-collection
   over the parent array's frozen `opensToday`/`timeUsedMinutes` values; on listener errors they
   fall back to the array values instead of closing the flow.
 - Dot notation on array indices (`participants.$index.field`) remains forbidden everywhere
   (invariant #21) — it causes partial snapshots where `participants` becomes a Map.
+
+### THREE independent day stamps — not one
+
+Three separate writers touch this doc: the **opens** path (`OverlayManager`, on a conscious
+"Ja, öffnen"), the **time** path (`UsageTrackingService` polling) and the **exceeded** path
+(`DailyEvaluationWorker`, once on a violation day). They must NEVER share one stamp:
+whichever wrote first on a new day would roll the shared key to today, and the others would
+then see "already today", skip folding their still-pending previous-day value into the
+cumulative total, and **silently drop a day**. Each path owns its own
+`{daily value, cumulative total, day stamp}` triple and rolls only that triple. This is a
+*sequential* bug — locking cannot fix it.
+
+A per-group in-process `Mutex` additionally serialises stat writes so two writes cannot both
+observe a stale stamp and double-fold. That is insurance against double-COUNTING only; it is
+not what makes the three paths independent.
+
+### The cumulative invariant (load-bearing)
+
+> A cumulative field is the sum over all days **strictly before** its day stamp. The daily
+> slot holds the value **for** that stamped day.
+
+Two readings follow, and they differ **deliberately**:
+
+| Question | Formula |
+|---|---|
+| "What is TODAY's value?" | `daily`, gated on the stamp — **0 if stale** |
+| "What is the WHOLE-CHALLENGE total?" | `total + daily`, **ungated** |
+
+The ungated form is what makes the final day of a challenge recoverable forever without an
+end-of-challenge flush — which is precisely why `completeGroupChallenge`, settlement and
+every Stripe path stay **untouched** by the ranking feature. Gating the total would silently
+drop the last day of every finished challenge from the results ranking.
+
+### Reader-side daily reset (invariant #29)
+
+Stat writes are **lazy**: the TIME path skips `totalMs == 0`, SESSIONS only writes on a
+conscious open, and a clean day therefore produces **no write at all**. A stat doc routinely
+survives midnight still carrying yesterday's numbers, so the reset **cannot** be done from
+the write side. `withStats` is the single gate — every one of the ~13 read sites funnels
+through it. Do **not** re-implement the reset at a call site: the Room mirror re-serialises
+these values, so a downstream reader cannot detect staleness on its own (the mirror carries
+a `statsDateKey` inside `participantsJson` for exactly this reason — no column, no migration).
+
+This is not cosmetic. `UsageTrackingService` feeds the value into
+`TrackedAppEventBus.groupSessionInfos`, which `AppDetectionAccessibilityService` consults to
+decide whether the session limit is reached. Before the fix, a SESSIONS participant who hit
+their limit yesterday stayed **blocked from 00:01 on a clean day**.
+
+### Ranking metric — clean days, then total usage (DECISION, 2026-07-25)
+
+`groupRankingComparator` in `domain/model/GroupRanking.kt` is the ONE ordering. Best first:
+
+1. **Fewest exceeded days** (= most clean days; every participant has the same elapsed-day
+   count because joining is fenced at start). Primary axis — it is what the challenge asks.
+2. **Least total usage across the whole challenge** — `totalOpens` for SESSIONS,
+   `totalMinutes` for TIME/TIME_BUDGET. Separates the crowd tied at zero exceeded days.
+3. **Earliest `joinedAt`** — deterministic final tiebreak.
+
+`groupRankingMetricComparator` is steps 1–2 only and decides **ties** (shared rank 1,1,3);
+`joinedAt` orders the list but must never split a *displayed* rank.
+
+All five ranking surfaces sort through this — results podium, detail leaderboard + rank map,
+`OverlayManager.computeGroupRank`, `GetDailyStatsUseCase`, `FriendsHubScreen`. They each used
+to hand-roll their own sort and had drifted apart; keeping the ordering in one place is the
+point. **Do not re-implement it.**
+
+> ⚠️ **These are SELF-REPORTED CLIENT NUMBERS.** Each participant writes only their own stat
+> doc, and one who simply stops writing stops accumulating. Rules enforce monotonicity (a
+> total may rise or stay, never fall) but that is the *only* integrity guarantee. Ranking is
+> **cosmetic and must never gate money**: settlement classifies purely on `status`
+> (failed vs not) in the CF-only parent array and splits the bonus equally among winners.
+> **Never wire a payout to any of these fields.**
 
 ---
 
@@ -414,10 +492,13 @@ users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
 
 ### Target 2 — Participant Stats Sub-collection (Group-specific)
 groupChallenges/{groupId}/participants/{uid}      ← sub-collection DOC, not the array
-    opensToday: Int          ← mirrored from DailyLog consciousOpens
-    timeUsedMinutes: Int     ← mirrored from DailyLog totalMinutes
-    dateKey: String
+    opensToday / timeUsedMinutes / exceededToday   ← daily slot
+    opensDateKey / timeDateKey / exceededDateKey   ← per-path day stamps (+ legacy dateKey)
+    totalOpens / totalMinutes / exceededDays       ← cumulative (excludes the stamped day)
     updatedAt: Long
+
+Full field semantics, the three-stamp rule and the cumulative invariant: see
+"Critical Sync Pattern: opensToday Updates" above.
 
 SYNC RULE: When DailyLog is written → also merge-write the own stats sub-collection doc.
 The participants ARRAY is Cloud-Function-only (see "Participants Array Write Protocol").

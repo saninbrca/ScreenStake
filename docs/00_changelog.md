@@ -21,6 +21,66 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-25 — Group Phase 4: leaderboard & results correctness
+
+Six commits. No payout math, settlement amount, Stripe call, `completeGroupChallenge`,
+`failParticipant` or participants-array write touched. No Room migration (DB stays at 28).
+
+**FIXED — stale `dateKey` served as today's stats (enforcement bug, not cosmetic).**
+The write side had stamped every stat write with `DateUtils.todayKey()` since the stats
+sub-collection landed, but nothing ever *read* the stamp. Writes are lazy — the TIME path
+skips `totalMs == 0`, SESSIONS only writes on a conscious open — so a clean day produced no
+write and the doc kept yesterday's numbers. `UsageTrackingService` fed that into
+`TrackedAppEventBus.groupSessionInfos` → `AppDetectionAccessibilityService`, so a SESSIONS
+participant who hit their limit yesterday was **blocked from 00:01 on a clean day**, and
+`OverlayManager` re-seeded `consciousOpensToday` from the same stale value right after
+`ensureDailyStateFresh()` had cleared it. Fixed at the single merge point (`withStats`),
+covering all ~13 read sites; the Room mirror carries a `statsDateKey` in `participantsJson`
+so it survives a rollover on a cold start. → **invariant #29**
+
+**FIXED — `ParticipantStatus.SUCCESS` was unreachable.** The settlement CF writes
+`status: "completed"`, the enum had no `COMPLETED`, so `valueOf` threw and every settled
+winner parsed back to `ACTIVE`. The winner banner on a completed group challenge never
+rendered; `succeededCount`/`iWon`/`isWinner` were permanently false. Added `COMPLETED` +
+a `hasWon` extension. Money paths compare the raw string against `"FAILED"` and were
+unaffected.
+
+**FIXED — invariant #18 violation in the client.** `startChallenge`'s optimistic Room sync
+recomputed `endDate = startDate + durationDays × MILLIS_PER_DAY` (up to ~14 h later than the
+server's `endOfDayMillis`), and the parse fallback used `startDate + 7 × MILLIS_PER_DAY`.
+Self-healed on the next snapshot and could never settle early (the CF re-derives `endDate`),
+but the forbidden form is gone.
+
+**DECISION — ranking metric: clean days, then total usage, then `joinedAt`.**
+The podium ranked on `opensToday` — one day of a multi-day challenge, and effectively the
+final day since settlement runs after `endDate`. For a TIME challenge it ranked a column of
+zeros (nothing writes `opensToday` there). No whole-challenge measure existed in any
+peer-readable location: `users/{uid}/dailyLogs` is owner-only, Room is per-device and only
+written on violation days. So cumulative counters are now captured *during* the challenge
+(`totalOpens`/`totalMinutes`/`exceededDays`) — there is no back-fill, and challenges already
+in flight cannot be ranked retroactively.
+
+Options weighed: total usage alone (measures avoidance, not discipline); clean days alone
+(right axis, too coarse — most non-quitters tie at 7/7); longest streak (rejected: 6
+consecutive clean days should not beat 6 non-consecutive ones); average daily usage
+(rejected: joining is fenced at start so it is total × a constant). The composite puts
+adherence first and uses magnitude only to break the ties clean-days leaves behind.
+
+**DECISION — cumulative excludes the current day.** This is what makes the final day
+recoverable via `total + daily` without an end-of-challenge flush, and is the sole reason
+settlement needed no change. **DECISION — three independent day stamps**, one per writer
+path: a shared stamp lets whichever writer rolls first make the others skip folding their
+pending day, silently dropping it.
+
+**DECISION — five hand-rolled sorts unified.** Results podium, detail leaderboard + rank
+map, `computeGroupRank`, `GetDailyStatsUseCase` and `FriendsHubScreen` had each grown their
+own ordering and disagreed with one another. All now sort through `groupRankingComparator`.
+
+Rules deployed (`firebase deploy --only firestore:rules`): stat-doc whitelist extended with
+type guards and monotonic guards on the cumulative fields, both sides using `.get(field, 0)`
+so in-flight docs and partial merge writes stay valid. Ranking reads self-reported client
+numbers and is **cosmetic — it must never gate money**.
+
 ### 2026-07-25 — Group Phase 3: creator sets the participant cap; honest best-case figure
 
 `maxParticipants` already existed in every layer (model, Room entity, Firestore doc,

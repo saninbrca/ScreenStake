@@ -37,9 +37,20 @@ import javax.inject.Singleton
 data class ParticipantStats(
     val opensToday: Int? = null,
     val timeUsedMinutes: Int? = null,
-    /** [DateUtils.todayKey] of the day the stats refer to — enables a later reader-side daily reset. */
+    /** [DateUtils.todayKey] of the day the stats refer to — drives the reader-side daily reset. */
     val dateKey: Long? = null,
-)
+) {
+    /**
+     * True only when [dateKey] is stamped with the CURRENT day. The stat doc is written
+     * lazily (no write happens on a day the user never opens the tracked app), so a doc
+     * routinely survives a midnight rollover still carrying yesterday's numbers. Readers
+     * MUST gate every daily value on this — see [GroupChallengeFirestoreService.withStats].
+     *
+     * A missing `dateKey` (pre-dateKey legacy doc) is NOT today: its value cannot be
+     * attributed to any particular day, so it reads as stale.
+     */
+    val isForToday: Boolean get() = dateKey != null && dateKey == DateUtils.todayKey()
+}
 
 @Singleton
 class GroupChallengeFirestoreService @Inject constructor(
@@ -196,12 +207,46 @@ class GroupChallengeFirestoreService @Inject constructor(
      * overrides the array value when present; the array value (frozen at its last legacy
      * write, or the CF's initial 0) is the fallback — this is the whole transition story
      * for in-flight and completed challenges.
+     *
+     * ── DAILY RESET (the ONE place it happens) ────────────────────────────────────────
+     * `opensToday`/`timeUsedMinutes` are DAILY values. The write side stamps every write
+     * with [DateUtils.todayKey], but writes are lazy: a user who stays clean all day
+     * produces NO write at all (the TIME path skips `totalMs == 0`, the SESSIONS path
+     * only writes on a conscious open), so a stat doc routinely carries yesterday's
+     * numbers into today. A doc that is not [ParticipantStats.isForToday] therefore
+     * reads as 0 — never as its stale value.
+     *
+     * This is deliberately the SINGLE gate for the whole app. Every consumer of
+     * `Participant.opensToday`/`timeUsedMinutes` — the detail leaderboard, the results
+     * podium, `OverlayManager.computeGroupRank`, `GetDailyStatsUseCase`, `FriendsHubScreen`,
+     * and (via the Room mirror → `TrackedAppEventBus`) the accessibility service's
+     * session-limit gate — reads through here. Do NOT re-implement the reset at a call
+     * site: the Room mirror re-serialises these values WITHOUT `dateKey`
+     * (`GroupChallengeRepositoryImpl.toEntity`), so a downstream reader cannot detect
+     * staleness even in principle. It has to be zeroed here, before it is cached.
+     *
+     * The stale-gate is why this is not merely cosmetic: `UsageTrackingService` feeds the
+     * Room value into `TrackedAppEventBus.groupSessionInfos`, which
+     * `AppDetectionAccessibilityService` consults to decide whether the session limit is
+     * already reached. Without the reset, a SESSIONS participant who hit their limit
+     * yesterday stayed blocked from 00:01 on a clean day — and re-poisoned
+     * `OverlayManager.consciousOpensToday` right after the midnight reset had cleared it.
      */
     private fun GroupChallenge.withStats(stats: Map<String, ParticipantStats>): GroupChallenge {
+        // Empty map = the stats listener errored (its documented fallback). Keep the
+        // parent array's values rather than blanking a live leaderboard on a transient
+        // read failure.
         if (stats.isEmpty()) return this
         return copy(
             participants = participants.map { p ->
                 val s = stats[p.userId] ?: return@map p
+                if (!s.isForToday) {
+                    Timber.d(
+                        "GroupChallengeFirestore: stale stat doc for %s (dateKey=%s, today=%d) — reading as 0",
+                        p.userId, s.dateKey, DateUtils.todayKey()
+                    )
+                    return@map p.copy(opensToday = 0, timeUsedMinutes = 0)
+                }
                 p.copy(
                     opensToday = s.opensToday ?: p.opensToday,
                     timeUsedMinutes = s.timeUsedMinutes ?: p.timeUsedMinutes,

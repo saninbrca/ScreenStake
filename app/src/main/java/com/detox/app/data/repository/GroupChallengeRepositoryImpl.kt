@@ -14,6 +14,7 @@ import com.detox.app.domain.model.ParticipantStatus
 import com.detox.app.domain.model.Taunt
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.service.TrackedAppEventBus
+import com.detox.app.util.DateUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -349,6 +350,14 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             val array = JSONArray(participantsJson)
             (0 until array.length()).map { i ->
                 val obj = array.getJSONObject(i)
+                // Daily-value guard, carrying GroupChallengeFirestoreService.withStats'
+                // reset across a midnight rollover. The cached row was normalised to
+                // "today's value or 0" when it was written and stamped with that day;
+                // once the day turns over the cached daily values are stale again.
+                // This matters before the first Firestore emission of a cold start —
+                // UsageTrackingService.startGroupSessionLimitTracking reads THIS path
+                // into TrackedAppEventBus, which gates the accessibility service.
+                val staleDay = obj.optLong("statsDateKey", 0L) != DateUtils.todayKey()
                 Participant(
                     userId = obj.optString("userId", ""),
                     displayName = obj.optString("displayName", ""),
@@ -357,8 +366,8 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                     status = runCatching {
                         ParticipantStatus.valueOf(obj.optString("status", "active").uppercase())
                     }.getOrDefault(ParticipantStatus.ACTIVE),
-                    opensToday = obj.optInt("opensToday", 0),
-                    timeUsedMinutes = obj.optInt("timeUsedMinutes", 0),
+                    opensToday = if (staleDay) 0 else obj.optInt("opensToday", 0),
+                    timeUsedMinutes = if (staleDay) 0 else obj.optInt("timeUsedMinutes", 0),
                     joinedAt = obj.optLong("joinedAt", 0L)
                 )
             }
@@ -394,6 +403,7 @@ class GroupChallengeRepositoryImpl @Inject constructor(
 
     private fun GroupChallenge.toEntity(): GroupChallengeEntity {
         val array = JSONArray()
+        val today = DateUtils.todayKey()
         participants.forEach { p ->
             val obj = JSONObject()
             obj.put("userId", p.userId)
@@ -403,6 +413,12 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             obj.put("status", p.status.name.lowercase())
             obj.put("opensToday", p.opensToday)
             obj.put("timeUsedMinutes", p.timeUsedMinutes)
+            // Day-stamp for the daily values above. Everything reaching here has passed
+            // through withStats, so the values are today's-or-zero by construction —
+            // stamping "today" records exactly that, and lets toDomain re-zero them once
+            // the day rolls over. Lives inside participantsJson on purpose: no column,
+            // so no Room migration (DB stays at 28).
+            obj.put("statsDateKey", today)
             obj.put("joinedAt", p.joinedAt)
             array.put(obj)
         }

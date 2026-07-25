@@ -37,8 +37,8 @@
     <string name="permission_danger_title">🚨 WARNING — challenge at risk!</string>
     <string name="permission_fix_now">FIX IT NOW →</string>
     <string name="active_challenge_current_limit">Current: %1$d %2$s</string>
-    <string name="group_pot_estimate">Pot estimate (20 players)</string>
-    <string name="group_pot_estimate_value" translatable="false">€%1$d</string>
+    <string name="group_pot_estimate">Most you could win</string>
+    <string name="group_pot_estimate_note">Only if everyone else runs out of screen time and you don\'t. If nobody does, everyone gets 100%% back.</string>
     <string name="app_selection_usage_permission_required">Usage access permission is required to see your app stats.</string>
     <string name="app_selection_load_failed">Couldn\'t load your apps.</string>
     <string name="app_selection_usage_insufficient">Not enough usage to track</string>
@@ -1626,6 +1626,8 @@
     <string name="group_wizard_buyin_title">Stake per player</string>
     <string name="group_wizard_buyin_subtitle">How much does each player pay to take part?</string>
     <string name="group_wizard_buyin_unit">euros per player</string>
+    <string name="group_wizard_max_players_title">Max players</string>
+    <string name="group_wizard_max_players_unit">players</string>
     <string name="group_wizard_review_einsatz_label">Stake</string>
     <string name="group_wizard_review_einsatz_value">€%1$d per player</string>
 
@@ -1646,8 +1648,8 @@
     <string name="group_wizard_review_bonus_on">Enabled (10%% of the pot)</string>
     <string name="group_wizard_review_bonus_off">Disabled</string>
     <string name="group_wizard_review_max_players_label">Max players</string>
-    <string name="group_wizard_review_pot_label">Pot estimate</string>
-    <string name="group_wizard_review_pot_value">Up to €%1$d with 20 players</string>
+    <string name="group_wizard_review_pot_label">Most you could win</string>
+    <string name="group_wizard_review_pot_value">Up to %1$s</string>
 
     <!-- Permission Warning Banner -->
     <string name="permission_banner_title">Permission missing</string>

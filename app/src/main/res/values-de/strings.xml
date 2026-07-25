@@ -37,7 +37,8 @@
     <string name="permission_danger_title">🚨 ACHTUNG — Challenge in Gefahr!</string>
     <string name="permission_fix_now">JETZT BEHEBEN →</string>
     <string name="active_challenge_current_limit">Aktuell: %1$d %2$s</string>
-    <string name="group_pot_estimate">Pot-Schätzung (20 Spieler)</string>
+    <string name="group_pot_estimate">Höchstmöglicher Gewinn</string>
+    <string name="group_pot_estimate_note">Nur wenn alle anderen ihre Bildschirmzeit aufbrauchen und du nicht. Schafft es jeder, bekommen alle 100%% zurück.</string>
     <string name="app_selection_usage_permission_required">Für deine App-Statistiken ist die Nutzungszugriffsberechtigung erforderlich.</string>
     <string name="app_selection_load_failed">Apps konnten nicht geladen werden.</string>
     <string name="app_selection_usage_insufficient">Nicht genügend Nutzung zum Tracken</string>
@@ -1602,6 +1603,8 @@
     <string name="group_wizard_buyin_title">Einsatz pro Spieler</string>
     <string name="group_wizard_buyin_subtitle">Wie viel zahlt jeder Spieler um teilzunehmen?</string>
     <string name="group_wizard_buyin_unit">Euro pro Spieler</string>
+    <string name="group_wizard_max_players_title">Max. Spieler</string>
+    <string name="group_wizard_max_players_unit">Spieler</string>
     <string name="group_wizard_review_einsatz_label">Einsatz</string>
     <string name="group_wizard_review_einsatz_value">€%1$d pro Spieler</string>
 
@@ -1622,8 +1625,8 @@
     <string name="group_wizard_review_bonus_on">Aktiviert (10%% des Pots)</string>
     <string name="group_wizard_review_bonus_off">Deaktiviert</string>
     <string name="group_wizard_review_max_players_label">Max. Spieler</string>
-    <string name="group_wizard_review_pot_label">Pot-Schätzung</string>
-    <string name="group_wizard_review_pot_value">Bis zu €%1$d mit 20 Spielern</string>
+    <string name="group_wizard_review_pot_label">Höchstmöglicher Gewinn</string>
+    <string name="group_wizard_review_pot_value">Bis zu %1$s</string>
 
     <!-- Permission Warning Banner -->
     <string name="permission_banner_title">Berechtigung fehlt</string>

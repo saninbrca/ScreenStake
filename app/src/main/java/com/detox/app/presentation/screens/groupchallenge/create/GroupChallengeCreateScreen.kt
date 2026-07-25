@@ -78,7 +78,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
+import com.detox.app.domain.model.GroupParticipantLimits
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.maxPossibleWinCents
 import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
@@ -342,6 +344,8 @@ fun GroupChallengeCreateScreen(
                     4 -> GStep4BuyIn(
                         buyIn = formState.buyInEuros,
                         onBuyInChange = viewModel::setBuyInEuros,
+                        maxParticipants = formState.maxParticipants,
+                        onMaxParticipantsChange = viewModel::setMaxParticipants,
                         buyInMin = appConfig.groupMinBuyIn,
                         buyInMax = appConfig.groupMaxBuyIn,
                     )
@@ -562,19 +566,26 @@ private fun GStep3LimitAndDuration(
     }
 }
 
-// ── Step 4: Buy-in ────────────────────────────────────────────────────────────
+// ── Step 4: Buy-in + participant cap ──────────────────────────────────────────
 
 @Composable
 private fun GStep4BuyIn(
     buyIn: Int,
     onBuyInChange: (Int) -> Unit,
+    maxParticipants: Int,
+    onMaxParticipantsChange: (Int) -> Unit,
     buyInMin: Int = 10,
     buyInMax: Int = 50,
 ) {
     // Remote-controlled buy-in range (config/app) with hardcoded €10–€50 fallback.
     val safeMin = buyInMin.coerceAtLeast(1)
     val safeMax = buyInMax.coerceAtLeast(safeMin)
-    val estimatedPot = buyIn * GROUP_MAX_PARTICIPANTS
+    // Both step-4 inputs are economic parameters, so the best-case figure below depends on
+    // BOTH pickers and updates as either moves. See [maxPossibleWinCents] — it mirrors the
+    // settlement Cloud Function's maths rather than the old "buy-in × full lobby" pot, which
+    // implied a payout that could not happen (a pot of N stakes needs N failures — and then
+    // there is no winner to pay).
+    val maxWinCents = maxPossibleWinCents(stakeCents = buyIn * 100, maxParticipants = maxParticipants)
 
     Column(
         modifier = Modifier
@@ -612,6 +623,21 @@ private fun GStep4BuyIn(
                     unit = stringResource(R.string.group_wizard_buyin_unit),
                 )
                 HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                Text(
+                    text = stringResource(R.string.group_wizard_max_players_title),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = detoxColors.label,
+                )
+                DetoxHorizontalPicker(
+                    values = GroupParticipantLimits.PICKER_VALUES,
+                    selectedValue = maxParticipants.coerceIn(
+                        GroupParticipantLimits.PICKER_MIN, GroupParticipantLimits.MAX,
+                    ),
+                    onValueChange = onMaxParticipantsChange,
+                    unit = stringResource(R.string.group_wizard_max_players_unit),
+                )
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -621,14 +647,21 @@ private fun GStep4BuyIn(
                         text = stringResource(R.string.group_pot_estimate),
                         fontSize = 13.sp,
                         color = detoxColors.subtext,
+                        modifier = Modifier.weight(1f),
                     )
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = stringResource(R.string.group_pot_estimate_value, estimatedPot),
+                        text = formatEuroCents(maxWinCents),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = detoxColors.accent,
                     )
                 }
+                Text(
+                    text = stringResource(R.string.group_pot_estimate_note),
+                    fontSize = 12.sp,
+                    color = detoxColors.subtext,
+                )
             }
         }
     }
@@ -856,7 +889,11 @@ private fun GStep6Review(
     onCreateChallenge: () -> Unit,
 ) {
     val sdf = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
-    val estimatedPot = formState.buyInEuros * GROUP_MAX_PARTICIPANTS
+    // Same best-case maths as step 4 — the creator's chosen cap, not a fixed lobby size.
+    val maxWinCents = maxPossibleWinCents(
+        stakeCents = formState.buyInEuros * 100,
+        maxParticipants = formState.maxParticipants,
+    )
     var waiverChecked by remember { mutableStateOf(false) }
 
     Column(
@@ -954,11 +991,13 @@ private fun GStep6Review(
                 )
                 WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_max_players_label),
-                    value = GROUP_MAX_PARTICIPANTS.toString(),
+                    value = formState.maxParticipants.toString(),
                 )
                 WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_pot_label),
-                    value = stringResource(R.string.group_wizard_review_pot_value, estimatedPot),
+                    value = stringResource(
+                        R.string.group_wizard_review_pot_value, formatEuroCents(maxWinCents),
+                    ),
                     valueColor = detoxColors.accent,
                 )
             }

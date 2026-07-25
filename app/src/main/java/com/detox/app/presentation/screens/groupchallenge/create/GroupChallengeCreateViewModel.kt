@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.repository.AppConfig
 import com.detox.app.data.repository.AppConfigRepository
+import com.detox.app.domain.model.GroupParticipantLimits
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
@@ -31,8 +32,6 @@ import timber.log.Timber
 import javax.inject.Inject
 
 const val GROUP_WIZARD_TOTAL_STEPS = 6
-/** Group cap — also drives the review-step "max players" row and the estimated-pot maths. */
-const val GROUP_MAX_PARTICIPANTS = 20
 
 /**
  * Ordered list of visible step ids for the current wizard path (mirrors Solo/Hard's [visibleSteps]).
@@ -73,8 +72,9 @@ data class GroupCreateFormState(
     val dailyBudgetMinutes: Int = 10,
     val durationDays: Int = 7,
     val durationError: String? = null,
-    // Step 4 — buy-in
+    // Step 4 — buy-in + participant cap
     val buyInEuros: Int = 10,
+    val maxParticipants: Int = GroupParticipantLimits.DEFAULT,
     // Step 5 — start date + bonus
     val startDateEnabled: Boolean = false,
     val startDateMs: Long = 0L,
@@ -299,11 +299,21 @@ class GroupChallengeCreateViewModel @Inject constructor(
         _formState.update { it.copy(durationDays = clamped, durationError = error) }
     }
 
-    // ── Step 4 — buy-in ─────────────────────────────────────────────────────────
+    // ── Step 4 — buy-in + participant cap ───────────────────────────────────────
 
     fun setBuyInEuros(v: Int) {
         val clamped = v.coerceIn(10, 500)
         _formState.update { it.copy(buyInEuros = clamped) }
+    }
+
+    /**
+     * The picker only offers [GroupParticipantLimits.PICKER_VALUES], so the clamp is defensive —
+     * it guarantees the value handed to the CF can never fall below the 2-participant floor a
+     * group needs to start, nor above the cap the server-side create validation accepts.
+     */
+    fun setMaxParticipants(v: Int) {
+        val clamped = v.coerceIn(GroupParticipantLimits.HARD_MIN, GroupParticipantLimits.MAX)
+        _formState.update { it.copy(maxParticipants = clamped) }
     }
 
     // ── Step 5 — start date + bonus ─────────────────────────────────────────────
@@ -345,7 +355,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                  else s.manualDomains.isNotEmpty() || s.blockAdultContent
             2 -> s.limitType != null
             3 -> s.durationError == null && s.durationDays >= 3
-            4 -> s.buyInEuros >= 10
+            4 -> s.buyInEuros >= 10 && s.maxParticipants >= GroupParticipantLimits.HARD_MIN
             5 -> !s.startDateEnabled || (s.startDateMs > 0L && s.startDateError == null)
             else -> true
         }
@@ -550,7 +560,7 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 sessionDurationMinutes = s.sessionMinutes,
                 durationDays = s.durationDays,
                 buyInCents = s.buyInEuros * 100,
-                maxParticipants = GROUP_MAX_PARTICIPANTS,
+                maxParticipants = s.maxParticipants,
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
                 bonusEnabled = s.bonusEnabled,
                 blockedDomains = sub.blockedDomains,

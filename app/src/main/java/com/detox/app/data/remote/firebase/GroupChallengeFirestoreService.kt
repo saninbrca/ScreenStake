@@ -463,6 +463,11 @@ class GroupChallengeFirestoreService @Inject constructor(
                 sessionDurationMinutes = (d["sessionDurationMinutes"] as? Long)?.toInt() ?: 5,
                 durationDays = (d["durationDays"] as? Long)?.toInt() ?: 7,
                 buyInCents = (d["buyInCents"] as? Long)?.toInt() ?: 500,
+                // Deliberate fail-safe fallback, NOT the creation default (that is
+                // GroupParticipantLimits.DEFAULT = 20, chosen by the creator on step 4). It only
+                // applies to a doc written before the field existed; 5 matches the identical
+                // `?? 5` in joinGroupChallenge/confirmGroupJoin so client and server agree, and it
+                // errs SMALL — an undersized group, never an oversold one. Do not raise it.
                 maxParticipants = (d["maxParticipants"] as? Long)?.toInt() ?: 5,
                 startDate = startDate,
                 endDate = endDate,

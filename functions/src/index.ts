@@ -522,6 +522,29 @@ export const createGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
     }
     if (groupData["creatorUserId"] !== userId) throw new HttpError(403, "creatorUserId must match the authenticated user.");
 
+    // maxParticipants is chosen by the creator on wizard step 4 and spread into the doc below,
+    // so it is client-supplied input and must be validated here — this is the ONLY server-side
+    // gate on it. Rejecting before any Firestore read or write means a tampered value can never
+    // reach the document that joinGroupChallenge/confirmGroupJoin later enforce against.
+    // Input validation only: no Stripe call, no capture, no settlement, no change to the join
+    // capacity checks. GroupParticipantLimits (Kotlin) holds the same 2..20 bounds.
+    const maxParticipants = groupData["maxParticipants"];
+    if (
+      typeof maxParticipants !== "number" ||
+      !Number.isInteger(maxParticipants) ||
+      maxParticipants < 2 ||
+      maxParticipants > 20
+    ) {
+      functions.logger.warn("createGroupChallenge: rejected out-of-range maxParticipants", {
+        groupId, userId, maxParticipants,
+      });
+      throw new HttpError(
+        400,
+        "maxParticipants must be a whole number between 2 and 20.",
+        "invalid_max_participants",
+      );
+    }
+
     const db = admin.firestore();
 
     let finalCode = code.toUpperCase();

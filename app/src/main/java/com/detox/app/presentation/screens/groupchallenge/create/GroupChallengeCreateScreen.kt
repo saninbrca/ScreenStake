@@ -810,7 +810,6 @@ private fun GStep5StartDate(
                 }
             }
         }
-
     }
 }
 

@@ -21,6 +21,47 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-26 — Session length: dashboard card read the wrong field
+
+Display only. No Room migration, no sync change, no CF change, no money path touched.
+Commits `92b6e86` (fix) + `a904142` (group detail row + documentation).
+
+**FIXED — the dashboard card overstated session length 60x on group challenges.** A group
+challenge configured as "3 opens / day, 1 minute each" rendered "Max. 3 Öffnungen/Tag, je 60
+Min." on the dashboard card. `ChallengeCard.buildLimitLabel` filled the "je N Min." slot from
+`DailyStats.limitValueMinutes` — the TIME-limit cap, not the per-session length — and
+`DailyStats` carried no session-duration field at all, so the card had no way to be right.
+`DailyStats.sessionDurationMinutes` added and populated in both `GetDailyStatsUseCase`
+constructions; the card now reads it.
+
+**NOT A BUG — enforcement was always correct.** Traced device-side: `CheckDailyLimitUseCase`
+→ `OverlayManager.handleSessionLimitApp` → `startSessionTimer(durationMinutes =
+challenge.sessionDurationMinutes)`, sourced from the Room mirror, which matches Firestore on
+both the solo and group paths (`GroupChallengeRepositoryImpl.syncGroupChallengeToLocalTracking`
+carries the field). The 1-minute challenge did block after 1 minute. No money path reads it
+either — SESSIONS loss is classified on opens alone (`DailyEvaluationWorker.computeLimitExceeded`)
+and no Cloud Function reads `sessionDurationMinutes`. The `SyncRepositoryImpl.toEntity()`
+drop fixed in `143caaf` was NOT the cause: it never applied to group rows and its failure
+mode was 5, not 60.
+
+**DECISION — `limitValueMinutes` stays written on SESSIONS group challenges, documented not
+changed.** The group wizard's SESSIONS step edits `sessionMinutes` and never touches
+`limitValueMinutes`, so the doc receives the form's untouched 60-minute default. Left as-is
+deliberately: nothing reads it once the card is fixed, and splitting it would create two
+generations of group documents for no reader benefit. The guard is the comment — at the write
+site in `GroupChallengeCreateViewModel.submission()` and in
+[docs/04](04_group_challenges.md#-limitvalueminutes-is-not-the-session-length), including why
+solo hides the trap (`ChallengeCreationViewModel.resolveLimitPair` stores the session length in
+BOTH fields, so the wrong read still printed the right number) and the two surviving no-op
+readers whose output nothing renders (`CheckDailyLimitUseCase.remainingMinutes`,
+`ActiveChallengeViewModel.remainingMinutes`).
+
+**FIXED — the group detail screen never showed session length.** Participants saw it on the
+join preview and then nowhere again. Added as a third SESSIONS-only `SessionInfoRow` in
+`SessionCard`, below the two live-state rows (`group_detail_session_dur_label` /
+`group_detail_session_dur_val`, EN+DE). Abbreviated "min"/"Min" rather than reusing the solo
+screen's `detail_info_session_dur_val` ("%1$d minutes"), which would render "1 Minuten".
+
 ### 2026-07-25 — Group Phase 5.1: join screen redesign
 
 No join Cloud Function, payout math or Stripe call touched. No Room migration, no rules

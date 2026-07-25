@@ -22,7 +22,12 @@ data class GroupChallengeEntity(
     val maxParticipants: Int,
     val startDate: Long,
     val endDate: Long,
-    /** 0 = false, 1 = true. */
+    /**
+     * 0 = false, 1 = true. **Retired** — the winner-bonus toggle is gone from the create
+     * wizard and settlement never read it (completeGroupChallenge always splits the pot
+     * equally among winners). Always 0 on new rows; kept only so existing rows and docs
+     * still map. Dropping it costs a Room migration for no behavior change — don't.
+     */
     @ColumnInfo(defaultValue = "0") val bonusEnabled: Int,
     @ColumnInfo(defaultValue = "waiting") val status: String,
     /** JSON array of participant objects. */

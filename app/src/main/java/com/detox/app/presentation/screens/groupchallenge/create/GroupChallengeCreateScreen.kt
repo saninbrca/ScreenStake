@@ -29,7 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.TouchApp
@@ -40,10 +39,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -51,10 +48,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -348,14 +342,12 @@ fun GroupChallengeCreateScreen(
                         buyInMin = appConfig.groupMinBuyIn,
                         buyInMax = appConfig.groupMaxBuyIn,
                     )
-                    5 -> GStep5StartDateAndBonus(
+                    5 -> GStep5StartDate(
                         startDateEnabled = formState.startDateEnabled,
                         startDateMs = formState.startDateMs,
                         startDateError = formState.startDateError,
-                        bonusEnabled = formState.bonusEnabled,
                         onStartDateEnabledToggle = viewModel::setStartDateEnabled,
                         onStartDateChange = viewModel::setStartDate,
-                        onBonusToggle = viewModel::setBonusEnabled,
                     )
                     6 -> GStep6Review(
                         formState = formState,
@@ -661,23 +653,46 @@ private fun GStep4BuyIn(
                     fontSize = 12.sp,
                     color = detoxColors.subtext,
                 )
+                // The full money mechanic lives HERE, next to the figure it explains and at
+                // the moment the stake is chosen — not on the review step, whose breakdown
+                // is about the creator's OWN stake (80/20) and would only restate this.
+                // Every line names its base: the pot vs. your own stake are different money.
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                Text(
+                    text = stringResource(R.string.group_pot_rules_title),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = detoxColors.label,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        R.string.group_pot_rules_stake_to_pot,
+                        R.string.group_pot_rules_split_and_fee,
+                        R.string.group_pot_rules_own_stake,
+                        R.string.group_pot_rules_nobody_fails,
+                    ).forEach { line ->
+                        Text(
+                            text = stringResource(line),
+                            fontSize = 12.sp,
+                            color = detoxColors.subtext,
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-// ── Step 5: Start date + bonus ────────────────────────────────────────────────
+// ── Step 5: Start date ────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GStep5StartDateAndBonus(
+private fun GStep5StartDate(
     startDateEnabled: Boolean,
     startDateMs: Long,
     startDateError: String?,
-    bonusEnabled: Boolean,
     onStartDateEnabledToggle: (Boolean) -> Unit,
     onStartDateChange: (Long) -> Unit,
-    onBonusToggle: (Boolean) -> Unit,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
@@ -796,78 +811,6 @@ private fun GStep5StartDateAndBonus(
             }
         }
 
-        // ── Bonus card ──────────────────────────────────────────────────────
-        val tooltipState = rememberTooltipState()
-        val tooltipScope = rememberCoroutineScope()
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(GCardShape)
-                .background(detoxColors.cardBackground)
-                .border(0.5.dp, detoxColors.cardBorder, GCardShape),
-        ) {
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.group_wizard_bonus_label),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = detoxColors.label,
-                        )
-                        TooltipBox(
-                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                            tooltip = {
-                                PlainTooltip {
-                                    Text(stringResource(R.string.group_wizard_bonus_tooltip))
-                                }
-                            },
-                            state = tooltipState,
-                        ) {
-                            IconButton(
-                                onClick = { tooltipScope.launch { tooltipState.show() } },
-                                modifier = Modifier.size(28.dp),
-                            ) {
-                                Icon(
-                                    Icons.Default.Info,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = detoxColors.subtext,
-                                )
-                            }
-                        }
-                    }
-                    Switch(
-                        checked = bonusEnabled,
-                        onCheckedChange = onBonusToggle,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    )
-                }
-
-                if (bonusEnabled) {
-                    HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
-                    Text(
-                        text = stringResource(R.string.group_wizard_bonus_desc),
-                        fontSize = 13.sp,
-                        color = detoxColors.subtext,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -974,12 +917,6 @@ private fun GStep6Review(
                     value = if (formState.startDateEnabled && formState.startDateMs > 0L)
                         sdf.format(Date(formState.startDateMs))
                     else stringResource(R.string.group_wizard_review_start_manual),
-                )
-                WizardSummaryDividerRow(
-                    label = stringResource(R.string.group_wizard_review_bonus_label),
-                    value = if (formState.bonusEnabled)
-                        stringResource(R.string.group_wizard_review_bonus_on)
-                    else stringResource(R.string.group_wizard_review_bonus_off),
                 )
                 WizardSummaryDividerRow(
                     label = stringResource(R.string.group_wizard_review_max_players_label),

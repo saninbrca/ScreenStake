@@ -75,10 +75,9 @@ data class GroupCreateFormState(
     // Step 4 — buy-in + participant cap
     val buyInEuros: Int = 10,
     val maxParticipants: Int = GroupParticipantLimits.DEFAULT,
-    // Step 5 — start date + bonus
+    // Step 5 — start date
     val startDateEnabled: Boolean = false,
     val startDateMs: Long = 0L,
-    val bonusEnabled: Boolean = false,
     // Step 6 — review (populated after creation)
     val generatedCode: String = "",
     // Errors
@@ -326,8 +325,6 @@ class GroupChallengeCreateViewModel @Inject constructor(
         _formState.update { it.copy(startDateMs = ms, startDateError = null) }
     }
 
-    fun setBonusEnabled(v: Boolean) = _formState.update { it.copy(bonusEnabled = v) }
-
     // ── Navigation ──────────────────────────────────────────────────────────────
 
     // Navigation walks [visibleGroupSteps] (nearest visible neighbour), so the block-only path's
@@ -562,7 +559,6 @@ class GroupChallengeCreateViewModel @Inject constructor(
                 buyInCents = s.buyInEuros * 100,
                 maxParticipants = s.maxParticipants,
                 startDateMs = if (s.startDateEnabled) s.startDateMs else 0L,
-                bonusEnabled = s.bonusEnabled,
                 blockedDomains = sub.blockedDomains,
                 blockAdultContent = sub.blockAdultContent,
                 groupId = pd.groupId,

@@ -38,8 +38,13 @@
     <string name="permission_fix_now">JETZT BEHEBEN →</string>
     <string name="active_challenge_current_limit">Aktuell: %1$d %2$s</string>
     <string name="group_pot_estimate">Höchstmöglicher Gewinn</string>
+    <string name="group_pot_estimate_note">Nur wenn alle anderen ihr Limit überschreiten und du nicht.</string>
     <!-- formatted="false" + a single %, mirroring values/ — see the EN comment. -->
-    <string name="group_pot_estimate_note" formatted="false">Nur wenn alle anderen ihre Bildschirmzeit aufbrauchen und du nicht. Schafft es jeder, bekommen alle 100% zurück.</string>
+    <string name="group_pot_rules_title">So funktioniert das Geld</string>
+    <string name="group_pot_rules_stake_to_pot">• Wenn jemand sein Limit überschreitet, wandert sein Einsatz in den Pot.</string>
+    <string name="group_pot_rules_split_and_fee" formatted="false">• Alle, die es schaffen, teilen den Pot gleichmäßig unter sich auf — die App behält 10% des Pots.</string>
+    <string name="group_pot_rules_own_stake" formatted="false">• Dein eigener Einsatz zählt separat: Du bekommst 80% deines Einsatzes zurück.</string>
+    <string name="group_pot_rules_nobody_fails" formatted="false">• Überschreitet niemand sein Limit, bekommen alle 100% ihres eigenen Einsatzes zurück und die App behält nichts.</string>
     <string name="app_selection_usage_permission_required">Für deine App-Statistiken ist die Nutzungszugriffsberechtigung erforderlich.</string>
     <string name="app_selection_load_failed">Apps konnten nicht geladen werden.</string>
     <string name="app_selection_usage_insufficient">Nicht genügend Nutzung zum Tracken</string>
@@ -683,9 +688,6 @@
     <string name="group_create_max_participants_label">Max. Teilnehmer</string>
     <string name="group_create_start_date_label">Startdatum (frühestens morgen)</string>
     <string name="group_create_start_date_hint">Datum wählen…</string>
-    <string name="group_create_bonus_label">Bonus für den Gewinner</string>
-    <string name="group_create_bonus_info">Was ist der Gewinner-Bonus?</string>
-    <string name="group_create_bonus_tooltip" formatted="false">Alle, die es schaffen, teilen die Einsätze der anderen gleichmäßig unter sich auf. Die App behält 10% dieses Pots.</string>
     <string name="group_create_next">Weiter — Überprüfen</string>
     <!-- Step 2 — Review -->
     <string name="group_create_code_label">Dein Gruppen-Code</string>
@@ -696,7 +698,6 @@
     <string name="group_create_summary_buy_in">Buy-in pro Spieler</string>
     <string name="join_group_entry_fee">Einsatz: €%1$d</string>
     <string name="group_create_summary_max_players">Max. Spieler</string>
-    <string name="group_create_summary_bonus">Gewinner-Bonus</string>
     <string name="group_create_share_button">Erstellen &amp; Code teilen</string>
     <string name="group_create_done_button">Fertig — zu Freunde</string>
     <string name="group_create_share_text">Tritt meiner Finite-Challenge bei! Code: %1$s — App: %2$s, %3$d Tage, mind. €%4$d</string>
@@ -1614,23 +1615,17 @@
     <string name="group_wizard_review_einsatz_value">€%1$d pro Spieler</string>
 
     <!-- Group Wizard Step 5 — Start Date &amp; Bonus -->
-    <string name="group_wizard_start_title">Startdatum &amp; Bonus</string>
+    <string name="group_wizard_start_title">Startdatum</string>
     <string name="group_wizard_start_date_label">Startdatum festlegen</string>
     <string name="group_wizard_start_manual_desc">Challenge startet manuell — tippe auf „Challenge starten" sobald alle beigetreten sind.</string>
     <string name="group_wizard_start_date_section">Startdatum</string>
     <string name="group_wizard_start_date_placeholder">Datum wählen…</string>
     <!-- Title of the shared wizard date-picker dialog (WizardDatePickerDialog). -->
     <string name="wizard_date_picker_title">Datum auswählen</string>
-    <string name="group_wizard_bonus_label">Bonus für den Gewinner</string>
-    <string name="group_wizard_bonus_tooltip" formatted="false">Alle, die es schaffen, teilen die Einsätze der anderen gleichmäßig unter sich auf. Die App behält 10% dieses Pots. Dein eigener Einsatz zählt separat: 80% davon bekommst du zurück.</string>
-    <string name="group_wizard_bonus_desc" formatted="false">Wenn jemand sein Limit sprengt, wandert sein Einsatz in den Pot. Alle, die es schaffen, teilen diesen Pot gleichmäßig unter sich auf, und die App behält 10% des Pots. Dein eigener Einsatz zählt separat — davon bekommst du 80% zurück.</string>
 
     <!-- Group Wizard Step 6 — Review rows -->
     <string name="group_wizard_review_start_label">Startdatum</string>
     <string name="group_wizard_review_start_manual">Manueller Start</string>
-    <string name="group_wizard_review_bonus_label">Gewinner-Bonus</string>
-    <string name="group_wizard_review_bonus_on">Aktiviert</string>
-    <string name="group_wizard_review_bonus_off">Deaktiviert</string>
     <string name="group_wizard_review_max_players_label">Max. Spieler</string>
     <string name="group_wizard_review_pot_label">Höchstmöglicher Gewinn</string>
     <string name="group_wizard_review_pot_value">Bis zu %1$s</string>

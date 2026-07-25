@@ -119,7 +119,6 @@ class CreateGroupChallengeUseCase @Inject constructor(
         buyInCents: Int,
         maxParticipants: Int,
         startDateMs: Long,
-        bonusEnabled: Boolean,
         blockedDomains: List<String> = emptyList(),
         blockAdultContent: Boolean = false,
         groupId: String,
@@ -145,7 +144,11 @@ class CreateGroupChallengeUseCase @Inject constructor(
             "maxParticipants" to maxParticipants,
             "startDate" to startDateMs,
             "endDate" to endDateMs,
-            "bonusEnabled" to bonusEnabled,
+            // Retired winner-bonus toggle. Settlement never read it (completeGroupChallenge
+            // splits the pot equally among winners, always), so the wizard no longer offers
+            // it. The key is still written as a constant false to keep the group doc's shape
+            // unchanged for every existing reader/parser — see docs/firestore-schema.md.
+            "bonusEnabled" to false,
             "status" to "waiting",
             "blockedDomains" to blockedDomains.joinToString(",").ifEmpty { null },
             // Spread into the group doc by createGroupChallenge CF (no capture/settlement touched).

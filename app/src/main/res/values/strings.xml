@@ -38,11 +38,23 @@
     <string name="permission_fix_now">FIX IT NOW →</string>
     <string name="active_challenge_current_limit">Current: %1$d %2$s</string>
     <string name="group_pot_estimate">Most you could win</string>
-    <!-- formatted="false" + a single %: this is read via stringResource(id) with NO format args,
-         so nothing runs String.format over it and an escaped "%%" would render literally as "%%".
-         The attribute is what stops lint from reading "100% back" as a broken format specifier;
-         it must be repeated in values-de/. -->
-    <string name="group_pot_estimate_note" formatted="false">Only if everyone else runs out of screen time and you don\'t. If nobody does, everyone gets 100% back.</string>
+    <!-- Caveat on the figure only — the nobody-fails case is stated once, in the rules
+         block below, instead of being repeated here. -->
+    <string name="group_pot_estimate_note">Only if everyone else goes over their limit and you don\'t.</string>
+    <!-- How the group money actually works, shown under the pot estimate on wizard step 4.
+         These MUST match completeGroupChallenge in functions/src/index.ts: the app fee is
+         10% OF THE POT, the stake refund is 80% OF YOUR OWN STAKE, and the pot is split
+         EQUALLY among winners (there is no performance bonus — ranking never gates money).
+         Two different bases, so every line names the base it applies to.
+         formatted="false" + a single %: these are read via stringResource(id) with NO format
+         args, so nothing runs String.format over them and an escaped "%%" would render
+         literally as "%%". The attribute is what stops lint from reading "100% back" as a
+         broken format specifier; it must be repeated in values-de/. -->
+    <string name="group_pot_rules_title">How the money works</string>
+    <string name="group_pot_rules_stake_to_pot">• If someone goes over their limit, their stake goes into the pot.</string>
+    <string name="group_pot_rules_split_and_fee" formatted="false">• Everyone who makes it splits the pot equally — the app keeps 10% of the pot.</string>
+    <string name="group_pot_rules_own_stake" formatted="false">• Your own stake is separate: you get 80% of your stake back.</string>
+    <string name="group_pot_rules_nobody_fails" formatted="false">• If nobody goes over, everyone gets 100% of their own stake back and the app takes nothing.</string>
     <string name="app_selection_usage_permission_required">Usage access permission is required to see your app stats.</string>
     <string name="app_selection_load_failed">Couldn\'t load your apps.</string>
     <string name="app_selection_usage_insufficient">Not enough usage to track</string>
@@ -690,9 +702,6 @@
     <string name="group_create_max_participants_label">Max Participants</string>
     <string name="group_create_start_date_label">Start Date (must be tomorrow or later)</string>
     <string name="group_create_start_date_hint">Pick a date…</string>
-    <string name="group_create_bonus_label">Bonus for winner</string>
-    <string name="group_create_bonus_info">What is the winner bonus?</string>
-    <string name="group_create_bonus_tooltip" formatted="false">Everyone who makes it splits the stakes of those who run out — equally. The app keeps 10% of that pot.</string>
     <string name="group_create_next">Next — Review</string>
     <!-- Step 2 — Review -->
     <string name="group_create_code_label">Your Group Code</string>
@@ -703,7 +712,6 @@
     <string name="group_create_summary_buy_in">Buy-In Per Player</string>
     <string name="join_group_entry_fee">Entry fee: €%1$d</string>
     <string name="group_create_summary_max_players">Max Players</string>
-    <string name="group_create_summary_bonus">Winner Bonus</string>
     <string name="group_create_share_button">Create &amp; Share Code</string>
     <string name="group_create_done_button">Done — Go to Friends</string>
     <string name="group_create_share_text">Join my Finite challenge! Code: %1$s — App: %2$s, %3$d days, min €%4$d</string>
@@ -1640,26 +1648,17 @@
     <string name="group_wizard_review_einsatz_value">€%1$d per player</string>
 
     <!-- Group Wizard Step 5 — Start Date &amp; Bonus -->
-    <string name="group_wizard_start_title">Start date &amp; bonus</string>
+    <string name="group_wizard_start_title">Start date</string>
     <string name="group_wizard_start_date_label">Set a start date</string>
     <string name="group_wizard_start_manual_desc">The challenge starts manually — tap “Start challenge” once everyone has joined.</string>
     <string name="group_wizard_start_date_section">Start date</string>
     <string name="group_wizard_start_date_placeholder">Pick a date…</string>
     <!-- Title of the shared wizard date-picker dialog (WizardDatePickerDialog). -->
     <string name="wizard_date_picker_title">Select a date</string>
-    <string name="group_wizard_bonus_label">Bonus for the winner</string>
-    <!-- Percentages here MUST match completeGroupChallenge in functions/src/index.ts:
-         app fee = 10% OF THE FAILED POT, own-stake refund = 80% OF YOUR OWN STAKE.
-         Two different bases — always name the base, never just the number. -->
-    <string name="group_wizard_bonus_tooltip" formatted="false">Everyone who makes it splits the stakes of those who run out — equally. The app keeps 10% of that pot. Your own stake is separate: 80% of it comes back.</string>
-    <string name="group_wizard_bonus_desc" formatted="false">If someone runs out of screen time, their stake goes into the pot. Everyone who makes it splits that pot equally, and the app keeps 10% of the pot. Your own stake is separate — you get 80% of it back.</string>
 
     <!-- Group Wizard Step 6 — Review rows -->
     <string name="group_wizard_review_start_label">Start date</string>
     <string name="group_wizard_review_start_manual">Manual start</string>
-    <string name="group_wizard_review_bonus_label">Winner bonus</string>
-    <string name="group_wizard_review_bonus_on">Enabled</string>
-    <string name="group_wizard_review_bonus_off">Disabled</string>
     <string name="group_wizard_review_max_players_label">Max players</string>
     <string name="group_wizard_review_pot_label">Most you could win</string>
     <string name="group_wizard_review_pot_value">Up to %1$s</string>

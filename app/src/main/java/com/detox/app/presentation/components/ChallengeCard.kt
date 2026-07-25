@@ -699,10 +699,13 @@ internal fun AppIconImage(packageName: String?, appName: String, modifier: Modif
 @Composable
 private fun buildLimitLabel(stats: DailyStats): String = when (stats.limitType) {
     LimitType.TIME -> stringResource(R.string.challenge_card_time_limit, stats.limitValueMinutes)
+    // "je N Min." is the per-session length, so it MUST read sessionDurationMinutes. It used to read
+    // limitValueMinutes — invisible for solo (which stores the session length in both fields) but
+    // 60x too high for group challenges, where limitValueMinutes is the wizard's untouched default.
     LimitType.SESSIONS -> stringResource(
         R.string.challenge_card_session_limit,
         stats.limitValueSessions ?: 0,
-        stats.limitValueMinutes
+        stats.sessionDurationMinutes
     )
     LimitType.TIME_BUDGET -> stringResource(
         R.string.challenge_card_budget_limit,

@@ -7,6 +7,16 @@ data class DailyStats(
     val limitType: LimitType,
     val limitValueMinutes: Int,
     val limitValueSessions: Int?,
+    /**
+     * Length of ONE allowed session in minutes (SESSIONS challenges only) — mirrors
+     * [Challenge.sessionDurationMinutes], the same value the overlay's session countdown enforces.
+     *
+     * Read this for "je N Min.", NEVER [limitValueMinutes]: that field is the TIME-limit cap and is
+     * meaningless on a SESSIONS challenge (the group wizard writes its untouched 60-minute default
+     * there). Solo happens to store the session length in both fields, which is exactly why reading
+     * the wrong one stayed invisible until a group challenge rendered it.
+     */
+    val sessionDurationMinutes: Int = 5,
     val todayMinutes: Int,
     val todayOpens: Int,
     val limitExceeded: Boolean,

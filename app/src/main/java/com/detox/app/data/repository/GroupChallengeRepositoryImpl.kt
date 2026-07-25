@@ -290,6 +290,10 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         firestoreService.setParticipantOpensToday(groupId, userId, opensToday)
     }
 
+    override suspend fun setParticipantExceededToday(groupId: String, userId: String) {
+        firestoreService.setParticipantExceededToday(groupId, userId)
+    }
+
     override suspend fun markParticipantFailedLocally(groupId: String, userId: String) {
         val entity = groupChallengeDao.getById(groupId) ?: return
         val updatedJson = runCatching {
@@ -368,6 +372,11 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                     }.getOrDefault(ParticipantStatus.ACTIVE),
                     opensToday = if (staleDay) 0 else obj.optInt("opensToday", 0),
                     timeUsedMinutes = if (staleDay) 0 else obj.optInt("timeUsedMinutes", 0),
+                    // Whole-challenge totals are NOT day-scoped — never zero them on a
+                    // rollover, they are cumulative by definition.
+                    totalOpens = obj.optInt("totalOpens", 0),
+                    totalMinutes = obj.optInt("totalMinutes", 0),
+                    exceededDays = obj.optInt("exceededDays", 0),
                     joinedAt = obj.optLong("joinedAt", 0L)
                 )
             }
@@ -413,6 +422,9 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             obj.put("status", p.status.name.lowercase())
             obj.put("opensToday", p.opensToday)
             obj.put("timeUsedMinutes", p.timeUsedMinutes)
+            obj.put("totalOpens", p.totalOpens)
+            obj.put("totalMinutes", p.totalMinutes)
+            obj.put("exceededDays", p.exceededDays)
             // Day-stamp for the daily values above. Everything reaching here has passed
             // through withStats, so the values are today's-or-zero by construction —
             // stamping "today" records exactly that, and lets toDomain re-zero them once

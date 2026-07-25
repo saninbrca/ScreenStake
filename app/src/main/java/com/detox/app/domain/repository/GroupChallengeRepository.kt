@@ -76,6 +76,15 @@ interface GroupChallengeRepository {
     suspend fun setParticipantOpensToday(groupId: String, userId: String, opensToday: Int)
 
     /**
+     * Flags TODAY as a day on which [userId] blew the challenge's limit, folding any
+     * previously flagged day into their cumulative `exceededDays`. Drives the clean-days
+     * axis of the group ranking; carries no money meaning — a group challenge never
+     * auto-fails, so exceeding a limit costs nothing but position on the leaderboard.
+     * Called once per violation day from `DailyEvaluationWorker`.
+     */
+    suspend fun setParticipantExceededToday(groupId: String, userId: String)
+
+    /**
      * Updates the local [GroupChallengeEntity] to mark [userId]'s participant status as "failed",
      * then adds the challenge's app packages to [TrackedAppEventBus.failedPackagesToday] so the
      * AccessibilityService stops showing the overlay for those apps immediately.

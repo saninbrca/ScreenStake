@@ -857,6 +857,14 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     )
                 )
                 Timber.d("DailyEvaluationWorker: group limit_exceeded DailyLog written for %s (stats only, no fail, no Stripe)", challenge.id)
+
+                // Mirror the violation into the leaderboard stat doc so the clean-days
+                // ranking axis can see it. Stats only, exactly like the DailyLog above:
+                // a group challenge NEVER auto-fails, so this changes nothing about the
+                // participant's status, their stake, or any Stripe call. Guarded by the
+                // `alreadyLogged` check above so it runs once per violation day, and the
+                // write is idempotent if it ever runs twice.
+                groupChallengeRepository.setParticipantExceededToday(groupId, userId)
             }
         } else {
             Timber.d("DailyEvaluationWorker: group %s limit already logged today — skipping usage check", groupId)

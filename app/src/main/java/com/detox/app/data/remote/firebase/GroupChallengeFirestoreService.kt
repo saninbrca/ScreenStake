@@ -19,10 +19,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import java.util.Calendar
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,21 +38,65 @@ import javax.inject.Singleton
  * time) merge independently and a doc may carry only one of them at first.
  */
 data class ParticipantStats(
+    // ── Daily slot: the value FOR the day named by the matching date key ──────────
     val opensToday: Int? = null,
     val timeUsedMinutes: Int? = null,
-    /** [DateUtils.todayKey] of the day the stats refer to — drives the reader-side daily reset. */
-    val dateKey: Long? = null,
-) {
+    /** True when the day named by [exceededDateKey] blew the challenge's limit. */
+    val exceededToday: Boolean = false,
+
     /**
-     * True only when [dateKey] is stamped with the CURRENT day. The stat doc is written
-     * lazily (no write happens on a day the user never opens the tracked app), so a doc
-     * routinely survives a midnight rollover still carrying yesterday's numbers. Readers
-     * MUST gate every daily value on this — see [GroupChallengeFirestoreService.withStats].
-     *
-     * A missing `dateKey` (pre-dateKey legacy doc) is NOT today: its value cannot be
-     * attributed to any particular day, so it reads as stale.
+     * Legacy SHARED day stamp, written before the per-path split. Still written by every
+     * path so an older build reading this doc keeps its daily reset, and used as the
+     * fallback for a doc that predates the split keys below.
      */
-    val isForToday: Boolean get() = dateKey != null && dateKey == DateUtils.todayKey()
+    val dateKey: Long? = null,
+
+    // ── Per-path day stamps ──────────────────────────────────────────────────────
+    // Three INDEPENDENT writers touch this doc: the opens path (OverlayManager, on a
+    // conscious "Ja, öffnen"), the time path (UsageTrackingService, on its polling
+    // loops) and the exceeded path (DailyEvaluationWorker, once on a violation day).
+    // They must NOT share one stamp: whichever wrote first would roll the shared key to
+    // today, and the others would then see "already today" and skip folding THEIR
+    // still-pending previous-day value into the cumulative total — silently dropping a
+    // day. Each path owns its own {daily value, cumulative total, date key} triple and
+    // rolls only that triple.
+    val opensDateKey: Long? = null,
+    val timeDateKey: Long? = null,
+    val exceededDateKey: Long? = null,
+
+    // ── Cumulative slot: the sum over all days STRICTLY BEFORE the matching key ───
+    // This exclusion is the load-bearing invariant. It means the last day of a
+    // challenge needs no end-of-challenge flush: its value is still sitting in the
+    // daily slot, and `total + daily` recovers it forever. That is what keeps
+    // completeGroupChallenge (and therefore all settlement/payout code) out of this
+    // feature entirely.
+    val totalOpens: Int = 0,
+    val totalMinutes: Int = 0,
+    val exceededDays: Int = 0,
+) {
+    private fun isToday(key: Long?): Boolean =
+        key != null && key == DateUtils.todayKey()
+
+    /**
+     * Whether each daily slot refers to the CURRENT day. Stat writes are lazy — no write
+     * happens on a day the user never opens the tracked app — so a doc routinely survives
+     * a midnight rollover still carrying yesterday's numbers. Anything asking "what is
+     * today's value" MUST gate on these; see [GroupChallengeFirestoreService.withStats].
+     *
+     * A missing key is NOT today: an unattributable value belongs to no particular day.
+     */
+    val opensIsForToday: Boolean get() = isToday(opensDateKey ?: dateKey)
+    val timeIsForToday: Boolean get() = isToday(timeDateKey ?: dateKey)
+
+    /**
+     * Whole-challenge totals. Deliberately NOT gated on the date key: under the
+     * cumulative-excludes-the-current-day invariant, `total + daily` is the true all-time
+     * sum whether or not the daily slot happens to be today's. Gating these would silently
+     * drop the final day of every finished challenge from the results ranking.
+     */
+    val totalOpensAllDays: Int get() = totalOpens + (opensToday ?: 0)
+    val totalMinutesAllDays: Int get() = totalMinutes + (timeUsedMinutes ?: 0)
+    val exceededDaysAllDays: Int get() = exceededDays + (if (exceededToday) 1 else 0)
 }
 
 @Singleton
@@ -154,52 +201,124 @@ class GroupChallengeFirestoreService @Inject constructor(
     }
 
     /**
-     * ABSOLUTE write of the caller's own conscious-opens count for today. Merge-writes
-     * only the user's own stat doc — never the parent doc, never another participant.
-     * The value is today's count (from the overlay's per-day counter / Room DailyLog),
-     * stamped with [DateUtils.todayKey] so a reader-side daily reset can slot in later.
+     * Serialises stat writes per group WITHIN this process. The rollover below is a
+     * read-modify-write, so two writes racing on the same triple could both observe the
+     * stale date key and both fold the same daily value into the cumulative total. The
+     * three writer paths live in one app process, so a local mutex closes that window
+     * without putting a Firestore transaction on the overlay's "Ja, öffnen" tap path.
+     *
+     * This is insurance against DOUBLE-COUNTING only. It is NOT what makes the three
+     * paths independent — that is the per-path date keys on [ParticipantStats], which fix
+     * a sequential bug a mutex cannot touch.
      */
-    suspend fun setParticipantOpensToday(groupId: String, userId: String, opensToday: Int) {
+    private val statsWriteMutexes = ConcurrentHashMap<String, Mutex>()
+
+    /**
+     * Read-modify-merge of the caller's OWN stat doc. [build] receives the stored doc plus
+     * today's key and returns the fields to merge; it is called only when the current doc
+     * was read successfully.
+     *
+     * On a read failure the write is SKIPPED rather than attempted blind. A blind write
+     * would have to guess the cumulative total, and guessing 0 would overwrite a real
+     * total with zero — losing the whole challenge's history for one transient error.
+     * Dropping a single stat update instead is cheap: the opens path rewrites on the next
+     * conscious open and the time path within 60 s. A non-existent doc is NOT a failure —
+     * it reads back as an all-defaults [ParticipantStats], which is exactly right for a
+     * first write.
+     */
+    private suspend fun writeOwnStats(
+        groupId: String,
+        userId: String,
+        label: String,
+        build: (stored: ParticipantStats, today: Long) -> Map<String, Any>,
+    ) {
+        val mutex = statsWriteMutexes.getOrPut(groupId) { Mutex() }
         try {
-            statsRef(groupId).document(userId)
-                .set(
-                    mapOf(
-                        "opensToday" to opensToday,
-                        "dateKey" to DateUtils.todayKey(),
-                        "updatedAt" to System.currentTimeMillis(),
-                    ),
-                    SetOptions.merge()
+            mutex.withLock {
+                val ref = statsRef(groupId).document(userId)
+                val stored = ref.get().await().toParticipantStats()
+                val fields = build(stored, DateUtils.todayKey()) +
+                    ("updatedAt" to System.currentTimeMillis())
+                ref.set(fields, SetOptions.merge()).await()
+                Timber.d(
+                    "GroupChallengeFirestore: %s stats written groupId=%s uid=%s fields=%s",
+                    label, groupId, userId, fields.keys
                 )
-                .await()
-            Timber.d("Group opensToday set: %s user=%s opens=%d", groupId, userId, opensToday)
+            }
         } catch (e: Exception) {
-            Timber.e(e, "GroupChallengeFirestore: setParticipantOpensToday failed groupId=%s uid=%s", groupId, userId)
+            Timber.e(
+                e, "GroupChallengeFirestore: %s stat write failed (skipped, no cumulative touched) groupId=%s uid=%s",
+                label, groupId, userId
+            )
         }
     }
 
-    /** ABSOLUTE write of the caller's own time-used minutes — same contract as [setParticipantOpensToday]. */
-    suspend fun setParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) {
-        try {
-            statsRef(groupId).document(userId)
-                .set(
-                    mapOf(
-                        "timeUsedMinutes" to timeUsedMinutes,
-                        "dateKey" to DateUtils.todayKey(),
-                        "updatedAt" to System.currentTimeMillis(),
-                    ),
-                    SetOptions.merge()
-                )
-                .await()
-            Timber.d("Leaderboard time set: groupId=%s userId=%s time=%d", groupId, userId, timeUsedMinutes)
-        } catch (e: Exception) {
-            Timber.e(e, "GroupChallengeFirestore: setParticipantTimeUsed failed groupId=%s uid=%s", groupId, userId)
+    /**
+     * ABSOLUTE write of the caller's own conscious-opens count for today, rolling the
+     * previous day's count into [ParticipantStats.totalOpens] first if the stored opens
+     * stamp is not today's. Merge-writes only the user's own stat doc — never the parent
+     * doc, never another participant.
+     */
+    suspend fun setParticipantOpensToday(groupId: String, userId: String, opensToday: Int) =
+        writeOwnStats(groupId, userId, "opens") { stored, today ->
+            buildMap {
+                put("opensToday", opensToday)
+                put("opensDateKey", today)
+                put("dateKey", today)
+                // Fold the stored day's count into the total as we leave that day. Runs
+                // on the FIRST write of a new day only; the daily slot then belongs to
+                // today and stays excluded from the total (see ParticipantStats).
+                if (!stored.opensIsForToday) {
+                    put("totalOpens", stored.totalOpens + (stored.opensToday ?: 0))
+                }
+            }
         }
-    }
+
+    /** ABSOLUTE write of the caller's own time-used minutes — same contract as [setParticipantOpensToday]. */
+    suspend fun setParticipantTimeUsed(groupId: String, userId: String, timeUsedMinutes: Int) =
+        writeOwnStats(groupId, userId, "time") { stored, today ->
+            buildMap {
+                put("timeUsedMinutes", timeUsedMinutes)
+                put("timeDateKey", today)
+                put("dateKey", today)
+                if (!stored.timeIsForToday) {
+                    put("totalMinutes", stored.totalMinutes + (stored.timeUsedMinutes ?: 0))
+                }
+            }
+        }
+
+    /**
+     * Records that TODAY blew the challenge's limit, rolling a previous flagged day into
+     * [ParticipantStats.exceededDays] first. Idempotent: called once per violation day by
+     * `DailyEvaluationWorker`, and a repeat call on the same day re-writes the same flag
+     * without folding again (the stamp already matches today).
+     *
+     * A clean day writes NOTHING — which is correct, because the stored flag describes the
+     * day named by `exceededDateKey`, however long ago that was. The fold on the next
+     * violation day still credits exactly one day.
+     */
+    suspend fun setParticipantExceededToday(groupId: String, userId: String) =
+        writeOwnStats(groupId, userId, "exceeded") { stored, today ->
+            buildMap {
+                put("exceededToday", true)
+                put("exceededDateKey", today)
+                if (stored.exceededDateKey != today) {
+                    put("exceededDays", stored.exceededDays + (if (stored.exceededToday) 1 else 0))
+                }
+            }
+        }
 
     private fun DocumentSnapshot.toParticipantStats(): ParticipantStats = ParticipantStats(
         opensToday = getLong("opensToday")?.toInt(),
         timeUsedMinutes = getLong("timeUsedMinutes")?.toInt(),
+        exceededToday = getBoolean("exceededToday") ?: false,
         dateKey = getLong("dateKey"),
+        opensDateKey = getLong("opensDateKey"),
+        timeDateKey = getLong("timeDateKey"),
+        exceededDateKey = getLong("exceededDateKey"),
+        totalOpens = getLong("totalOpens")?.toInt() ?: 0,
+        totalMinutes = getLong("totalMinutes")?.toInt() ?: 0,
+        exceededDays = getLong("exceededDays")?.toInt() ?: 0,
     )
 
     /**
@@ -240,16 +359,16 @@ class GroupChallengeFirestoreService @Inject constructor(
         return copy(
             participants = participants.map { p ->
                 val s = stats[p.userId] ?: return@map p
-                if (!s.isForToday) {
-                    Timber.d(
-                        "GroupChallengeFirestore: stale stat doc for %s (dateKey=%s, today=%d) — reading as 0",
-                        p.userId, s.dateKey, DateUtils.todayKey()
-                    )
-                    return@map p.copy(opensToday = 0, timeUsedMinutes = 0)
-                }
                 p.copy(
-                    opensToday = s.opensToday ?: p.opensToday,
-                    timeUsedMinutes = s.timeUsedMinutes ?: p.timeUsedMinutes,
+                    // Daily values — each gated on ITS OWN day stamp, so a fresh time
+                    // write cannot make a stale opens value look current (or vice versa).
+                    opensToday = if (s.opensIsForToday) s.opensToday ?: p.opensToday else 0,
+                    timeUsedMinutes =
+                        if (s.timeIsForToday) s.timeUsedMinutes ?: p.timeUsedMinutes else 0,
+                    // Whole-challenge totals — ungated by design (see ParticipantStats).
+                    totalOpens = s.totalOpensAllDays,
+                    totalMinutes = s.totalMinutesAllDays,
+                    exceededDays = s.exceededDaysAllDays,
                 )
             }
         )

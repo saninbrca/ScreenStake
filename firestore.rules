@@ -186,22 +186,58 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
-      // Participants sub-collection — LIVE: per-participant leaderboard stats
-      // ({opensToday, timeUsedMinutes, dateKey, updatedAt}), written by each user to
-      // their OWN doc only (doc id == uid). Whitelist, not blacklist: the doc CANNOT
-      // carry money/identity fields at all — those live in the parent doc's
-      // participants array, which is Cloud-Function-only. request.resource.data is
-      // the post-merge doc, so the field checks tolerate partial merge writes
-      // (opens-only or time-only) while still type-guarding whatever is present.
+      // Participants sub-collection — LIVE: per-participant leaderboard stats, written
+      // by each user to their OWN doc only (doc id == uid). Whitelist, not blacklist:
+      // the doc CANNOT carry money/identity fields at all — those live in the parent
+      // doc's participants array, which is Cloud-Function-only. request.resource.data
+      // is the post-merge doc, so the field checks tolerate partial merge writes
+      // (opens-only, time-only or exceeded-only) while still type-guarding whatever
+      // is present.
+      //
+      // Shape:
+      //   daily slot      opensToday, timeUsedMinutes, exceededToday
+      //   day stamps      opensDateKey, timeDateKey, exceededDateKey (+ legacy dateKey)
+      //   cumulative      totalOpens, totalMinutes, exceededDays
+      //
+      // The cumulative fields feed the whole-challenge ranking and are MONOTONIC: a
+      // write may raise them or leave them alone, never lower them. That is the only
+      // integrity guarantee available here — these are self-reported client numbers,
+      // and a participant who simply stops writing stops accumulating. They are
+      // therefore SAFE FOR RANKING ONLY and must never gate money. Settlement
+      // classifies on `status` (failed vs not) in the CF-only parent array and splits
+      // the bonus equally among winners; nothing here can influence a payout.
       match /participants/{participantId} {
         allow read: if request.auth != null;
         allow create, update: if request.auth != null
           && request.auth.uid == participantId
-          && request.resource.data.keys().hasOnly(['opensToday', 'timeUsedMinutes', 'dateKey', 'updatedAt'])
+          && request.resource.data.keys().hasOnly([
+               'opensToday', 'timeUsedMinutes', 'exceededToday',
+               'dateKey', 'opensDateKey', 'timeDateKey', 'exceededDateKey',
+               'totalOpens', 'totalMinutes', 'exceededDays',
+               'updatedAt'
+             ])
           && (!('opensToday' in request.resource.data)
               || (request.resource.data.opensToday is int && request.resource.data.opensToday >= 0))
           && (!('timeUsedMinutes' in request.resource.data)
-              || (request.resource.data.timeUsedMinutes is int && request.resource.data.timeUsedMinutes >= 0));
+              || (request.resource.data.timeUsedMinutes is int && request.resource.data.timeUsedMinutes >= 0))
+          && (!('exceededToday' in request.resource.data)
+              || request.resource.data.exceededToday is bool)
+          && (!('totalOpens' in request.resource.data)
+              || (request.resource.data.totalOpens is int && request.resource.data.totalOpens >= 0))
+          && (!('totalMinutes' in request.resource.data)
+              || (request.resource.data.totalMinutes is int && request.resource.data.totalMinutes >= 0))
+          && (!('exceededDays' in request.resource.data)
+              || (request.resource.data.exceededDays is int && request.resource.data.exceededDays >= 0))
+          // Monotonic guards: a cumulative total may rise or stay, never fall.
+          // `resource == null` on create (no prior doc to compare against). Both sides
+          // use .get(field, 0) so the rule stays valid for a doc written BEFORE these
+          // fields existed (an in-flight challenge) and for a partial merge write that
+          // omits them — a missing-field access would otherwise error and deny the write.
+          && (resource == null || (
+                request.resource.data.get('totalOpens', 0) >= resource.data.get('totalOpens', 0)
+             && request.resource.data.get('totalMinutes', 0) >= resource.data.get('totalMinutes', 0)
+             && request.resource.data.get('exceededDays', 0) >= resource.data.get('exceededDays', 0)
+          ));
         allow delete: if false;
       }
 

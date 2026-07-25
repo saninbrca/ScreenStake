@@ -74,6 +74,7 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.hasWon
 import com.detox.app.presentation.components.formatEuroCents
 import com.detox.app.presentation.screens.activechallenge.DetoxCard
 import com.detox.app.ui.theme.DetoxAvatarPalette
@@ -968,7 +969,10 @@ private fun LeaderboardRow(
             val statusLabel = when (participant.status) {
                 ParticipantStatus.ACTIVE -> stringResource(R.string.group_detail_row_aktiv)
                 ParticipantStatus.FAILED -> stringResource(R.string.group_detail_row_failed)
-                ParticipantStatus.SUCCESS -> stringResource(R.string.group_detail_row_won)
+                // SUCCESS (legacy docs) and COMPLETED (what the settlement CF writes)
+                // are the same outcome — see ParticipantStatus.hasWon.
+                ParticipantStatus.SUCCESS,
+                ParticipantStatus.COMPLETED -> stringResource(R.string.group_detail_row_won)
             }
             val statusColor = when (participant.status) {
                 ParticipantStatus.ACTIVE -> detoxColors.accent
@@ -1166,7 +1170,7 @@ private fun FailedUserBanner(gc: GroupChallenge) {
             }
             if (gc.status == GroupChallengeStatus.COMPLETED) {
                 val winner = gc.participants
-                    .filter { it.status == ParticipantStatus.SUCCESS }
+                    .filter { it.status.hasWon }
                     .minByOrNull { it.timeUsedMinutes }
                 if (winner != null) {
                     val name = "@" + (winner.displayName.takeIf { it.isNotBlank() }
@@ -1200,9 +1204,9 @@ private fun ResultSummaryCard(
     onConnectBank: () -> Unit,
 ) {
     val failedCount = gc.participants.count { it.status == ParticipantStatus.FAILED }
-    val succeededCount = gc.participants.count { it.status == ParticipantStatus.SUCCESS }
+    val succeededCount = gc.participants.count { it.status.hasWon }
     val myParticipant = gc.participants.find { it.userId == currentUserId }
-    val iWon = myParticipant?.status == ParticipantStatus.SUCCESS
+    val iWon = myParticipant?.status?.hasWon == true
     val iLost = myParticipant?.status == ParticipantStatus.FAILED
 
     Card(
@@ -1335,7 +1339,7 @@ private fun AbrechnungGroupCard(
     val nobodyFailed = gc.perWinnerBonus == 0
     val prizePerWinner = gc.perWinnerBonus
     val payoutStatus = myParticipant.payoutStatus ?: "captured"
-    val isWinner = myStatus == ParticipantStatus.SUCCESS
+    val isWinner = myStatus?.hasWon == true
 
     val formatCents: (Int) -> String = { cents ->
         "€%,.2f".format(cents / 100.0)

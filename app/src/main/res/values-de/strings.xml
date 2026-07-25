@@ -1455,9 +1455,10 @@
     <string name="abrechnung_not_passed">Challenge nicht bestanden</string>
 
     <!-- Group Challenge Authorization Window -->
-    <string name="group_auth_days_remaining">Noch %1$d Tage zum Starten</string>
-    <string name="group_auth_expires_tomorrow">Läuft morgen ab!</string>
-    <string name="group_auth_expired">Abgelaufen</string>
+    <!-- Reservierung = der Stripe-Hold (authorizationExpiresAt), NICHT der Starttermin. -->
+    <string name="group_auth_days_remaining">Reservierung läuft in %1$d Tagen ab</string>
+    <string name="group_auth_expires_tomorrow">Reservierung läuft morgen ab!</string>
+    <string name="group_auth_expired">Reservierung abgelaufen</string>
 
     <!-- Start — payment_not_ready dialog -->
     <string name="group_start_payment_not_ready_title">Start nicht möglich</string>

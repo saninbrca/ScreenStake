@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -85,6 +86,7 @@ import com.detox.app.presentation.screens.activechallenge.DetoxCard
 import com.detox.app.ui.theme.DetoxAvatarPalette
 import com.detox.app.ui.theme.DetoxPodiumColors
 import com.detox.app.ui.theme.detoxColors
+import androidx.compose.ui.graphics.vector.ImageVector
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -798,6 +800,22 @@ private fun GroupHeaderCard(
                     color = detoxColors.subtext
                 )
 
+                // Two dates, and they are NOT the same thing. Only the second one used to be
+                // shown, under the label "Noch N Tage zum Starten" — which reads as a countdown to
+                // the start while actually counting down the card hold, so a challenge starting on
+                // the 27th advertised "4 days" from a deadline on the 31st.
+                //   • startDate              — when the challenge begins (0 = creator starts it manually)
+                //   • authorizationExpiresAt — when the Stripe hold lapses if it has NOT started by then
+                // A participant cares about both, and the join preview already separates them.
+                WaitingInfoLine(
+                    icon = Icons.Outlined.Event,
+                    text = if (gc.startDate > 0L)
+                        stringResource(R.string.group_starts_on, dateFmt.format(Date(gc.startDate)))
+                    else
+                        stringResource(R.string.join_group_starts_manual),
+                    color = detoxColors.subtext,
+                )
+
                 // Authorization window countdown
                 if (gc.authorizationExpiresAt > 0L) {
                     val now = System.currentTimeMillis()
@@ -812,23 +830,11 @@ private fun GroupHeaderCard(
                     }
                     // Icon, not the ⏳/🔴 the strings used to carry — emoji are not our
                     // icon system, and the string is now shared with the join screen.
-                    Row(
-                        modifier = Modifier.padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.HourglassTop,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = countdownColor,
-                        )
-                        Text(
-                            text = countdownText,
-                            fontSize = 13.sp,
-                            color = countdownColor,
-                        )
-                    }
+                    WaitingInfoLine(
+                        icon = Icons.Outlined.HourglassTop,
+                        text = countdownText,
+                        color = countdownColor,
+                    )
                 }
 
                 if (gc.creatorUserId == currentUserId) {
@@ -1140,6 +1146,24 @@ private fun SessionCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
+    }
+}
+
+/** One icon + text line in the WAITING block (scheduled start, authorization deadline). */
+@Composable
+private fun WaitingInfoLine(icon: ImageVector, text: String, color: Color) {
+    Row(
+        modifier = Modifier.padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = color,
+        )
+        Text(text = text, fontSize = 13.sp, color = color)
     }
 }
 

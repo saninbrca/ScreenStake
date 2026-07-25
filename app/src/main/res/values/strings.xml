@@ -1485,9 +1485,12 @@
     <string name="abrechnung_not_passed">Challenge not passed</string>
 
     <!-- Group Challenge Authorization Window -->
-    <string name="group_auth_days_remaining">%1$d days left to start</string>
-    <string name="group_auth_expires_tomorrow">Expires tomorrow!</string>
-    <string name="group_auth_expired">Expired</string>
+    <!-- These three describe the Stripe authorization hold (authorizationExpiresAt), NOT the
+         scheduled start (startDate) — they are shown on separate lines and must not be reworded
+         into a start countdown. "%1$d days left to start" used to sit here and read as one. -->
+    <string name="group_auth_days_remaining">Card hold expires in %1$d days</string>
+    <string name="group_auth_expires_tomorrow">Card hold expires tomorrow!</string>
+    <string name="group_auth_expired">Card hold expired</string>
 
     <!-- Start — payment_not_ready dialog -->
     <string name="group_start_payment_not_ready_title">Can\'t start yet</string>

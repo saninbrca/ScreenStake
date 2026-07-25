@@ -21,7 +21,7 @@
 | Minimum participants to start | **2** |
 | Minimum duration | **3 days** |
 | Maximum duration | **30 days** |
-| Maximum participants | **20** (fixed) |
+| Maximum participants | **Creator-chosen, 3–20** (wizard step 4, default 20). Hard floor 2, validated server-side in `createGroupChallenge`; `GroupParticipantLimits` is the client's single source of truth |
 | Who can start | Creator (manual) — OR automatic once an optional scheduled start date passes |
 | Start date | Optional (`startDateEnabled`/`startDateMs` in the create wizard); when set, `GroupChallengeAutoStartWorker` (24h periodic, scheduled in `DetoxApplication`) starts due WAITING groups |
 | Auto-cancel condition | < 2 participants when creator tries to start → refund all |
@@ -74,19 +74,62 @@ read error leaves the feature enabled. See `docs/13_remote_config_and_flags.md`.
 
 ---
 
-## Creation Flow (5-Step Wizard)
+## Creation Flow (6-Step Wizard)
 
 ```
-Step 1: Mode (Group auto-selected)
-Step 2: App/Website selection
-Step 3: Limit type + value
-Step 4: Duration + Buy-in
-Step 5: Review & Start → calls createGroupChallenge Cloud Function
+Step 1: App/Website selection (Apps tab | Websites tab — the Websites path skips step 2)
+Step 2: Limit type
+Step 3: Limit value + duration
+Step 4: Buy-in + max players          ← both economic parameters, one card
+Step 5: Start date + winner bonus
+Step 6: Review & create → PaymentSheet → createGroupChallenge Cloud Function
     ↓
 Cloud Function creates Firestore document + generates 6-char join code
     ↓
 Creator sees detail screen with join code to share
 ```
+
+Visible steps come from `visibleGroupSteps(state)` — step 4 is on BOTH paths and is
+never skipped. Step 4 has no Solo/Hard counterpart, which is why group-only economic
+inputs live there.
+
+### Step 4 — participant cap + the honest best-case figure (2026-07-25)
+
+`maxParticipants` was always present end to end (model, Room entity, Firestore doc,
+enforced in `joinGroupChallenge` + `confirmGroupJoin`) but hardcoded to 20 in the
+create ViewModel. The creator now picks it from a second `DetoxHorizontalPicker` in
+the same card as the buy-in.
+
+- **`GroupParticipantLimits`** (`domain/model`) is the single source of truth:
+  `HARD_MIN = 2`, `PICKER_MIN = 3`, `MAX = 20`, `DEFAULT = 20`. It replaced the old
+  `GROUP_MAX_PARTICIPANTS` constant. `HARD_MIN` is not cosmetic — `startGroupChallenge`
+  cancels every PaymentIntent and refuses to start below 2 participants, so a cap of 1
+  would produce a group that can never start. The ViewModel setter clamps defensively.
+- **Server validation:** `createGroupChallenge` rejects an absent, non-integer, or
+  out-of-`2..20` value with HTTP 400 + code `invalid_max_participants`, **before any
+  Firestore read or write**. This is the only server-side gate on the field (the CF
+  spreads `groupData` into the doc), and it is input validation only — no Stripe call,
+  no capture, no change to the join capacity checks.
+- **The `?? 5` / `?: 5` fallbacks are NOT the default** — they are a deliberate
+  fail-safe for a document written before the field existed, in
+  `GroupChallengeFirestoreService`, `joinGroupChallenge` and `confirmGroupJoin`. All
+  three agree at 5 so client and server never disagree about capacity, and 5 errs
+  small: an undersized group, never an oversold one. **Do not raise them to 20.**
+- **The pot figure is honest.** It used to read `buyIn × 20` — a full lobby in which
+  all 20 fail, which pays nobody. It is now `maxPossibleWinCents(stake, cap)`, which
+  mirrors `completeGroupChallenge` exactly: own stake back at 80%, plus the failed
+  participants' pot minus the 10% app fee, taken whole by a sole winner. €10 at cap 20
+  → €179,00; €10 at cap 3 → €26,00. The label states the assumption ("Most you could
+  win") and a note names the nobody-fails 100% case. `GroupParticipantLimitsTest`
+  locks the maths to the CF's percentages.
+- **Editability after creation is out of scope** and blocked by design: `firestore.rules`
+  lists `maxParticipants` among the CF-only keys on update, so changing it would need a
+  new Cloud Function. Lowering a cap would evict paid participants; if this is ever
+  built, it should be raise-only or a separate "close joins" flag.
+
+Every runtime `X/max` display (Friends hub, join screen, detail screen, challenge card
+via `DailyStats`, the "challenge is full" message) already read `gc.maxParticipants`
+and needed no change.
 
 ---
 
@@ -246,7 +289,7 @@ groupChallenges/{groupId}/
     sessionDurationMinutes: Int
     durationDays: Int
     buyInCents: Int                  ← minimum 1000 (€10)
-    maxParticipants: Int             ← fixed at 20
+    maxParticipants: Int             ← creator-chosen 3–20 (step 4); CF-validated 2..20 on create
     startDate: Long                  ← Unix ms, 0 if not started yet
     endDate: Long                    ← Unix ms
     completedAt: Long                ← Unix ms, 0 if not completed
@@ -755,7 +798,8 @@ exhausted path jumped straight to `SessionLimitReachedOverlay`.
 - `"● LIVE"` badge (green) or `"⏳ WARTET"` (gray) + days remaining
 - App name: 22sp bold
 - Subtitle: limit description
-- 3-column stats: **Gesamtpot €X** | **Teilnehmer X/20** | **Dein Gewinn €X** (green)
+- 3-column stats: **Gesamtpot €X** | **Teilnehmer X/max** | **Dein Gewinn €X** (green) — the
+  max is the group's own `maxParticipants`, not a fixed 20
 
 ### Leaderboard section
 Single white card, rows with 0.5px dividers.

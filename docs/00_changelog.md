@@ -21,6 +21,40 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-25 — Group Phase 3: creator sets the participant cap; honest best-case figure
+
+`maxParticipants` already existed in every layer (model, Room entity, Firestore doc,
+enforced in `joinGroupChallenge` + `confirmGroupJoin`) but was hardcoded to 20 in
+`GroupChallengeCreateViewModel`. The creator now chooses it on wizard step 4, as a second
+picker in the same card as the buy-in — step 4 is group-only and on both wizard paths, so
+this cannot re-diverge the Solo/Hard wizard. **No Room migration:** the column is already
+`INTEGER NOT NULL` in the shipped schema and no entity field changed.
+
+- **`GroupParticipantLimits`** (`domain/model`) replaces `GROUP_MAX_PARTICIPANTS`:
+  `HARD_MIN = 2`, `PICKER_MIN = 3`, `MAX = 20`, `DEFAULT = 20` (an untouched wizard behaves
+  exactly as before). `HARD_MIN` is a real floor — `startGroupChallenge` cancels every PI and
+  refuses to start below 2 participants.
+- **DECISION — the pot estimate must be a figure the payout code can actually produce.**
+  It read `buyIn × 20`: a full lobby in which all 20 fail, which pays nobody. Replaced with
+  `maxPossibleWinCents(stake, cap)`, mirroring `completeGroupChallenge` exactly — own stake
+  at 80% + failed pot − 10% fee, taken whole by a sole winner. €10/cap 20 → €179,00;
+  €10/cap 3 → €26,00. Label states the assumption; a note names the nobody-fails 100% case.
+  `GroupParticipantLimitsTest` locks it to the CF's percentages. Same honesty principle
+  already applied to the results screens.
+- **`createGroupChallenge` now validates `maxParticipants`** (absent / non-integer / outside
+  `2..20` → HTTP 400, code `invalid_max_participants`) **before any Firestore read or write**.
+  The CF spreads `groupData` verbatim, so this is the only server-side gate on a now
+  genuinely client-supplied field. Input validation only — no Stripe, no capture, no change
+  to the join capacity checks.
+- **DECISION — the `?? 5` / `?: 5` fallbacks stay at 5.** They are a fail-safe for pre-field
+  docs, not the default; all three sites agree so client and server never disagree about
+  capacity, and 5 errs small (undersized group, never oversold). Docs that called the cap
+  "fixed at 20" were wrong and are corrected. Raising them to 20 would loosen capacity
+  enforcement on any field-less doc.
+- Editability after creation stays out of scope — `firestore.rules` makes `maxParticipants`
+  CF-only on update, so it would need a new CF. Lowering would evict paid participants;
+  raise-only or a separate "close joins" flag if it is ever built.
+
 ### 2026-07-24 — Group participants array: transactional merges everywhere (INVARIANT #28)
 
 Last piece of Phase 2. Six CFs (`cancelGroupChallenge`, `deleteGroupChallenge`,

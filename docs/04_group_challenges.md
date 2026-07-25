@@ -81,7 +81,7 @@ Step 1: App/Website selection (Apps tab | Websites tab — the Websites path ski
 Step 2: Limit type
 Step 3: Limit value + duration
 Step 4: Buy-in + max players          ← both economic parameters, one card
-Step 5: Start date + winner bonus
+Step 5: Start date
 Step 6: Review & create → PaymentSheet → createGroupChallenge Cloud Function
     ↓
 Cloud Function creates Firestore document + generates 6-char join code
@@ -293,7 +293,7 @@ groupChallenges/{groupId}/
     startDate: Long                  ← Unix ms, 0 if not started yet
     endDate: Long                    ← Unix ms
     completedAt: Long                ← Unix ms, 0 if not completed
-    bonusEnabled: Boolean
+    bonusEnabled: Boolean            ← RETIRED, always false; no CF ever read it (see below)
     authorizationExpiresAt: Timestamp? ← 5 days after creation
     status: String                   ← "waiting" | "active" | "completed" | "cancelled"
     participants: Array<Participant>
@@ -422,7 +422,7 @@ point. **Do not re-implement it.**
 > doc, and one who simply stops writing stops accumulating. Rules enforce monotonicity (a
 > total may rise or stay, never fall) but that is the *only* integrity guarantee. Ranking is
 > **cosmetic and must never gate money**: settlement classifies purely on `status`
-> (failed vs not) in the CF-only parent array and splits the bonus equally among winners.
+> (failed vs not) in the CF-only parent array and splits the pot equally among winners.
 > **Never wire a payout to any of these fields.**
 
 ---

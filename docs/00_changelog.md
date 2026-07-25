@@ -21,6 +21,55 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-25 — Group create wizard: display bugs + winner-bonus removal
+
+Five commits. No payout math, settlement amount or Stripe call touched. No Room migration
+(DB stays at 28).
+
+**FIXED — `%%` rendered literally in 8 strings.** A string read via plain
+`stringResource`/`getString` never goes through `String.format`, so an escaped `%%` prints
+as `%%`. Those need a single `%` + `formatted="false"`. Swept both locale files and checked
+every call site: 8 were read without args (incl. `verlauf_hard_refund_fee`, visible on every
+won Hard Mode history detail); the rest carry positional args and keep `%%`.
+
+**FIXED — the wizard advertised fees that settlement does not charge.** Step 4 claimed a
+5% app fee and a 10% bonus to "the participant with the best performance". The truth from
+`completeGroupChallenge`: `appFee = floor(failedPot × 0.10)`, winner stake refund =
+`floor(ownStake × 0.80)`, and the remaining 90% of the pot is split **equally** among all
+winners. Step 5's "Service fee (20%)" was already correct (base = your own stake). Copy
+rewritten to match the CF and to name the base of every percentage — the two rates apply to
+different bases.
+
+**FIXED — review row broke mid-word.** Only the label column was weighted, so a long value
+starved it until a single German word no longer fit and Compose fell back to character-level
+breaking ("Gewinner-B / onus"). The value is now capped at half the row (`weight(1f,
+fill = false)`). Shared component — Solo/Hard review rows get it too.
+
+**FIXED — unthemed start-date picker.** The raw M3 `DatePickerDialog` drew from the M3
+surface defaults, its title+headline+mode-toggle chrome overran the dialog's max height, and
+M3's `requiredWidth` of `DatePicker`'s 360dp minimum clipped the confirm button on narrower
+viewports. Replaced by `WizardDatePickerDialog` in `WizardComponents.kt` — `detoxColors`
+throughout, zero tonal elevation, own title inside the surface, and a `LocalDensity`
+downscale below 360dp. It lives in the shared wizard components so a future Solo picker is
+identical by construction.
+
+**DECISION — the winner-bonus toggle is removed, not implemented.** `bonusEnabled` was
+written at create time and read by **no Cloud Function**: settlement always split the pot
+equally, so the toggle changed nothing in either position and both review states ("Enabled"
+/ "Disabled") misdescribed the payout. Building a real performance bonus is refused on
+purpose — ranking numbers are self-reported client values and must never gate money (see the
+ranking warning above). The control, its tooltip, its description and the review row are
+gone; step 4 now carries a four-line "How the money works" block under the pot estimate
+(stake of anyone over their limit → pot; pot split equally among finishers; app keeps 10%
+**of the pot**; your own stake separate at 80% back; nobody fails → 100% of your own stake,
+no fee). Placed there, not on review, because it explains the pot figure at the moment the
+stake is chosen while the review breakdown covers the creator's own stake.
+
+**DECISION — `bonusEnabled` stays in the data layer.** The Room column, entity field, domain
+field and Firestore key are kept, with the client now writing a constant `false`. The doc
+shape is unchanged for every existing parser and no migration runs for what is a UI removal.
+The entity field is commented as retired so nobody drops the column later.
+
 ### 2026-07-25 — Group Phase 4: leaderboard & results correctness
 
 Six commits. No payout math, settlement amount, Stripe call, `completeGroupChallenge`,

@@ -38,7 +38,11 @@
     <string name="permission_fix_now">FIX IT NOW →</string>
     <string name="active_challenge_current_limit">Current: %1$d %2$s</string>
     <string name="group_pot_estimate">Most you could win</string>
-    <string name="group_pot_estimate_note">Only if everyone else runs out of screen time and you don\'t. If nobody does, everyone gets 100%% back.</string>
+    <!-- formatted="false" + a single %: this is read via stringResource(id) with NO format args,
+         so nothing runs String.format over it and an escaped "%%" would render literally as "%%".
+         The attribute is what stops lint from reading "100% back" as a broken format specifier;
+         it must be repeated in values-de/. -->
+    <string name="group_pot_estimate_note" formatted="false">Only if everyone else runs out of screen time and you don\'t. If nobody does, everyone gets 100% back.</string>
     <string name="app_selection_usage_permission_required">Usage access permission is required to see your app stats.</string>
     <string name="app_selection_load_failed">Couldn\'t load your apps.</string>
     <string name="app_selection_usage_insufficient">Not enough usage to track</string>

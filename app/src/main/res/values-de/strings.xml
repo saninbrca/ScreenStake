@@ -38,7 +38,8 @@
     <string name="permission_fix_now">JETZT BEHEBEN →</string>
     <string name="active_challenge_current_limit">Aktuell: %1$d %2$s</string>
     <string name="group_pot_estimate">Höchstmöglicher Gewinn</string>
-    <string name="group_pot_estimate_note">Nur wenn alle anderen ihre Bildschirmzeit aufbrauchen und du nicht. Schafft es jeder, bekommen alle 100%% zurück.</string>
+    <!-- formatted="false" + a single %, mirroring values/ — see the EN comment. -->
+    <string name="group_pot_estimate_note" formatted="false">Nur wenn alle anderen ihre Bildschirmzeit aufbrauchen und du nicht. Schafft es jeder, bekommen alle 100% zurück.</string>
     <string name="app_selection_usage_permission_required">Für deine App-Statistiken ist die Nutzungszugriffsberechtigung erforderlich.</string>
     <string name="app_selection_load_failed">Apps konnten nicht geladen werden.</string>
     <string name="app_selection_usage_insufficient">Nicht genügend Nutzung zum Tracken</string>

@@ -231,6 +231,14 @@ fun WizardSummaryDividerRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // BOTH columns are weighted. With only the label weighted, the value was
+        // measured at its full intrinsic width first and a long one ("Aktiviert
+        // (10% des Pots)") starved the label column until a single German word no
+        // longer fit — at which point Compose falls back to breaking mid-word
+        // ("Gewinner-B / onus"). Capping the value at half the row keeps every
+        // label wide enough to wrap at word boundaries instead, in both languages.
+        // fill = false so a short value still renders at its natural width and the
+        // slack goes between the columns rather than padding the value out.
         Text(
             text = label,
             fontSize = 14.sp,
@@ -244,6 +252,7 @@ fun WizardSummaryDividerRow(
             fontWeight = FontWeight.SemiBold,
             color = valueColor,
             textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f, fill = false),
         )
     }
 }

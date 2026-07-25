@@ -1619,6 +1619,8 @@
     <string name="group_wizard_start_manual_desc">Challenge startet manuell — tippe auf „Challenge starten" sobald alle beigetreten sind.</string>
     <string name="group_wizard_start_date_section">Startdatum</string>
     <string name="group_wizard_start_date_placeholder">Datum wählen…</string>
+    <!-- Title of the shared wizard date-picker dialog (WizardDatePickerDialog). -->
+    <string name="wizard_date_picker_title">Datum auswählen</string>
     <string name="group_wizard_bonus_label">Bonus für den Gewinner</string>
     <string name="group_wizard_bonus_tooltip" formatted="false">Alle, die es schaffen, teilen die Einsätze der anderen gleichmäßig unter sich auf. Die App behält 10% dieses Pots. Dein eigener Einsatz zählt separat: 80% davon bekommst du zurück.</string>
     <string name="group_wizard_bonus_desc" formatted="false">Wenn jemand sein Limit sprengt, wandert sein Einsatz in den Pot. Alle, die es schaffen, teilen diesen Pot gleichmäßig unter sich auf, und die App behält 10% des Pots. Dein eigener Einsatz zählt separat — davon bekommst du 80% zurück.</string>

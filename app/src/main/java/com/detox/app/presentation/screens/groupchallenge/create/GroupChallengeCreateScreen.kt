@@ -37,8 +37,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -85,6 +83,7 @@ import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.WIZARD_TRANSITION_MS
+import com.detox.app.presentation.components.WizardDatePickerDialog
 import com.detox.app.presentation.components.WizardFeeBreakdownCard
 import com.detox.app.presentation.components.WizardHeader
 import com.detox.app.presentation.components.WizardLimitTypeCard
@@ -685,22 +684,15 @@ private fun GStep5StartDateAndBonus(
     val sdf = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
 
     if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { onStartDateChange(it) }
-                    showDatePicker = false
-                }) { Text(stringResource(R.string.ok), color = detoxColors.accent) }
+        WizardDatePickerDialog(
+            state = datePickerState,
+            title = stringResource(R.string.wizard_date_picker_title),
+            onConfirm = {
+                datePickerState.selectedDateMillis?.let { onStartDateChange(it) }
+                showDatePicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text(stringResource(R.string.dialog_cancel), color = detoxColors.subtext)
-                }
-            },
-        ) {
-            DatePicker(state = datePickerState)
-        }
+            onDismiss = { showDatePicker = false },
+        )
     }
 
     Column(

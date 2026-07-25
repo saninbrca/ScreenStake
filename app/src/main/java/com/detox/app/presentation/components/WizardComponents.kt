@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,13 +24,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,12 +44,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.detox.app.R
 import com.detox.app.presentation.util.pressScaleFeedback
 import com.detox.app.ui.theme.detoxColors
@@ -61,6 +72,16 @@ val WizardCardShape = RoundedCornerShape(16.dp)
 
 /** Primary-button corner radius shared by every wizard CTA. */
 val WizardBtnShape = RoundedCornerShape(14.dp)
+
+/** Dialog corner radius — M3's own dialog radius, so the picker reads as a dialog. */
+private val WizardDialogShape = RoundedCornerShape(28.dp)
+
+/**
+ * The width Material3's [DatePicker] refuses to go below (`DatePickerModalTokens
+ * .ContainerWidth`, applied internally as a `sizeIn(minWidth = …)`). Not exposed by
+ * the library, so it is mirrored here — see [WizardDatePickerDialog].
+ */
+private val DatePickerMinWidth = 360.dp
 
 /** Step-transition duration/easing — the header progress bar and the step slide stay in sync. */
 const val WIZARD_TRANSITION_MS = 300
@@ -408,6 +429,120 @@ fun WizardMissingPermissionRow(name: String, onGrant: () -> Unit) {
         )
         androidx.compose.material3.TextButton(onClick = onGrant) {
             Text(stringResource(R.string.challenge_permission_grant))
+        }
+    }
+}
+
+// ── Date picker dialog ────────────────────────────────────────────────────────
+
+/**
+ * The wizards' date picker. Currently only the Group wizard (step 5, start date) has
+ * one; it lives here so a Solo/Hard picker is identical the day one is added, instead
+ * of a second raw `DatePickerDialog` drifting away from this one.
+ *
+ * Deliberately NOT Material3's [androidx.compose.material3.DatePickerDialog]:
+ *
+ *  - **Theme.** M3's defaults draw the container from `surfaceContainerHigh` and the
+ *    day/nav foregrounds from the M3 roles, so the sheet read as a foreign grey panel
+ *    next to the app's cards. Every slot below is a [detoxColors] token, and
+ *    `tonalElevation = 0.dp` matches the theme's "no tonal overlays in either mode".
+ *  - **Height.** The default title + headline + mode toggle is ~140dp of chrome that
+ *    pushed the dialog past its own max height, clipping the top. All three are off;
+ *    [title] renders inside the surface instead, where nothing can overlap it.
+ *  - **Width.** [DatePicker] will not measure below [DatePickerMinWidth], and M3's
+ *    dialog wraps it in a `requiredWidth` of exactly that — which overflows (and
+ *    clips the confirm button off the right edge) on any viewport narrower than
+ *    360dp, e.g. a device set to a larger display size. Scaling the density down by
+ *    the shortfall shrinks the picker as real layout — hit targets included — and is
+ *    a no-op at 360dp and above.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WizardDatePickerDialog(
+    state: DatePickerState,
+    title: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+        ) {
+            val outer = LocalDensity.current
+            val shrink = (maxWidth / DatePickerMinWidth).coerceAtMost(1f)
+            CompositionLocalProvider(
+                LocalDensity provides Density(outer.density * shrink, outer.fontScale),
+            ) {
+                Surface(
+                    shape = WizardDialogShape,
+                    color = detoxColors.cardBackground,
+                    tonalElevation = 0.dp,
+                ) {
+                    Column {
+                        Text(
+                            text = title,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = detoxColors.label,
+                            modifier = Modifier.padding(
+                                start = 24.dp, end = 24.dp, top = 20.dp, bottom = 4.dp,
+                            ),
+                        )
+                        DatePicker(
+                            state = state,
+                            title = null,
+                            headline = null,
+                            showModeToggle = false,
+                            colors = DatePickerDefaults.colors(
+                                containerColor = detoxColors.cardBackground,
+                                weekdayContentColor = detoxColors.subtext,
+                                subheadContentColor = detoxColors.subtext,
+                                navigationContentColor = detoxColors.label,
+                                yearContentColor = detoxColors.label,
+                                currentYearContentColor = detoxColors.accent,
+                                selectedYearContentColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedYearContainerColor = detoxColors.accent,
+                                dayContentColor = detoxColors.label,
+                                disabledDayContentColor = detoxColors.hint,
+                                selectedDayContentColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedDayContainerColor = detoxColors.accent,
+                                todayContentColor = detoxColors.accent,
+                                todayDateBorderColor = detoxColors.accent,
+                                dividerColor = detoxColors.divider,
+                            ),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 12.dp, end = 20.dp, top = 4.dp, bottom = 16.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                                Text(
+                                    text = stringResource(R.string.dialog_cancel),
+                                    color = detoxColors.subtext,
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            androidx.compose.material3.TextButton(
+                                onClick = onConfirm,
+                                enabled = state.selectedDateMillis != null,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.ok),
+                                    color = if (state.selectedDateMillis != null) detoxColors.accent
+                                    else detoxColors.hint,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -1645,6 +1645,8 @@
     <string name="group_wizard_start_manual_desc">The challenge starts manually — tap “Start challenge” once everyone has joined.</string>
     <string name="group_wizard_start_date_section">Start date</string>
     <string name="group_wizard_start_date_placeholder">Pick a date…</string>
+    <!-- Title of the shared wizard date-picker dialog (WizardDatePickerDialog). -->
+    <string name="wizard_date_picker_title">Select a date</string>
     <string name="group_wizard_bonus_label">Bonus for the winner</string>
     <!-- Percentages here MUST match completeGroupChallenge in functions/src/index.ts:
          app fee = 10% OF THE FAILED POT, own-stake refund = 80% OF YOUR OWN STAKE.

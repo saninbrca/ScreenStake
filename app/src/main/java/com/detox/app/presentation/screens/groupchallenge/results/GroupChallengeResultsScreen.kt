@@ -51,8 +51,11 @@ import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.detox.app.R
+import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.cleanDays
+import com.detox.app.domain.model.elapsedDays
 import com.detox.app.util.HapticManager
 import kotlinx.coroutines.delay
 import nl.dionsegijn.konfetti.compose.KonfettiView
@@ -227,6 +230,7 @@ fun GroupChallengeResultsScreen(
                             else -> podium3OffsetY
                         }
                         PodiumSlotItem(
+                            challenge = uiState.challenge,
                             slot = slot,
                             alpha = alpha,
                             offsetYDp = offsetY,
@@ -280,6 +284,7 @@ fun GroupChallengeResultsScreen(
 @Composable
 private fun PodiumSlotItem(
     slot: PodiumSlot,
+    challenge: GroupChallenge?,
     alpha: Float,
     offsetYDp: Float,
     showLottie: Boolean,
@@ -338,6 +343,24 @@ private fun PodiumSlotItem(
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 86.dp),
         )
+
+        // The metric the podium is actually ordered by. Previously the podium showed no
+        // number at all, which is why it went unnoticed that it ranked on a single day.
+        if (slot.participant != null && challenge != null) {
+            Text(
+                text = stringResource(
+                    R.string.results_clean_days,
+                    slot.participant.cleanDays(challenge),
+                    challenge.elapsedDays(),
+                ),
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 86.dp),
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
 

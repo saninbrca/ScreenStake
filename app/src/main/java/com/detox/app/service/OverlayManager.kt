@@ -30,6 +30,8 @@ import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.DailyLog
+import com.detox.app.domain.model.groupRankingComparator
+import com.detox.app.domain.model.groupRankingMetricComparator
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.ParticipantStatus
@@ -1728,7 +1730,8 @@ class OverlayManager @Inject constructor(
 
     /**
      * Returns (rank, totalParticipants) for the current user in a group challenge.
-     * Uses standard competition ranking (1,1,3) — shared rank when opensToday is equal.
+     * Uses standard competition ranking (1,1,3) — shared rank when the ranking METRIC
+     * ties (joinedAt orders the list but never splits a displayed rank).
      * Only active (non-failed) participants are counted.
      * Falls back to (1, 1) on any error.
      */
@@ -1737,10 +1740,13 @@ class OverlayManager @Inject constructor(
             val gc = groupChallengeRepository.getGroupChallengeById(groupId) ?: return Pair(1, 1)
             val uid = firebaseAuthService.currentUserId() ?: return Pair(1, 1)
             val active = gc.participants.filter { it.status != ParticipantStatus.FAILED }
-            val sorted = active.sortedBy { it.opensToday }
+            // Shared whole-challenge ordering — the overlay header must never disagree
+            // with the leaderboard the user sees when they tap through.
+            val sorted = active.sortedWith(groupRankingComparator(gc))
+            val metric = groupRankingMetricComparator(gc)
             val myParticipant = sorted.find { it.userId == uid }
                 ?: return Pair(1, sorted.size.coerceAtLeast(1))
-            val rank = sorted.indexOfFirst { it.opensToday == myParticipant.opensToday } + 1
+            val rank = sorted.indexOfFirst { metric.compare(it, myParticipant) == 0 } + 1
             Pair(rank, sorted.size.coerceAtLeast(1))
         } catch (e: Exception) {
             Timber.e(e, "OverlayManager: computeGroupRank failed for $groupId")

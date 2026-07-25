@@ -1341,6 +1341,8 @@
     <string name="group_detail_row_won">Won ✅</string>
     <string name="group_detail_opens_stat">%1$d/%2$d opens</string>
     <string name="group_detail_time_stat">%1$d/%2$d min</string>
+    <!-- Whole-challenge ranking metric: clean days out of days elapsed so far. -->
+    <string name="group_detail_clean_days">%1$d/%2$d clean days</string>
     <string name="group_detail_du_badge">You</string>
     <string name="group_detail_limit_sessions">%1$d opens / day</string>
     <string name="group_detail_limit_time">%1$d min / day</string>
@@ -1523,6 +1525,8 @@
     <string name="results_medal_1" translatable="false">🥇</string>
     <string name="results_medal_2" translatable="false">🥈</string>
     <string name="results_medal_3" translatable="false">🥉</string>
+    <!-- Podium subtitle — the whole-challenge metric the podium is ordered by. -->
+    <string name="results_clean_days">%1$d of %2$d clean days</string>
     <string name="results_winner_headline">🎉 You won!</string>
     <string name="results_winner_sub">Your stake is being refunded</string>
     <string name="results_winner_prize">Prize share: +€%1$s</string>

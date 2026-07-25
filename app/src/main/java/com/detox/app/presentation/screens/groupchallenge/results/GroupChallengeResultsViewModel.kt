@@ -5,8 +5,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.detox.app.data.remote.firebase.FirebaseAuthService
+import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.groupRankingComparator
 import com.detox.app.domain.repository.GroupChallengeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,6 +35,8 @@ class GroupChallengeResultsViewModel @Inject constructor(
         val sortedWinners: List<Participant> = emptyList(),
         val failedParticipants: List<Participant> = emptyList(),
         val currentUserParticipant: Participant? = null,
+        /** Needed by the podium to render the clean-days metric it is ordered by. */
+        val challenge: GroupChallenge? = null,
         val isLoading: Boolean = true,
     )
 
@@ -48,15 +52,20 @@ class GroupChallengeResultsViewModel @Inject constructor(
             }.onSuccess { challenge ->
                 if (challenge == null) return@onSuccess
                 val all = challenge.participants
+                // Whole-challenge ordering (fewest exceeded days, then least total usage,
+                // then joinedAt). This used to sort on opensToday — ONE day's opens, and
+                // the final day at that — which ignored days 1..n-1 entirely and ranked a
+                // TIME challenge on a column that nothing writes.
                 val winners = all
                     .filter { it.status != ParticipantStatus.FAILED }
-                    .sortedWith(compareBy({ it.opensToday }, { it.timeUsedMinutes }))
+                    .sortedWith(groupRankingComparator(challenge))
                 val failed = all.filter { it.status == ParticipantStatus.FAILED }
                 _uiState.update {
                     it.copy(
                         sortedWinners = winners,
                         failedParticipants = failed,
                         currentUserParticipant = all.firstOrNull { p -> p.userId == userId },
+                        challenge = challenge,
                         isLoading = false,
                     )
                 }

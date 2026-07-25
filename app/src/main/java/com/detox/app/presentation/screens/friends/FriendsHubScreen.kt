@@ -60,6 +60,7 @@ import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.domain.model.GroupChallenge
 import com.detox.app.domain.model.GroupChallengeStatus
+import com.detox.app.domain.model.groupRankingComparator
 import com.detox.app.ui.theme.detoxColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -276,7 +277,9 @@ private fun ActiveChallengeCard(
 
     val userRank: Int? = remember(gc.participants, currentUserId) {
         if (currentUserId == null) return@remember null
-        val sorted = gc.participants.sortedBy { it.timeUsedMinutes }
+        // Shared whole-challenge ordering — this used to sort on timeUsedMinutes while the
+        // detail leaderboard sorted on opensToday, so the two disagreed by construction.
+        val sorted = gc.participants.sortedWith(groupRankingComparator(gc))
         val idx = sorted.indexOfFirst { it.userId == currentUserId }
         if (idx >= 0) idx + 1 else null
     }

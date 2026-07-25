@@ -5,6 +5,7 @@ import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.groupRankingComparator
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -88,10 +89,10 @@ class GetDailyStatsUseCase @Inject constructor(
                 val participantCount = groupChallenge?.participants?.size ?: 0
                 val maxParticipants = groupChallenge?.maxParticipants ?: 0
                 val userRank: Int? = if (isGroup && groupChallenge != null && currentUid != null) {
-                    val sorted = groupChallenge.participants.sortedBy { p ->
-                        if (challenge.limitType == LimitType.SESSIONS) p.opensToday
-                        else p.timeUsedMinutes
-                    }
+                    // Shared whole-challenge ordering — the dashboard card must agree with
+                    // the group detail leaderboard and the overlay header.
+                    val sorted = groupChallenge.participants
+                        .sortedWith(groupRankingComparator(groupChallenge))
                     sorted.indexOfFirst { it.userId == currentUid }.takeIf { it >= 0 }?.plus(1)
                 } else null
 

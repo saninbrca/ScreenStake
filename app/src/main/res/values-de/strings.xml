@@ -1323,6 +1323,8 @@
     <string name="group_detail_row_won">Gewonnen ✅</string>
     <string name="group_detail_opens_stat">%1$d/%2$d Öffnungen</string>
     <string name="group_detail_time_stat">%1$d/%2$d min</string>
+    <!-- Whole-challenge ranking metric: clean days out of days elapsed so far. -->
+    <string name="group_detail_clean_days">%1$d/%2$d saubere Tage</string>
     <string name="group_detail_du_badge">Du</string>
     <string name="group_detail_limit_sessions">%1$d Öffnungen / Tag</string>
     <string name="group_detail_limit_time">%1$d Min / Tag</string>
@@ -1502,6 +1504,8 @@
 
     <!-- Group Challenge Results Screen -->
     <string name="results_title">Challenge beendet! 🏁</string>
+    <!-- Podium subtitle — the whole-challenge metric the podium is ordered by. -->
+    <string name="results_clean_days">%1$d von %2$d sauberen Tagen</string>
     <string name="results_winner_headline">🎉 Du hast gewonnen!</string>
     <string name="results_winner_sub">Dein Einsatz wird zurückgebucht</string>
     <string name="results_winner_prize">Gewinnanteil: +€%1$s</string>

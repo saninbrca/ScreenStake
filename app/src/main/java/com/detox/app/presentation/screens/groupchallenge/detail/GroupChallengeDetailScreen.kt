@@ -74,6 +74,10 @@ import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.Participant
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.cleanDays
+import com.detox.app.domain.model.elapsedDays
+import com.detox.app.domain.model.groupRankingComparator
+import com.detox.app.domain.model.groupRankingMetricComparator
 import com.detox.app.domain.model.hasWon
 import com.detox.app.presentation.components.formatEuroCents
 import com.detox.app.presentation.screens.activechallenge.DetoxCard
@@ -338,27 +342,22 @@ private fun GroupDetailContent(
         Timber.d("GroupDetail: endDate=${gc.endDate} remaining=${remainingDays}d ${remainingHours}h")
     }
 
-    // Sorted participants (active ascending by opens, failed at bottom)
-    val sorted = gc.participants.sortedWith(Comparator { a, b ->
-        val aFailed = a.status == ParticipantStatus.FAILED
-        val bFailed = b.status == ParticipantStatus.FAILED
-        when {
-            aFailed != bFailed -> if (aFailed) 1 else -1
-            aFailed -> b.opensToday.compareTo(a.opensToday)
-            else -> {
-                val byOpens = a.opensToday.compareTo(b.opensToday)
-                if (byOpens != 0) byOpens else a.timeUsedMinutes.compareTo(b.timeUsedMinutes)
-            }
-        }
-    })
+    // Failed participants sink to the bottom; everyone else takes the shared
+    // whole-challenge ordering (see groupRankingComparator — do not inline a sort here).
+    val ranking = groupRankingComparator(gc)
+    val rankingMetric = groupRankingMetricComparator(gc)
+    val sorted = gc.participants.sortedWith(
+        compareBy<Participant> { it.status == ParticipantStatus.FAILED }.then(ranking)
+    )
     Timber.d("Leaderboard sorted: ${sorted.map { "${it.displayName}:${it.status}" }}")
 
     // Standard competition ranking (1,1,3 — not 1,2,3) for active participants only.
-    // Failed participants get rank 0 (displayed as "—").
+    // Failed participants get rank 0 (displayed as "—"). Ties are decided by the
+    // comparator itself, so the rank map can never disagree with the sort order.
     val rankMap: Map<String, Int> = buildMap {
         val active = sorted.filter { it.status != ParticipantStatus.FAILED }
         active.forEachIndexed { index, participant ->
-            val rank = if (index > 0 && participant.opensToday == active[index - 1].opensToday) {
+            val rank = if (index > 0 && rankingMetric.compare(participant, active[index - 1]) == 0) {
                 this[active[index - 1].userId]!!
             } else {
                 index + 1
@@ -981,13 +980,27 @@ private fun LeaderboardRow(
             Text(text = statusLabel, fontSize = 11.sp, color = statusColor)
         }
 
-        // Stat
-        Text(
-            text = stat,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (isFailed) detoxColors.hint else detoxColors.label
-        )
+        // Stat — today's usage against the limit, with the whole-challenge metric the
+        // rank is actually computed from underneath it. The rank column used to be
+        // explained by nothing on screen, so a rank that disagreed with today's number
+        // (the normal case, now that ranking spans the whole challenge) looked like a bug.
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = stat,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isFailed) detoxColors.hint else detoxColors.label
+            )
+            Text(
+                text = stringResource(
+                    R.string.group_detail_clean_days,
+                    participant.cleanDays(gc),
+                    gc.elapsedDays(),
+                ),
+                fontSize = 11.sp,
+                color = if (isFailed) detoxColors.hint else detoxColors.subtext
+            )
+        }
     }
 }
 

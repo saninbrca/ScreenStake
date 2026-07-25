@@ -685,7 +685,7 @@
     <string name="group_create_start_date_hint">Datum wählen…</string>
     <string name="group_create_bonus_label">Bonus für den Gewinner</string>
     <string name="group_create_bonus_info">Was ist der Gewinner-Bonus?</string>
-    <string name="group_create_bonus_tooltip" formatted="false">Der Teilnehmer mit der besten Performance (wenigste Öffnungen / meiste gesparte Zeit) erhält 10% extra aus dem Gesamtpot. Die App nimmt eine 5%-Gebühr.</string>
+    <string name="group_create_bonus_tooltip" formatted="false">Alle, die es schaffen, teilen die Einsätze der anderen gleichmäßig unter sich auf. Die App behält 10% dieses Pots.</string>
     <string name="group_create_next">Weiter — Überprüfen</string>
     <!-- Step 2 — Review -->
     <string name="group_create_code_label">Dein Gruppen-Code</string>
@@ -1620,14 +1620,14 @@
     <string name="group_wizard_start_date_section">Startdatum</string>
     <string name="group_wizard_start_date_placeholder">Datum wählen…</string>
     <string name="group_wizard_bonus_label">Bonus für den Gewinner</string>
-    <string name="group_wizard_bonus_tooltip" formatted="false">Der beste Teilnehmer erhält 10% extra aus dem Pot. Die App nimmt 5% Gebühr.</string>
-    <string name="group_wizard_bonus_desc" formatted="false">Der Teilnehmer mit der besten Performance erhält 10% extra aus dem Topf. Die App nimmt eine 5%-Gebühr.</string>
+    <string name="group_wizard_bonus_tooltip" formatted="false">Alle, die es schaffen, teilen die Einsätze der anderen gleichmäßig unter sich auf. Die App behält 10% dieses Pots. Dein eigener Einsatz zählt separat: 80% davon bekommst du zurück.</string>
+    <string name="group_wizard_bonus_desc" formatted="false">Wenn jemand sein Limit sprengt, wandert sein Einsatz in den Pot. Alle, die es schaffen, teilen diesen Pot gleichmäßig unter sich auf, und die App behält 10% des Pots. Dein eigener Einsatz zählt separat — davon bekommst du 80% zurück.</string>
 
     <!-- Group Wizard Step 6 — Review rows -->
     <string name="group_wizard_review_start_label">Startdatum</string>
     <string name="group_wizard_review_start_manual">Manueller Start</string>
     <string name="group_wizard_review_bonus_label">Gewinner-Bonus</string>
-    <string name="group_wizard_review_bonus_on" formatted="false">Aktiviert (10% des Pots)</string>
+    <string name="group_wizard_review_bonus_on">Aktiviert</string>
     <string name="group_wizard_review_bonus_off">Deaktiviert</string>
     <string name="group_wizard_review_max_players_label">Max. Spieler</string>
     <string name="group_wizard_review_pot_label">Höchstmöglicher Gewinn</string>

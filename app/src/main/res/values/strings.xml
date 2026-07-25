@@ -692,7 +692,7 @@
     <string name="group_create_start_date_hint">Pick a date…</string>
     <string name="group_create_bonus_label">Bonus for winner</string>
     <string name="group_create_bonus_info">What is the winner bonus?</string>
-    <string name="group_create_bonus_tooltip" formatted="false">The participant with the best performance (fewest opens / most time saved) receives an extra 10% of the total pot. The app takes a 5% fee.</string>
+    <string name="group_create_bonus_tooltip" formatted="false">Everyone who makes it splits the stakes of those who run out — equally. The app keeps 10% of that pot.</string>
     <string name="group_create_next">Next — Review</string>
     <!-- Step 2 — Review -->
     <string name="group_create_code_label">Your Group Code</string>
@@ -1646,14 +1646,17 @@
     <string name="group_wizard_start_date_section">Start date</string>
     <string name="group_wizard_start_date_placeholder">Pick a date…</string>
     <string name="group_wizard_bonus_label">Bonus for the winner</string>
-    <string name="group_wizard_bonus_tooltip" formatted="false">The best participant gets an extra 10% from the pot. The app takes a 5% fee.</string>
-    <string name="group_wizard_bonus_desc" formatted="false">The participant with the best performance gets an extra 10% from the pot. The app takes a 5% fee.</string>
+    <!-- Percentages here MUST match completeGroupChallenge in functions/src/index.ts:
+         app fee = 10% OF THE FAILED POT, own-stake refund = 80% OF YOUR OWN STAKE.
+         Two different bases — always name the base, never just the number. -->
+    <string name="group_wizard_bonus_tooltip" formatted="false">Everyone who makes it splits the stakes of those who run out — equally. The app keeps 10% of that pot. Your own stake is separate: 80% of it comes back.</string>
+    <string name="group_wizard_bonus_desc" formatted="false">If someone runs out of screen time, their stake goes into the pot. Everyone who makes it splits that pot equally, and the app keeps 10% of the pot. Your own stake is separate — you get 80% of it back.</string>
 
     <!-- Group Wizard Step 6 — Review rows -->
     <string name="group_wizard_review_start_label">Start date</string>
     <string name="group_wizard_review_start_manual">Manual start</string>
     <string name="group_wizard_review_bonus_label">Winner bonus</string>
-    <string name="group_wizard_review_bonus_on" formatted="false">Enabled (10% of the pot)</string>
+    <string name="group_wizard_review_bonus_on">Enabled</string>
     <string name="group_wizard_review_bonus_off">Disabled</string>
     <string name="group_wizard_review_max_players_label">Max players</string>
     <string name="group_wizard_review_pot_label">Most you could win</string>

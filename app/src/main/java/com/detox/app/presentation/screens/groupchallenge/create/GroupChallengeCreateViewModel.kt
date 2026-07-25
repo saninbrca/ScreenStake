@@ -428,6 +428,18 @@ class GroupChallengeCreateViewModel @Inject constructor(
         return GroupSubmission(
             appPackageNames = s.packageNames,
             limitType = limitType,
+            // ⚠️ limitValueMinutes is MEANINGLESS on a SESSIONS challenge — it is NOT the session
+            // length. The `else` branch just forwards the form's untouched 60-minute default
+            // (GroupCreateFormState.limitValueMinutes), because the SESSIONS step edits
+            // `sessionMinutes` and never touches this field. It is written to the group doc only to
+            // keep the document shape identical for every existing reader; splitting it now would
+            // create two generations of docs for no reader benefit.
+            //
+            // NEVER read it as session length — that is `sessionDurationMinutes`, which is what the
+            // overlay countdown enforces. The dashboard card used to read this field and rendered
+            // "je 60 Min." for a 1-minute group challenge; solo hid the bug because its wizard
+            // stores the session length in BOTH fields (ChallengeCreationViewModel.resolveLimitPair).
+            // See docs/04_group_challenges.md.
             limitValueMinutes = when (limitType) {
                 LimitType.TIME -> s.limitValueMinutes
                 LimitType.TIME_BUDGET -> s.dailyBudgetMinutes

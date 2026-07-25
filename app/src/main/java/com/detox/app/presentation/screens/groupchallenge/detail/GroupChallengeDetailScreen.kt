@@ -1112,6 +1112,22 @@ private fun SessionCard(
                 valueColor = detoxColors.accent
             )
 
+            // How long ONE open lasts before the overlay comes back — the rule the countdown
+            // actually enforces, and until now the only limit the joiner saw on the join preview
+            // but nowhere afterwards. Static config, so it sits below the two live-state rows.
+            // Reads sessionDurationMinutes; limitValueMinutes is NOT the session length (see the
+            // note at the group wizard's write site).
+            if (gc.limitType == LimitType.SESSIONS) {
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                SessionInfoRow(
+                    label = stringResource(R.string.group_detail_session_dur_label),
+                    value = stringResource(
+                        R.string.group_detail_session_dur_val,
+                        gc.sessionDurationMinutes
+                    )
+                )
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
 
             // EXISTING PROGRESS BAR — animated fill on screen open

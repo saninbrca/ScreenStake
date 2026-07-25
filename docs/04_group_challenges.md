@@ -284,9 +284,9 @@ groupChallenges/{groupId}/
     appPackageNames: String          ← comma-separated, e.g. "com.instagram.android,com.tiktok.android"
     blockedDomains: String?          ← comma-separated, nullable
     limitType: String                ← "sessions" | "time" | "budget"
-    limitValueMinutes: Int
+    limitValueMinutes: Int           ← TIME cap. MEANINGLESS on SESSIONS — see note below
     limitValueSessions: Int
-    sessionDurationMinutes: Int
+    sessionDurationMinutes: Int      ← length of ONE session; the value enforcement uses
     durationDays: Int
     buyInCents: Int                  ← minimum 1000 (€10)
     maxParticipants: Int             ← creator-chosen 3–20 (step 4); CF-validated 2..20 on create
@@ -321,6 +321,29 @@ payoutRequests/{requestId}/
     createdAt: Long
     paidAt: Long?
 ```
+
+### ⚠️ `limitValueMinutes` is NOT the session length
+
+On a **SESSIONS** group challenge, `limitValueMinutes` is meaningless. The wizard's Step-3
+SESSIONS screen edits `sessionMinutes` and never touches `limitValueMinutes`, so what lands in the
+document is `GroupCreateFormState.limitValueMinutes`' untouched default: **60**. It is written
+anyway, deliberately — the group doc keeps ONE shape for every existing reader/parser, and changing
+it now would create two generations of documents for no reader benefit
+(`GroupChallengeCreateViewModel.submission()` carries the same note at the write site).
+
+**Session length is `sessionDurationMinutes`, always** — that is the value the overlay countdown
+enforces (`OverlayManager.startSessionTimer`), and the only one any surface may display as "je N Min."
+
+Solo hides this trap: `ChallengeCreationViewModel.resolveLimitPair()` stores the session length in
+`limitValueMinutes` **as well**, so both fields hold the same number and reading the wrong one still
+prints the right value. That is exactly why the dashboard card's wrong-field read went unnoticed
+until a group challenge rendered it as "je 60 Min." for a 1-minute session (fixed 2026-07-26 —
+`DailyStats.sessionDurationMinutes`). Two known no-op readers of the wrong field survive because
+nothing renders their output: `CheckDailyLimitUseCase.remainingMinutes` and
+`ActiveChallengeViewModel.remainingMinutes` compute `limitValueMinutes × limitValueSessions` for
+SESSIONS. Money is unaffected either way — SESSIONS loss is classified on opens alone
+(`DailyEvaluationWorker.computeLimitExceeded`), and no Cloud Function reads either field as a
+duration.
 
 ---
 

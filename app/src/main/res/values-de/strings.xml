@@ -1332,6 +1332,8 @@
     <string name="group_detail_limit_time">%1$d Min / Tag</string>
     <string name="group_detail_limit_budget">%1$d Min Budget / Tag</string>
     <string name="group_detail_limit_window">Zeitfenster</string>
+    <string name="group_detail_session_dur_label">Session-Dauer</string>
+    <string name="group_detail_session_dur_val">%1$d Min</string>
     <string name="group_detail_waiting_players">%1$d/%2$d Spieler beigetreten</string>
     <string name="group_detail_start_button">Challenge starten 🚀</string>
     <string name="group_detail_need_players">Mindestens 2 Spieler nötig</string>

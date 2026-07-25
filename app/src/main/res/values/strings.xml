@@ -1358,6 +1358,10 @@
     <string name="group_detail_limit_time">%1$d min / day</string>
     <string name="group_detail_limit_budget">%1$d min budget / day</string>
     <string name="group_detail_limit_window">Time window</string>
+    <!-- Session-length row on the group detail SessionCard. Fed from sessionDurationMinutes —
+         NEVER limitValueMinutes, which carries a meaningless default on SESSIONS challenges. -->
+    <string name="group_detail_session_dur_label">Session length</string>
+    <string name="group_detail_session_dur_val">%1$d min</string>
     <string name="group_detail_waiting_players">%1$d/%2$d players joined</string>
     <string name="group_detail_start_button">Start challenge 🚀</string>
     <string name="group_detail_need_players">At least 2 players required</string>

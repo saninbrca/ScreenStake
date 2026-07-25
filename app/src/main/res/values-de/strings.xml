@@ -55,7 +55,8 @@
     <string name="content_description_increase">Erhöhen</string>
     <string name="group_pot_label">€%1$d Topf</string>
     <string name="group_player_count">👥 %1$d/%2$d Spieler</string>
-    <string name="group_join_code">Beitritts-Code</string>
+    <!-- EIN Name für den Gruppen-Code auf allen Oberflächen: "Einladungscode". -->
+    <string name="group_join_code">Einladungscode</string>
     <string name="content_description_share_code">Code teilen</string>
     <string name="group_joined_count">👥 %1$d/%2$d Spieler beigetreten%3$s</string>
     <!-- Quotes REQUIRED — they preserve the leading space (see values/strings.xml). -->
@@ -515,7 +516,8 @@
     <!-- Challenge card — mode / type badges -->
     <string name="challenge_card_badge_hard">HARD MODE</string>
     <string name="challenge_card_badge_soft">SOFT MODE</string>
-    <string name="challenge_card_badge_group">LIVE</string>
+    <!-- Untranslated by design — same slot convention as SOFT MODE / HARD MODE above. -->
+    <string name="challenge_card_badge_group">GROUP</string>
     <string name="challenge_card_participants">%1$d/%2$d Spieler</string>
     <string name="challenge_card_rank">Platz %1$d 🏆</string>
 
@@ -691,7 +693,7 @@
     <string name="group_create_start_date_hint">Datum wählen…</string>
     <string name="group_create_next">Weiter — Überprüfen</string>
     <!-- Step 2 — Review -->
-    <string name="group_create_code_label">Dein Gruppen-Code</string>
+    <string name="group_create_code_label">Dein Einladungscode</string>
     <string name="group_create_code_hint">Teile diesen Code mit deinen Freunden, damit sie beitreten können!</string>
     <string name="group_create_summary_app">App</string>
     <string name="group_create_summary_limit">Tageslimit</string>
@@ -701,13 +703,13 @@
     <string name="group_create_share_button">Erstellen &amp; Code teilen</string>
     <string name="group_create_done_button">Fertig — zu Freunde</string>
     <string name="group_create_share_text">Tritt meiner Finite-Challenge bei! Code: %1$s — App: %2$s, %3$d Tage, mind. €%4$d</string>
-    <string name="group_create_share_chooser">Challenge-Code teilen</string>
+    <string name="group_create_share_chooser">Einladungscode teilen</string>
 
     <!-- Group Challenge — Join flow -->
     <string name="join_group_title">Challenge beitreten</string>
     <string name="join_group_heading">Einer Challenge beitreten</string>
-    <string name="join_group_subtitle">Gib den 6-stelligen Code ein, den der Ersteller mit dir geteilt hat.</string>
-    <string name="join_group_code_label">Challenge-Code</string>
+    <string name="join_group_subtitle">Gib den 6-stelligen Einladungscode ein, den der Ersteller mit dir geteilt hat.</string>
+    <string name="join_group_code_label">Einladungscode</string>
     <string name="join_group_lookup">Suchen</string>
     <string name="join_group_join_and_pay">Jetzt beitreten — €%1$d bezahlen</string>
     <string name="join_group_confirming">Beitritt wird bestätigt…</string>

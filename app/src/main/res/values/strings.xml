@@ -65,7 +65,11 @@
     <string name="content_description_increase">Increase</string>
     <string name="group_pot_label">€%1$d pot</string>
     <string name="group_player_count">👥 %1$d/%2$d players</string>
-    <string name="group_join_code">Join code</string>
+    <!-- ONE name for the group code across every surface: "invite code" / "Einladungscode".
+         A bare "code" inside running text is fine (it refers to the same thing in context);
+         what must not come back is a second NAME for it ("join code", "challenge code",
+         "group code"). -->
+    <string name="group_join_code">Invite code</string>
     <string name="content_description_share_code">Share code</string>
     <string name="group_joined_count">👥 %1$d/%2$d players joined%3$s</string>
     <!-- Appended as %3$s of group_joined_count, so it carries its own leading space. The quotes
@@ -529,7 +533,11 @@
     <!-- Challenge card — mode / type badges -->
     <string name="challenge_card_badge_hard">HARD MODE</string>
     <string name="challenge_card_badge_soft">SOFT MODE</string>
-    <string name="challenge_card_badge_group">LIVE</string>
+    <!-- MODE slot, alongside SOFT MODE / HARD MODE: answers "what kind of challenge is this",
+         NOT "is it running". It used to read LIVE, which collided with the green LIVE status
+         badge in the friends hub and group detail screen. Purple = group, green LIVE = running.
+         Left untranslated to match the SOFT MODE / HARD MODE convention in the same slot. -->
+    <string name="challenge_card_badge_group">GROUP</string>
     <string name="challenge_card_participants">%1$d/%2$d players</string>
     <string name="challenge_card_rank">Rank %1$d 🏆</string>
 
@@ -707,7 +715,7 @@
     <string name="group_create_start_date_hint">Pick a date…</string>
     <string name="group_create_next">Next — Review</string>
     <!-- Step 2 — Review -->
-    <string name="group_create_code_label">Your Group Code</string>
+    <string name="group_create_code_label">Your invite code</string>
     <string name="group_create_code_hint">Share this code with your friends so they can join!</string>
     <string name="group_create_summary_app">App</string>
     <string name="group_create_summary_limit">Daily Limit</string>
@@ -717,13 +725,13 @@
     <string name="group_create_share_button">Create &amp; Share Code</string>
     <string name="group_create_done_button">Done — Go to Friends</string>
     <string name="group_create_share_text">Join my Finite challenge! Code: %1$s — App: %2$s, %3$d days, min €%4$d</string>
-    <string name="group_create_share_chooser">Share Challenge Code</string>
+    <string name="group_create_share_chooser">Share invite code</string>
 
     <!-- Group Challenge — Join flow -->
     <string name="join_group_title">Join challenge</string>
     <string name="join_group_heading">Join a challenge</string>
-    <string name="join_group_subtitle">Enter the 6-character code the creator shared with you.</string>
-    <string name="join_group_code_label">Challenge code</string>
+    <string name="join_group_subtitle">Enter the 6-character invite code the creator shared with you.</string>
+    <string name="join_group_code_label">Invite code</string>
     <string name="join_group_lookup">Look up</string>
     <string name="join_group_join_and_pay">Join now — pay €%1$d</string>
     <string name="join_group_confirming">Confirming your join…</string>

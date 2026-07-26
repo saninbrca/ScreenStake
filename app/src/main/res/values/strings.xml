@@ -1396,7 +1396,14 @@
          NEVER limitValueMinutes, which carries a meaningless default on SESSIONS challenges. -->
     <string name="group_detail_session_dur_label">Session length</string>
     <string name="group_detail_session_dur_val">%1$d min</string>
-    <string name="group_detail_waiting_players">%1$d/%2$d players joined</string>
+    <!-- Waiting-room roster. Free slots render as rows so the cap is visible; group_roster_your_spot
+         is unused today by design — the join preview deliberately does NOT show a roster (an invite
+         code that gets forwarded would expose participants' handles to whoever ends up with it), so
+         the label is held ready for whichever surface earns it. -->
+    <string name="group_detail_roster_section">WHO\'S IN</string>
+    <string name="group_roster_empty_slot">Open spot</string>
+    <string name="group_roster_creator">Creator</string>
+    <string name="group_roster_your_spot">Your spot</string>
     <string name="group_detail_start_button">Start challenge</string>
     <string name="group_detail_need_players">At least 2 players required</string>
     <string name="group_detail_join_code_label">Invite code</string>

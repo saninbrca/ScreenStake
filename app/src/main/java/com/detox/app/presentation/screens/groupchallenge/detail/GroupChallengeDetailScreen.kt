@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -66,7 +65,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -82,9 +80,11 @@ import com.detox.app.domain.model.elapsedDays
 import com.detox.app.domain.model.groupRankingComparator
 import com.detox.app.domain.model.groupRankingMetricComparator
 import com.detox.app.domain.model.hasWon
+import com.detox.app.presentation.components.AvatarCircle
+import com.detox.app.presentation.components.DuBadge
+import com.detox.app.presentation.components.GroupParticipantRow
 import com.detox.app.presentation.components.formatEuroCents
 import com.detox.app.presentation.screens.activechallenge.DetoxCard
-import com.detox.app.ui.theme.DetoxAvatarPalette
 import com.detox.app.ui.theme.DetoxPodiumColors
 import com.detox.app.ui.theme.detoxColors
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -356,6 +356,15 @@ private fun GroupDetailContent(
     )
     Timber.d("Leaderboard sorted: ${sorted.map { "${it.displayName}:${it.status}" }}")
 
+    // WAITING roster order — creator first, then join order. joinedAt is the SORT KEY only: a date
+    // under every name is a second line of text nobody acts on, and the ordering already encodes it.
+    // Nothing to rank on before a challenge starts, which is exactly why the leaderboard's sort
+    // (and its row) cannot be reused here.
+    val roster = gc.participants.sortedWith(
+        compareByDescending<Participant> { it.userId == gc.creatorUserId }
+            .thenBy { it.joinedAt }
+    )
+
     // Standard competition ranking (1,1,3 — not 1,2,3) for active participants only.
     // Failed participants get rank 0 (displayed as "—"). Ties are decided by the
     // comparator itself, so the rank map can never disagree with the sort order.
@@ -464,11 +473,7 @@ private fun GroupDetailContent(
                 currentUserId = currentUserId,
                 endDateValid = endDateValid,
                 dateFmt = dateFmt,
-                isStarting = isStarting,
                 isCurrentUserFailed = isCurrentUserFailed,
-                isDeleting = isDeleting,
-                onStartChallenge = onStartChallenge,
-                onDelete = { showDeleteDialog = true },
                 onShare = {
                     val shareText = context.getString(
                         R.string.group_create_share_text,
@@ -512,6 +517,89 @@ private fun GroupDetailContent(
                             }
                         )
                     }
+                }
+            }
+        }
+
+        // ── Waiting-room roster (WAITING) ──────────────────────────────────────
+        // Same slot and the same grouped-card idiom the leaderboard uses below, so the screen
+        // does not grow a second visual vocabulary. Free slots are rendered as rows too: that is
+        // what makes the cap visible and gives the creator a reason to keep sharing the code.
+        if (gc.status == GroupChallengeStatus.WAITING) {
+            val freeSlots = (gc.maxParticipants - roster.size).coerceAtLeast(0)
+            val rowCount = roster.size + freeSlots
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.group_detail_roster_section),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.W500,
+                        color = detoxColors.subtext,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.group_detail_participants_val,
+                            roster.size, gc.maxParticipants
+                        ),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.W500,
+                        color = detoxColors.subtext
+                    )
+                }
+            }
+
+            items(count = rowCount, key = { i ->
+                if (i < roster.size) "roster_${roster[i].userId}" else "roster_free_$i"
+            }) { index ->
+                val participant = roster.getOrNull(index)
+                val isFirst = index == 0
+                val isLast = index == rowCount - 1
+                val shape = when {
+                    isFirst && isLast -> RoundedCornerShape(16.dp)
+                    isFirst -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                    isLast -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+                    else -> RoundedCornerShape(0.dp)
+                }
+                val isCurrentUser = participant != null && participant.userId == currentUserId
+                val rowBg = if (isCurrentUser) detoxColors.selectedSurface else detoxColors.cardBackground
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = shape,
+                    colors = CardDefaults.cardColors(containerColor = rowBg),
+                    elevation = CardDefaults.cardElevation(0.dp),
+                    border = BorderStroke(0.5.dp, detoxColors.cardBorder)
+                ) {
+                    GroupParticipantRow(
+                        displayName = participant?.let { p ->
+                            p.displayName.takeIf { it.isNotBlank() }
+                                ?: p.userId.substringBefore('@').ifBlank { p.userId }
+                        },
+                        emptySlotLabel = stringResource(R.string.group_roster_empty_slot),
+                        isCurrentUser = isCurrentUser,
+                        subLabel = if (participant != null && participant.userId == gc.creatorUserId)
+                            stringResource(R.string.group_roster_creator) else null,
+                    )
+                    if (!isLast) {
+                        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                    }
+                }
+            }
+
+            if (gc.creatorUserId == currentUserId) {
+                item {
+                    WaitingCreatorActions(
+                        canStart = roster.size >= 2,
+                        isStarting = isStarting,
+                        isDeleting = isDeleting,
+                        onStartChallenge = onStartChallenge,
+                        onDelete = { showDeleteDialog = true },
+                    )
                 }
             }
         }
@@ -657,12 +745,8 @@ private fun GroupHeaderCard(
     currentUserId: String?,
     endDateValid: Boolean,
     dateFmt: SimpleDateFormat,
-    isStarting: Boolean,
     /** Drives the give-up branch of the stats row — an eliminated participant's share is 0. */
     isCurrentUserFailed: Boolean,
-    isDeleting: Boolean,
-    onStartChallenge: () -> Unit,
-    onDelete: () -> Unit,
     onShare: () -> Unit,
 ) {
     DetoxCard {
@@ -831,12 +915,9 @@ private fun GroupHeaderCard(
                     color = detoxColors.subtext
                 )
 
-                val joined = gc.participants.size
-                Text(
-                    text = stringResource(R.string.group_detail_waiting_players, joined, gc.maxParticipants),
-                    fontSize = 13.sp,
-                    color = detoxColors.subtext
-                )
+                // The "N/M Spieler beigetreten" line used to sit here. The roster below the card
+                // shows the same thing structurally — filled rows plus free slots — and carries the
+                // count in its section header, so repeating it here is noise.
 
                 // Two dates, and they are NOT the same thing. Only the second one used to be
                 // shown, under the label "Noch N Tage zum Starten" — which reads as a countdown to
@@ -875,58 +956,73 @@ private fun GroupHeaderCard(
                     )
                 }
 
-                if (gc.creatorUserId == currentUserId) {
-                    val canStart = joined >= 2
-                    Button(
-                        onClick = onStartChallenge,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = canStart && !isStarting,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        if (isStarting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Text(
-                                text = stringResource(R.string.group_detail_start_button),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                    }
-                    if (!canStart) {
-                        Text(
-                            text = stringResource(R.string.group_detail_need_players),
-                            fontSize = 12.sp,
-                            color = detoxColors.subtext,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    // Delete button — below Start, creator only, WAITING only
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !isDeleting) { onDelete() }
-                            .padding(top = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isDeleting) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
-                            Text(
-                                text = stringResource(R.string.group_delete_button),
-                                fontSize = 14.sp,
-                                color = detoxColors.danger,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
+                // Start / Delete used to live here, inside the card and ABOVE the roster — which
+                // asked the creator to start before they could see who was in. Both now render as
+                // their own items below the roster; see WaitingCreatorActions.
+            }
+        }
+    }
+}
+
+/**
+ * Creator-only WAITING actions, rendered BELOW the roster so the decision to start comes after
+ * seeing who is in. Non-creators get the "leave" link further down instead.
+ */
+@Composable
+private fun WaitingCreatorActions(
+    canStart: Boolean,
+    isStarting: Boolean,
+    isDeleting: Boolean,
+    onStartChallenge: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = onStartChallenge,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = canStart && !isStarting,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary
+            )
+        ) {
+            if (isStarting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.group_detail_start_button),
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+        }
+        if (!canStart) {
+            Text(
+                text = stringResource(R.string.group_detail_need_players),
+                fontSize = 12.sp,
+                color = detoxColors.subtext,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = !isDeleting) { onDelete() }
+                .padding(top = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isDeleting) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Text(
+                    text = stringResource(R.string.group_delete_button),
+                    fontSize = 14.sp,
+                    color = detoxColors.danger,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -1062,46 +1158,8 @@ private fun LeaderboardRow(
     }
 }
 
-@Composable
-private fun AvatarCircle(name: String, size: Dp = 32.dp) {
-    val initials = name.trim()
-        .split(" ")
-        .mapNotNull { it.firstOrNull()?.uppercaseChar() }
-        .take(2)
-        .joinToString("")
-        .ifEmpty { "?" }
-    val avatarColors = DetoxAvatarPalette.Colors
-    val bgColor = avatarColors[Math.abs(name.hashCode()) % avatarColors.size]
-    Box(
-        modifier = Modifier
-            .size(size)
-            .background(bgColor, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = initials,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = detoxColors.onSolid
-        )
-    }
-}
-
-@Composable
-private fun DuBadge() {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = detoxColors.accent.copy(alpha = 0.15f)
-    ) {
-        Text(
-            text = stringResource(R.string.group_detail_du_badge),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = detoxColors.accent,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
-}
+// AvatarCircle and DuBadge moved to presentation/components/GroupParticipantRow.kt so the
+// waiting-room roster can share them. LeaderboardRow below calls the shared versions unchanged.
 
 // ── Session card ──────────────────────────────────────────────────────────────
 

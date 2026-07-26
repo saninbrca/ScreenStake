@@ -1353,7 +1353,10 @@
     <string name="group_detail_limit_window">Zeitfenster</string>
     <string name="group_detail_session_dur_label">Session-Dauer</string>
     <string name="group_detail_session_dur_val">%1$d Min</string>
-    <string name="group_detail_waiting_players">%1$d/%2$d Spieler beigetreten</string>
+    <string name="group_detail_roster_section">WER IST DABEI</string>
+    <string name="group_roster_empty_slot">Freier Platz</string>
+    <string name="group_roster_creator">Ersteller</string>
+    <string name="group_roster_your_spot">Dein Platz</string>
     <string name="group_detail_start_button">Challenge starten</string>
     <string name="group_detail_need_players">Mindestens 2 Spieler nötig</string>
     <string name="group_detail_join_code_label">Einladungscode</string>

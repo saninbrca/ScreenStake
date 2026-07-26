@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -274,13 +276,27 @@ fun ChallengeCard(
                     }
                     if (dailyStats.isGroup && dailyStats.userRank != null) {
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = stringResource(R.string.challenge_card_rank, dailyStats.userRank),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = detoxColors.groupAccent,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Icon in place of the 🏆 the string used to carry.
+                            Icon(
+                                imageVector = Icons.Outlined.EmojiEvents,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = detoxColors.groupAccent
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.challenge_card_rank, dailyStats.userRank
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = detoxColors.groupAccent,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -402,8 +418,19 @@ private fun AdultBlockCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Streak hero — replaces the progress bar.
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            // Streak hero — replaces the progress bar. Icon in place of the 🔥 the strings carried.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.LocalFireDepartment,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = if (dailyStats.streak <= 0)
                         stringResource(R.string.challenge_card_streak_day_one)
@@ -621,8 +648,8 @@ private fun DaysLeftBadge(daysRemaining: Int, isOpenEnded: Boolean = false, stre
     val onPrimary = MaterialTheme.colorScheme.onPrimary
     val (label, badgeColor, textColor) = when {
         // Open-ended: "days remaining" is meaningless → show the consecutive-success streak instead.
-        // Compact card format ("🔥 N Tage"); the flame signals "streak", full wording is on the detail
-        // screen. streak == 0 means day 1 of the (possibly just-restarted) streak → "🔥 Tag 1".
+        // Compact card format ("N Tage") behind a flame ICON — the strings used to carry a 🔥.
+        // streak == 0 means day 1 of the (possibly just-restarted) streak → "Tag 1".
         isOpenEnded && streak <= 0 -> Triple(stringResource(R.string.challenge_card_streak_day_one), primary, onPrimary)
         isOpenEnded -> Triple(stringResource(R.string.challenge_card_streak_format, streak), primary, onPrimary)
         daysRemaining <= 0 -> Triple(stringResource(R.string.challenge_card_ends_today), detoxColors.solidOrangeBg, detoxColors.onSolid)
@@ -634,13 +661,26 @@ private fun DaysLeftBadge(daysRemaining: Int, isOpenEnded: Boolean = false, stre
         shape = RoundedCornerShape(50),
         color = badgeColor
     ) {
-        Text(
-            text = label,
+        Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = textColor,
-            maxLines = 1
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            if (isOpenEnded) {
+                Icon(
+                    imageVector = Icons.Outlined.LocalFireDepartment,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = textColor
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = textColor,
+                maxLines = 1
+            )
+        }
     }
 }
 

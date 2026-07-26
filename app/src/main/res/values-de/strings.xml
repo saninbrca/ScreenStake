@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="app_name">Finite</string>
 
     <!-- Generic, safe user-facing errors. Raw backend exceptions must never be shown in UI. -->
@@ -54,16 +54,16 @@
     <string name="content_description_decrease">Verringern</string>
     <string name="content_description_increase">Erhöhen</string>
     <string name="group_pot_label">€%1$d Topf</string>
-    <string name="group_player_count">👥 %1$d/%2$d Spieler</string>
+    <string name="group_player_count">%1$d/%2$d Spieler</string>
     <!-- EIN Name für den Gruppen-Code auf allen Oberflächen: "Einladungscode". -->
     <string name="group_join_code">Einladungscode</string>
     <string name="content_description_share_code">Code teilen</string>
-    <string name="group_joined_count">👥 %1$d/%2$d Spieler beigetreten%3$s</string>
+    <string name="group_joined_count">%1$d/%2$d Spieler beigetreten%3$s</string>
     <!-- Quotes REQUIRED — they preserve the leading space (see values/strings.xml). -->
     <string name="group_minimum_players">" — mind. 2 zum Starten"</string>
     <string name="group_buy_in_duration">Buy-in: €%1$d · %2$d Tage</string>
-    <string name="group_status_live">🟢 LIVE</string>
-    <string name="group_status_waiting">⏳ Warten</string>
+    <string name="group_status_live">LIVE</string>
+    <string name="group_status_waiting">Warten</string>
     <string name="payout_duration_days">%1$d Tage</string>
     <string name="payout_completed">Abgeschlossen</string>
     <string name="payout_status">Status: %1$s</string>
@@ -99,6 +99,7 @@
     <string name="group_starts_soon">Startet bald</string>
     <string name="group_share_message">Tritt meiner Finite Group Challenge bei! Code: %1$s</string>
     <string name="group_status_cancelled">Abgebrochen</string>
+    <string name="group_status_completed">Abgeschlossen</string>
     <string name="group_result_cancelled_title">⚠️ Challenge Abgebrochen</string>
     <string name="group_result_lost_title">😔 Du hast verloren</string>
     <string name="group_result_won_title">🎉 Du hast gewonnen!</string>
@@ -110,6 +111,16 @@
     <string name="group_win_iban_missing">Hinterlege deine IBAN um deinen Gewinn zu erhalten.</string>
     <string name="group_connect_bank_warning">⚠️ Verbinde dein Bankkonto um €%1$d zu erhalten</string>
     <string name="group_nudge_failed">Fehler beim Senden 😢</string>
+    <string name="group_taunt_sent">Taunt gesendet!</string>
+    <string name="group_taunt_limit_reached">Du hast heute schon 3x genervt</string>
+    <string-array name="group_taunt_messages">
+        <item>👀 %1$s schaut zu!</item>
+        <item>😂 %1$s hat dich erwischt!</item>
+        <item>💪 %1$s sagt: Bleib stark!</item>
+        <item>🐔 %1$s nennt dich einen Feigling!</item>
+        <item>🔥 %1$s: Du verlierst deinen Streak!</item>
+        <item>😈 %1$s lacht über dich!</item>
+    </string-array>
     <string name="display_name_fallback">Anonym</string>
     <string name="join_conflict_active_challenge">Du hast bereits eine aktive Challenge für „%1$s". Beende sie zuerst.</string>
     <string name="join_error_server_unreachable">Server nicht erreichbar. Bitte kontaktiere den Support.</string>
@@ -240,7 +251,7 @@
     <string name="dashboard_empty">Noch keine aktiven Challenges. Starte eine und übernimm die Kontrolle über deine Bildschirmzeit!</string>
     <string name="dashboard_empty_title">Keine aktiven Challenges</string>
     <string name="dashboard_empty_subtitle">Übernimm die Kontrolle über deine Bildschirmzeit und baue bessere Gewohnheiten auf.</string>
-    <string name="dashboard_start_first">Starte deine erste Challenge 🚀</string>
+    <string name="dashboard_start_first">Starte deine erste Challenge</string>
     <string name="dashboard_add_challenge">Challenge hinzufügen</string>
 
     <!-- Points -->
@@ -252,8 +263,8 @@
     <string name="challenge_card_days_remaining">Noch %1$d Tage</string>
     <string name="challenge_card_no_end_date">Kein Enddatum</string>
     <!-- Open-ended card badge: compact streak (flame already signals "streak"; full wording on detail screen) -->
-    <string name="challenge_card_streak_format">🔥 %1$d Tage</string>
-    <string name="challenge_card_streak_day_one">🔥 Tag 1</string>
+    <string name="challenge_card_streak_format">%1$d Tage</string>
+    <string name="challenge_card_streak_day_one">Tag 1</string>
     <string name="challenge_card_adult_subtitle">Alle 18+ Websites blockiert – rund um die Uhr</string>
     <string name="challenge_card_ends_today">Endet heute</string>
     <string name="challenge_card_tomorrow">Morgen</string>
@@ -519,7 +530,7 @@
     <!-- Untranslated by design — same slot convention as SOFT MODE / HARD MODE above. -->
     <string name="challenge_card_badge_group">GROUP</string>
     <string name="challenge_card_participants">%1$d/%2$d Spieler</string>
-    <string name="challenge_card_rank">Platz %1$d 🏆</string>
+    <string name="challenge_card_rank">Platz %1$d</string>
 
     <!-- Default motivation text when none is set by the user -->
     <string name="default_motivation_text">Bleib stark!</string>
@@ -674,6 +685,7 @@
     <string name="friends_hub_title">Freunde</string>
     <string name="friends_hub_create">Challenge erstellen</string>
     <string name="friends_hub_join">Mit Code beitreten</string>
+    <string name="friends_hub_your_rank">Du: #%1$d</string>
     <string name="friends_hub_active">Aktiv</string>
     <string name="friends_hub_waiting">Wartet auf Start</string>
     <string name="friends_hub_empty_title">Keine aktiven Group Challenges</string>
@@ -925,13 +937,13 @@
     <!-- Group Challenge Detail — redesign strings -->
     <string name="group_detail_end_date">Endet: %1$s</string>
     <string name="group_detail_duration_fallback">%1$d Tage Challenge</string>
-    <string name="group_detail_active_participants">👥 %1$d/%2$d Teilnehmer aktiv</string>
+    <string name="group_detail_active_participants">%1$d/%2$d Teilnehmer aktiv</string>
     <string name="group_detail_started_today">Gestartet heute</string>
     <string name="group_detail_started_on">Gestartet: %1$s</string>
     <string name="group_detail_my_status_title">Deine heutige Session</string>
     <string name="group_detail_my_opens">Opens heute: %1$d/%2$d</string>
     <string name="group_detail_my_time">Zeit heute: %1$d min</string>
-    <string name="group_detail_my_streak">🔥 %1$d Tage Streak</string>
+    <string name="group_detail_my_streak">%1$d Tage Streak</string>
     <string name="group_detail_nudge">👀 Nerv ihn!</string>
     <string name="group_detail_nudge_sent">Benachrichtigung gesendet!</string>
     <string name="group_detail_opens_label">%1$d/%2$d Opens</string>
@@ -969,7 +981,7 @@
     <!-- Group Challenge Detail — failed user read-only banner -->
     <string name="group_detail_failed_banner">Du bist ausgeschieden 😔</string>
     <string name="group_detail_challenge_ends_on">Challenge endet am %1$s</string>
-    <string name="group_detail_winner">🏆 %1$s hat gewonnen!</string>
+    <string name="group_detail_winner">%1$s hat gewonnen!</string>
     <string name="group_detail_total_prize">Gesamttopf: €%1$d</string>
 
     <!-- Accessibility service lost/restored notifications -->
@@ -1309,7 +1321,7 @@
 
     <!-- Detail Screen Redesign — Group Challenge -->
     <string name="group_detail_live_badge">● LIVE</string>
-    <string name="group_detail_waiting_badge">⏳ WARTET</string>
+    <string name="group_detail_waiting_badge">WARTET</string>
     <string name="group_detail_remaining_days">Noch %1$d Tage</string>
     <string name="group_detail_duration_label">%1$d Tage Challenge</string>
     <!-- Ersetzt "Gesamtpot" (summierte ALLE Einsätze) und "Dein Gewinn" (der eigene Einsatz
@@ -1342,7 +1354,7 @@
     <string name="group_detail_session_dur_label">Session-Dauer</string>
     <string name="group_detail_session_dur_val">%1$d Min</string>
     <string name="group_detail_waiting_players">%1$d/%2$d Spieler beigetreten</string>
-    <string name="group_detail_start_button">Challenge starten 🚀</string>
+    <string name="group_detail_start_button">Challenge starten</string>
     <string name="group_detail_need_players">Mindestens 2 Spieler nötig</string>
     <string name="group_detail_join_code_label">Einladungscode</string>
     <string name="group_detail_join_code_hint">Teile diesen Code mit deinen Freunden!</string>

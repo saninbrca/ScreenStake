@@ -122,14 +122,15 @@ class GroupChallengeDetailViewModel @Inject constructor(
     /** In-memory taunt count per target userId for the current session. */
     private val tauntCountsToday = mutableMapOf<String, Int>()
 
-    private val tauntMessages = listOf(
-        "👀 %s schaut zu!",
-        "😂 %s hat dich erwischt!",
-        "💪 %s sagt: Bleib stark!",
-        "🐔 %s nennt dich einen Feigling!",
-        "🔥 %s: Du verlierst deinen Streak!",
-        "😈 %s lacht über dich!",
-    )
+    /**
+     * Taunt bodies, localized. These were hardcoded German with bare `%s` placeholders.
+     *
+     * The emoji here are deliberately KEPT: unlike the ⏳/🏆/🔥 that stood in for icons in our own
+     * chrome, these are the content of a playful message one friend sends another — closer to chat
+     * text than to UI. Placeholders are positional (`%1$s`) per CLAUDE.md §4b.
+     */
+    private val tauntMessages: List<String>
+        get() = context.resources.getStringArray(R.array.group_taunt_messages).toList()
 
     /**
      * Live Firestore snapshot — updates in real time as participants join, fail, or succeed.
@@ -373,7 +374,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
             }
 
             if (cachedCount >= 3) {
-                _nudgeEvent.value = "Du hast heute schon 3x genervt 😄"
+                _nudgeEvent.value = context.getString(R.string.group_taunt_limit_reached)
                 return@launch
             }
 
@@ -381,7 +382,7 @@ class GroupChallengeDetailViewModel @Inject constructor(
             groupChallengeRepository.sendTaunt(groupId, fromUserId, fromDisplayName, targetUserId, message)
                 .onSuccess {
                     tauntCountsToday[targetUserId] = cachedCount + 1
-                    _nudgeEvent.value = "Taunt gesendet! 👀"
+                    _nudgeEvent.value = context.getString(R.string.group_taunt_sent)
                     Timber.d("GroupDetailVM: taunt sent to $targetUserId in group $groupId")
                 }
                 .onFailure { e ->

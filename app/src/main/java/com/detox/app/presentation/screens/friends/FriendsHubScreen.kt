@@ -23,6 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -283,13 +286,11 @@ private fun ActiveChallengeCard(
         val idx = sorted.indexOfFirst { it.userId == currentUserId }
         if (idx >= 0) idx + 1 else null
     }
-    val rankText = when (userRank) {
-        1 -> "Du: #1 🏆"
-        2 -> "Du: #2 🥈"
-        3 -> "Du: #3 🥉"
-        null -> null
-        else -> "Du: #$userRank"
-    }
+    // One localized format for every rank; the podium places used to be hardcoded German with
+    // 🏆/🥈/🥉 appended. A trophy icon marks the top three instead — same information, our icon
+    // system, and translatable.
+    val rankText = userRank?.let { stringResource(R.string.friends_hub_your_rank, it) }
+    val isPodium = userRank != null && userRank <= 3
 
     Card(
         onClick = onClick,
@@ -362,18 +363,44 @@ private fun ActiveChallengeCard(
                     )
                 }
                 if (rankText != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (isPodium) {
+                            Icon(
+                                imageVector = Icons.Outlined.EmojiEvents,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = rankText,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Group,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Text(
-                        text = rankText,
+                        text = stringResource(
+                            R.string.group_player_count, gc.participants.size, gc.maxParticipants
+                        ),
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text(
-                    text = stringResource(R.string.group_player_count, gc.participants.size, gc.maxParticipants),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
@@ -477,11 +504,25 @@ private fun WaitingChallengeCard(
             Spacer(Modifier.height(8.dp))
 
             // Players count
-            Text(
-                text = stringResource(R.string.group_joined_count, joined, max, if (joined < 2) stringResource(R.string.group_minimum_players) else ""),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Group,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(
+                        R.string.group_joined_count, joined, max,
+                        if (joined < 2) stringResource(R.string.group_minimum_players) else ""
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             // Start date
             Text(
@@ -536,11 +577,20 @@ private fun LiveBadge() {
 
 @Composable
 private fun WaitingBadge() {
-    Box(
+    Row(
         modifier = Modifier
             .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        // Icon in place of the ⏳ the string used to carry.
+        Icon(
+            imageVector = Icons.Outlined.HourglassTop,
+            contentDescription = null,
+            modifier = Modifier.size(12.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
         Text(
             text = stringResource(R.string.group_status_waiting),
             style = MaterialTheme.typography.labelSmall,

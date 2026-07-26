@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material3.AlertDialog
@@ -1226,18 +1227,33 @@ private fun GroupStatusBadge(status: GroupChallengeStatus) {
         GroupChallengeStatus.WAITING ->
             Triple(stringResource(R.string.group_detail_waiting_badge), detoxColors.insetSurface, detoxColors.subtext)
         GroupChallengeStatus.COMPLETED ->
-            Triple("Abgeschlossen", detoxColors.softGreenBg, detoxColors.softGreenText)
+            Triple(stringResource(R.string.group_status_completed), detoxColors.softGreenBg, detoxColors.softGreenText)
         GroupChallengeStatus.CANCELLED ->
             Triple(stringResource(R.string.group_status_cancelled), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.error)
     }
     Surface(shape = RoundedCornerShape(50), color = bgColor) {
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Icon in place of the ⏳ the WAITING string used to carry. The ACTIVE badge keeps
+            // its "●" — that is typography, not an emoji.
+            if (status == GroupChallengeStatus.WAITING) {
+                Icon(
+                    imageVector = Icons.Outlined.HourglassTop,
+                    contentDescription = null,
+                    modifier = Modifier.size(11.dp),
+                    tint = textColor
+                )
+            }
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = textColor
+            )
+        }
     }
 }
 
@@ -1281,11 +1297,23 @@ private fun FailedUserBanner(gc: GroupChallenge) {
                         ?: winner.userId.substringBefore('@'))
                     val pot = gc.participants.count { it.status == ParticipantStatus.FAILED } *
                             gc.buyInCents / 100
-                    Text(
-                        text = stringResource(R.string.group_detail_winner, name),
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Icon in place of the 🏆 the string used to carry.
+                        Icon(
+                            imageVector = Icons.Outlined.EmojiEvents,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = stringResource(R.string.group_detail_winner, name),
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
                     if (pot > 0) {
                         Text(
                             text = stringResource(R.string.group_detail_total_prize, pot),

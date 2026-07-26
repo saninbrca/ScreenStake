@@ -39,7 +39,7 @@
 ### Services & Workers
 - **Foreground Service:** `UsageTrackingService` — screen time tracking
 - **Accessibility Service:** `AppDetectionAccessibilityService` — app detection + overlay trigger
-- **Workers:** `DailyEvaluationWorker`, `PermissionCheckWorker`, `RedemptionNotificationWorker`, `AdultDomainsUpdateWorker`, `GroupChallengeAutoStartWorker` (24h periodic — starts due WAITING groups with a scheduled start date), `PermissionWarningWorker` (staged permission-loss warnings, scheduled from `UsageTrackingService`)
+- **Workers:** `DailyEvaluationWorker`, `PermissionCheckWorker`, `RedemptionNotificationWorker`, `AdultDomainsUpdateWorker`, `GroupChallengeAutoStartWorker` (24h periodic — starts due WAITING groups the signed-in user CREATED; the server-side `scheduledGroupChallengeAutoStart` covers everyone else), `PermissionWarningWorker` (staged permission-loss warnings, scheduled from `UsageTrackingService`)
   (`DailyReminderWorker` + `ServiceWatchdogWorker` were deleted in the notification cleanup)
 - **Money-safety gate (not a worker):** `service/ChallengeSettlementGuard.kt` — `@Singleton` pre-settlement server check that MUST precede every client-side capture/refund in `DailyEvaluationWorker` + `PermissionCheckWorker` (see `docs/03`)
 - **Boot:** `BootReceiver` — restarts services after device reboot
@@ -174,7 +174,7 @@ com.detox.app/
 │   ├── ChallengeSettlementGuard.kt          ← money-safety gate before client capture/refund (docs/03)
 │   ├── DailyEvaluationWorker.kt
 │   ├── DetoxFirebaseMessagingService.kt
-│   ├── GroupChallengeAutoStartWorker.kt     ← auto-starts due WAITING groups (docs/04)
+│   ├── GroupChallengeAutoStartWorker.kt     ← auto-starts due WAITING groups the user created (docs/04)
 │   ├── NotificationHelper.kt
 │   ├── OverlayManager.kt                    ← CORE
 │   ├── PermissionCheckWorker.kt

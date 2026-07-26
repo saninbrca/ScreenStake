@@ -35,8 +35,16 @@ class GroupChallengeAutoStartWorker @AssistedInject constructor(
             val now = System.currentTimeMillis()
             val challenges = firestoreService.fetchUserGroupChallenges(userId)
 
+            // Creator-only. startGroupChallenge / cancelGroupChallenge are both creator-gated, so
+            // this worker used to fire a guaranteed 403 on every non-creator's device, once a day,
+            // per group — caught, logged, and invisible. The server-side sweep
+            // (scheduledGroupChallengeAutoStart) is what actually covers the other participants
+            // now; this stays as the creator's redundant trigger, which is also the only path that
+            // works while the server flag is still off.
             val due = challenges.filter {
-                it.status == GroupChallengeStatus.WAITING && it.startDate > 0L && it.startDate <= now
+                it.status == GroupChallengeStatus.WAITING &&
+                        it.creatorUserId == userId &&
+                        it.startDate > 0L && it.startDate <= now
             }
             Timber.d("GroupChallengeAutoStartWorker: %d challenge(s) due for auto-start", due.size)
 

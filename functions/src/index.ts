@@ -940,6 +940,133 @@ export const confirmGroupJoin = functions.runWith({ maxInstances: 10 }).region(R
 });
 
 // ── startGroupChallenge ────────────────────────────────────────────────────────
+// The start body lives in runGroupChallengeStart so the HTTP handler and the hourly
+// scheduler (scheduledGroupChallengeAutoStart) share ONE implementation of the capture
+// sequence — a second copy of a capture loop is exactly the thing that drifts.
+//
+// The extraction was a PURE MOVE of the fence, the <2-participants branch, the preflight,
+// the capture loop, the endDate computation and the final write. The ONLY lines that
+// changed are the response sites: `res.status(x).json(y); return;` became
+// `return { ok: false, httpStatus: x, body: y };`, because the core has no `res` when the
+// scheduler calls it. The HTTP handler below replays those verbatim onto `res`.
+//
+// Caller-dependent checks (requireAuth, enforceRateLimit, the creator check) stayed in the
+// handler — they are exactly the parts a scheduler has no answer for. Nothing inside the
+// moved body ever referenced the caller: `verifiedUserId` appeared only in those three
+// places, which is what makes the sequence safe to run without a user context at all.
+
+type GroupStartOutcome =
+  | { ok: true; status: string }
+  | { ok: false; httpStatus: number; body: Record<string, unknown> };
+
+async function runGroupChallengeStart(groupId: string): Promise<GroupStartOutcome> {
+  const db = admin.firestore();
+  const docRef = db.collection("groupChallenges").doc(groupId);
+  const doc = await docRef.get();
+  if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+
+  const gc = doc.data()!;
+  if (gc["status"] !== "waiting") {
+    functions.logger.info("startGroupChallenge: already status=" + gc["status"], { groupId });
+    return { ok: true, status: gc["status"] as string };
+  }
+
+  // Fence joiners while we capture: transactionally stamp startLockAt (both join
+  // CFs reject while it is fresh) and take the participant snapshot from the SAME
+  // transactional read — a joiner confirmed after this commit is rejected, one
+  // confirmed before it is in the snapshot, so the capture loop misses nobody.
+  // Deliberately NOT checked here: a creator retry re-stamps a stale lock, and a
+  // stranded lock only blocks joining for START_LOCK_TTL_MS, never start itself.
+  const lockedGc = await db.runTransaction(async (tx) => {
+    const fresh = await tx.get(docRef);
+    if (!fresh.exists) throw new HttpError(404, "Group challenge not found.");
+    const data = fresh.data()!;
+    if (data["status"] === "waiting") tx.update(docRef, { startLockAt: Date.now() });
+    return data;
+  });
+  if (lockedGc["status"] !== "waiting") {
+    functions.logger.info("startGroupChallenge: already status=" + lockedGc["status"] + " (post-lock)", { groupId });
+    return { ok: true, status: lockedGc["status"] as string };
+  }
+
+  const participants = parseParticipants<{ userId: string; displayName: string; paymentIntentId: string }>(lockedGc["participants"]);
+
+  if (participants.length < 2) {
+    for (const p of participants) {
+      try {
+        const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+        if (pi.status === "requires_capture") {
+          await getStripe().paymentIntents.cancel(p.paymentIntentId);
+        }
+      } catch (e) {
+        functions.logger.error("startGroupChallenge: cancel failed for <2 participants", { groupId, userId: p.userId, error: e });
+      }
+    }
+    await docRef.update({ status: "cancelled", startLockAt: admin.firestore.FieldValue.delete() });
+    functions.logger.info("startGroupChallenge: cancelled (< 2 participants)", { groupId, participants: participants.length });
+    return { ok: true, status: "cancelled" };
+  }
+
+  // Pre-flight: all PIs must be requires_capture before we capture any.
+  for (const p of participants) {
+    const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
+    if (pi.status !== "requires_capture") {
+      functions.logger.warn("startGroupChallenge: payment not ready", { groupId, userId: p.userId, piStatus: pi.status });
+      try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
+        functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
+      }
+      return {
+        ok: false,
+        httpStatus: 400,
+        body: {
+          error: "payment_not_ready",
+          message: `Payment for ${p.displayName} is not ready. Their authorization may have expired.`,
+        },
+      };
+    }
+  }
+
+  // Capture all PIs — money is now charged.
+  const captured: string[] = [];
+  for (const p of participants) {
+    try {
+      await getStripe().paymentIntents.capture(p.paymentIntentId);
+      captured.push(p.paymentIntentId);
+      functions.logger.info("startGroupChallenge: captured PI", { groupId, userId: p.userId });
+    } catch (e) {
+      functions.logger.error("startGroupChallenge: capture failed mid-loop — rolling back", { groupId, userId: p.userId, error: e });
+      for (const piId of captured) {
+        try { await getStripe().refunds.create({ payment_intent: piId }); } catch (re) {
+          functions.logger.error("startGroupChallenge: rollback refund failed", { piId, error: re });
+        }
+      }
+      try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
+        functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
+      }
+      return {
+        ok: false,
+        httpStatus: 500,
+        body: { error: "capture_failed", message: "Failed to capture a payment. All captured payments have been refunded." },
+      };
+    }
+  }
+
+  const startDate = Date.now();
+  const durationDays: number = (gc["durationDays"] as number) ?? 7;
+  const endDate = endOfDayMillis(startDate, durationDays);
+
+  functions.logger.info("startGroupChallenge: setting startDate + endDate", {
+    groupId,
+    startDate,
+    endDate,
+    durationDays,
+    participants: participants.length,
+  });
+
+  await docRef.update({ status: "active", startDate, endDate, startLockAt: admin.firestore.FieldValue.delete() });
+  functions.logger.info("startGroupChallenge: activated", { groupId, participants: participants.length, startDate, endDate });
+  return { ok: true, status: "active" };
+}
 
 export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
   try {
@@ -949,111 +1076,16 @@ export const startGroupChallenge = functions.runWith({ maxInstances: 10 }).regio
     if (!groupId) throw new HttpError(400, "groupId is required.");
 
     const db = admin.firestore();
-    const docRef = db.collection("groupChallenges").doc(groupId);
-    const doc = await docRef.get();
+    const doc = await db.collection("groupChallenges").doc(groupId).get();
     if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
 
-    const gc = doc.data()!;
-    if (gc["creatorUserId"] !== verifiedUserId) {
+    if (doc.data()!["creatorUserId"] !== verifiedUserId) {
       throw new HttpError(403, "Only the creator can start this challenge.");
     }
-    if (gc["status"] !== "waiting") {
-      functions.logger.info("startGroupChallenge: already status=" + gc["status"], { groupId });
-      res.json({ status: gc["status"] });
-      return;
-    }
 
-    // Fence joiners while we capture: transactionally stamp startLockAt (both join
-    // CFs reject while it is fresh) and take the participant snapshot from the SAME
-    // transactional read — a joiner confirmed after this commit is rejected, one
-    // confirmed before it is in the snapshot, so the capture loop misses nobody.
-    // Deliberately NOT checked here: a creator retry re-stamps a stale lock, and a
-    // stranded lock only blocks joining for START_LOCK_TTL_MS, never start itself.
-    const lockedGc = await db.runTransaction(async (tx) => {
-      const fresh = await tx.get(docRef);
-      if (!fresh.exists) throw new HttpError(404, "Group challenge not found.");
-      const data = fresh.data()!;
-      if (data["status"] === "waiting") tx.update(docRef, { startLockAt: Date.now() });
-      return data;
-    });
-    if (lockedGc["status"] !== "waiting") {
-      functions.logger.info("startGroupChallenge: already status=" + lockedGc["status"] + " (post-lock)", { groupId });
-      res.json({ status: lockedGc["status"] });
-      return;
-    }
-
-    const participants = parseParticipants<{ userId: string; displayName: string; paymentIntentId: string }>(lockedGc["participants"]);
-
-    if (participants.length < 2) {
-      for (const p of participants) {
-        try {
-          const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
-          if (pi.status === "requires_capture") {
-            await getStripe().paymentIntents.cancel(p.paymentIntentId);
-          }
-        } catch (e) {
-          functions.logger.error("startGroupChallenge: cancel failed for <2 participants", { groupId, userId: p.userId, error: e });
-        }
-      }
-      await docRef.update({ status: "cancelled", startLockAt: admin.firestore.FieldValue.delete() });
-      functions.logger.info("startGroupChallenge: cancelled (< 2 participants)", { groupId, participants: participants.length });
-      res.json({ status: "cancelled" });
-      return;
-    }
-
-    // Pre-flight: all PIs must be requires_capture before we capture any.
-    for (const p of participants) {
-      const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
-      if (pi.status !== "requires_capture") {
-        functions.logger.warn("startGroupChallenge: payment not ready", { groupId, userId: p.userId, piStatus: pi.status });
-        try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
-          functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
-        }
-        res.status(400).json({
-          error: "payment_not_ready",
-          message: `Payment for ${p.displayName} is not ready. Their authorization may have expired.`,
-        });
-        return;
-      }
-    }
-
-    // Capture all PIs — money is now charged.
-    const captured: string[] = [];
-    for (const p of participants) {
-      try {
-        await getStripe().paymentIntents.capture(p.paymentIntentId);
-        captured.push(p.paymentIntentId);
-        functions.logger.info("startGroupChallenge: captured PI", { groupId, userId: p.userId });
-      } catch (e) {
-        functions.logger.error("startGroupChallenge: capture failed mid-loop — rolling back", { groupId, userId: p.userId, error: e });
-        for (const piId of captured) {
-          try { await getStripe().refunds.create({ payment_intent: piId }); } catch (re) {
-            functions.logger.error("startGroupChallenge: rollback refund failed", { piId, error: re });
-          }
-        }
-        try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
-          functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
-        }
-        res.status(500).json({ error: "capture_failed", message: "Failed to capture a payment. All captured payments have been refunded." });
-        return;
-      }
-    }
-
-    const startDate = Date.now();
-    const durationDays: number = (gc["durationDays"] as number) ?? 7;
-    const endDate = endOfDayMillis(startDate, durationDays);
-
-    functions.logger.info("startGroupChallenge: setting startDate + endDate", {
-      groupId,
-      startDate,
-      endDate,
-      durationDays,
-      participants: participants.length,
-    });
-
-    await docRef.update({ status: "active", startDate, endDate, startLockAt: admin.firestore.FieldValue.delete() });
-    functions.logger.info("startGroupChallenge: activated", { groupId, participants: participants.length, startDate, endDate });
-    res.json({ status: "active" });
+    const outcome = await runGroupChallengeStart(groupId);
+    if (outcome.ok) res.json({ status: outcome.status });
+    else res.status(outcome.httpStatus).json(outcome.body);
   } catch (e) { handleError("startGroupChallenge", e, res); }
 });
 
@@ -1409,6 +1441,147 @@ export const sweepStaleJoinReservations = functions.region(REGION)
       }
     }
     functions.logger.info("sweepStaleJoinReservations: done", { candidates: snap.size, released, skipped, parked });
+  });
+
+// ── scheduledGroupChallengeAutoStart ──────────────────────────────────────────
+// Starts group challenges whose scheduled startDate has come due, server-side.
+//
+// The gap this closes: a scheduled start was triggered ONLY by the client
+// (GroupChallengeAutoStartWorker, 24h-periodic, plus a MainActivity cold-start pass) and
+// startGroupChallenge is creator-only, so every non-creator's run 403'd and was merely
+// logged. A challenge began when the CREATOR next opened their app — up to a day late, or
+// never — while everyone had already paid and their holds were ticking toward the 5-day
+// authorization expiry. Nobody lost money (expireGroupChallenge refunds everything), but
+// the challenge people paid for silently never happened.
+//
+// Shape mirrors runPermissionViolationCheck / runDueChallengeReconciliation: an internal
+// handler run by a pubsub schedule. Deliberately NO onRequest twin — this path captures
+// money unattended, and every extra entry point is extra surface on it. Deliberately NO
+// enforceRateLimit either: it keys on a verified uid and there is none here (the throttle
+// store would be keyed on nothing), exactly as the helper's own contract requires.
+//
+// MONEY-SAFE BY DEFAULT: OFF unless config/app.groupAutoStartEnabled === true, and ANY
+// config read failure ⇒ DISABLED. Same deliberate inversion of the user-facing fail-OPEN
+// AppConfig contract that runDueChallengeReconciliation uses: for an unattended capture, a
+// missing or unreadable config must never be read as consent. It therefore ships INERT and
+// is armed alongside config/app.groupChallengeEnabled at group launch.
+//
+// Per-challenge gates, all of them skips rather than failures:
+//  - startDate must be a positive number that has come due. 0 = "creator starts it
+//    manually" and must never be auto-started. The value is CF-only in firestore.rules, so
+//    it is the creator's own intent, unforgeable after creation — and it is re-derived from
+//    the stored doc against the SERVER clock (invariant #2), never a client's.
+//  - authorizationExpiresAt already passed ⇒ leave it alone. That is expireGroupChallenge's
+//    job (refund), and racing a refund path with a capture path is the one thing this
+//    function must not do.
+//  - startLockAt fresh ⇒ another start owns this challenge right now; defer to the next
+//    run. Without this, two starts both pass the fence (it does not check freshness, by
+//    design — invariant #27 forbids a stranded lock from blocking start) and the loser's
+//    error path deletes the lock while the winner is still capturing, briefly re-opening
+//    joining mid-capture. Deferring keeps the scheduler out of that race entirely.
+//
+// The <2-participants branch inside runGroupChallengeStart cancels every hold and refunds.
+// Keeping it on the unattended path is deliberate and matches the reasoning that already
+// licenses sweepStaleJoinReservations and expireGroupChallenge: releasing an uncaptured
+// authorization is strictly user-favourable.
+//
+// Touches NO payout math, NO settlement, and does not alter the capture loop it calls.
+
+interface AutoStartTally {
+  enabled: boolean;
+  waiting: number;
+  started: number;
+  cancelled: number;
+  deferred: number;
+  skipped: number;
+  failed: number;
+}
+
+async function runDueGroupChallengeAutoStart(): Promise<AutoStartTally> {
+  const db = admin.firestore();
+  const tally: AutoStartTally = {
+    enabled: false, waiting: 0, started: 0, cancelled: 0, deferred: 0, skipped: 0, failed: 0,
+  };
+
+  try {
+    const cfg = await db.collection("config").doc("app").get();
+    tally.enabled = (cfg.data() ?? {})["groupAutoStartEnabled"] === true;
+  } catch (e) {
+    functions.logger.error("autoStart: config/app read failed → DISABLED (fail-safe)", e);
+    tally.enabled = false;
+  }
+  if (!tally.enabled) {
+    functions.logger.info("autoStart: disabled (groupAutoStartEnabled !== true) — no-op");
+    return tally;
+  }
+
+  // status equality only — served by the automatic single-field index, so this needs no
+  // composite and no indexes deploy. Due-ness is computed per doc below; WAITING groups are
+  // few and short-lived, so the in-memory filter costs nothing worth an index for.
+  let docs: admin.firestore.QueryDocumentSnapshot[] = [];
+  try {
+    const snap = await db.collection("groupChallenges").where("status", "==", "waiting").get();
+    docs = snap.docs;
+  } catch (e) {
+    functions.logger.error("autoStart: waiting-challenge query failed — bailing this run", e);
+    return tally;
+  }
+
+  tally.waiting = docs.length;
+  const now = Date.now();
+
+  for (const doc of docs) {
+    const groupId = doc.id;
+    const gc = doc.data();
+    try {
+      const startDate = gc["startDate"];
+      if (typeof startDate !== "number" || startDate <= 0 || startDate > now) {
+        tally.skipped++;
+        continue;
+      }
+
+      const expiresAt = gc["authorizationExpiresAt"];
+      if (typeof expiresAt === "number" && expiresAt > 0 && now >= expiresAt) {
+        functions.logger.info("autoStart: authorization already expired — leaving to expireGroupChallenge", { groupId });
+        tally.skipped++;
+        continue;
+      }
+
+      if (isStartLockFresh(gc["startLockAt"])) {
+        functions.logger.info("autoStart: a start is already in progress — deferring to the next run", { groupId });
+        tally.deferred++;
+        continue;
+      }
+
+      const outcome = await runGroupChallengeStart(groupId);
+      if (!outcome.ok) {
+        functions.logger.warn("autoStart: start did not complete", { groupId, httpStatus: outcome.httpStatus, body: outcome.body });
+        tally.failed++;
+      } else if (outcome.status === "active") {
+        functions.logger.info("autoStart: started", { groupId, startDate });
+        tally.started++;
+      } else if (outcome.status === "cancelled") {
+        functions.logger.info("autoStart: cancelled (< 2 participants) — holds released", { groupId });
+        tally.cancelled++;
+      } else {
+        tally.skipped++;
+      }
+    } catch (e) {
+      // One bad doc never halts the sweep; it stays WAITING for the next run.
+      functions.logger.error("autoStart: challenge failed — leaving WAITING", { groupId, error: e });
+      tally.failed++;
+    }
+  }
+
+  functions.logger.info(`autoStart: done ${JSON.stringify(tally)}`);
+  return tally;
+}
+
+export const scheduledGroupChallengeAutoStart = functions.region(REGION)
+  .pubsub.schedule("every 1 hours")
+  .onRun(async () => {
+    const tally = await runDueGroupChallengeAutoStart();
+    functions.logger.info(`scheduledGroupChallengeAutoStart: ${JSON.stringify(tally)}`);
   });
 
 // ── deleteGroupChallenge ───────────────────────────────────────────────────────

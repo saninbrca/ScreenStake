@@ -34,6 +34,14 @@ document **`config/app`** remotely controls the app. All reads go through the ex
 | `reconciliationEnabled` | Bool | **false** | master kill-switch for the reconciliation net (server-read only) |
 | `reconciliationDryRun` | Bool | **true** | true → net logs intended actions, makes NO Stripe call / NO write |
 | `wentDarkGraceMs` | Int (millis) | **absent ⇒ never forfeit** | went-dark forfeit grace; only a positive number arms it (server-read only) |
+| `groupAutoStartEnabled` | Bool | **false** | master switch for `scheduledGroupChallengeAutoStart` (server-read only) |
+
+> **The three server-read-only flags above are fail-SAFE, not fail-open.** `reconciliationEnabled`,
+> `wentDarkGraceMs` and `groupAutoStartEnabled` gate unattended Stripe operations, so a missing or
+> unreadable `config/app` reads as **disabled** — the deliberate inverse of the user-facing
+> `AppConfig` contract (invariant #24), whose fail-open exists so a config blip can never lock a
+> user out. Neither rule may be applied to the other's flags: fail-open on an unattended capture
+> would treat an infra error as consent.
 
 ---
 
@@ -120,6 +128,13 @@ Both gate **new creation only** — active challenges are never affected.
 > explicit server config value. (Fail-open means a config-read error would fall back to `true` and
 > re-enable creation, which is acceptable: the flag gates only NEW group creation, never money on
 > active challenges.)
+
+> **Arm `groupAutoStartEnabled` in the same step.** It is `false` by default and fail-safe on a read
+> error, so `scheduledGroupChallengeAutoStart` ships **inert**: until it is explicitly set to `true`,
+> a scheduled start still depends entirely on the creator's device. Set it when
+> `groupChallengeEnabled` is turned on — leaving it off is a supported (if degraded) state, turning
+> it on without groups is a no-op, and the two together are what make a scheduled start date mean
+> anything.
 
 ---
 

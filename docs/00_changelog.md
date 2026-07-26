@@ -21,6 +21,70 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-26 — Group Phase 5/6: scheduled starts actually happen now
+
+Two commits. No payout math, no settlement change, and the capture loop was moved but not
+modified. **Deploy: `functions` only** — no rules change (`startDate`/`status`/`startLockAt` were
+already CF-only) and no indexes change (the sweep's `status ==` equality is served by the automatic
+single-field index).
+
+**FIXED — a start date the card holds could not survive was offerable.** The wizard's picker was a
+bare `rememberDatePickerState()` with no bounds, so a creator could schedule a start weeks out.
+`createGroupChallenge` stamps `authorizationExpiresAt = createdAt + 5 days` and
+`startGroupChallenge`'s preflight refuses to start unless every PI is still `requires_capture` — so
+any date past that window produced a challenge **guaranteed** never to start: everyone joins,
+everyone pays, the group sits in WAITING until `expireGroupChallenge` cancels the holds and the
+whole thing silently refunds. `GroupStartWindow` (`domain/model/`) is the client-side mirror of the
+CF's 5-day literal and the single predicate behind both the greyed-out days and the validation
+backstop. The bound subtracts the auto-start worker's 24h period — a date coming due just after a
+run waits a day for the next one — so the latest selectable day is `now + 5d − 24h`, i.e. 4 days
+out. `startDateError` was half-wired (only ever cleared, never set); it is now set from the same
+predicate and covers the one path the picker cannot, a wizard left open across midnight. docs/04
+claimed "creator must be warned"; that warning never existed, and the doc now describes prevention.
+
+**FIXED — a scheduled start depended entirely on the creator's device.**
+`GroupChallengeAutoStartWorker` runs on EVERY participant's device but `startGroupChallenge` is
+creator-only, so every non-creator's run 403'd and was caught, logged, and never surfaced (this
+worker has no Sentry). Net effect: a challenge began when the creator next opened their app — up to
+a day late, or never — while everyone had already paid. New `scheduledGroupChallengeAutoStart`
+(hourly pubsub, shape mirrors `runPermissionViolationCheck` / `runDueChallengeReconciliation`)
+starts due challenges server-side; the existing WAITING→ACTIVE snapshot listener in
+`GroupChallengeRepositoryImpl` already propagates the result to every participant's Room mirror, so
+no client change was needed to consume it.
+
+**DECISION — the money-sensitive shape of the new sweep.** No `onRequest` twin (unattended capture;
+every extra entry point is extra surface). No `enforceRateLimit` (it keys on a verified uid, of
+which there is none). Gated on `config/app.groupAutoStartEnabled`, default **false**, config read
+error ⇒ **disabled** — the same deliberate inversion of the fail-open `AppConfig` contract that
+`runDueChallengeReconciliation` uses. **It therefore ships INERT and is armed alongside
+`groupChallengeEnabled`** (docs/13). Per-challenge skips: `startDate` must be positive and due
+(0 = manual start, and the field is CF-only in rules, so it is the creator's unforgeable intent,
+re-derived against the SERVER clock per invariant #2); an already-expired
+`authorizationExpiresAt` is left to `expireGroupChallenge` rather than raced with a capture; and a
+fresh `startLockAt` defers to the next run. The `<2 participants` cancel branch is kept on the
+unattended path — releasing an uncaptured authorization is user-favourable, the same reasoning that
+already licenses `sweepStaleJoinReservations` and `expireGroupChallenge`.
+
+**DECISION — `runGroupChallengeStart` extraction is a PURE MOVE.** The fence, the `<2` branch, the
+preflight, the capture loop, the endDate computation and the final write are byte-identical apart
+from indentation. The only changed lines are the response sites: `res.status(x).json(y); return;`
+became `return { ok: false, httpStatus: x, body: y }`, because the core has no `res` when the
+scheduler calls it; the HTTP handler replays them verbatim. `verifiedUserId` appeared in exactly
+three places (`requireAuth`, `enforceRateLimit`, the creator check), all of which stayed in the
+handler — which is precisely why the sequence is safe to run with no user context.
+
+**Client follow-on:** `GroupChallengeAutoStartWorker` and `MainActivity.autoStartGroupChallenges`
+now skip groups the signed-in user did not create, ending the guaranteed daily 403 per non-creator
+per group. The creator's path is kept as a redundant trigger — and while the server flag is off it
+is the only path that works at all.
+
+**KNOWN — the fence-release race is still open (next commit).** Two concurrent starts both pass the
+`startLockAt` fence (it does not check freshness, by design: invariant #27 forbids a stranded lock
+from blocking start), and the loser's error path deletes the lock while the winner is still
+capturing, briefly re-opening joining mid-capture — which can leave a paid participant in an ACTIVE
+challenge with an uncaptured hold, invisible to settlement. The new sweep's `isStartLockFresh`
+guard keeps the scheduler out of it; the creator's-worker-vs-creator's-manual-tap case remains.
+
 ### 2026-07-26 — Session length: dashboard card read the wrong field
 
 Display only. No Room migration, no sync change, no CF change, no money path touched.

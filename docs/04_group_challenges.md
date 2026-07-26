@@ -23,7 +23,7 @@
 | Maximum duration | **30 days** |
 | Maximum participants | **Creator-chosen, 3–20** (wizard step 4, default 20). Hard floor 2, validated server-side in `createGroupChallenge`; `GroupParticipantLimits` is the client's single source of truth |
 | Who can start | Creator (manual) — OR automatic once an optional scheduled start date passes |
-| Start date | Optional (`startDateEnabled`/`startDateMs` in the create wizard); when set, `GroupChallengeAutoStartWorker` (24h periodic, scheduled in `DetoxApplication`) starts due WAITING groups |
+| Start date | Optional (`startDateEnabled`/`startDateMs` in the create wizard), bounded by `GroupStartWindow` so it can never outlive the card holds; when set, `scheduledGroupChallengeAutoStart` (hourly CF, flag-gated) starts due WAITING groups, with `GroupChallengeAutoStartWorker` (24h periodic, creator-only) as the client-side redundant trigger |
 | Auto-cancel condition | < 2 participants when creator tries to start → refund all |
 | App fee | **10%** of failed participants' money |
 | Winner payout | Manual SEPA transfer by founder |

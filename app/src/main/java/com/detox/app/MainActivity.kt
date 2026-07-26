@@ -312,7 +312,13 @@ class MainActivity : ComponentActivity() {
         val now = System.currentTimeMillis()
         try {
             groupChallengeRepository.getGroupChallenges().first()
-                .filter { it.status == GroupChallengeStatus.WAITING && it.startDate > 0L && it.startDate <= now }
+                // Creator-only — see GroupChallengeAutoStartWorker. Both CFs called below are
+                // creator-gated, so a non-creator's pass could only ever produce a logged 403.
+                .filter {
+                    it.status == GroupChallengeStatus.WAITING &&
+                            it.creatorUserId == userId &&
+                            it.startDate > 0L && it.startDate <= now
+                }
                 .forEach { gc ->
                     if (gc.participants.size >= 2) {
                         cloudFunctionsService.startGroupChallenge(gc.groupId)

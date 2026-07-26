@@ -684,7 +684,29 @@ async function terminalizeWaitingGroupChallenge(
 
   const participants = parseParticipants<Participant>(fenced["participants"]);
 
+  // ── REFUND GATE (mirrors the settlement-side payout gate) ───────────────────
+  // "refunded" is written ONLY for a hold this loop confirmed released. It used to be
+  // written in EVERY non-throwing branch, including the `else` that catches a PI already
+  // `succeeded` — i.e. money we had taken and not given back. That produced a document
+  // claiming a participant was refunded while they were, in fact, charged: a debt nobody
+  // could see, let alone query for. A `succeeded` PI here is reachable via
+  // startGroupChallenge's rollback path (a rollback refund that failed, or a run killed
+  // mid-capture-loop) and, notably, ALSO after a rollback that fully SUCCEEDED — a Stripe
+  // refund leaves the PaymentIntent `succeeded` rather than returning it to
+  // `requires_capture`, so status alone cannot tell the two apart.
+  //
+  // Hence the recorded debt is "verify in Stripe", not "definitely owed": it is deliberately
+  // conservative, because a false positive costs one manual check while a false negative is
+  // money silently kept. Confirming it would need a refunds lookup, which is a new Stripe
+  // call and out of scope here — this change is control flow and record-keeping only.
+  //
+  // The other non-cancelled statuses (processing / requires_payment_method / requires_action
+  // / requires_confirmation) never captured anything, so nothing is owed — but the hold was
+  // not confirmed released either, so they no longer claim "refunded" either. Stripe expires
+  // an uncaptured authorization on its own.
   const releasedUserIds = new Set<string>();
+  const owedCentsByUserId = new Map<string, number>();
+  const groupBuyInCents = (fenced["buyInCents"] as number) ?? 0;
   for (const p of participants) {
     if (!p.paymentIntentId) continue;
     try {
@@ -692,12 +714,23 @@ async function terminalizeWaitingGroupChallenge(
       if (pi.status === "requires_capture") {
         await getStripe().paymentIntents.cancel(p.paymentIntentId);
         functions.logger.info(`${tag}: PI cancelled`, { groupId, userId: p.userId });
+        releasedUserIds.add(p.userId);
       } else if (pi.status === "canceled") {
         functions.logger.info(`${tag}: PI already cancelled (idempotent)`, { groupId, userId: p.userId });
+        releasedUserIds.add(p.userId);
+      } else if (pi.status === "succeeded") {
+        const owed = p.amountCents ?? groupBuyInCents;
+        owedCentsByUserId.set(p.userId, owed);
+        functions.logger.error(
+          `${tag}: CANCEL-REFUND DEBT — stake was CAPTURED and this cancellation did not return it; participant NOT recorded as refunded; verify in Stripe whether a rollback refund already covers it and refund manually if not`,
+          { groupId, userId: p.userId, paymentIntentId: p.paymentIntentId, piStatus: pi.status, owedCents: owed, debt: "cancel_refund" },
+        );
       } else {
-        functions.logger.warn(`${tag}: unexpected PI status`, { groupId, userId: p.userId, piStatus: pi.status });
+        functions.logger.error(
+          `${tag}: PI in unexpected status — hold NOT confirmed released, participant NOT recorded as refunded; nothing was captured, so nothing is owed`,
+          { groupId, userId: p.userId, paymentIntentId: p.paymentIntentId, piStatus: pi.status },
+        );
       }
-      releasedUserIds.add(p.userId);
     } catch (e) {
       functions.logger.error(`${tag}: PI cancel failed`, { groupId, userId: p.userId, error: e });
     }
@@ -710,22 +743,48 @@ async function terminalizeWaitingGroupChallenge(
     const status = data["status"] as string;
     if (status !== "waiting" && status !== "cancelled") return status;
     const freshParticipants = parseParticipants<Participant>(data["participants"]);
-    const merged = freshParticipants.map((p) =>
-      releasedUserIds.has(p.userId) ? { ...p, status: "refunded" } : p
-    );
-    const update: Record<string, unknown> = { participants: merged };
+    // Same field names and meaning as the settlement-side gate in completeGroupChallenge:
+    // `status` carries the participation outcome, `payoutStatus`/`payoutOwedCents` carry the
+    // money outcome. Reusing them (rather than minting cancel-specific twins) is what lets
+    // ONE query — groupChallenges where payoutIncomplete == true — surface every group that
+    // owes somebody money, whether the debt came from a settlement or from a cancellation.
+    const merged = freshParticipants.map((p) => {
+      if (releasedUserIds.has(p.userId)) return { ...p, status: "refunded" };
+      const owed = owedCentsByUserId.get(p.userId);
+      if (owed !== undefined) return { ...p, payoutStatus: "refund_failed", payoutOwedCents: owed };
+      return p;
+    });
+    // Doc-level mirror of the per-participant gate: Firestore cannot query inside array
+    // elements, so this is what makes the debt FINDABLE. Derived from the merged array so
+    // the stored document is self-consistent, exactly as commitSettlement does it.
+    const owedUserIds = (merged as Record<string, unknown>[])
+      .filter((p) => p["payoutStatus"] === "refund_failed")
+      .map((p) => p["userId"] as string);
+    const update: Record<string, unknown> = {
+      participants: merged,
+      payoutIncomplete: owedUserIds.length > 0,
+      payoutFailedUserIds: owedUserIds,
+    };
     if (status === "waiting") {
       update["status"] = "cancelled";
       update["startLockAt"] = admin.firestore.FieldValue.delete();
     }
     tx.update(docRef, update);
-    return "cancelled";
+    return { outcome: "cancelled", owedUserIds };
   });
-  if (outcome !== "cancelled") {
+  if (typeof outcome === "string") {
     functions.logger.error(`${tag}: challenge changed state mid-terminalization — no write performed`, { groupId, outcome });
+    functions.logger.info(`${tag}: terminalization done`, { groupId, participants: participants.length, outcome });
+    return outcome;
   }
-  functions.logger.info(`${tag}: terminalization done`, { groupId, participants: participants.length, outcome });
-  return outcome;
+  if (outcome.owedUserIds.length > 0) {
+    functions.logger.error(
+      `${tag}: CANCEL-REFUND DEBT — challenge cancelled with participants whose captured stake was NOT returned; manual refund required`,
+      { groupId, owedCount: outcome.owedUserIds.length, owedUserIds: outcome.owedUserIds, debt: "cancel_refund" },
+    );
+  }
+  functions.logger.info(`${tag}: terminalization done`, { groupId, participants: participants.length, outcome: outcome.outcome });
+  return outcome.outcome;
 }
 
 // ── joinGroupChallenge ─────────────────────────────────────────────────────────

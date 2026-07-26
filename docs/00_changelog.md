@@ -104,15 +104,38 @@ concurrent start from a half-dead previous one, because the only signal is `star
 exact ordering being fixed the loser had already overwritten the winner's stamp. Both were dropped
 in favour of the fence change, which needs neither and stays out of the capture loop entirely.
 
-**KNOWN (untouched, pre-existing) — a partially-captured WAITING challenge cannot restart, and one
-of its outcomes loses money.** Reachable when a rollback refund fails (logged only), when the
-function is killed mid-loop (no rollback runs), and even after a fully SUCCESSFUL rollback, since a
-Stripe refund leaves the PI `succeeded` rather than returning it to `requires_capture`. In every
-case the preflight then returns 400 `payment_not_ready` forever and the challenge only ages out via
-`expireGroupChallenge`. On that path `terminalizeWaitingGroupChallenge` meets a `succeeded` PI,
-logs "unexpected PI status", and still marks the participant `refunded` without issuing a refund —
-accurate if the rollback refund succeeded, but if it FAILED the user was charged, the document
-claims refunded, and nothing ever pays them back. Needs its own change.
+**FIXED (fourth commit) — `terminalizeWaitingGroupChallenge` claimed people were refunded when
+they had been charged.** `status: "refunded"` was written in EVERY non-throwing branch, including
+the `else` that catches a PI already `succeeded` — money we had taken and not given back. The
+document then asserted a refund that never happened, and because Firestore cannot query inside
+array elements, nothing could find it. Reachable when a `startGroupChallenge` rollback refund fails
+(logged only), when the function is killed mid-capture-loop (no rollback runs), and — the subtle
+one — even after a fully SUCCESSFUL rollback, because a Stripe refund leaves the PI `succeeded`
+rather than returning it to `requires_capture`.
+
+Now gated like the settlement-side payout gate: `refunded` is written ONLY for a hold the Stripe
+phase confirmed released. A `succeeded` PI leaves the participant unrefunded with
+`payoutStatus: "refund_failed"` + `payoutOwedCents`, and the other non-cancelled statuses (nothing
+captured, so nothing owed) also stop claiming `refunded`. **DECISION — reuse the settlement field
+names rather than mint cancel-specific twins:** `payoutStatus`/`payoutOwedCents` already mean
+exactly this (status = participation outcome, payoutStatus = money outcome), and reusing the
+doc-level `payoutIncomplete`/`payoutFailedUserIds` means ONE query finds every group that owes
+money whatever the cause. Both doc fields were **already** in the CF-only list in
+`firestore.rules`, so no rules change was required — only the comment there was updated to name
+the second writer. Greppable `CANCEL-REFUND DEBT` error logs per participant and per challenge,
+in the shape of `FAIL-VS-SETTLE CONFLICT`.
+
+**DECISION — the marker means "verify in Stripe", not "definitely owed".** Distinguishing a failed
+rollback from a successful one needs a refunds lookup, i.e. a new Stripe call, which is out of
+scope for a control-flow-and-record-keeping change. Conservative on purpose: a false positive costs
+one manual check, a false negative is money silently kept.
+
+**DECISION — no reconciliation sweep, and that is now a LAUNCH GATE.** Building an automated
+discharge path inside the most dangerous function, for a production population that is certainly
+zero (`groupChallengeEnabled = false`), is the wrong trade today. Recorded instead as a hard
+prerequisite for arming `groupChallengeEnabled` in docs/04 and docs/13: a debt is now findable, not
+dischargeable, and the affected user is told nothing in-app for a CANCELLED challenge (the
+`refund_failed` UI renders only for COMPLETED ones).
 
 ### 2026-07-26 — Session length: dashboard card read the wrong field
 

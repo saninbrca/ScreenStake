@@ -129,6 +129,14 @@ Both gate **new creation only** — active challenges are never affected.
 > re-enable creation, which is acceptable: the flag gates only NEW group creation, never money on
 > active challenges.)
 
+> ### 🚧 Gate on arming `groupChallengeEnabled`
+> Setting it to `true` is blocked on an **automated payout-reconciliation path**. Both
+> `completeGroupChallenge` and `terminalizeWaitingGroupChallenge` can record money owed
+> (`payoutStatus: "refund_failed"` + `payoutOwedCents`, doc-level `payoutIncomplete`), but nothing
+> discharges it — that is a human reading logs, checking Stripe and refunding by hand, and for a
+> CANCELLED challenge the affected user is told nothing in-app. Acceptable at zero users, not
+> acceptable the moment groups are live. Full criteria in [docs/04](04_group_challenges.md#-launch-gate--groups-may-not-be-armed-without-payout-reconciliation).
+
 > **Arm `groupAutoStartEnabled` in the same step.** It is `false` by default and fail-safe on a read
 > error, so `scheduledGroupChallengeAutoStart` ships **inert**: until it is explicitly set to `true`,
 > a scheduled start still depends entirely on the creator's device. Set it when

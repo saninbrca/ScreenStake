@@ -496,6 +496,25 @@ Per function:
   fresh array by `userId` and derives `payoutIncomplete`/`payoutFailedUserIds` from the
   merged result. A premature `not_expired` call clears its own stamp.
 
+- **`terminalizeWaitingGroupChallenge`** (cancel / delete / expire) — the same refund gate:
+  `status: "refunded"` is written ONLY for a hold the Stripe phase confirmed released
+  (`requires_capture` → cancelled, or already `canceled`). A PI found `succeeded` means the
+  stake was CAPTURED and this cancellation did not return it, so that participant is left
+  unrefunded and carries `payoutStatus: "refund_failed"` + `payoutOwedCents`, feeding the
+  same doc-level `payoutIncomplete`/`payoutFailedUserIds`. Any other status captured nothing
+  (nothing owed) but was not confirmed released either, so it no longer claims "refunded".
+
+**One liability query for both paths.** `payoutIncomplete`/`payoutFailedUserIds` are written by
+`completeGroupChallenge` AND `terminalizeWaitingGroupChallenge`, deliberately reusing one pair of
+field names, so `groupChallenges where payoutIncomplete == true` finds every group that owes
+somebody money regardless of how the debt arose. Both are CF-only in `firestore.rules`.
+
+**A cancel-side debt is "verify in Stripe", not "definitely owed".** A `succeeded` PI is reachable
+through `startGroupChallenge`'s rollback path — and also after a rollback that fully SUCCEEDED,
+because a Stripe refund leaves the PaymentIntent `succeeded` rather than returning it to
+`requires_capture`. Status alone cannot separate the two, so the marker is deliberately
+conservative: a false positive costs one manual check, a false negative is money silently kept.
+
 **`settleLockAt` scope (same discipline as `startLockAt`):** a stranded stamp blocks
 ONLY `failParticipant`, for at most 15 min (`SETTLE_LOCK_TTL_MS`) — never joining,
 leaving, start, cancellation, or a settlement re-run after the TTL. CF-only in rules.
@@ -810,6 +829,31 @@ config, so `GroupStartWindow.WINDOW_DAYS` is a second copy — change both toget
 ✅ **Automatic enforcement:** `expireGroupChallenge` CF runs via DailyEvaluationWorker and enforces the
 5-day buffer (`authorizationExpiresAt`). After the buffer elapses without start → PaymentIntents
 cancelled automatically — well before Stripe's ~7-day authorization actually expires.
+
+---
+
+## 🚧 Launch gate — groups may not be armed without payout reconciliation
+
+**`config/app.groupChallengeEnabled` must NOT be set to `true` until an automated
+reconciliation path for owed money exists.** This is a gate, not a backlog item.
+
+Two money paths can now record a debt they cannot themselves settle:
+`completeGroupChallenge` (a settlement refund/transfer that did not go through) and
+`terminalizeWaitingGroupChallenge` (a cancelled challenge whose captured stake was not
+returned). Both mark `payoutStatus: "refund_failed"` + `payoutOwedCents` on the participant
+and raise `payoutIncomplete` on the document — which makes a debt **findable**, and nothing
+more. Discharging it today means a human reading logs, checking Stripe, and refunding by
+hand, and the affected participant is told nothing in-app for a CANCELLED challenge (the
+`refund_failed` UI in `GroupChallengeDetailScreen`/`ProfileViewModel` only renders for
+COMPLETED ones).
+
+That is an acceptable trade while `groupChallengeEnabled = false` and the affected population
+is zero. It stops being acceptable the moment real users can join a group. Arming groups
+therefore requires, at minimum: a scheduled sweep over `payoutIncomplete == true` that
+re-attempts the refund idempotently (the `refund_${groupId}_${userId}` key already exists),
+clears the marker on success, and escalates on repeated failure — plus a user-visible owed
+state for cancelled challenges. See also `docs/13` for the flag itself and
+`scheduledGroupChallengeAutoStart`, whose `groupAutoStartEnabled` is armed at the same moment.
 
 ---
 

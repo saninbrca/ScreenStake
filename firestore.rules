@@ -140,8 +140,11 @@ service cloud.firestore {
     // in the blocked list so the sync continues to work.
     match /groupChallenges/{groupId} {
       allow read: if request.auth != null;
-      // 'payoutIncomplete' / 'payoutFailedUserIds' are the settlement liability markers
-      // written by completeGroupChallenge when a refund/transfer did not go through.
+      // 'payoutIncomplete' / 'payoutFailedUserIds' are the liability markers written by
+      // completeGroupChallenge when a settlement refund/transfer did not go through, and
+      // by terminalizeWaitingGroupChallenge when a cancelled challenge could not return an
+      // already-captured stake. One doc-level flag for both, so a single query finds every
+      // group that owes money.
       // They are Cloud-Function-only: a client must never be able to clear a record of
       // money the service still owes.
       //

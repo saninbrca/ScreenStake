@@ -7,10 +7,10 @@ import com.detox.app.data.local.db.dao.PendingHardChallengeDao
 import com.detox.app.data.local.db.entity.ChallengeEntity
 import com.detox.app.data.local.db.entity.DailyLogEntity
 import com.detox.app.data.local.db.entity.toChallenge
+import com.detox.app.data.local.db.entity.toEntity
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.Challenge
-import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
@@ -82,16 +82,38 @@ class SyncRepositoryImpl @Inject constructor(
                 )
                 logs.forEach { log ->
                     val entity = log.toEntity()
-                    // consciousOpens is monotonic-up within a (challengeId, date): conscious opens
-                    // are pushed only to the FLAT collection (restored in step 4), so the NESTED
-                    // doc read here usually carries 0 for today. insertDailyLog is a full-row
-                    // REPLACE, so a blind write would clobber a correct local count → carry the
-                    // higher consciousOpens forward instead. (Scoped to consciousOpens only; other
-                    // fields still REPLACE from the nested doc — see deferred follow-up #2.)
+                    // insertDailyLog is a full-row REPLACE, so a blind write clobbers EVERY
+                    // live-tracking column the nested doc doesn't carry. The nested doc is only
+                    // rewritten by the 23:59 DailyEvaluationWorker (plus the two idempotent
+                    // intra-day OverlayManager writes), so mid-day it is a stale snapshot of
+                    // today's row. Merge against the existing row — two different rules, by field:
+                    //
+                    //  • consciousOpens / overlayPausedMs / totalMinutes → maxOf(). All three are
+                    //    monotonic-up within a (challengeId, date) (midnight = new date key = fresh
+                    //    row), so the higher value is always the truer one and max() can never
+                    //    lower a correct local count. overlayPausedMs matters most: it is
+                    //    accumulated Room-ONLY (addOverlayPausedMs, pushed to no collection) and
+                    //    has no step-4 restore, so a REPLACE here loses it permanently — and it is
+                    //    subtracted from raw usage in CheckDailyLimitUseCase/DailyEvaluationWorker,
+                    //    i.e. losing it inflates the user's counted screen time against them.
+                    //
+                    //  • the four budget fields → carry `existing` forward UNCONDITIONALLY. Never
+                    //    maxOf(). Two independent reasons, both load-bearing: (1) fetchDailyLogs
+                    //    does not parse these fields at all, so `entity` ALWAYS carries 0 and there
+                    //    is nothing to compare against; (2) budgetRemainingMs counts DOWN, so a
+                    //    max() would resurrect a stale LARGER remaining and hand the user free
+                    //    budget. Do not "improve" this into a max. Today's real values are restored
+                    //    from the FLAT collection in step 4 (group: step 3a).
                     val existing = dailyLogDao.getLogForDate(entity.challengeId, entity.date)
-                    val merged = if (existing != null)
-                        entity.copy(consciousOpens = maxOf(entity.consciousOpens, existing.consciousOpens))
-                    else entity
+                    val merged = if (existing != null) entity.copy(
+                        consciousOpens = maxOf(entity.consciousOpens, existing.consciousOpens),
+                        overlayPausedMs = maxOf(entity.overlayPausedMs, existing.overlayPausedMs),
+                        totalMinutes = maxOf(entity.totalMinutes, existing.totalMinutes),
+                        budgetUsedMinutes = existing.budgetUsedMinutes,
+                        budgetRemainingMinutes = existing.budgetRemainingMinutes,
+                        budgetUsedMs = existing.budgetUsedMs,
+                        budgetRemainingMs = existing.budgetRemainingMs,
+                    ) else entity
                     dailyLogDao.insertDailyLog(merged)
                 }
             }
@@ -397,18 +419,7 @@ class SyncRepositoryImpl @Inject constructor(
         pendingLimitAppliesAt = pendingLimitAppliesAt,
     )
 
-    private fun DailyLog.toEntity() = DailyLogEntity(
-        id = id,
-        challengeId = challengeId,
-        date = date,
-        totalMinutes = totalMinutes,
-        openCount = openCount,
-        consciousOpens = consciousOpens,
-        overlayPausedMs = overlayPausedMs,
-        budgetUsedMinutes = budgetUsedMinutes,
-        budgetRemainingMinutes = budgetRemainingMinutes,
-        pointsEarned = 0,
-        limitExceeded = limitExceeded,
-        moneyLostCents = moneyLostCents
-    )
+    // DailyLog → DailyLogEntity now lives in DailyLogEntity.kt (shared with DailyLogRepositoryImpl).
+    // The private copy that used to sit here omitted budgetUsedMs/budgetRemainingMs, which is how
+    // the sync-down REPLACE came to zero the live budget columns.
 }

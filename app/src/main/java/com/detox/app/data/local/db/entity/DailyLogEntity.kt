@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.detox.app.domain.model.DailyLog
 
 @Entity(
     tableName = "daily_logs",
@@ -43,4 +44,32 @@ data class DailyLogEntity(
     val pointsEarned: Int,
     val limitExceeded: Boolean,
     val moneyLostCents: Int,
+)
+
+/**
+ * Domain [DailyLog] → [DailyLogEntity]. Single owner of this direction: it used to be duplicated
+ * privately in `DailyLogRepositoryImpl` (write path) and `SyncRepositoryImpl` (sync-down path), and
+ * the two drifted — the sync copy silently omitted `budgetUsedMs`/`budgetRemainingMs`, so every
+ * sync-down REPLACE zeroed the live budget columns. Keep it in one place so the next added column
+ * can't be forgotten on one side.
+ *
+ * Straight field-for-field copy, no defaulting: callers that need to protect a live-tracking column
+ * from a full-row REPLACE must merge against the existing row themselves (see `SyncRepositoryImpl`
+ * sync step 2) — a mapper cannot know what the current row holds.
+ */
+fun DailyLog.toEntity(): DailyLogEntity = DailyLogEntity(
+    id = id,
+    challengeId = challengeId,
+    date = date,
+    totalMinutes = totalMinutes,
+    openCount = openCount,
+    consciousOpens = consciousOpens,
+    overlayPausedMs = overlayPausedMs,
+    budgetUsedMinutes = budgetUsedMinutes,
+    budgetRemainingMinutes = budgetRemainingMinutes,
+    budgetUsedMs = budgetUsedMs,
+    budgetRemainingMs = budgetRemainingMs,
+    pointsEarned = pointsEarned,
+    limitExceeded = limitExceeded,
+    moneyLostCents = moneyLostCents,
 )

@@ -2,6 +2,7 @@ package com.detox.app.data.repository
 
 import com.detox.app.data.local.db.dao.DailyLogDao
 import com.detox.app.data.local.db.entity.DailyLogEntity
+import com.detox.app.data.local.db.entity.toEntity
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.di.ApplicationScope
@@ -239,23 +240,6 @@ class DailyLogRepositoryImpl @Inject constructor(
     }
 
     private fun DailyLogEntity.toDomain(): DailyLog = DailyLog(
-        id = id,
-        challengeId = challengeId,
-        date = date,
-        totalMinutes = totalMinutes,
-        openCount = openCount,
-        consciousOpens = consciousOpens,
-        overlayPausedMs = overlayPausedMs,
-        budgetUsedMinutes = budgetUsedMinutes,
-        budgetRemainingMinutes = budgetRemainingMinutes,
-        budgetUsedMs = budgetUsedMs,
-        budgetRemainingMs = budgetRemainingMs,
-        pointsEarned = pointsEarned,
-        limitExceeded = limitExceeded,
-        moneyLostCents = moneyLostCents,
-    )
-
-    private fun DailyLog.toEntity(): DailyLogEntity = DailyLogEntity(
         id = id,
         challengeId = challengeId,
         date = date,

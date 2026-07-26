@@ -1646,6 +1646,11 @@
     <string name="group_wizard_start_manual_desc">Challenge startet manuell — tippe auf „Challenge starten" sobald alle beigetreten sind.</string>
     <string name="group_wizard_start_date_section">Startdatum</string>
     <string name="group_wizard_start_date_placeholder">Datum wählen…</string>
+    <!-- %1$s = latest selectable date, %2$d = length of the card-hold window in days. -->
+    <string name="group_wizard_start_date_window_hint">Spätestmöglicher Start: %1$s. Die Kartenreservierung beim Beitritt gilt nur %2$d Tage — ein späterer Start könnte nicht abgebucht werden.</string>
+    <string name="group_wizard_start_date_required">Wähle ein Startdatum.</string>
+    <!-- %1$s = latest selectable date. -->
+    <string name="group_wizard_start_date_too_late">Starte spätestens am %1$s. Danach verfallen die Kartenreservierungen und die Challenge kann nicht mehr starten.</string>
     <!-- Title of the shared wizard date-picker dialog (WizardDatePickerDialog). -->
     <string name="wizard_date_picker_title">Datum auswählen</string>
 

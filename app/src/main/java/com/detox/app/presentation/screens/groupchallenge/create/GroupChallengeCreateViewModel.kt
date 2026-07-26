@@ -9,6 +9,7 @@ import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.repository.AppConfig
 import com.detox.app.data.repository.AppConfigRepository
 import com.detox.app.domain.model.GroupParticipantLimits
+import com.detox.app.domain.model.GroupStartWindow
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
@@ -29,6 +30,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 const val GROUP_WIZARD_TOTAL_STEPS = 6
@@ -322,7 +326,23 @@ class GroupChallengeCreateViewModel @Inject constructor(
     }
 
     fun setStartDate(ms: Long) {
-        _formState.update { it.copy(startDateMs = ms, startDateError = null) }
+        _formState.update { it.copy(startDateMs = ms, startDateError = startDateErrorFor(ms)) }
+    }
+
+    /**
+     * Backstop for the picker's own bound (see [GroupStartWindow]). The picker greys out-of-window
+     * days out, so this should never fire in practice — it exists because the wizard can be left
+     * open across midnight, and because a start date past the card-hold window is not a cosmetic
+     * mistake: it produces a challenge everyone pays into that is guaranteed never to start.
+     * Returns null when [ms] is fine, so it doubles as the "is this date valid" check.
+     */
+    private fun startDateErrorFor(ms: Long): String? {
+        val now = System.currentTimeMillis()
+        if (ms <= 0L) return context.getString(R.string.group_wizard_start_date_required)
+        if (GroupStartWindow.isSelectable(ms, now)) return null
+        val latest = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+            .format(Date(GroupStartWindow.latestSelectableUtcDay(now)))
+        return context.getString(R.string.group_wizard_start_date_too_late, latest)
     }
 
     // ── Navigation ──────────────────────────────────────────────────────────────
@@ -377,8 +397,10 @@ class GroupChallengeCreateViewModel @Inject constructor(
             }
             4 -> true
             5 -> {
-                if (s.startDateEnabled && s.startDateMs == 0L) {
-                    _formState.update { it.copy(startDateError = "Pick a valid start date") }
+                if (!s.startDateEnabled) return true
+                val error = startDateErrorFor(s.startDateMs)
+                if (error != null) {
+                    _formState.update { it.copy(startDateError = error) }
                     false
                 } else true
             }

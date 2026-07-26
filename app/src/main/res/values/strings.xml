@@ -1703,6 +1703,11 @@
     <string name="group_wizard_start_manual_desc">The challenge starts manually — tap “Start challenge” once everyone has joined.</string>
     <string name="group_wizard_start_date_section">Start date</string>
     <string name="group_wizard_start_date_placeholder">Pick a date…</string>
+    <!-- %1$s = latest selectable date, %2$d = length of the card-hold window in days. -->
+    <string name="group_wizard_start_date_window_hint">Latest possible start: %1$s. The card hold placed when everyone joins is only valid for %2$d days, so a later start could not be charged.</string>
+    <string name="group_wizard_start_date_required">Pick a start date.</string>
+    <!-- %1$s = latest selectable date. -->
+    <string name="group_wizard_start_date_too_late">Start no later than %1$s. After that the card holds expire and the challenge can no longer start.</string>
     <!-- Title of the shared wizard date-picker dialog (WizardDatePickerDialog). -->
     <string name="wizard_date_picker_title">Select a date</string>
 

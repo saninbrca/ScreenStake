@@ -48,6 +48,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,6 +72,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.GroupParticipantLimits
+import com.detox.app.domain.model.GroupStartWindow
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.maxPossibleWinCents
 import com.detox.app.presentation.components.AccessibilityDisclosureDialog
@@ -695,8 +697,29 @@ private fun GStep5StartDate(
     onStartDateChange: (Long) -> Unit,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
     val sdf = remember { SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()) }
+
+    // A start date past the card-hold window produces a challenge that can never start (see
+    // GroupStartWindow). Bound the picker so such a date cannot be chosen at all — the ViewModel
+    // re-checks on Next as a backstop, which is also what catches a wizard left open past midnight.
+    // `now` is captured once per entry into this step so the bounds don't shift under recomposition.
+    val nowMs = remember { System.currentTimeMillis() }
+    val selectableStartDates = remember(nowMs) {
+        object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                GroupStartWindow.isSelectable(utcTimeMillis, nowMs)
+
+            override fun isSelectableYear(year: Int): Boolean =
+                year in GroupStartWindow.selectableYears(nowMs)
+        }
+    }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = startDateMs.takeIf { it > 0L },
+        selectableDates = selectableStartDates,
+    )
+    val latestStartLabel = remember(nowMs) {
+        sdf.format(Date(GroupStartWindow.latestSelectableUtcDay(nowMs)))
+    }
 
     if (showDatePicker) {
         WizardDatePickerDialog(
@@ -799,6 +822,18 @@ private fun GStep5StartDate(
                                 color = if (startDateMs > 0L) detoxColors.label else detoxColors.subtext,
                             )
                         }
+                        // Always shown, not only on error: the constraint is a fact about the
+                        // card hold, and a creator who understands it up front never hits the
+                        // greyed-out days wondering why.
+                        Text(
+                            text = stringResource(
+                                R.string.group_wizard_start_date_window_hint,
+                                latestStartLabel,
+                                GroupStartWindow.WINDOW_DAYS.toInt(),
+                            ),
+                            fontSize = 12.sp,
+                            color = detoxColors.subtext,
+                        )
                         if (startDateError != null) {
                             Text(
                                 text = startDateError,

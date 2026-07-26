@@ -783,7 +783,18 @@ capture/retry. The **5 days is our own enforced cap, not Stripe's limit.**
 **Rule for challenge start timing:**
 - `joinGroupChallenge` CF creates the PaymentIntent (Stripe's ~7-day authorization clock starts)
 - Challenge MUST be started within our **5-day buffer** of the last participant joining
-- If `endDate - startDate` would push any capture beyond the 5-day buffer → creator must be warned
+- A **scheduled start date past that buffer is prevented, not warned about** — see below
+
+✅ **The scheduled start date is bounded at the picker.** `GroupStartWindow`
+(`domain/model/GroupStartWindow.kt`) is the client-side mirror of the 5-day buffer and the single
+predicate behind both the wizard's greyed-out days and its validation backstop. The latest
+selectable day is `now + 5 days − AUTO_START_MAX_LATENCY_MS`, where the latency term (24 h) is the
+`GroupChallengeAutoStartWorker` period — a date that comes due just after a run waits a full day
+for the next one, so the bound has to leave room for that lag, not just for the buffer. Net effect:
+the latest offered start is **4 days out**. This replaces the "creator must be warned" rule: a date
+that could not be captured is not offered at all, and `startDateError` catches the one path the
+picker cannot (a wizard left open across midnight). The window is a literal in the CF, not remote
+config, so `GroupStartWindow.WINDOW_DAYS` is a second copy — change both together.
 
 ✅ **Automatic enforcement:** `expireGroupChallenge` CF runs via DailyEvaluationWorker and enforces the
 5-day buffer (`authorizationExpiresAt`). After the buffer elapses without start → PaymentIntents

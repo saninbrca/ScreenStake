@@ -244,8 +244,9 @@ class SyncRepositoryImpl @Inject constructor(
             }
 
             // 4. Fetch today's dailyLog entries from the flat Firestore collection and upsert
-            //    consciousOpens + budgetUsedMs/budgetRemainingMs into Room — restores both
-            //    session-limit and daily-budget state after reinstalls / service kills.
+            //    consciousOpens + overlayPausedMs + budgetUsedMs/budgetRemainingMs into Room —
+            //    restores session-limit, overlay-pause credit and daily-budget state after
+            //    reinstalls / service kills.
             val startOfToday = DateUtils.todayKey()
             val todayLogs = firestoreService.fetchTodayDailyLogs(userId, startOfToday)
             Timber.d("Sync: about to write ${todayLogs.size} DailyLogs to Room")
@@ -257,6 +258,10 @@ class SyncRepositoryImpl @Inject constructor(
                 val opens = (data["consciousOpens"] as? Long)?.toInt()
                 val budgetUsedMs = data["budgetUsedMs"] as? Long
                 val budgetRemainingMs = data["budgetRemainingMs"] as? Long
+                // Absent on entries written before the overlay-pause mirror existed, and on
+                // challenges that have shown no overlay yet today — null, not 0, so the existing
+                // local value is preserved rather than zeroed.
+                val overlayPausedMs = data["overlayPausedMs"] as? Long
 
                 val existing = dailyLogDao.getLogForDate(challengeId, date)
                 if (existing != null) {
@@ -266,6 +271,9 @@ class SyncRepositoryImpl @Inject constructor(
                             // (opens are monotonic-up within a date). opens==null (TIME_BUDGET
                             // entries) → maxOf(0, existing) preserves existing, as before.
                             consciousOpens = maxOf(opens ?: 0, existing.consciousOpens),
+                            // Same monotonic-up reasoning: the flat doc is written on every overlay
+                            // dismissal, so it can lag Room but never legitimately lead it downward.
+                            overlayPausedMs = maxOf(overlayPausedMs ?: 0L, existing.overlayPausedMs),
                             budgetUsedMs = budgetUsedMs ?: existing.budgetUsedMs,
                             budgetRemainingMs = budgetRemainingMs ?: existing.budgetRemainingMs
                         )
@@ -279,6 +287,7 @@ class SyncRepositoryImpl @Inject constructor(
                             totalMinutes = 0,
                             openCount = 0,
                             consciousOpens = opens ?: 0,
+                            overlayPausedMs = overlayPausedMs ?: 0L,
                             budgetUsedMs = budgetUsedMs ?: 0L,
                             budgetRemainingMs = budgetRemainingMs ?: 0L,
                             pointsEarned = 0,
@@ -289,6 +298,7 @@ class SyncRepositoryImpl @Inject constructor(
                 }
                 if (opens != null) Timber.d("DailyLog synced from Firestore: opens=$opens for $challengeId")
                 if (budgetUsedMs != null) Timber.d("Budget restored from Firestore: ${budgetUsedMs}ms used for $challengeId")
+                if (overlayPausedMs != null) Timber.d("Overlay pause restored from Firestore: ${overlayPausedMs}ms for $challengeId")
             }
 
             // Part B: after Room is fully populated, push correct data to TrackedAppEventBus.

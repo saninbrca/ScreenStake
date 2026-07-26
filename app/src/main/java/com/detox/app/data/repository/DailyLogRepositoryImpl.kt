@@ -134,6 +134,22 @@ class DailyLogRepositoryImpl @Inject constructor(
                 )
             )
             dailyLogDao.addOverlayPausedMs(challengeId, date, additionalMs)
+            // Mirror to the FLAT dailyLogs collection so today's accumulated pause survives a
+            // reinstall / Room clear. Without this the field was pushed nowhere during the day —
+            // the NESTED doc for today is only written by the 23:59 worker, and sync step 4
+            // restores from the FLAT collection — so a same-day reinstall lost the credit and the
+            // user's counted screen time came back inflated.
+            // Push the ABSOLUTE total read back from Room, never the delta: the flat write is a
+            // merge-set, so an absolute value is idempotent and a retried push can't double-count.
+            // Fire-and-forget on appScope like the sibling consciousOpens/budget pushes — the
+            // Firestore SDK's durable mutation queue handles retry, and this must never block
+            // overlay dismissal.
+            val totalPausedMs = dailyLogDao.getOverlayPausedMs(challengeId, date)
+            appScope.launch {
+                firebaseAuthService.currentUserId()?.let { uid ->
+                    firestoreService.updateDailyLogOverlayPaused(uid, challengeId, date, totalPausedMs)
+                }
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

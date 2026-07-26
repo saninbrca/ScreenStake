@@ -78,12 +78,41 @@ now skip groups the signed-in user did not create, ending the guaranteed daily 4
 per group. The creator's path is kept as a redundant trigger — and while the server flag is off it
 is the only path that works at all.
 
-**KNOWN — the fence-release race is still open (next commit).** Two concurrent starts both pass the
-`startLockAt` fence (it does not check freshness, by design: invariant #27 forbids a stranded lock
-from blocking start), and the loser's error path deletes the lock while the winner is still
-capturing, briefly re-opening joining mid-capture — which can leave a paid participant in an ACTIVE
-challenge with an uncaptured hold, invisible to settlement. The new sweep's `isStartLockFresh`
-guard keeps the scheduler out of it; the creator's-worker-vs-creator's-manual-tap case remains.
+**FIXED — the fence-release race (third commit).** Two concurrent starts both passed the
+`startLockAt` fence — it did not check freshness, deliberately, because invariant #27 forbids a
+stranded lock from blocking a start — and then the loser's error path deleted the lock while the
+winner was still capturing. A `confirmGroupJoin` landing in that window was accepted (`status` was
+still `waiting`), added a participant after the winner's snapshot, and the winner's final write
+does not touch `participants` — leaving a PAID participant in an ACTIVE challenge with an
+uncaptured hold, invisible to settlement. Not exotic: the 00:01 worker firing while the creator has
+the app open and taps Start is two concurrent starts on one device.
+
+**DECISION — closed by fence OWNERSHIP, not by serialising starts.** The fence no longer overwrites
+a FRESH lock: that run proceeds (a fresh lock must never block a start — #27) but records no
+ownership, and its error paths call `releaseStartLockIfOwned`, which transactionally
+compare-and-deletes only its own stamp. A STALE lock is still re-stamped and owned, so a crashed
+start's retry is unchanged; the only behavioural consequence is that the TTL now runs from the
+ORIGINAL stamp rather than the latest, so repeated attempts can no longer extend it — strictly
+closer to "TTL-bounded". The two exit paths that write a terminal status still clear the lock
+unconditionally, because `status` closes joining in that same write whoever owns the stamp.
+Invariant #27 gained the ownership clause (CLAUDE.md §3 kept in sync).
+
+**REJECTED — two alternatives.** Rejecting a start while the lock is fresh would fully serialise
+starts but makes a stranded lock block start itself, which #27 forbids outright. A preflight branch
+returning 409 on an already-`succeeded` PI cannot work either: it has no way to tell a live
+concurrent start from a half-dead previous one, because the only signal is `startLockAt` and in the
+exact ordering being fixed the loser had already overwritten the winner's stamp. Both were dropped
+in favour of the fence change, which needs neither and stays out of the capture loop entirely.
+
+**KNOWN (untouched, pre-existing) — a partially-captured WAITING challenge cannot restart, and one
+of its outcomes loses money.** Reachable when a rollback refund fails (logged only), when the
+function is killed mid-loop (no rollback runs), and even after a fully SUCCESSFUL rollback, since a
+Stripe refund leaves the PI `succeeded` rather than returning it to `requires_capture`. In every
+case the preflight then returns 400 `payment_not_ready` forever and the challenge only ages out via
+`expireGroupChallenge`. On that path `terminalizeWaitingGroupChallenge` meets a `succeeded` PI,
+logs "unexpected PI status", and still marks the participant `refunded` without issuing a refund —
+accurate if the rollback refund succeeded, but if it FAILED the user was charged, the document
+claims refunded, and nothing ever pays them back. Needs its own change.
 
 ### 2026-07-26 — Session length: dashboard card read the wrong field
 

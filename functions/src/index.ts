@@ -959,6 +959,43 @@ type GroupStartOutcome =
   | { ok: true; status: string }
   | { ok: false; httpStatus: number; body: Record<string, unknown> };
 
+// Release the join fence ONLY if this run still owns it — i.e. it stamped the lock
+// (myLockStamp !== null) and nothing has overwritten the stamp since. A run that found
+// the fence already held never owned it and must never delete it: doing so re-opens
+// joining underneath the run that DOES own it, mid-capture.
+//
+// Compare-and-delete is transactional because the read and the delete have to be one
+// step; a plain read-then-update could delete a stamp written between the two.
+// Failure is never fatal — the TTL releases the lock either way, which is the
+// documented behaviour of a stranded stamp (invariant #27).
+//
+// NOT used by the two paths that write a TERMINAL status (activated / cancelled < 2).
+// Those clear the lock in the SAME update that leaves "waiting", so joining is already
+// closed by status alone and releasing is correct no matter who owns the stamp.
+async function releaseStartLockIfOwned(
+  docRef: FirebaseFirestore.DocumentReference,
+  groupId: string,
+  myLockStamp: number | null,
+): Promise<void> {
+  if (myLockStamp === null) {
+    functions.logger.info("startGroupChallenge: start lock not ours — leaving it to its owner", { groupId });
+    return;
+  }
+  try {
+    await admin.firestore().runTransaction(async (tx) => {
+      const fresh = await tx.get(docRef);
+      if (!fresh.exists) return;
+      if (fresh.data()!["startLockAt"] !== myLockStamp) {
+        functions.logger.info("startGroupChallenge: start lock was re-stamped by another run — leaving it", { groupId });
+        return;
+      }
+      tx.update(docRef, { startLockAt: admin.firestore.FieldValue.delete() });
+    });
+  } catch (e) {
+    functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: e });
+  }
+}
+
 async function runGroupChallengeStart(groupId: string): Promise<GroupStartOutcome> {
   const db = admin.firestore();
   const docRef = db.collection("groupChallenges").doc(groupId);
@@ -975,15 +1012,36 @@ async function runGroupChallengeStart(groupId: string): Promise<GroupStartOutcom
   // CFs reject while it is fresh) and take the participant snapshot from the SAME
   // transactional read — a joiner confirmed after this commit is rejected, one
   // confirmed before it is in the snapshot, so the capture loop misses nobody.
-  // Deliberately NOT checked here: a creator retry re-stamps a stale lock, and a
-  // stranded lock only blocks joining for START_LOCK_TTL_MS, never start itself.
-  const lockedGc = await db.runTransaction(async (tx) => {
+  //
+  // A FRESH lock is NOT overwritten: another start owns the fence, and this run
+  // proceeds WITHOUT owning it (stamp === null). This is ownership, not exclusion —
+  // a fresh lock still never blocks a start, exactly as invariant #27 requires; it
+  // only decides who is allowed to RELEASE the fence. Without this, both runs stamp,
+  // the loser's error path deletes the lock while the winner is still capturing, and
+  // a joiner slipping into that window lands in an ACTIVE challenge with an
+  // uncaptured hold — a paid participant settlement cannot see.
+  // A STALE lock is still re-stamped and owned, so a crashed start's retry behaves
+  // exactly as it always has. The consequence is that the TTL now runs from the
+  // ORIGINAL stamp instead of the latest: a lock can no longer be extended
+  // indefinitely by repeated attempts, which is strictly closer to "TTL-bounded".
+  const fenced = await db.runTransaction(async (tx) => {
     const fresh = await tx.get(docRef);
     if (!fresh.exists) throw new HttpError(404, "Group challenge not found.");
     const data = fresh.data()!;
-    if (data["status"] === "waiting") tx.update(docRef, { startLockAt: Date.now() });
-    return data;
+    // Recomputed per attempt — a transaction body can re-run, and a stamp from a
+    // discarded attempt must never be mistaken for ownership.
+    let stamp: number | null = null;
+    if (data["status"] === "waiting" && !isStartLockFresh(data["startLockAt"])) {
+      stamp = Date.now();
+      tx.update(docRef, { startLockAt: stamp });
+    }
+    return { data, stamp };
   });
+  const lockedGc = fenced.data;
+  const myLockStamp = fenced.stamp;
+  if (myLockStamp === null && lockedGc["status"] === "waiting") {
+    functions.logger.info("startGroupChallenge: another start owns the fence — proceeding without it", { groupId });
+  }
   if (lockedGc["status"] !== "waiting") {
     functions.logger.info("startGroupChallenge: already status=" + lockedGc["status"] + " (post-lock)", { groupId });
     return { ok: true, status: lockedGc["status"] as string };
@@ -1002,6 +1060,8 @@ async function runGroupChallengeStart(groupId: string): Promise<GroupStartOutcom
         functions.logger.error("startGroupChallenge: cancel failed for <2 participants", { groupId, userId: p.userId, error: e });
       }
     }
+    // Unconditional lock clear, not releaseStartLockIfOwned: this update leaves "waiting"
+    // in the same write, so joining is closed by status regardless of who owns the stamp.
     await docRef.update({ status: "cancelled", startLockAt: admin.firestore.FieldValue.delete() });
     functions.logger.info("startGroupChallenge: cancelled (< 2 participants)", { groupId, participants: participants.length });
     return { ok: true, status: "cancelled" };
@@ -1012,9 +1072,7 @@ async function runGroupChallengeStart(groupId: string): Promise<GroupStartOutcom
     const pi = await getStripe().paymentIntents.retrieve(p.paymentIntentId);
     if (pi.status !== "requires_capture") {
       functions.logger.warn("startGroupChallenge: payment not ready", { groupId, userId: p.userId, piStatus: pi.status });
-      try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
-        functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
-      }
+      await releaseStartLockIfOwned(docRef, groupId, myLockStamp);
       return {
         ok: false,
         httpStatus: 400,
@@ -1040,9 +1098,7 @@ async function runGroupChallengeStart(groupId: string): Promise<GroupStartOutcom
           functions.logger.error("startGroupChallenge: rollback refund failed", { piId, error: re });
         }
       }
-      try { await docRef.update({ startLockAt: admin.firestore.FieldValue.delete() }); } catch (le) {
-        functions.logger.warn("startGroupChallenge: start lock clear failed — TTL will release it", { groupId, error: le });
-      }
+      await releaseStartLockIfOwned(docRef, groupId, myLockStamp);
       return {
         ok: false,
         httpStatus: 500,
@@ -1063,6 +1119,8 @@ async function runGroupChallengeStart(groupId: string): Promise<GroupStartOutcom
     participants: participants.length,
   });
 
+  // Unconditional lock clear — same reasoning as the cancelled branch: status leaves
+  // "waiting" in this very write, so the fence has done its job whoever owns the stamp.
   await docRef.update({ status: "active", startDate, endDate, startLockAt: admin.firestore.FieldValue.delete() });
   functions.logger.info("startGroupChallenge: activated", { groupId, participants: participants.length, startDate, endDate });
   return { ok: true, status: "active" };

@@ -240,8 +240,19 @@ PaymentSheetResult.Failed:
   reservations; worst case a hold lives until Stripe's ~7-day auto-expiry.
 - **`startLockAt`** (group doc, CF-only): `startGroupChallenge` transactionally stamps it and
   takes its participant snapshot from the SAME read before the capture pre-flight; both join CFs
-  reject while the stamp is fresh (15-min TTL). Cleared on every start exit path; a stranded lock
-  only ever blocks JOINING for the TTL — never start (creator retry re-stamps), leave, or settle.
+  reject while the stamp is fresh (15-min TTL). A stranded lock only ever blocks JOINING for the
+  TTL — never start, leave, or settle.
+  **The stamp is OWNED by the run that wrote it.** A start that finds the lock already fresh does
+  not overwrite it: it proceeds (a fresh lock must never block a start) but records no ownership,
+  and its error paths call `releaseStartLockIfOwned`, which compare-and-deletes only its own stamp.
+  A *stale* lock is still re-stamped and owned, so a crashed start's retry behaves exactly as
+  before — the TTL simply now runs from the original stamp rather than the latest, so repeated
+  attempts can no longer extend it. Without ownership, two concurrent starts both stamped and the
+  loser's error path deleted the lock while the winner was still capturing, re-opening joining
+  mid-capture: a joiner landing in that window became a PAID participant of an ACTIVE challenge
+  with an uncaptured hold, invisible to settlement. The two exit paths that write a terminal
+  status (`active`, `cancelled`) still clear the lock unconditionally in that same write — joining
+  is closed by `status` there, whoever owns the stamp.
 
 ---
 

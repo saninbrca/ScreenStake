@@ -230,8 +230,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
                 lastForegroundPackage = packageName
                 lastDetectedPackage = packageName
                 TrackedAppEventBus.updateForegroundPackage(packageName)
-                val scheduleInfo = TrackedAppEventBus.packageSchedules.value[packageName]
-                if (scheduleInfo == null || isWithinActiveSchedule(scheduleInfo)) {
+                if (isAnyScheduleActive(packageName)) {
                     Timber.d("AppDetectionService: CONTENT_CHANGED foreground transition to $packageName — triggering overlay")
                     TrackedAppEventBus.emitAppOpen(packageName)
                 }
@@ -290,8 +289,7 @@ class AppDetectionAccessibilityService : AccessibilityService() {
             }
 
             // Gate on challenge schedule — skip overlay if outside the active window
-            val scheduleInfo = TrackedAppEventBus.packageSchedules.value[packageName]
-            if (scheduleInfo != null && !isWithinActiveSchedule(scheduleInfo)) {
+            if (!isAnyScheduleActive(packageName)) {
                 Timber.d("AppDetectionService: $packageName — outside schedule window, skipping overlay")
                 return
             }
@@ -557,6 +555,19 @@ class AppDetectionAccessibilityService : AccessibilityService() {
     }
 
     // ── Schedule gate ─────────────────────────────────────────────────────────
+
+    /**
+     * True if ANY challenge tracking [packageName] is inside its active schedule right now — i.e.
+     * whether enforcement applies to this package at this moment.
+     *
+     * Evaluates every schedule rather than one: several challenges may track the same app, and
+     * each one's window entitles it to enforce independently. A package with no schedules at all
+     * (nothing registered yet) enforces, preserving the previous null-means-always behaviour.
+     */
+    private fun isAnyScheduleActive(packageName: String): Boolean {
+        val schedules = TrackedAppEventBus.packageSchedules.value[packageName] ?: return true
+        return schedules.isEmpty() || schedules.any { isWithinActiveSchedule(it) }
+    }
 
     /**
      * Returns true if the current time/day falls within the challenge's active schedule.

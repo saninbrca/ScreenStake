@@ -122,11 +122,15 @@ object TrackedAppEventBus {
     // ── Schedule info ──────────────────────────────────────────────────────────
 
     /**
-     * Maps each tracked package name to the schedule of its active challenge so that
+     * Maps each tracked package name to the schedules of EVERY active challenge tracking it, so
      * [AppDetectionAccessibilityService] can skip overlays outside the active window.
+     *
+     * A list, not a single entry: two challenges may track the same app, and collapsing them into
+     * one value silently discarded whichever was built second — including replacing a real window
+     * with the all-null "no schedule" shape, which disables the gate for that package entirely.
      */
-    private val _packageSchedules = MutableStateFlow<Map<String, ScheduleInfo>>(emptyMap())
-    val packageSchedules: StateFlow<Map<String, ScheduleInfo>> = _packageSchedules.asStateFlow()
+    private val _packageSchedules = MutableStateFlow<Map<String, List<ScheduleInfo>>>(emptyMap())
+    val packageSchedules: StateFlow<Map<String, List<ScheduleInfo>>> = _packageSchedules.asStateFlow()
 
     fun emitAppOpen(packageName: String) {
         _appOpenEvents.tryEmit(packageName)
@@ -164,7 +168,7 @@ object TrackedAppEventBus {
         _freedDomainsToday.value = _freedDomainsToday.value + domain
     }
 
-    fun updatePackageSchedules(schedules: Map<String, ScheduleInfo>) {
+    fun updatePackageSchedules(schedules: Map<String, List<ScheduleInfo>>) {
         _packageSchedules.value = schedules
     }
 

@@ -133,7 +133,10 @@ class UsageTrackingService : Service() {
                 val adultBlockingActive = challenges.any { it.blockAdultContent }
                 TrackedAppEventBus.updateAdultBlockingActive(adultBlockingActive)
 
-                // Build per-package schedule map so AccessibilityService can gate overlays
+                // Build per-package schedule map so AccessibilityService can gate overlays.
+                // groupBy, NOT toMap(): two challenges can track the same app, and on a duplicate
+                // key toMap() kept only the last one — silently dropping the other challenge's
+                // window, and disabling the gate outright whenever the survivor had no schedule.
                 val scheduleMap = challenges.flatMap { challenge ->
                     challenge.appPackageNames.map { pkg ->
                         pkg to TrackedAppEventBus.ScheduleInfo(
@@ -142,7 +145,7 @@ class UsageTrackingService : Service() {
                             activeDays = challenge.activeDays
                         )
                     }
-                }.toMap()
+                }.groupBy({ it.first }, { it.second })
                 TrackedAppEventBus.updatePackageSchedules(scheduleMap)
             }
         }

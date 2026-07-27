@@ -191,8 +191,9 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     val durationDays = ((challenge.endDate - challenge.startDate) /
                             DateUtils.MILLIS_PER_DAY).toInt()
                     if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
-                        val log = existingRealLog
-                        val finalStatus = if (log.limitExceeded) {
+                        // Whole-challenge verdict (server rule), not today's row alone.
+                        val violated = challengeViolated(challenge.id, existingRealLog.limitExceeded)
+                        val finalStatus = if (violated) {
                             ChallengeStatus.FAILED
                         } else {
                             ChallengeStatus.COMPLETED
@@ -255,6 +256,28 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                         "(already logged) — leaving ACTIVE for retry next cycle"
                             )
                             continue
+                        }
+                        // Capture-gate the loss (CLAUDE.md #6). Reachable now that the verdict reads
+                        // the whole history: a challenge whose breach was on an EARLIER day arrives
+                        // here as FAILED with nothing captured yet. FAILED only after a confirmed
+                        // capture — on failure stay ACTIVE for the next cycle / the server net.
+                        if (finalStatus == ChallengeStatus.FAILED &&
+                            challenge.mode == ChallengeMode.HARD &&
+                            challenge.stripePaymentIntentId != null
+                        ) {
+                            val captured = paymentRepository
+                                .capturePayment(challenge.stripePaymentIntentId)
+                                .onSuccess { setRedemptionInfo(challenge, now) }
+                                .onFailure { e ->
+                                    Timber.e(e, "Failed to capture payment for ${challenge.id} (already logged)")
+                                }
+                            if (captured.isFailure) {
+                                Timber.w(
+                                    "DailyEvaluationWorker: '${challenge.appDisplayName}' loss capture failed " +
+                                            "(already logged) — leaving ACTIVE for retry next cycle"
+                                )
+                                continue
+                            }
                         }
                         challengeRepository.updateChallengeStatus(
                             challenge.id, finalStatus,
@@ -323,8 +346,13 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     val totalBudgetMs = (budgetMinutes ?: 0) * 60_000L
                     val limitExceeded = budgetMinutes != null && budgetUsedMs > totalBudgetMs
 
+                    // Whole-challenge verdict (server rule). Today's row is not written until
+                    // further down, so today's freshly computed value is OR-ed in here.
+                    val violated = challengeViolated(challenge.id, limitExceeded)
+
                     var moneyLostCents = 0
                     var hardModeWinRefundFailed = false
+                    var hardModeLossCaptureFailed = false
                     if (challenge.mode == ChallengeMode.HARD &&
                         challenge.stripePaymentIntentId != null
                     ) {
@@ -347,6 +375,19 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 }
                                 .onFailure { e ->
                                     Timber.e(e, "Failed to capture payment for ${challenge.id}")
+                                }
+                        } else if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now) && violated) {
+                            // Clean today, but an EARLIER day broke the budget → the challenge is a
+                            // loss. Capture instead of refunding, and only then may the status flip
+                            // (CLAUDE.md #6). Previously this path refunded 80% of a forfeited stake.
+                            paymentRepository.capturePayment(challenge.stripePaymentIntentId)
+                                .onSuccess {
+                                    moneyLostCents = challenge.amountCents ?: 0
+                                    setRedemptionInfo(challenge, now)
+                                }
+                                .onFailure { e ->
+                                    hardModeLossCaptureFailed = true
+                                    Timber.e(e, "Failed to capture payment for prior-day TIME_BUDGET loss ${challenge.id}")
                                 }
                         } else if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                             if (challenge.isRedemption && challenge.originalPaymentIntentId != null && challenge.refundAmountCents != null) {
@@ -414,11 +455,19 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         )
                         continue
                     }
+                    // Same stance for the loss side: never record FAILED without a confirmed capture.
+                    if (hardModeLossCaptureFailed) {
+                        Timber.w(
+                            "DailyEvaluationWorker: TIME_BUDGET '${challenge.appDisplayName}' loss capture failed — " +
+                                    "leaving ACTIVE for retry next cycle"
+                        )
+                        continue
+                    }
 
                     val durationDays = ((challenge.endDate - challenge.startDate) /
                             DateUtils.MILLIS_PER_DAY).toInt()
                     if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
-                        val finalStatus = if (limitExceeded) {
+                        val finalStatus = if (violated) {
                             ChallengeStatus.FAILED
                         } else {
                             ChallengeStatus.COMPLETED
@@ -533,9 +582,14 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     )
                 }
 
+                // Whole-challenge verdict (server rule). Today's row is not written until further
+                // down, so today's freshly computed value is OR-ed in here.
+                val violated = challengeViolated(challenge.id, limitExceeded)
+
                 // ── Hard Mode: handle Stripe payment ──────────────────────────
                 var moneyLostCents = 0
                 var hardModeWinRefundFailed = false
+                var hardModeLossCaptureFailed = false
                 // True once a Hard Mode limit-exceeded loss has flipped status→FAILED below
                 // (only ever set inside capturePayment.onSuccess). Guards the end-date block from
                 // issuing a duplicate updateChallengeStatus(FAILED) for the same challenge.
@@ -577,6 +631,22 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             .onFailure { e ->
                                 // Capture failed → leave ACTIVE so the next worker cycle retries.
                                 Timber.e(e, "Failed to capture payment for ${challenge.id}")
+                            }
+                    } else if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now) && violated) {
+                        // Clean today, but an EARLIER day broke the limit → the challenge is a loss.
+                        // Capture instead of refunding, and only then may the status flip
+                        // (CLAUDE.md #6). Previously this path refunded 80% of a forfeited stake —
+                        // including the case where an earlier day's capture had failed and was
+                        // silently forgotten, because the verdict only ever looked at today.
+                        paymentRepository.capturePayment(challenge.stripePaymentIntentId)
+                            .onSuccess {
+                                moneyLostCents = challenge.amountCents ?: 0
+                                Timber.d("Prior-day loss captured: €${moneyLostCents / 100f}")
+                                setRedemptionInfo(challenge, now)
+                            }
+                            .onFailure { e ->
+                                hardModeLossCaptureFailed = true
+                                Timber.e(e, "Failed to capture payment for prior-day loss ${challenge.id}")
                             }
                     } else if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                         if (challenge.isRedemption && challenge.originalPaymentIntentId != null && challenge.refundAmountCents != null) {
@@ -648,12 +718,20 @@ class DailyEvaluationWorker @AssistedInject constructor(
                     )
                     continue
                 }
+                // Same stance for the loss side: never record FAILED without a confirmed capture.
+                if (hardModeLossCaptureFailed) {
+                    Timber.w(
+                        "DailyEvaluationWorker: '${challenge.appDisplayName}' loss capture failed — " +
+                                "leaving ACTIVE for retry next cycle"
+                    )
+                    continue
+                }
 
                 // ── Update challenge status if end date reached ─────────────────
                 val durationDays = ((challenge.endDate - challenge.startDate) /
                         DateUtils.MILLIS_PER_DAY).toInt()
                 if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
-                    val finalStatus = if (limitExceeded) {
+                    val finalStatus = if (violated) {
                         ChallengeStatus.FAILED
                     } else {
                         ChallengeStatus.COMPLETED
@@ -750,6 +828,44 @@ class DailyEvaluationWorker @AssistedInject constructor(
             Sentry.captureException(e)
             Result.retry()
         }
+    }
+
+    /**
+     * WHOLE-CHALLENGE verdict. Mirrors the server's reconciliation rule exactly
+     * (`runDueChallengeReconciliation` in `functions/src/index.ts`):
+     *
+     * ```ts
+     * const lossProven = logsSnap.docs.some((d) => d.data()["limitExceeded"] === true);
+     * ```
+     *
+     * ANY day that recorded a breach loses the whole challenge. This is deliberately NOT a third
+     * rule: the client used to settle on the CURRENT day's value alone, so client and server
+     * decided the same challenge oppositely and whichever ran first won — usually the client,
+     * because the server net only queries `status == "active"` and the client writes its terminal
+     * status first. A multi-day challenge that broke its limit on day 3 and stayed clean on the
+     * last day settled as a WIN and was refunded.
+     *
+     * [todayExceeded] is OR-ed in for the call sites that decide BEFORE today's DailyLog row has
+     * been written; once written it is redundant (the row is part of the history).
+     *
+     * Fail-open on a read error — same stance as the server, which refunds when it finds zero logs
+     * and only flags `reconciliationLowEvidence` for review. Never capture on data we couldn't read.
+     */
+    private suspend fun challengeViolated(challengeId: String, todayExceeded: Boolean): Boolean {
+        if (todayExceeded) return true
+        val logs = runCatching { dailyLogRepository.getLogsForChallengeOnce(challengeId) }
+            .getOrElse { e ->
+                Timber.e(e, "DailyEvaluationWorker: log history unreadable for $challengeId — treating as clean")
+                return false
+            }
+        val violated = logs.any { it.limitExceeded }
+        if (violated) {
+            Timber.d(
+                "DailyEvaluationWorker: $challengeId — prior breach found in history " +
+                        "(${logs.count { it.limitExceeded }}/${logs.size} day(s)) → whole challenge is a LOSS"
+            )
+        }
+        return violated
     }
 
     private fun computeLimitExceeded(

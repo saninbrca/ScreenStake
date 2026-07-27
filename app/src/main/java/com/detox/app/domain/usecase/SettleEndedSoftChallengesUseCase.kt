@@ -22,10 +22,10 @@ import javax.inject.Inject
  *  - Open-ended challenges ([DateUtils.isOpenEnded]) run indefinitely by design and are NEVER
  *    completed here.
  *
- * The FAILED-vs-COMPLETED choice mirrors the worker's already-logged short-circuit: FAILED iff
- * today's DailyLog recorded a limit breach, otherwise COMPLETED. (A Soft challenge that actually
- * exceeded its limit is already flipped to FAILED intra-day by OverlayManager and is therefore no
- * longer in the active list, so in practice this backstop resolves the win case.)
+ * The FAILED-vs-COMPLETED choice mirrors the worker's whole-challenge verdict, which in turn
+ * mirrors the server's reconciliation rule: FAILED iff ANY DailyLog in the challenge's history
+ * recorded a limit breach, otherwise COMPLETED. Reading only TODAY's row (the previous behaviour)
+ * let a challenge that broke its limit on an earlier day settle as a win.
  */
 class SettleEndedSoftChallengesUseCase @Inject constructor(
     private val challengeRepository: ChallengeRepository,
@@ -33,7 +33,6 @@ class SettleEndedSoftChallengesUseCase @Inject constructor(
 ) {
     suspend operator fun invoke() {
         val now = System.currentTimeMillis()
-        val today = DateUtils.todayKey()
         val challenges = challengeRepository.getActiveChallengesList().getOrElse { e ->
             Timber.w(e, "SettleEndedSoftChallenges: could not read active challenges — skipping")
             return
@@ -52,9 +51,16 @@ class SettleEndedSoftChallengesUseCase @Inject constructor(
             // whenever the app is opened after endDate has passed, this fires immediately.
             if (!DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) continue
 
-            val limitExceeded = dailyLogRepository.getLogForDate(challenge.id, today)
-                .getOrNull()?.limitExceeded == true
-            val finalStatus = if (limitExceeded) ChallengeStatus.FAILED else ChallengeStatus.COMPLETED
+            // Whole-challenge verdict, matching DailyEvaluationWorker.challengeViolated and the
+            // server's `logsSnap.docs.some(d => d.limitExceeded === true)`. Fail-open on a read
+            // error — an unreadable history must never manufacture a loss.
+            val violated = runCatching { dailyLogRepository.getLogsForChallengeOnce(challenge.id) }
+                .getOrElse { e ->
+                    Timber.e(e, "SettleEndedSoftChallenges: log history unreadable for %s — treating as clean", challenge.id)
+                    emptyList()
+                }
+                .any { it.limitExceeded }
+            val finalStatus = if (violated) ChallengeStatus.FAILED else ChallengeStatus.COMPLETED
 
             challengeRepository.updateChallengeStatus(
                 challenge.id,

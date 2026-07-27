@@ -27,24 +27,32 @@ object DateUtils {
     /**
      * The end-of-challenge trigger shared by [com.detox.app.service.DailyEvaluationWorker] and the
      * on-app-open soft backstop ([com.detox.app.domain.usecase.SettleEndedSoftChallengesUseCase]),
-     * so the two completion paths can never diverge. Mirrors the worker's inline condition exactly:
-     * a challenge has reached its end when [now] is at/after its resolved [endMs], OR it is a
-     * single-day challenge. Open-endedness is a SEPARATE guard ([isOpenEnded]) — callers that must
-     * never complete open-ended challenges check that first.
+     * so the two completion paths can never diverge. Open-endedness is a SEPARATE guard
+     * ([isOpenEnded]) — callers that must never complete open-ended challenges check that first.
+     *
+     * Compares CALENDAR DAYS, not milliseconds. [endOfDayMillis] resolves [endMs] to 23:59:59.999
+     * of the final day, while the worker fires at ~23:59:00 — so a raw `now >= endMs` was still
+     * false on the final day and settlement slipped to the NEXT run, 23:59 of day N+1, whose usage
+     * is not part of the challenge at all (and is therefore essentially always clean). Comparing
+     * day keys makes the final day's own run settle the challenge.
+     *
+     * The former `|| durationDays == 1` escape hatch is gone: it made a 2-day challenge
+     * (span ≈ 1.x days → 1) report "ended" on its very first evaluation. Day-key comparison covers
+     * the genuine 1-day case correctly — start and end fall on the same day key.
      */
-    fun hasReachedEnd(startMs: Long, endMs: Long, now: Long): Boolean {
-        val durationDays = ((endMs - startMs) / MILLIS_PER_DAY).toInt()
-        return now >= endMs || durationDays == 1
-    }
+    fun hasReachedEnd(startMs: Long, endMs: Long, now: Long): Boolean =
+        dayKey(now) >= dayKey(endMs)
 
-    fun todayKey(): Long {
-        val cal = Calendar.getInstance()
-        cal.set(Calendar.HOUR_OF_DAY, 0)
-        cal.set(Calendar.MINUTE, 0)
-        cal.set(Calendar.SECOND, 0)
-        cal.set(Calendar.MILLISECOND, 0)
-        return cal.timeInMillis
-    }
+    /** Midnight (00:00:00.000, local) of the calendar day containing [timestampMs]. */
+    fun dayKey(timestampMs: Long): Long = Calendar.getInstance().apply {
+        timeInMillis = timestampMs
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    fun todayKey(): Long = dayKey(System.currentTimeMillis())
 
     fun nextMidnightTimestamp(): Long = Calendar.getInstance().apply {
         add(Calendar.DAY_OF_YEAR, 1)

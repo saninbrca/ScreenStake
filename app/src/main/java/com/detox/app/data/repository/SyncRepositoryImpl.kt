@@ -196,6 +196,11 @@ class SyncRepositoryImpl @Inject constructor(
             val budgetPrefs = context.getSharedPreferences(
                 OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
             )
+            // Run the day-rollover sweep BEFORE any restore write, ONCE for the whole loop.
+            // Stamping today's reset day key first means a later polling-tick guard call no-ops
+            // instead of clearing the accumulators this restore is about to write. Placed after a
+            // write (or inside the loop) it would sweep away the value just restored.
+            OverlayManager.ensureCommittedBudgetFresh(budgetPrefs)
             val groupChallenges = groupChallengeRepository.getGroupChallenges().first()
             for (gc in groupChallenges) {
                 if (gc.status != GroupChallengeStatus.ACTIVE) continue

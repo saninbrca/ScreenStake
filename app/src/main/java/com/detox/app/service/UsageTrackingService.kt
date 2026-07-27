@@ -221,6 +221,15 @@ class UsageTrackingService : Service() {
 
     private suspend fun checkBudgetSession() {
         val prefs = getSharedPreferences(OverlayManager.BUDGET_SESSION_PREFS_NAME, MODE_PRIVATE)
+
+        // Day-key guard, deliberately ABOVE the no-active-session early return. This is the single
+        // accumulation path — the committed read below adds today's elapsed on top of whatever is
+        // stored — so the reset has to happen before it, on every tick, whether or not a session is
+        // running. Running it here (not only when a session is active) also means the 10s loop
+        // clears a stale accumulator within seconds of midnight, so the dashboard read in
+        // GetDailyStatsUseCase never shows yesterday's spend either.
+        OverlayManager.ensureCommittedBudgetFresh(prefs)
+
         val sessionEndTime = prefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
         if (sessionEndTime <= 0L) return  // no active session
 

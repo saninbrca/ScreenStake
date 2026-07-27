@@ -86,12 +86,18 @@ class DailyEvaluationWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         Timber.d("DailyEvaluationWorker: ▶ starting (runAttemptCount=$runAttemptCount)")
 
-        // Clear budget session accumulator at midnight so day-N committed time doesn't bleed into day-N+1
+        // Clear budget session accumulator at midnight so day-N committed time doesn't bleed into
+        // day-N+1. This used to write the BARE `budget_committed_ms` key, which nothing reads —
+        // the real accumulators are per-challenge (`budget_committed_ms_<id>`), so the reset was
+        // a no-op and the intent stated in this comment never happened. It now runs the same
+        // date-key-gated prefix sweep as the live path and shares its day key, so whichever fires
+        // first does the clear and the other correctly no-ops. At the usual ~23:59 run that is a
+        // no-op (still day N); a run that lands after midnight clears.
         val budgetPrefs = applicationContext.getSharedPreferences(
             OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
         )
+        OverlayManager.ensureCommittedBudgetFresh(budgetPrefs)
         budgetPrefs.edit()
-            .putLong(OverlayManager.BUDGET_COMMITTED_MS_KEY, 0L)
             .putLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
             .putLong(OverlayManager.BUDGET_SESSION_START_TIME_KEY, 0L)
             .remove(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY)

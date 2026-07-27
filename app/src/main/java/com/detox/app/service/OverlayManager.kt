@@ -100,6 +100,62 @@ class OverlayManager @Inject constructor(
         const val BUDGET_SESSION_PACKAGE_KEY   = "budget_session_package"
         const val BUDGET_COMMITTED_MS_KEY      = "budget_committed_ms"
 
+        /**
+         * Prefix of the per-challenge committed-budget accumulators
+         * (`budget_committed_ms_<challengeId>`; group shadow rows land on
+         * `budget_committed_ms_group_<groupId>` because their challenge id already carries the
+         * `group_` prefix).
+         *
+         * The TRAILING UNDERSCORE is load-bearing. It is what keeps a prefix sweep from matching
+         * the bare [BUDGET_COMMITTED_MS_KEY] or [BUDGET_COMMITTED_RESET_DAYKEY], and the four
+         * `budget_session_*` keys never collide with it either.
+         */
+        const val BUDGET_COMMITTED_MS_PREFIX   = "budget_committed_ms_"
+
+        /**
+         * Day key of the last committed-accumulator reset. Deliberately NOT prefixed with
+         * [BUDGET_COMMITTED_MS_PREFIX] — the sweep must never delete its own guard, or the reset
+         * would re-arm and re-run on every call.
+         */
+        const val BUDGET_COMMITTED_RESET_DAYKEY = "budget_committed_reset_daykey"
+
+        /**
+         * Lazily resets the per-challenge TIME_BUDGET accumulators when the calendar day has
+         * rolled over since the last reset. Same date-key self-heal shape as
+         * [ensureDailyStateFresh], and sharing its day-key source ([DateUtils.todayKey]) — but
+         * this one clears SharedPreferences, which the in-memory reset never touched.
+         *
+         * Why it exists: committed budget counts UP and is accumulated on top of on every live
+         * tick, so a value surviving midnight makes the new day start already spent — always
+         * against the user, and enough to trip a TIME_BUDGET challenge early. The only reset that
+         * actually cleared these keys ran from a `postDelayed` on the uptime clock, which stalls
+         * in Doze and silently misses the rollover.
+         *
+         * Idempotent: at most one clear per calendar day, a no-op on every later call that day.
+         * Two callers racing is harmless — removing an absent key is a no-op and both stamp the
+         * same value.
+         *
+         * Clears ONLY the accumulators. `budgetRemainingMs` counts DOWN and lives in Room, and the
+         * four `budget_session_*` keys describe the in-flight session; neither is touched here.
+         *
+         * @return true when this call performed the reset (for logging only).
+         */
+        fun ensureCommittedBudgetFresh(prefs: android.content.SharedPreferences): Boolean {
+            val today = DateUtils.todayKey()
+            if (prefs.getLong(BUDGET_COMMITTED_RESET_DAYKEY, 0L) == today) return false
+
+            val stale = prefs.all.keys.filter { it.startsWith(BUDGET_COMMITTED_MS_PREFIX) }
+            prefs.edit().apply {
+                stale.forEach { remove(it) }
+                putLong(BUDGET_COMMITTED_RESET_DAYKEY, today)
+            }.apply()
+            Timber.i(
+                "Budget: day rolled over — cleared %d committed accumulator(s), reset day key = %d",
+                stale.size, today
+            )
+            return true
+        }
+
         // Shared preferences keys for GROUP TIME_LIMIT active-session tracking.
         // Written by OverlayManager; read by UsageTrackingService every 10 s.
         // Timer only runs while user is inside the blocked app AND no overlay is shown.

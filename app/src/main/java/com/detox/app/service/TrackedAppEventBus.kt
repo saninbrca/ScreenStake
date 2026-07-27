@@ -1,5 +1,6 @@
 package com.detox.app.service
 
+import com.detox.app.domain.model.LimitType
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,11 +14,18 @@ object TrackedAppEventBus {
     /**
      * Carry-all for per-challenge schedule constraints so [AppDetectionAccessibilityService]
      * can gate overlays without hitting the database.
+     *
+     * [limitType] is what makes the window's MEANING unambiguous, and it is why this is a
+     * per-challenge value rather than a per-package one: for TIME/SESSIONS/TIME_BUDGET the window
+     * says "enforce INSIDE these hours", for TIME_WINDOW it says the opposite — "only ALLOW inside
+     * these hours", i.e. enforce OUTSIDE them. Without it the gate can only implement one meaning,
+     * which left TIME_WINDOW blocking inside its own allowed window and free outside it.
      */
     data class ScheduleInfo(
         val scheduleStartTime: String?,  // "HH:mm", null = always active
         val scheduleEndTime: String?,    // "HH:mm", null = always active
-        val activeDays: List<String>     // ["MON","TUE",...], empty = every day
+        val activeDays: List<String>,    // ["MON","TUE",...], empty = every day
+        val limitType: LimitType         // decides whether the window means "enforce in" or "allow in"
     )
 
     private val _appOpenEvents = MutableSharedFlow<String>(

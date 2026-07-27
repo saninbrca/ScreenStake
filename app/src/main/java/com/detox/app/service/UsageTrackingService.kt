@@ -142,7 +142,10 @@ class UsageTrackingService : Service() {
                         pkg to TrackedAppEventBus.ScheduleInfo(
                             scheduleStartTime = challenge.scheduleStartTime,
                             scheduleEndTime = challenge.scheduleEndTime,
-                            activeDays = challenge.activeDays
+                            activeDays = challenge.activeDays,
+                            // Carried so the gate knows which way the window points: TIME_WINDOW
+                            // means "only ALLOW inside", every other type means "enforce inside".
+                            limitType = challenge.limitType
                         )
                     }
                 }.groupBy({ it.first }, { it.second })

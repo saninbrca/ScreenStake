@@ -11,6 +11,7 @@ import android.widget.Toast
 import com.detox.app.R
 import com.detox.app.data.system.CriticalPackageResolver
 import com.detox.app.domain.model.AdultDomains
+import com.detox.app.domain.model.LimitType
 import dagger.hilt.android.AndroidEntryPoint
 import io.sentry.Breadcrumb
 import io.sentry.Sentry
@@ -557,21 +558,54 @@ class AppDetectionAccessibilityService : AccessibilityService() {
     // ── Schedule gate ─────────────────────────────────────────────────────────
 
     /**
-     * True if ANY challenge tracking [packageName] is inside its active schedule right now — i.e.
-     * whether enforcement applies to this package at this moment.
+     * True if ANY challenge tracking [packageName] enforces right now — i.e. whether this package
+     * should be blocked at this moment.
      *
      * Evaluates every schedule rather than one: several challenges may track the same app, and
      * each one's window entitles it to enforce independently. A package with no schedules at all
      * (nothing registered yet) enforces, preserving the previous null-means-always behaviour.
+     *
+     * The OR is deliberate and must stay an OR over PER-ENTRY decisions: because TIME_WINDOW's
+     * window points the opposite way to TIME/SESSIONS' (see [scheduleEnforcesNow]), one app carrying
+     * both kinds of challenge holds opposite polarities at the same instant, and only a per-entry
+     * fold can honour both. Never invert this result as a whole, and never decide the polarity from
+     * one representative entry.
      */
     private fun isAnyScheduleActive(packageName: String): Boolean {
         val schedules = TrackedAppEventBus.packageSchedules.value[packageName] ?: return true
-        return schedules.isEmpty() || schedules.any { isWithinActiveSchedule(it) }
+        return schedules.isEmpty() || schedules.any { scheduleEnforcesNow(it) }
+    }
+
+    /**
+     * Whether THIS ONE challenge's schedule demands enforcement at this instant.
+     *
+     * The window carries two opposite meanings depending on the limit type:
+     *  - TIME / SESSIONS / TIME_BUDGET — "enforce INSIDE these hours" ⇒ enforce when inside.
+     *  - TIME_WINDOW — "only ALLOW inside these hours" ⇒ enforce when OUTSIDE.
+     *
+     * Only the second was ever implemented as the first, which is what left TIME_WINDOW inverted:
+     * blocked inside its own allowed window, free outside it.
+     *
+     * The inversion is gated on the entry actually having bounds. A boundless entry (no times AND
+     * no days) is the canonical "always active" shape — including the 24/7 website block, which is
+     * persisted as TIME_WINDOW with null/null/empty. [isWithinActiveSchedule] returns true for it,
+     * so an ungated `!` would turn a permanent block into a permanent allow. Boundless entries
+     * therefore enforce unconditionally, for EVERY type.
+     */
+    private fun scheduleEnforcesNow(info: TrackedAppEventBus.ScheduleInfo): Boolean {
+        val inside = isWithinActiveSchedule(info)
+        val hasBounds = (info.scheduleStartTime != null && info.scheduleEndTime != null) ||
+                info.activeDays.isNotEmpty()
+        return if (info.limitType == LimitType.TIME_WINDOW && hasBounds) !inside else inside
     }
 
     /**
      * Returns true if the current time/day falls within the challenge's active schedule.
      * If no schedule is configured (null times and empty days), always returns true.
+     *
+     * Pure "is it inside the window" primitive — it says nothing about blocking. Whether being
+     * inside means enforce or allow is decided by [scheduleEnforcesNow]; keep that polarity out
+     * of here.
      */
     private fun isWithinActiveSchedule(info: TrackedAppEventBus.ScheduleInfo): Boolean {
         val hasTimeBounds = info.scheduleStartTime != null && info.scheduleEndTime != null

@@ -7,6 +7,7 @@ import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
+import com.detox.app.util.UserFacingException
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -118,7 +119,9 @@ class CreateChallengeUseCaseTest {
         )
 
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull() is IllegalStateException)
+        // UserFacingException, not IllegalStateException: the conflict message is already-localized
+        // copy built from a string resource, so ErrorMessages shows it verbatim to the user.
+        assertTrue(result.exceptionOrNull() is UserFacingException)
     }
 
     @Test

@@ -17,9 +17,15 @@ import org.junit.Test
 
 /**
  * Behavioural tests for the on-app-open soft backstop. The backstop must:
- *  - finalise a fixed-end SOFT challenge whose endDate has passed (COMPLETED, or FAILED when today's
- *    log recorded a limit breach), and
+ *  - finalise a fixed-end SOFT challenge whose endDate has passed — FAILED iff ANY DailyLog in the
+ *    challenge's history recorded a limit breach, otherwise COMPLETED, and
  *  - NEVER touch open-ended, Hard, staked (stripePaymentIntentId), or group challenges.
+ *
+ * The verdict reads the WHOLE history via `getLogsForChallengeOnce` — never just today's row, which
+ * let a challenge that broke its limit on an earlier day settle as a win. That call is stubbed
+ * explicitly in [setUp]: the use case fail-opens on a read error (`runCatching { … }.getOrElse
+ * { emptyList() }`), so an unstubbed mock would throw, be swallowed, and silently settle every
+ * challenge as COMPLETED — making the COMPLETED cases pass without ever exercising the verdict.
  */
 class SettleEndedSoftChallengesUseCaseTest {
 
@@ -34,8 +40,11 @@ class SettleEndedSoftChallengesUseCaseTest {
     fun setUp() {
         challengeRepository = mockk()
         dailyLogRepository = mockk()
-        // Default: no log today → not exceeded. Individual tests override as needed.
-        coEvery { dailyLogRepository.getLogForDate(any(), any()) } returns Result.success(null)
+        // Default: clean history → not exceeded. Individual tests override as needed.
+        // Must be stubbed, not left to the fail-open: an unstubbed call throws a MockKException
+        // that the use case swallows into an empty history, which would make every COMPLETED
+        // assertion below pass through the error path instead of the settlement verdict.
+        coEvery { dailyLogRepository.getLogsForChallengeOnce(any()) } returns emptyList()
         coEvery { challengeRepository.updateChallengeStatus(any(), any(), any()) } returns Result.success(Unit)
         useCase = SettleEndedSoftChallengesUseCase(challengeRepository, dailyLogRepository)
     }
@@ -66,10 +75,15 @@ class SettleEndedSoftChallengesUseCaseTest {
         groupChallengeId = groupChallengeId,
     )
 
-    private fun dailyLog(limitExceeded: Boolean) = DailyLog(
-        id = "log1",
+    /** A log from somewhere inside the default challenge window (started 10 days ago, ended 2 ago). */
+    private fun dailyLog(
+        limitExceeded: Boolean,
+        id: String = "log1",
+        date: Long = DateUtils.dayKey(now - 3 * day),
+    ) = DailyLog(
+        id = id,
         challengeId = "soft1",
-        date = DateUtils.todayKey(),
+        date = date,
         totalMinutes = 0,
         openCount = 0,
         pointsEarned = 0,
@@ -81,6 +95,11 @@ class SettleEndedSoftChallengesUseCaseTest {
     fun `completes a fixed-end soft challenge whose endDate passed with no limit breach`() = runTest {
         coEvery { challengeRepository.getActiveChallengesList() } returns
             Result.success(listOf(challenge("soft1")))
+        // A real history, every day clean — not an empty one standing in for a read error.
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns listOf(
+            dailyLog(limitExceeded = false, id = "log1", date = DateUtils.dayKey(now - 4 * day)),
+            dailyLog(limitExceeded = false, id = "log2", date = DateUtils.dayKey(now - 3 * day)),
+        )
 
         useCase()
 
@@ -90,11 +109,47 @@ class SettleEndedSoftChallengesUseCaseTest {
     }
 
     @Test
-    fun `fails a fixed-end soft challenge when today's log recorded a limit breach`() = runTest {
+    fun `fail-open — an unreadable history settles as COMPLETED, never a manufactured loss`() = runTest {
+        // Deliberate production behaviour, asserted rather than left implicit: a read error must
+        // never invent a breach. It is also why no COMPLETED assertion in this class can, on its
+        // own, prove the verdict ran — the error path produces the same status. The two FAILED
+        // tests are the discriminating ones: the fail-open can never produce FAILED.
         coEvery { challengeRepository.getActiveChallengesList() } returns
             Result.success(listOf(challenge("soft1")))
-        coEvery { dailyLogRepository.getLogForDate("soft1", any()) } returns
-            Result.success(dailyLog(limitExceeded = true))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } throws
+            RuntimeException("Room unavailable")
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.COMPLETED, null)
+        }
+    }
+
+    @Test
+    fun `fails a fixed-end soft challenge when its history recorded a limit breach`() = runTest {
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns
+            listOf(dailyLog(limitExceeded = true))
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.FAILED, "limit_exceeded")
+        }
+    }
+
+    @Test
+    fun `fails when an EARLIER day broke the limit and the final day was clean`() = runTest {
+        // The whole point of the history verdict: reading only the last day let a challenge that
+        // already broke its limit settle as a win.
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns listOf(
+            dailyLog(limitExceeded = true, id = "log1", date = DateUtils.dayKey(now - 6 * day)),
+            dailyLog(limitExceeded = false, id = "log2", date = DateUtils.dayKey(now - 2 * day)),
+        )
 
         useCase()
 

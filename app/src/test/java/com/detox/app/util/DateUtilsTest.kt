@@ -7,8 +7,10 @@ import org.junit.Test
 /**
  * Covers the completion-trigger and open-ended helpers that back the soft-challenge fixes:
  *  - [DateUtils.hasReachedEnd] — the single end-of-challenge condition shared by the worker and the
- *    on-app-open backstop. Contract: `now >= endMs || durationDays == 1`, where
- *    `durationDays == ((endMs - startMs) / MILLIS_PER_DAY).toInt()`.
+ *    on-app-open backstop. Contract: `dayKey(now) >= dayKey(endMs)` — CALENDAR DAYS, not
+ *    milliseconds, so the final day's own 23:59 run settles the challenge instead of slipping to
+ *    day N+1. The former `|| durationDays == 1` escape hatch is gone: it fired on a 2-day challenge
+ *    (raw span ≈ 1.x days → 1) at its very first evaluation.
  *  - [DateUtils.isOpenEnded] — the ~100-year sentinel guard used across the display surfaces.
  */
 class DateUtilsTest {
@@ -38,11 +40,34 @@ class DateUtilsTest {
     }
 
     @Test
-    fun `hasReachedEnd is true when durationDays computes to 1 even though now is before end`() {
-        val end = start + day                // (end - start) / day == 1
-        val now = start + 60_000L            // one minute in, well before end
+    fun `hasReachedEnd is false on day 1 of a span that ends on the NEXT calendar day`() {
+        // Raw-ms arithmetic: same clock time tomorrow. The old `durationDays == 1` arm read this
+        // span as 1 and reported "ended" on the very first evaluation — a 2-day challenge settling
+        // on day 1. Day-key comparison keeps it running until tomorrow.
+        val end = start + day                // (end - start) / day == 1, but spans two day keys
+        val now = start + 60_000L            // one minute in
         assertFalse(now >= end)              // sanity: not past end by timestamp…
-        assertTrue(DateUtils.hasReachedEnd(start, end, now)) // …but the durationDays==1 branch fires
+        assertFalse(DateUtils.hasReachedEnd(start, end, now)) // …and not ended by day key either
+    }
+
+    @Test
+    fun `hasReachedEnd is true all through a genuine 1-day challenge`() {
+        // How production actually builds a 1-day challenge: endOfDayMillis adds durationDays - 1
+        // days, so the end is 23:59:59.999 of the START day and both fall on the same day key.
+        val end = DateUtils.endOfDayMillis(start, 1)
+        assertTrue(DateUtils.hasReachedEnd(start, end, start + 60_000L))
+        assertTrue(DateUtils.hasReachedEnd(start, end, end))
+    }
+
+    @Test
+    fun `hasReachedEnd is true on the final day before the 23-59-59 end instant`() {
+        // The reason for day-key comparison: the worker fires at ~23:59:00, endOfDayMillis resolves
+        // to 23:59:59.999, so a raw `now >= endMs` was still false on the final day and settlement
+        // slipped to 23:59 of day N+1 — a day whose usage is not part of the challenge at all.
+        val end = DateUtils.endOfDayMillis(start, 7)
+        val workerRun = end - 59_999L        // ~23:59:00 of the final day
+        assertFalse(workerRun >= end)        // sanity: the old millisecond test would miss it…
+        assertTrue(DateUtils.hasReachedEnd(start, end, workerRun)) // …the day-key test catches it
     }
 
     // ── isOpenEnded ──────────────────────────────────────────────────────────────

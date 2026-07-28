@@ -1,8 +1,14 @@
 package com.detox.app.presentation.screens.settings
 
+import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import com.detox.app.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +46,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
@@ -137,6 +144,36 @@ fun SettingsScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ── Notification permission ────────────────────────────────────────────────
+    // The app's own system notification screen. This is the only route below API 33 (no runtime
+    // permission exists there), and the only route left once the runtime dialog is spent.
+    val openAppNotificationSettings = {
+        context.startActivity(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    // Android 13+ runtime request. A bare denial result can't distinguish "declined this once"
+    // from "never ask again" — but shouldShowRequestPermissionRationale being false AFTER an ask
+    // means the dialog will never appear again, so system settings is the user's only remaining
+    // way in and we take them straight there. The ON_RESUME refresh above re-reads the real
+    // state on return, whichever path they took.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.refreshPermissions()
+        val activity = context as? Activity
+        if (!granted && activity != null &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(
+                activity, Manifest.permission.POST_NOTIFICATIONS
+            )
+        ) {
+            openAppNotificationSettings()
+        }
     }
 
     // Collect one-shot events
@@ -505,6 +542,27 @@ fun SettingsScreen(
                     activateLabel = stringResource(R.string.settings_permission_activate),
                     onActivate = {
                         context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    }
+                )
+                IosRowDivider()
+                // Second chance at POST_NOTIFICATIONS: the onboarding step that asks for it is
+                // skippable AND only reachable after registration, so anyone who logs in on a
+                // reinstall or a new device never sees it — and every notification we post
+                // silently no-ops for them with nothing on screen to explain why.
+                IosPermissionRow(
+                    icon = Icons.Filled.Notifications,
+                    title = stringResource(R.string.permission_notifications_title),
+                    subtitle = stringResource(R.string.settings_permission_notifications_subtitle),
+                    granted = state.notificationsGranted,
+                    activateLabel = stringResource(R.string.settings_permission_activate),
+                    onActivate = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(
+                                Manifest.permission.POST_NOTIFICATIONS
+                            )
+                        } else {
+                            openAppNotificationSettings()
+                        }
                     }
                 )
             }

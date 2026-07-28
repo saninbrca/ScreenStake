@@ -940,6 +940,7 @@
     <string name="settings_permission_overlay_subtitle">Required for the block screen</string>
     <string name="settings_permission_usage">Usage stats</string>
     <string name="settings_permission_usage_subtitle">Required for screen time</string>
+    <string name="settings_permission_notifications_subtitle">Required for limit warnings and results</string>
 
     <!-- Settings — Privacy section -->
     <string name="settings_section_privacy">PRIVACY</string>

@@ -911,6 +911,7 @@
     <string name="settings_permission_overlay_subtitle">Erforderlich für den Sperrbildschirm</string>
     <string name="settings_permission_usage">Nutzungsstatistiken</string>
     <string name="settings_permission_usage_subtitle">Erforderlich für die Bildschirmzeit</string>
+    <string name="settings_permission_notifications_subtitle">Erforderlich für Limit-Warnungen und Ergebnisse</string>
 
     <!-- Settings — Privacy section -->
     <string name="settings_section_privacy">DATENSCHUTZ</string>

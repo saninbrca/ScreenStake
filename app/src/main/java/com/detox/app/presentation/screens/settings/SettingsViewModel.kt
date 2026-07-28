@@ -4,6 +4,7 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.OneTimeWorkRequestBuilder
@@ -58,6 +59,7 @@ data class SettingsState(
     val accessibilityGranted: Boolean = false,
     val overlayGranted: Boolean = false,
     val usageStatsGranted: Boolean = false,
+    val notificationsGranted: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val isLoading: Boolean = false,
     val showDeleteConfirmDialog: Boolean = false,
@@ -162,10 +164,24 @@ class SettingsViewModel @Inject constructor(
             s.copy(
                 accessibilityGranted = isAccessibilityGranted(),
                 overlayGranted = Settings.canDrawOverlays(context),
-                usageStatsGranted = isUsageStatsGranted()
+                usageStatsGranted = isUsageStatsGranted(),
+                notificationsGranted = areNotificationsGranted()
             )
         }
     }
+
+    /**
+     * Whether the app may actually post notifications — the same question every sender asks
+     * before building one, so the Settings row can't claim "enabled" while notifications
+     * silently no-op.
+     *
+     * Deliberately NOT an API-33 `POST_NOTIFICATIONS` check: this is correct on every level.
+     * Below 33 there is no runtime permission and this reflects a user who switched the app's
+     * notifications off in system settings; from 33 up it additionally reflects the runtime
+     * grant. Either way, false means nothing we post will be shown.
+     */
+    private fun areNotificationsGranted(): Boolean =
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
 
     private fun isAccessibilityGranted(): Boolean {
         val enabledServices = Settings.Secure.getString(

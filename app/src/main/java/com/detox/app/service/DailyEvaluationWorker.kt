@@ -881,7 +881,13 @@ class DailyEvaluationWorker @AssistedInject constructor(
         adjustedMinutes: Int,
         opens: Int
     ): Boolean = when (limitType) {
-        LimitType.TIME -> adjustedMinutes >= limitValueMinutes
+        // Strict '>' (design decision), matching SESSIONS and TIME_BUDGET: REACHING the daily
+        // limit is a WIN, only exceeding it is a loss. The live block trigger
+        // (CheckDailyLimitUseCase) deliberately stays '>=' so the overlay engages AT the limit —
+        // the two predicates are MEANT to diverge. They used to be byte-identical, which made
+        // every blocked day settle as limitExceeded=true: a user who hit their limit, obeyed the
+        // block and never gave up still silently forfeited the whole multi-day challenge.
+        LimitType.TIME -> adjustedMinutes > limitValueMinutes
         LimitType.TIME_BUDGET -> adjustedMinutes >= limitValueMinutes
         LimitType.SESSIONS -> {
             val maxSessions = limitValueSessions

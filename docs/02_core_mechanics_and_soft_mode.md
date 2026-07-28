@@ -426,6 +426,13 @@ DEBUG only:
     ProfileScreen has "Run Daily Evaluation Now" button for testing.
 ```
 
+**Reaching the limit is a WIN — only exceeding it is a loss.** All three limit types settle
+on a strict `>` (`TIME`, `SESSIONS`, `TIME_BUDGET`). The live block trigger uses `>=` so the
+overlay engages exactly AT the limit; the settlement predicate deliberately diverges. A user
+who reaches their limit, obeys the block and does not give up wins the day — the limit is
+protection, not a tripwire. Losing requires deliberate "Aufgeben" or a bypass that pushes
+usage genuinely over the limit.
+
 ---
 
 ## Streak Logic

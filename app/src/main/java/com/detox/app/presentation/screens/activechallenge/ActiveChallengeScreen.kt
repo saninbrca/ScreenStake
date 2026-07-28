@@ -554,12 +554,21 @@ private fun ActiveChallengeContent(
                             color = detoxColors.subtext
                         )
                         val rightLabel = when (challenge.limitType) {
-                            LimitType.SESSIONS ->
-                                "${s.todayOpens} / ${challenge.limitValueSessions ?: 0} Öffnungen"
-                            LimitType.TIME ->
-                                "${s.todayMinutes} / ${challenge.limitValueMinutes} Min"
-                            LimitType.TIME_BUDGET ->
-                                "${s.todayMinutes} / ${challenge.dailyBudgetMinutes ?: 0} Min"
+                            LimitType.SESSIONS -> stringResource(
+                                R.string.detail_opens_of,
+                                s.todayOpens,
+                                challenge.limitValueSessions ?: 0
+                            )
+                            LimitType.TIME -> stringResource(
+                                R.string.detail_time_of,
+                                s.todayMinutes,
+                                challenge.limitValueMinutes
+                            )
+                            LimitType.TIME_BUDGET -> stringResource(
+                                R.string.detail_time_of,
+                                s.todayMinutes,
+                                challenge.dailyBudgetMinutes ?: 0
+                            )
                             LimitType.TIME_WINDOW -> "–"
                         }
                         Text(

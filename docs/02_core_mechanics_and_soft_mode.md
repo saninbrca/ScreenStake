@@ -41,13 +41,14 @@ This means:
 **The limit is SHARED across a challenge's apps — never one limit per app.** Two apps at 40 min
 under a 60 min limit is a breach, not two compliant apps. `TIME_BUDGET` (one accumulator per
 `challengeId`) and `SESSIONS` (conscious opens per `challengeId`) are shared by construction;
-`TIME` reads `UsageStats` per package and must therefore sum over `appPackageNames` explicitly —
-via `getTodayUsageForChallenge` at all three sites that measure it: the 23:59 settlement
-(`DailyEvaluationWorker`), the dashboard card (`GetDailyStatsUseCase`), and the live overlay gate
-(`CheckDailyLimitUseCase`). These three must never disagree: when the gate measured only the
-foreground package and the card only the first one, every app got the full limit to itself and a
-green day still lost at midnight. `overlayPausedMs` is tracked once per challenge and is subtracted
-ONCE from the summed total — never per package.
+`TIME` reads `UsageStats` per package and must therefore sum over `appPackageNames` explicitly, at
+all four sites that measure it: the live overlay gate (`CheckDailyLimitUseCase`), the dashboard card
+(`GetDailyStatsUseCase`) and the challenge detail screen (`ActiveChallengeViewModel`) call
+`getTodayUsageForChallenge`; the 23:59 settlement (`DailyEvaluationWorker`) inlines its own
+equivalent fold. These four must never disagree: when the gate measured only the foreground package
+and the card only the first one, every app got the full limit to itself and a green day still lost
+at midnight. `overlayPausedMs` is tracked once per challenge and is subtracted ONCE from the summed
+total — never per package.
 
 ---
 
@@ -147,18 +148,26 @@ Check SharedPreferences: active session running? ("session_end_time_{packageName
   YES + not expired → allow app directly (no overlay)
   NO or expired →
 ↓
-OverlayManager reads totalMinutes from Room DailyLog (DateUtils.todayKey())
+OverlayManager asks CheckDailyLimitUseCase for today's minutes — LIVE UsageStats summed
+over the challenge's packages, minus overlayPausedMs. NOT dailyLog.totalMinutes.
 ↓
-totalMinutes < limitValueMinutes → SessionIntentionOverlay (Stage 1)
+todayMinutes < limitValueMinutes → SessionIntentionOverlay (Stage 1)
   Same flow as SESSION_LIMIT
-  After allow: UsageTrackingService starts tracking time
-    → writes totalMinutes to Room every 10s
-    → writes totalMinutes to Firestore every 10s (fire-and-forget)
-    → stores session_end_time_{packageName} in SharedPreferences
+  After allow: stores session_end_time_{packageName} in SharedPreferences
 ↓
-totalMinutes >= limitValueMinutes → LimitExceededOverlay (Stage 2)
+todayMinutes >= limitValueMinutes → LimitExceededOverlay (Stage 2)
   "Nicht öffnen" only → dismiss + home
 ```
+
+**`dailyLogs.totalMinutes` is NOT an intraday counter — never read it for a "today" figure.**
+Nothing writes it while the day runs: the writers are the 23:59 `DailyEvaluationWorker`, the
+two one-shot breach paths in `OverlayManager` (soft session-fail / Hard Mode capture, both of
+which skip when a row already exists), and sync restore. An overlay-pause placeholder row
+(`totalMinutes = 0`, created by `addOverlayPausedMs`) normally lands first, so even the breach
+writes are skipped. Every surface that shows today's TIME usage — the overlay gate, the
+dashboard card, the challenge detail screen — measures live via `getTodayUsageForChallenge`
+instead. The detail screen read `totalMinutes` and therefore showed 0 minutes all day until
+this was fixed.
 
 **TIME_LIMIT has NO per-session countdown** (by design — LimitType difference):
 - `SESSION_LIMIT` and `DAILY_BUDGET` have session-scoped timers (user picks or counts down).
@@ -406,7 +415,8 @@ val key = "${challengeId}_${date}"
 - **Group challenge card:** 👥 icon, participant count, user's rank, pot amount
 - **Progress bar:**
   - `SESSION_LIMIT` → filled based on `consciousOpens / sessionLimit`
-  - `TIME_LIMIT` → filled based on `totalMinutes / limitValueMinutes`
+  - `TIME_LIMIT` → filled based on `getTodayUsageForChallenge(appPackageNames).minutes − overlayPausedMs`
+    over `limitValueMinutes` (live UsageStats — never `dailyLog.totalMinutes`)
 - **endDate display:** Smart detection needed:
   ```kotlin
   // Old records stored duration (ms), new records store absolute timestamp
@@ -583,7 +593,8 @@ applied to Soft Mode automatically covers Hard Mode.
 ```
 users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
     consciousOpens: Int      (SESSION_LIMIT)
-    totalMinutes: Int        (TIME_LIMIT — minutes, NOT ms)
+    totalMinutes: Int        (TIME_LIMIT — minutes, NOT ms; END-OF-DAY RESULT, not a live
+                              counter: written at 23:59 / on breach / by sync restore only)
     budgetUsedMs: Long       (DAILY_BUDGET)
     budgetRemainingMs: Long  (DAILY_BUDGET)
     updatedAt: Long
@@ -592,24 +603,28 @@ users/{userId}/dailyLogs/{challengeId}_{DateUtils.todayKey()}
 
 ### Fortschrittsbalken (Progress Bar) — same logic everywhere
 Used in: Dashboard card, Detail screen, Overlay
-Source of truth: Room DailyLog (read fresh via `DateUtils.todayKey()`)
+Source of truth: Room DailyLog for opens/budget (read fresh via `DateUtils.todayKey()`);
+live UsageStats for `TIME_LIMIT` — `dailyLog.totalMinutes` is an end-of-day result, not a
+live counter, and reading it mid-day yields 0.
 
 ```
 SESSION_LIMIT:  progress = consciousOpens / limitValueSessions
-TIME_LIMIT:     progress = totalMinutes / limitValueMinutes
+TIME_LIMIT:     progress = (getTodayUsageForChallenge(pkgs).minutes − overlayPausedMs/60000)
+                           / limitValueMinutes
 DAILY_BUDGET:   progress = budgetUsedMs / (dailyBudgetMinutes * 60000)
 ```
 
 Display (remaining):
 ```
 SESSION_LIMIT:  "${limitValueSessions - consciousOpens} opens remaining"
-TIME_LIMIT:     "${limitValueMinutes - totalMinutes} min remaining"
+TIME_LIMIT:     "${limitValueMinutes - todayMinutes} min remaining"   (todayMinutes = live, as above)
 DAILY_BUDGET:   "${budgetRemainingMs / 60000} min remaining"
 ```
 
-**CRITICAL:** Detail screen must use IDENTICAL data source as Dashboard.
-Both read from Room DailyLog via `DateUtils.todayKey()`.
-Never use ViewModel state or passed-in arguments for progress display.
+**CRITICAL:** Detail screen must use IDENTICAL data source as Dashboard — per limit type:
+Room DailyLog via `DateUtils.todayKey()` for `SESSION_LIMIT` (`consciousOpens`) and
+`DAILY_BUDGET` (`budgetUsedMs`), live `getTodayUsageForChallenge` minus `overlayPausedMs` for
+`TIME_LIMIT`. Never use ViewModel state or passed-in arguments for progress display.
 
 ---
 

@@ -13,8 +13,10 @@ import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.PaymentRepository
+import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
+import com.detox.app.domain.usecase.getTodayUsageForChallenge
 import com.detox.app.util.DateUtils
 import com.detox.app.R
 import com.detox.app.util.ErrorMessages
@@ -67,6 +69,7 @@ class ActiveChallengeViewModel @Inject constructor(
     private val dailyLogRepository: DailyLogRepository,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
     private val paymentRepository: PaymentRepository,
+    private val usageStatsRepository: UsageStatsRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -113,29 +116,51 @@ class ActiveChallengeViewModel @Inject constructor(
                         val bestStreak = computeBestStreak(allLogs)
                         val successRatePct = computeSuccessRate(allLogs)
 
-                        // Observe Room DailyLog via Flow — auto-refreshes whenever UsageTrackingService
-                        // writes (every 10 s) or on every conscious open. Never reads stale state.
+                        // Observe Room DailyLog via Flow — re-emits on every conscious open, overlay
+                        // pause and budget tick, i.e. the same cadence the dashboard refreshes on.
+                        // Never reads stale state.
                         dailyLogRepository.observeLogForDate(challengeId, todayKey)
                             .collect { dailyLog ->
                                 Timber.d("DetailScreen: dailyLog from Room = $dailyLog")
 
                                 // SOURCE OF TRUTH per field:
                                 // SESSION_LIMIT  → consciousOpens (written atomically on each "Ja, öffnen" tap)
-                                // TIME_LIMIT     → totalMinutes   (written by UsageTrackingService every 10 s)
+                                // TIME_LIMIT     → live UsageStats (see liveTimeMinutes below). NOT
+                                //                  dailyLog.totalMinutes: that column has NO intraday
+                                //                  writer — only the 23:59 worker, the two one-shot
+                                //                  breach paths and sync restore write it, and an
+                                //                  overlay-pause placeholder row (totalMinutes = 0)
+                                //                  usually lands first, so the breach writes skip too.
+                                //                  Reading it here showed 0 minutes all day.
                                 // TIME_BUDGET    → budgetUsedMs   (ms source of truth, written every 10 s)
                                 val opensToday     = dailyLog?.consciousOpens ?: 0
                                 val totalMinutes   = dailyLog?.totalMinutes   ?: 0
                                 val budgetUsedMs   = dailyLog?.budgetUsedMs   ?: 0L
                                 val budgetRemainingMs = dailyLog?.budgetRemainingMs ?: 0L
 
+                                // TIME: measure exactly the way the dashboard card, the live overlay gate
+                                // and the 23:59 settlement do — raw UsageStats summed over ALL of the
+                                // challenge's packages (the limit is shared by them), minus overlay-visible
+                                // time ONCE (it is tracked per challenge, never per package). Any other
+                                // arithmetic here and the detail screen disagrees with the card.
+                                // Display-only: this reads UsageStats, it never writes.
+                                val liveTimeMinutes = if (challenge.limitType == LimitType.TIME) {
+                                    val todayUsage = usageStatsRepository
+                                        .getTodayUsageForChallenge(challenge.appPackageNames)
+                                    val overlayPausedMinutes =
+                                        ((dailyLog?.overlayPausedMs ?: 0L) / 60_000L).toInt()
+                                    maxOf(0, todayUsage.minutes - overlayPausedMinutes)
+                                } else 0
+
                                 // todayMinutes fed into DailyLimitStatus (Screen reads s.todayMinutes)
                                 val todayMinutesForStatus = when (challenge.limitType) {
+                                    LimitType.TIME -> liveTimeMinutes
                                     LimitType.TIME_BUDGET -> (budgetUsedMs / 60_000L).toInt()
                                     else -> totalMinutes
                                 }
 
                                 val remainingMinutes = when (challenge.limitType) {
-                                    LimitType.TIME -> maxOf(0, challenge.limitValueMinutes - totalMinutes)
+                                    LimitType.TIME -> maxOf(0, challenge.limitValueMinutes - liveTimeMinutes)
                                     LimitType.SESSIONS -> maxOf(
                                         0,
                                         (challenge.limitValueSessions ?: 0) * challenge.limitValueMinutes - totalMinutes
@@ -158,13 +183,14 @@ class ActiveChallengeViewModel @Inject constructor(
                                     }
                                     else -> {
                                         if (challenge.limitValueMinutes > 0)
-                                            totalMinutes.toFloat() / challenge.limitValueMinutes else 0f
+                                            todayMinutesForStatus.toFloat() / challenge.limitValueMinutes else 0f
                                     }
                                 }.coerceIn(0f, 1f)
 
                                 Timber.d(
                                     "DetailScreen: progress=$progress opensToday=$opensToday " +
-                                    "totalMinutes=$totalMinutes budgetUsedMs=$budgetUsedMs"
+                                    "todayMinutes=$todayMinutesForStatus (live TIME=$liveTimeMinutes, " +
+                                    "log.totalMinutes=$totalMinutes) budgetUsedMs=$budgetUsedMs"
                                 )
 
                                 val status = DailyLimitStatus(

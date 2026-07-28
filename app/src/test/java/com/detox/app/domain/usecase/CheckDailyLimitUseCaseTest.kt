@@ -74,6 +74,46 @@ class CheckDailyLimitUseCaseTest {
     }
 
     @Test
+    fun `multi-app time limit sums usage across all tracked packages`() = runTest {
+        // The limit belongs to the challenge, not to each app: 40 + 25 breaches a 60 min limit
+        // even though neither app reaches it alone. Opening the SECOND app must still see the
+        // combined total — measuring only the foreground package gave each app its own full limit.
+        val challenge = createChallenge(LimitType.TIME, 60, null)
+            .copy(appPackageNames = listOf("com.tiktok", "com.instagram"))
+        coEvery { challengeRepository.getActiveChallengeForApp("com.instagram") } returns
+            Result.success(challenge)
+        coEvery { usageStatsRepository.getTodayUsageForApp("com.tiktok") } returns AppDailyUsage(40, 6)
+        coEvery { usageStatsRepository.getTodayUsageForApp("com.instagram") } returns AppDailyUsage(25, 4)
+
+        val result = useCase("com.instagram")
+
+        assertTrue(result.isSuccess)
+        val status = result.getOrThrow()
+        assertEquals(65, status.todayMinutes)
+        assertTrue(status.limitExceeded)
+        assertEquals(0, status.remainingMinutes)
+    }
+
+    @Test
+    fun `multi-app time limit not exceeded below the shared limit`() = runTest {
+        // Combined usage still under the shared limit — the gate must let the user through.
+        val challenge = createChallenge(LimitType.TIME, 60, null)
+            .copy(appPackageNames = listOf("com.tiktok", "com.instagram"))
+        coEvery { challengeRepository.getActiveChallengeForApp("com.tiktok") } returns
+            Result.success(challenge)
+        coEvery { usageStatsRepository.getTodayUsageForApp("com.tiktok") } returns AppDailyUsage(20, 3)
+        coEvery { usageStatsRepository.getTodayUsageForApp("com.instagram") } returns AppDailyUsage(15, 2)
+
+        val result = useCase("com.tiktok")
+
+        assertTrue(result.isSuccess)
+        val status = result.getOrThrow()
+        assertEquals(35, status.todayMinutes)
+        assertFalse(status.limitExceeded)
+        assertEquals(25, status.remainingMinutes)
+    }
+
+    @Test
     fun `sessions limit exceeded`() = runTest {
         coEvery { challengeRepository.getActiveChallengeForApp("com.tiktok") } returns Result.success(
             createChallenge(LimitType.SESSIONS, 5, 5)

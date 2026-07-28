@@ -103,6 +103,42 @@ class GetDailyStatsUseCaseTest {
     }
 
     @Test
+    fun `multi-app challenge sums usage across all tracked packages`() = runTest {
+        // The card must reflect EVERY tracked app, not just appPackageName (the first one).
+        // 30 + 45 = 75 against a 60 min limit: both the displayed minutes and the exceeded flag
+        // have to agree with the 23:59 worker, which has always summed all packages.
+        val challenge = Challenge(
+            id = "test-id",
+            appPackageName = "com.tiktok",
+            appPackageNames = listOf("com.tiktok", "com.instagram"),
+            appDisplayName = "TikTok, Instagram",
+            mode = ChallengeMode.SOFT,
+            limitType = LimitType.TIME,
+            limitValueMinutes = 60,
+            limitValueSessions = null,
+            startDate = System.currentTimeMillis(),
+            endDate = System.currentTimeMillis() + 7 * 86_400_000L,
+            amountCents = null,
+            stripePaymentIntentId = null,
+            customMotivation = null,
+            status = ChallengeStatus.ACTIVE,
+            createdAt = System.currentTimeMillis()
+        )
+
+        coEvery { challengeRepository.getActiveChallengesList() } returns Result.success(listOf(challenge))
+        coEvery { usageStatsRepository.getTodayUsageForApp("com.tiktok") } returns AppDailyUsage(30, 5)
+        coEvery { usageStatsRepository.getTodayUsageForApp("com.instagram") } returns AppDailyUsage(45, 3)
+
+        val result = useCase()
+
+        assertTrue(result.isSuccess)
+        val stats = result.getOrThrow()
+        assertEquals(1, stats.size)
+        assertEquals(75, stats[0].todayMinutes)
+        assertEquals(true, stats[0].limitExceeded)
+    }
+
+    @Test
     fun `returns failure when repository fails`() = runTest {
         coEvery { challengeRepository.getActiveChallengesList() } returns Result.failure(RuntimeException("DB error"))
 

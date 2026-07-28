@@ -163,9 +163,13 @@ class GetDailyStatsUseCase @Inject constructor(
                 }
 
                 // TIME / SESSIONS: existing UsageStats-based flow.
-                val todayUsage = usageStatsRepository.getTodayUsageForApp(challenge.appPackageName ?: "")
+                // Summed across ALL tracked packages — the limit is shared by the whole challenge,
+                // so a card reading only appPackageName (the FIRST package) hid apps 2..N from both
+                // the displayed minutes and the exceeded flag, and disagreed with the 23:59 worker.
+                val todayUsage = usageStatsRepository.getTodayUsageForChallenge(challenge.appPackageNames)
 
                 // Subtract overlay-visible time so it doesn't count against the user's limit.
+                // Challenge-level, subtracted ONCE from the summed total — never per package.
                 val overlayPausedMs = dailyLogRepository
                     .getOverlayPausedMs(challenge.id, today)
                     .getOrElse { 0L }

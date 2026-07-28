@@ -27,11 +27,18 @@ class CheckDailyLimitUseCase @Inject constructor(
             val challenge = challengeRepository.getActiveChallengeForApp(packageName).getOrThrow()
                 ?: return Result.failure(IllegalStateException("No active challenge for $packageName"))
 
-            val todayUsage = usageStatsRepository.getTodayUsageForApp(packageName)
+            // Usage is summed over EVERY package this challenge tracks, not just the one that was
+            // opened: the limit belongs to the challenge, not to each app. Measuring only the
+            // foreground package handed every app its own full limit, so two apps could each sit at
+            // 40 min under a 60 min limit, pass the gate all day, and still lose at 23:59 to the
+            // worker's sum. The challenge lookup above is already multi-app aware (the DAO matches
+            // any member package), so the full list is in hand here.
+            val todayUsage = usageStatsRepository.getTodayUsageForChallenge(challenge.appPackageNames)
             val today = todayMidnightMs()
 
             // Subtract time when our own overlay was covering this app — that time should
             // not count against the user's limit since the app was in the background.
+            // Challenge-level, subtracted ONCE from the summed total — never per package.
             val overlayPausedMs = dailyLogRepository
                 .getOverlayPausedMs(challenge.id, today)
                 .getOrElse { 0L }

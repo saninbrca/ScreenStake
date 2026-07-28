@@ -38,6 +38,17 @@ This means:
 
 **Check before creating a new challenge:** Query ALL active challenges (Solo + Group) and verify none of the selected apps is already being tracked (per-package "busy" state in the wizard; guard in `CreateChallengeUseCase`).
 
+**The limit is SHARED across a challenge's apps — never one limit per app.** Two apps at 40 min
+under a 60 min limit is a breach, not two compliant apps. `TIME_BUDGET` (one accumulator per
+`challengeId`) and `SESSIONS` (conscious opens per `challengeId`) are shared by construction;
+`TIME` reads `UsageStats` per package and must therefore sum over `appPackageNames` explicitly —
+via `getTodayUsageForChallenge` at all three sites that measure it: the 23:59 settlement
+(`DailyEvaluationWorker`), the dashboard card (`GetDailyStatsUseCase`), and the live overlay gate
+(`CheckDailyLimitUseCase`). These three must never disagree: when the gate measured only the
+foreground package and the card only the first one, every app got the full limit to itself and a
+green day still lost at midnight. `overlayPausedMs` is tracked once per challenge and is subtracted
+ONCE from the summed total — never per package.
+
 ---
 
 ## Limit Types

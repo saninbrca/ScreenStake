@@ -34,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.detox.app.util.DateUtils
+import com.detox.app.util.resolveAppsDisplayName
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -264,6 +265,19 @@ class UsageTrackingService : Service() {
         val elapsedMs = (effectiveNow - sessionStartTime).coerceAtLeast(0L)
         val totalUsedMs = committedMs + elapsedMs
         val newRemainingMs = (totalBudgetMs - totalUsedMs).coerceAtLeast(0L)
+
+        // 80 % approach warning. This tick is the ONLY place holding a live TIME_BUDGET figure:
+        // the overlay gate's CheckDailyLimitUseCase deliberately reports the FULL budget as
+        // remaining for this limit type, so the warning could never cross 80 % over there.
+        // Toggle gate, threshold and once-per-day dedup all live in the helper, so firing this on
+        // every 10 s tick still yields at most one notification per challenge per day.
+        NotificationHelper.maybeSendUsage80Percent(
+            context = applicationContext,
+            challengeId = challenge.id,
+            appName = challenge.resolveAppsDisplayName(applicationContext),
+            used = totalUsedMs,
+            limit = totalBudgetMs
+        )
 
         // Write to Room every tick — idempotent, survives Huawei kill
         dailyLogRepository.updateBudgetStateMs(challengeId, today, totalUsedMs, newRemainingMs)

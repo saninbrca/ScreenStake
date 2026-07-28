@@ -923,7 +923,7 @@
     <!-- Settings — Notifications section -->
     <string name="settings_section_notifications">NOTIFICATIONS</string>
     <string name="settings_challenge_updates">Challenge updates</string>
-    <string name="settings_challenge_updates_subtitle">On completion or failure</string>
+    <string name="settings_challenge_updates_subtitle">Limit warnings, completion and failure</string>
     <string name="settings_group_participant_failed">When a participant fails</string>
     <string name="settings_group_participant_failed_subtitle">Notification when a group member exceeds the limit</string>
     <string name="settings_friend_alerts">Friend Alerts</string>

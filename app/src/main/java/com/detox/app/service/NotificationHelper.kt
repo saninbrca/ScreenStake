@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.detox.app.R
+import com.detox.app.util.DateUtils
 import com.detox.app.util.FeatureFlags
 import timber.log.Timber
 
@@ -34,6 +35,42 @@ object NotificationHelper {
     private const val NOTIF_ID_PERMISSION_WARNING_BASE = 9010  // 9010..9013 for levels 0-3
     private const val NOTIF_ID_USAGE_VIOLATION        = 9040
     private const val NOTIF_ID_HEARTBEAT_WARNING      = 9050
+
+    // ── Toggle / dedup preferences ────────────────────────────────────────────
+
+    /** Per-notification switches owned by this helper (already backs the group toggle below). */
+    private const val NOTIF_PREFS_NAME = "detox_notifications"
+
+    /**
+     * The app-wide settings file. `challenge_updates_enabled` is WRITTEN by `SettingsViewModel`
+     * and lives HERE, not in [NOTIF_PREFS_NAME] — relocating the key would silently reset every
+     * existing user's toggle back to the default, so the reader comes to the key instead.
+     */
+    private const val SETTINGS_PREFS_NAME   = "detox_settings"
+    private const val KEY_CHALLENGE_UPDATES = "challenge_updates_enabled"
+
+    /**
+     * Day stamp of the last 80 % warning per challenge (`warn80_<challengeId>` → [DateUtils.todayKey]).
+     * Same lazy day-key shape as `OverlayManager.ensureCommittedBudgetFresh`: no Room column and
+     * no migration, it survives process death (the deciding property on Huawei, where an in-memory
+     * set would re-fire the warning after every service restart), and it self-heals at midnight —
+     * a stamp that is no longer today simply reads as "not warned yet".
+     */
+    private const val WARN_80_KEY_PREFIX = "warn80_"
+
+    /**
+     * The user-facing "Challenge updates" switch (Settings → Notifications).
+     *
+     * Gates ONLY challenge-progress notifications: the 80 % approach warning and the three
+     * completion/result senders. Deliberately NOT consulted by any permission, heartbeat,
+     * usage-violation, redemption or payout sender — muting progress updates must never cost a
+     * user a refund or a stake-protecting warning.
+     *
+     * Fail-open on a missing key: default `true`, matching `SettingsViewModel`'s own read.
+     */
+    private fun challengeUpdatesEnabled(context: Context): Boolean =
+        context.getSharedPreferences(SETTINGS_PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CHALLENGE_UPDATES, true)
 
     /** Must be called before posting any notification — safe to call repeatedly. */
     fun createChannels(context: Context) {
@@ -109,6 +146,7 @@ object NotificationHelper {
      * Posts a milestone notification when a challenge ends successfully.
      */
     fun sendChallengeCompleted(context: Context, appName: String, challengeId: String? = null) {
+        if (!challengeUpdatesEnabled(context)) return
         val notifId = NOTIF_ID_MILESTONE_BASE + appName.hashCode()
         postMilestone(
             context = context,
@@ -134,6 +172,7 @@ object NotificationHelper {
         feeCents: Int = 0,
         challengeId: String? = null
     ) {
+        if (!challengeUpdatesEnabled(context)) return
         val title = context.getString(R.string.notif_hard_mode_completed_title)
         val body = if (feeCents > 0) {
             context.getString(
@@ -190,12 +229,53 @@ object NotificationHelper {
     // ── Local-only notifications (work offline, no FCM needed) ─────────────────
 
     /**
-     * Fired by [UsageTrackingService] when an app reaches 80 % of its daily limit.
-     * Triggered at most once per app per calendar day (dedup is done in the service).
+     * Warns the user once per (challenge, day) as they approach 80 % of a daily limit, so the
+     * limit is a decision they see coming rather than a wall they hit.
      *
-     * @param appName human-readable app name shown in the notification body
+     * The toggle gate, the threshold predicate and the dedup stamp all live here — the three
+     * measuring seams that call this ([OverlayManager] for `TIME` and `SESSIONS`,
+     * [UsageTrackingService] for `TIME_BUDGET`) only supply a used/limit pair, so they cannot
+     * disagree about what "80 %" means or about how often it may fire.
+     *
+     * `used`/`limit` are whatever unit the limit type counts in — minutes, conscious opens, or
+     * budget milliseconds — and are only ever compared to each other, never mixed across types.
+     * `TIME_WINDOW` has no usage limit and never calls this.
+     *
+     * @param used  usage so far today, in the limit's own unit
+     * @param limit the daily limit, same unit; `<= 0` (an unset/degenerate limit) never warns
      */
-    fun sendUsage80Percent(context: Context, appName: String, challengeId: String? = null) {
+    fun maybeSendUsage80Percent(
+        context: Context,
+        challengeId: String,
+        appName: String,
+        used: Long,
+        limit: Long
+    ) {
+        if (!challengeUpdatesEnabled(context)) return
+
+        // Integer math, deliberately: `used * 100 >= limit * 80` instead of a Float ratio, so the
+        // threshold can't drift with rounding. `used < limit` keeps this a warning about the
+        // APPROACH — at or past the limit the overlay/settlement owns the moment, not a nudge.
+        if (limit <= 0L || used >= limit || used * 100L < limit * 80L) return
+
+        val prefs = context.getSharedPreferences(NOTIF_PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "$WARN_80_KEY_PREFIX$challengeId"
+        val today = DateUtils.todayKey()
+        if (prefs.getLong(key, 0L) == today) return
+
+        sendUsage80Percent(context, appName, challengeId)
+        prefs.edit().putLong(key, today).apply()
+        Timber.d("80%% warning fired for challenge=$challengeId ($used/$limit) — stamped day $today")
+    }
+
+    /**
+     * Posts the 80 % warning itself. PRIVATE on purpose: every send must go through
+     * [maybeSendUsage80Percent], which owns the "Challenge updates" toggle gate and the
+     * once-per-day dedup. A direct caller would silently bypass both.
+     *
+     * @param appName human-readable app name shown in the notification title
+     */
+    private fun sendUsage80Percent(context: Context, appName: String, challengeId: String? = null) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val notifId = NOTIF_ID_USAGE_80_BASE + appName.hashCode()
         val builder = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
@@ -382,6 +462,7 @@ object NotificationHelper {
         refundCents: Int,
         groupId: String? = null
     ) {
+        if (!challengeUpdatesEnabled(context)) return
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val notifId = NOTIF_ID_GROUP_BASE + appName.hashCode() + 2
         val title: String

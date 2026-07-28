@@ -58,6 +58,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.detox.app.util.DateUtils
+import com.detox.app.util.resolveAppsDisplayName
 import timber.log.Timber
 import java.util.Calendar
 import java.util.UUID
@@ -447,6 +448,24 @@ class OverlayManager @Inject constructor(
             Timber.d("Group challenge check: pkg=$packageName challengeType=GROUP limitType=${challenge.limitType}")
         }
 
+        // 80 % approach warning for TIME. This is the single app-open funnel, and the
+        // session-timer expiry paths re-enter checkDailyLimitUseCase from here too, so a user who
+        // stays inside the app is still re-evaluated every sessionDurationMinutes rather than only
+        // on the next cold open. The other two limit types cross elsewhere: SESSIONS on the
+        // conscious-open tap (status.todayOpens is stale by one at this point), TIME_BUDGET on the
+        // 10 s tick — CheckDailyLimitUseCase deliberately reports the FULL budget as remaining for
+        // TIME_BUDGET, so it could never cross 80 % here. TIME_WINDOW has no usage limit at all.
+        // Toggle gate, threshold and once-per-day dedup all live in the helper.
+        if (challenge.limitType == LimitType.TIME) {
+            NotificationHelper.maybeSendUsage80Percent(
+                context = context,
+                challengeId = challenge.id,
+                appName = resolveMultiAppDisplayName(challenge),
+                used = status.todayMinutes.toLong(),
+                limit = challenge.limitValueMinutes.toLong()
+            )
+        }
+
         // Single unified dispatch for ALL limit types AND ALL challenge types
         when (challenge.limitType) {
             LimitType.SESSIONS    -> handleSessionLimitApp(status, scope)
@@ -581,6 +600,18 @@ class OverlayManager @Inject constructor(
                         Timber.d(
                             "OverlayManager: Stage 1 'Yes, open it' — " +
                                     "consciousOpens=$newCount/$maxOpens for ${challenge.appDisplayName}"
+                        )
+
+                        // 80 % approach warning for SESSIONS, deliberately POST-increment: the
+                        // conscious-open tap IS the crossing, and the count the app-open funnel
+                        // saw is stale by one by the time we get here (invariant #15 — opens are
+                        // only ever counted on this tap, never from UsageStats).
+                        NotificationHelper.maybeSendUsage80Percent(
+                            context = context,
+                            challengeId = challenge.id,
+                            appName = resolveMultiAppDisplayName(challenge),
+                            used = newCount.toLong(),
+                            limit = maxOpens.toLong()
                         )
 
                         // Keep in-memory event bus in sync so AccessibilityService can check synchronously
@@ -1862,19 +1893,8 @@ class OverlayManager @Inject constructor(
 
     private fun todayKey(): Long = DateUtils.todayKey()
 
-    private fun resolveMultiAppDisplayName(challenge: Challenge): String {
-        val names = challenge.appPackageNames
-        return when {
-            names.size <= 1 -> challenge.appDisplayName
-            names.size == 2 -> names.joinToString(", ") { pkg ->
-                try {
-                    val info = context.packageManager.getApplicationInfo(pkg, 0)
-                    context.packageManager.getApplicationLabel(info).toString()
-                } catch (e: Exception) { pkg.substringAfterLast('.') }
-            }
-            else -> context.getString(R.string.challenge_apps_count, names.size)
-        }
-    }
+    private fun resolveMultiAppDisplayName(challenge: Challenge): String =
+        challenge.resolveAppsDisplayName(context)
 
     // ── Data class ─────────────────────────────────────────────────────────────
 

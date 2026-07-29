@@ -16,6 +16,7 @@ import com.detox.app.domain.model.AppUsageInfo
 import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.StakeCapture
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CreateChallengeUseCase
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
@@ -154,6 +156,14 @@ data class ChallengeCreationState(
     val durationError: String? = null,
     // Step 7
     val motivationText: String = "",
+    /**
+     * Hard Mode uninstall-forfeit consent — the MOMENT OF ACCEPTANCE in epoch millis,
+     * not a bare boolean: non-null ⇔ the box is ticked, and this exact value is what
+     * gets persisted as the consent record. Cleared to null on untick, so a record can
+     * never be a default-true. Lives in ViewModel state (not local Compose state) because
+     * it must survive the root-warning detour and reach the pre-payment write.
+     */
+    val uninstallForfeitAcceptedAt: Long? = null,
 )
 
 // ── UI state ──────────────────────────────────────────────────────────────────
@@ -478,6 +488,18 @@ class ChallengeCreationViewModel @Inject constructor(
 
     fun updateMotivationText(text: String) = _state.update { it.copy(motivationText = text) }
 
+    /**
+     * Step 7: toggles the Hard Mode uninstall-forfeit consent. Ticking stamps the acceptance
+     * moment; unticking clears it, so no stale timestamp can be persisted for a box that is
+     * no longer ticked. See [recordUninstallForfeitConsent] for where the stamp ends up.
+     */
+    fun toggleUninstallForfeitConsent() = _state.update {
+        it.copy(
+            uninstallForfeitAcceptedAt =
+                if (it.uninstallForfeitAcceptedAt == null) System.currentTimeMillis() else null
+        )
+    }
+
     // ── Navigation ────────────────────────────────────────────────────────────
 
     // Navigation walks [visibleSteps] (nearest visible neighbour), so per-path skips — TIME_WINDOW's
@@ -620,6 +642,12 @@ class ChallengeCreationViewModel @Inject constructor(
      * Stores the user's explicit FAGG § 18 withdrawal-rights waiver consent on the
      * challenge document. Fire-and-forget merge write — mirrors the challenge doc
      * at users/{uid}/challenges/{challengeId} written by FirestoreService.
+     *
+     * NOTE — the SECOND Hard Mode consent (uninstall-forfeit) is deliberately NOT here:
+     * it licenses the `device_dark` forfeit and therefore has to be on record BEFORE the
+     * PaymentIntent exists, while this doc only exists AFTER the payment. It lives on the
+     * user doc as `uninstallForfeitConsents.{challengeId}` — see
+     * [recordUninstallForfeitConsent].
      */
     private fun logWithdrawalWaiver(challengeId: String) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
@@ -633,6 +661,47 @@ class ChallengeCreationViewModel @Inject constructor(
                 ),
                 SetOptions.merge()
             )
+    }
+
+    /**
+     * Persists the user's explicit uninstall-forfeit consent — the consent that licenses the
+     * `device_dark` forfeit, the one money outcome with no usage evidence behind it.
+     *
+     * WHERE: `users/{uid}.uninstallForfeitConsents.{challengeId} = <acceptance millis>` —
+     * a nested-map merge on the consenting user's own doc, the same shape and mechanism as the
+     * group joiner's FAGG waiver (`groupWithdrawalWaivers.{groupId}`, GroupChallengeJoinViewModel).
+     * Consent lives on a document the consenting user owns and only they can write.
+     *
+     * WHY NOT the challenge doc, next to the Solo FAGG waiver: this record must exist BEFORE the
+     * PaymentIntent, and the challenge doc does not exist until after the payment. Pre-creating it
+     * would also burn the single rules-allowed CREATE (invariant #3) and turn the real Hard Mode
+     * mirror into an UPDATE, which the rules deny on `status`/`amountCents`/`stripePaymentIntentId`
+     * — i.e. a captured stake with no challenge doc. [logWithdrawalWaiver] points here.
+     *
+     * UNLIKE the waiver writes this one is AWAITED and BLOCKING: a failure aborts before the PI is
+     * created, so there is no path to a captured stake with no consent on record. Not a money step —
+     * no Stripe call has happened yet and none is reordered by it (invariant #1).
+     *
+     * KNOWN GAP (accepted for now): `deleteUserData` deletes `users/{uid}`, destroying this record
+     * along with the Solo FAGG waiver. Same tension, same place — see docs/challenge-risk-inventory.md.
+     */
+    private suspend fun recordUninstallForfeitConsent(
+        challengeId: String,
+        acceptedAt: Long,
+    ): Result<Unit> = runCatching {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+            ?: error("recordUninstallForfeitConsent: not authenticated")
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .set(
+                mapOf("uninstallForfeitConsents" to mapOf(challengeId to acceptedAt)),
+                SetOptions.merge()
+            )
+            .await()
+        Timber.d(
+            "recordUninstallForfeitConsent: stored consent for %s (acceptedAt=%d) — before PaymentIntent",
+            challengeId, acceptedAt,
+        )
     }
 
     private fun logRootedDeviceToFirestore() {
@@ -763,15 +832,38 @@ class ChallengeCreationViewModel @Inject constructor(
 
     private fun initiateHardModePayment() {
         val s = _state.value
+        // Legal gate, defense-in-depth behind the disabled Start button: no uninstall-forfeit
+        // consent → no PaymentIntent. The `device_dark` forfeit has no usage evidence behind it,
+        // so an un-ticked box must never reach a stake.
+        val forfeitAcceptedAt = s.uninstallForfeitAcceptedAt
+        if (forfeitAcceptedAt == null) {
+            Timber.w("initiateHardModePayment: aborted — uninstall-forfeit consent not accepted")
+            _uiState.value = ChallengeCreationUiState.Idle
+            return
+        }
         _uiState.value = ChallengeCreationUiState.Loading
         viewModelScope.launch {
             val tempId = UUID.randomUUID().toString()
+            // Consent BEFORE money: this lands (awaited) while no PaymentIntent exists yet, so a
+            // captured stake without a recorded forfeit consent is not reachable. A failure aborts
+            // here — nothing Stripe-side has happened, so nothing is left dangling.
+            recordUninstallForfeitConsent(tempId, forfeitAcceptedAt).onFailure { e ->
+                Timber.e(e, "initiateHardModePayment: forfeit-consent record failed for $tempId — no payment started")
+                Sentry.captureException(e)
+                _uiState.value = ChallengeCreationUiState.Error(
+                    context.getString(R.string.challenge_error_consent_record_failed)
+                )
+                return@launch
+            }
             processPaymentUseCase(
                 amountCents = s.amountEuros * 100,
                 durationDays = s.durationDays,
                 challengeId = tempId,
             ).fold(
                 onSuccess = { paymentData ->
+                    // Ordering marker: this line must ALWAYS follow the recordUninstallForfeitConsent
+                    // line for the same id — consent on record, then a PaymentIntent exists.
+                    Timber.d("initiateHardModePayment: PaymentIntent created for %s", tempId)
                     confirmedPaymentIntentId = paymentData.paymentIntentId
                     // Persist the SAME id the PI was created with (Stripe metadata.challengeId).
                     confirmedChallengeId = tempId
@@ -826,7 +918,7 @@ class ChallengeCreationViewModel @Inject constructor(
             challengeId = challengeId,
             paymentIntentId = paymentIntentId,
             paymentIntentCreatedAt = System.currentTimeMillis(),
-            isImmediateCapture = if (s.durationDays > 7) 1 else 0,
+            isImmediateCapture = if (StakeCapture.isImmediateCapture(s.durationDays)) 1 else 0,
             appDisplayName = displayName(),
             appPackageNames = appPackagesHard.joinToString(","),
             limitType = fields.limitType.name,

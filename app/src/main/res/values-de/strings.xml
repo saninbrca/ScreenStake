@@ -24,7 +24,10 @@
     <string name="challenge_schedule_set_window">Zeitfenster festlegen</string>
     <string name="challenge_stake">Einsatz</string>
     <string name="challenge_stake_unit">Euro Einsatz</string>
-    <string name="challenge_stake_warning">Wenn du das Limit überschreitest, werden €%1$d sofort eingezogen.</string>
+    <!-- Einsatz-Hinweis, abhängig von der Stripe-Capture-Grenze (StakeCapture.isImmediateCapture):
+         über 7 Tage wird die Karte sofort belastet, bis 7 Tage ist der Einsatz nur reserviert. -->
+    <string name="challenge_stake_warning_on_breach">Dein Einsatz von %1$s wird nur eingezogen, wenn du dein Limit brichst.</string>
+    <string name="challenge_stake_warning_upfront">Dein Einsatz von %1$s wird sofort abgebucht. Ziehst du die Challenge durch, bekommst du 80%% zurück (20%% Servicegebühr).</string>
     <string name="challenge_no_end_date">Kein Enddatum</string>
     <string name="notification_group_channel_name">Gruppen-Challenges</string>
     <string name="notification_group_channel_description">Updates zu deinen Gruppen-Challenges — Fehlschläge, Abschlüsse und Absagen</string>
@@ -234,6 +237,7 @@
     <string name="challenge_setup_error_hard_mode_min_days">Hard Mode erfordert mindestens 14 Tage</string>
     <string name="challenge_create_sync_failed">Challenge konnte nicht gespeichert werden. Bitte prüfe deine Internetverbindung und versuche es erneut. Deine Zahlung ist sicher.</string>
     <string name="challenge_error_duplicate_adult_block">Du hast bereits eine aktive Adult-Block-Challenge.</string>
+    <string name="challenge_error_consent_record_failed">Deine Zustimmung konnte nicht gespeichert werden. Es wurde keine Zahlung gestartet — bitte prüfe deine Internetverbindung und versuche es erneut.</string>
     <string name="challenge_setup_budget_field_label">Tagesbudget (Minuten)</string>
     <string name="challenge_setup_duration_field_label">Dauer</string>
     <string name="challenge_setup_no_end_date">Kein Enddatum</string>
@@ -417,7 +421,14 @@
     <string name="active_challenge_abandon_confirm_message">Die Challenge wird ohne Punkte beendet. Das kannst du nicht rückgängig machen.</string>
     <string name="active_challenge_abandon_confirm_yes">Ja, aufgeben</string>
     <string name="active_challenge_abandon_confirm_no">Weitermachen</string>
-    <string name="active_challenge_abandon_hard_message">Wenn du abbrichst verlierst du €%.2f sofort. Bist du sicher?</string>
+    <!-- Aufgeben-Dialog, abhängig von der Stripe-Capture-Grenze (StakeCapture). -->
+    <!-- Solo, bis 7 Tage: der Einsatz ist nur reserviert und wird beim Aufgeben eingezogen. -->
+    <string name="active_challenge_abandon_hard_message">Wenn du aufgibst, wird dein Einsatz von %1$s eingezogen. Bist du sicher?</string>
+    <!-- Solo, über 7 Tage: schon beim Erstellen abgebucht — Aufgeben kostet nur das bereits Gezahlte. -->
+    <string name="active_challenge_abandon_hard_charged_message">Dein Einsatz von %1$s wurde schon beim Start dieser Challenge abgebucht. Wenn du aufgibst, bekommst du ihn nicht zurück. Bist du sicher?</string>
+    <!-- Gruppen-Zeile: dieser Screen zieht nichts ein und fasst die participants-Liste nicht an —
+         ehrlich sagen lässt sich hier nur die Abbuchung, die beim Start bereits passiert ist. -->
+    <string name="active_challenge_abandon_group_message">Dein Einsatz von %1$s wurde beim Start der Challenge abgebucht.</string>
     <string name="active_challenge_abandon_hard_yes">Ja, Geld verlieren</string>
     <string name="active_challenge_abandon_hard_no">Nein, weitermachen</string>
     <string name="active_challenge_abandon_error_title">Einzug fehlgeschlagen</string>
@@ -427,8 +438,15 @@
     <string name="blocking_overlay_amount_stake">⚠ €%.2f auf dem Spiel</string>
 
     <!-- Limit Exceeded Overlay — Hard Mode -->
-    <string name="limit_exceeded_hard_title">Du verlierst €%.2f!</string>
-    <string name="limit_exceeded_hard_message">Dein Tageslimit ist aufgebraucht. Dein Einsatz wird jetzt eingezogen und die App für heute gesperrt.</string>
+    <string name="limit_exceeded_hard_title">Du verlierst %1$s!</string>
+    <!-- Das Limit zu erreichen ist ein GEWINN (verloren ist erst darüber) — hier keine Geld-Aussage. -->
+    <string name="limit_exceeded_hard_reached_message">Die App ist für heute gesperrt. Dein Limit zu erreichen ist keine Niederlage — dein Einsatz von %1$s bleibt sicher, solange du nicht darüber gehst.</string>
+    <!-- Gruppe: ein Limit-Verstoß zählt nur fürs Leaderboard, er zieht nie Geld ein und wirft dich nie raus. -->
+    <string name="limit_exceeded_group_message">Du bist über deinem Tageslimit. Dafür wird nichts eingezogen und du bleibst in der Challenge — der Tag zählt nur als Verstoß. Dein Einsatz von %1$s wandert nur in den Pot, wenn du aufgibst.</string>
+    <!-- Solo verloren, Einsatz wurde schon beim Erstellen abgebucht (über 7 Tage). -->
+    <string name="limit_exceeded_hard_lost_charged_message">Du bist über deinem Tageslimit — die Challenge ist verloren. Dein Einsatz von %1$s wurde schon beim Start abgebucht und wird nicht zurückerstattet.</string>
+    <!-- Solo verloren, Einsatz ist noch reserviert (bis 7 Tage) — wird bei der Tagesauswertung eingezogen. -->
+    <string name="limit_exceeded_hard_lost_capture_message">Du bist über deinem Tageslimit — die Challenge ist verloren. Dein Einsatz von %1$s wird eingezogen.</string>
     <string name="limit_exceeded_hard_continue">Trotzdem öffnen</string>
     <!-- Hard Mode Lockout Overlay -->
     <string name="lockout_title">🔒 Für heute gesperrt</string>
@@ -974,7 +992,7 @@
     <!-- Group Challenge Detail — Aufgeben (manual quit) flow -->
     <string name="group_detail_quit_button">Aufgeben</string>
     <string name="group_detail_quit_dialog_title">Wirklich aufgeben?</string>
-    <string name="group_detail_quit_dialog_message">€%1$d werden eingezogen. Diese Aktion kann nicht rückgängig gemacht werden.</string>
+    <string name="group_detail_quit_dialog_message">Dein Einsatz von %1$s wurde beim Start der Challenge abgebucht. Wenn du jetzt aufgibst, wandert er in den Pot für die anderen und du bekommst nichts zurück. Das kann nicht rückgängig gemacht werden.</string>
     <string name="group_detail_quit_confirm">Ja, aufgeben</string>
     <string name="group_detail_quit_cancel">Abbrechen</string>
     <string name="group_detail_quit_error">Fehler beim Aufgeben. Versuche es erneut.</string>

@@ -35,6 +35,7 @@ import com.detox.app.domain.model.groupRankingMetricComparator
 import com.detox.app.domain.model.GroupChallengeStatus
 import com.detox.app.domain.model.LimitType
 import com.detox.app.domain.model.ParticipantStatus
+import com.detox.app.domain.model.StakeCapture
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
@@ -1328,6 +1329,8 @@ class OverlayManager @Inject constructor(
                     todayMinutes = status.todayMinutes,
                     limitMinutes = challenge.limitValueMinutes,
                     streak = streak,
+                    isGroupChallenge = challenge.groupChallengeId != null,
+                    isStakeAlreadyCharged = StakeCapture.isStakeChargedWhileActive(challenge),
                     onStop = {
                         dismissOverlay()
                         goHome()

@@ -24,7 +24,10 @@
     <string name="challenge_schedule_set_window">Set time window</string>
     <string name="challenge_stake">Stake</string>
     <string name="challenge_stake_unit">Euro stake</string>
-    <string name="challenge_stake_warning">If you exceed the limit, €%1$d will be charged immediately.</string>
+    <!-- Stake warning, branched on the Stripe capture boundary (StakeCapture.isImmediateCapture):
+         over 7 days the card is charged at creation, at or below it the stake is only a hold. -->
+    <string name="challenge_stake_warning_on_breach">Your stake of %1$s is only charged if you break your limit.</string>
+    <string name="challenge_stake_warning_upfront">Your stake of %1$s is charged now. Finish the challenge and you get 80%% back (20%% service fee).</string>
     <string name="challenge_no_end_date">No end date</string>
     <string name="notification_group_channel_name">Group Challenges</string>
     <string name="notification_group_channel_description">Updates from your group challenges — failures, completions and cancellations</string>
@@ -253,6 +256,7 @@
     <string name="challenge_setup_error_hard_mode_min_days">Hard Mode requires minimum 14 days</string>
     <string name="challenge_create_sync_failed">The challenge could not be saved. Please check your internet connection and try again. Your payment is safe.</string>
     <string name="challenge_error_duplicate_adult_block">You already have an active Adult Block challenge.</string>
+    <string name="challenge_error_consent_record_failed">Your consent could not be saved. No payment was started — please check your internet connection and try again.</string>
     <string name="challenge_setup_budget_field_label">Daily budget (minutes)</string>
     <string name="challenge_setup_duration_field_label">Duration</string>
     <string name="challenge_setup_no_end_date">No end date</string>
@@ -437,7 +441,14 @@
     <string name="active_challenge_abandon_confirm_message">This will end the challenge without awarding points. You cannot undo this.</string>
     <string name="active_challenge_abandon_confirm_yes">Yes, abandon</string>
     <string name="active_challenge_abandon_confirm_no">Keep going</string>
-    <string name="active_challenge_abandon_hard_message">If you quit, you lose €%.2f immediately. Are you sure?</string>
+    <!-- Abandon dialog, branched on the Stripe capture boundary (StakeCapture). -->
+    <!-- Solo, 7 days or less: the stake is still a hold and the abandon path captures it. -->
+    <string name="active_challenge_abandon_hard_message">If you quit, your stake of %1$s will be charged. Are you sure?</string>
+    <!-- Solo, over 7 days: charged at creation, so quitting only forfeits what is already gone. -->
+    <string name="active_challenge_abandon_hard_charged_message">Your stake of %1$s was already charged when you started this challenge. If you quit, you won\'t get it back. Are you sure?</string>
+    <!-- Group row: this screen captures nothing and does not touch the participants array, so the
+         only thing that can honestly be said here is the charge that already happened at start. -->
+    <string name="active_challenge_abandon_group_message">Your buy-in of %1$s was charged when the challenge started.</string>
     <string name="active_challenge_abandon_hard_yes">Yes, lose my money</string>
     <string name="active_challenge_abandon_hard_no">No, keep going</string>
     <string name="active_challenge_abandon_error_title">Charge failed</string>
@@ -447,8 +458,15 @@
     <string name="blocking_overlay_amount_stake">⚠ €%.2f at stake</string>
 
     <!-- Limit Exceeded Overlay — Hard Mode -->
-    <string name="limit_exceeded_hard_title">You\'re losing €%.2f!</string>
-    <string name="limit_exceeded_hard_message">Your daily limit is used up. Your stake will now be charged and the app is blocked for today.</string>
+    <string name="limit_exceeded_hard_title">You\'re losing %1$s!</string>
+    <!-- Reaching the limit is a WIN (settlement loses only above it) — no money claim here. -->
+    <string name="limit_exceeded_hard_reached_message">The app is blocked for today. Reaching your limit is not a loss — your stake of %1$s stays safe as long as you don\'t go over it.</string>
+    <!-- Group: a limit breach is recorded for the leaderboard only, it never charges or eliminates. -->
+    <string name="limit_exceeded_group_message">You went over your daily limit. Nothing is charged for this and you stay in the challenge — the day just counts as a violation. Your buy-in of %1$s only goes into the pot if you give up.</string>
+    <!-- Solo loss, stake already taken at creation (over 7 days). -->
+    <string name="limit_exceeded_hard_lost_charged_message">You went over your daily limit — the challenge is lost. Your stake of %1$s was already charged when you started and will not be refunded.</string>
+    <!-- Solo loss, stake still a hold (7 days or less) — captured at the daily evaluation. -->
+    <string name="limit_exceeded_hard_lost_capture_message">You went over your daily limit — the challenge is lost. Your stake of %1$s will be charged.</string>
     <string name="limit_exceeded_hard_continue">Open anyway</string>
     <!-- Hard Mode Lockout Overlay -->
     <string name="lockout_title">🔒 Locked for Today</string>
@@ -1005,7 +1023,7 @@
     <!-- Group Challenge Detail — Aufgeben (manual quit) flow -->
     <string name="group_detail_quit_button">Give up</string>
     <string name="group_detail_quit_dialog_title">Really give up?</string>
-    <string name="group_detail_quit_dialog_message">€%1$d will be charged. This action cannot be undone.</string>
+    <string name="group_detail_quit_dialog_message">Your buy-in of %1$s was charged when the challenge started. If you give up now, it goes into the pot for the others and you get nothing back. This cannot be undone.</string>
     <string name="group_detail_quit_confirm">Yes, give up</string>
     <string name="group_detail_quit_cancel">Cancel</string>
     <string name="group_detail_quit_error">Giving up failed. Try again.</string>

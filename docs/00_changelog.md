@@ -21,6 +21,93 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-07-29 — Four money strings said the opposite of what the code does
+
+**FIXED — copy written for a "hold now, capture on breach" model that only holds below 8 days.**
+`createPaymentIntent` uses `capture_method: "automatic"` when `durationDays > 7`
+([functions/src/index.ts:192](../functions/src/index.ts#L192)), so above the boundary the money
+leaves the card AT CREATION and the model is "charge now, refund 80% on success". Four user-facing
+strings never branched on it, and two described a capture at the wrong moment entirely. Copy and one
+shared predicate only — no capture, settlement, refund or abandon logic moved.
+
+**The boundary is now ONE object.** `domain/model/StakeCapture.kt` mirrors the server branch verbatim
+(`isGroupChallenge ? false : durationDays > 7`) and is the only place any screen may learn when the
+stake leaves the card. It also answers the *runtime* question the copy actually needs —
+`isStakeChargedWhileActive`: solo = the auto-capture band, **group = always**, because
+`startGroupChallenge` captures every participant's hold before the challenge can go ACTIVE. The
+threshold already existed client-side as two loose literals (`ChallengeCreationViewModel`,
+`CloudFunctionsService`); both now read the object, behaviour unchanged. `durationDaysOf` recovers
+the duration from a stored challenge's date span (exact inverse of `DateUtils.endOfDayMillis`,
+day-keyed so DST cannot shift the 7/8 boundary) — `StakeCaptureTest` pins the round-trip for 1..90.
+
+**CORRECTION to a premise — group buy-ins are NOT the `> 7` branch.** They are always manual capture
+(5-day auth window), captured at start. Net effect for the user is the same ("already charged"), but
+the group copy must never be duration-branched, and one predicate now encodes both reasons.
+
+**The four sites:**
+- **Hard create** — branches: ≤7d "only charged if you break your limit", >7d "charged now, 80% back
+  on success (20% fee)".
+- **Limit-exceeded overlay** — this overlay engages at `>=` the limit while settlement only loses at
+  `>` (TIME), so **reaching** the limit is a WIN and no longer claims money is taken. Three loss
+  variants: group (nothing charged, you stay in — a group never auto-fails, see
+  `evaluateGroupChallenge`), solo >7d (already charged, not refunded), solo ≤7d (will be charged).
+- **Group detail "Aufgeben"** — was "€X will be charged"; `failParticipant` captures NOTHING new on
+  an ACTIVE group (the PI is already `succeeded`, [index.ts:1316](../functions/src/index.ts#L1316)).
+  Now: charged at start, giving up forfeits it to the pot.
+- **Solo abandon dialog** — same bug class, three cases via the same predicate. For a **group shadow
+  row** it states ONLY the verified fact ("your buy-in was charged when the challenge started") and
+  claims no forfeit: this screen's abandon deliberately skips capture, never touches the
+  `participants` array and never calls `failParticipant`, so nothing is forfeited here and the row
+  re-upserts to `active` on the next snapshot. The confirm button drops "Yes, lose my money" for the
+  neutral label in that case, for the same reason.
+
+**KNOWN GAP, deliberately not fixed here (belongs to the group-correctness block):** the abandon row
+is reachable for a group shadow row at all ([ActiveChallengeScreen](../app/src/main/java/com/detox/app/presentation/screens/activechallenge/ActiveChallengeScreen.kt) — no group guard, and
+`ChallengesViewModel` lists mirror rows unfiltered), where it produces a local-only FAILED the server
+ignores. The copy is now honest about it; the UI path still needs a guard.
+
+**Removed (each had exactly one reference, the one being rewritten):** `challenge_stake_warning`,
+`limit_exceeded_hard_message`. All amounts now go through `formatEuroCents` — no more integer-division
+euro strings. EN/DE parity green.
+
+**Deploy: app only** — no rules, CF, or index change.
+
+### 2026-07-29 — The uninstall-forfeit consent is now on record (Solo Hard)
+
+**FIXED — the consent that licenses the `device_dark` forfeit left no trace.** `forfeitChecked` was
+local Compose state: it gated the Start button and was then discarded. That is the ONE money outcome
+with no usage evidence behind it, and we kept the rule (product decision), so the consent had to be
+recorded as solidly as the FAGG waiver. The tick now lives in
+`ChallengeCreationState.uninstallForfeitAcceptedAt` — the **moment of acceptance** in epoch millis,
+null when unticked, so a stored record can never be a default-true — and
+`ChallengeCreationViewModel.recordUninstallForfeitConsent` persists it to
+`users/{uid}.uninstallForfeitConsents.{challengeId}`. `initiateHardModePayment` gates on the stamp
+(defense-in-depth behind the disabled button) and awaits the write **before** `createPaymentIntent`;
+a failure aborts with `challenge_error_consent_record_failed` and no PaymentIntent is created. Client
+path, same as all three FAGG waivers — no CF involved, nothing about capture/refund/settlement moved.
+
+**DECISION — it does NOT sit next to the Solo FAGG waiver on the challenge doc, and that is
+forced.** The record has to exist before the PaymentIntent so a captured stake without recorded
+consent is unreachable; the challenge doc does not exist until after the payment. Pre-creating it
+would burn the single rules-allowed CREATE (invariant #3) and turn the real Hard Mode mirror into an
+UPDATE the rules deny on `status`/`amountCents`/`stripePaymentIntentId` — a captured stake with no
+challenge doc. So it takes the group joiner's shape instead (`groupWithdrawalWaivers.{groupId}`):
+a dot-keyed map on a document the consenting user owns. `logWithdrawalWaiver`'s KDoc points at it so
+the two consents stay findable together. Not a weaker second mechanism — this one is awaited and
+blocking, where all three waivers are silent fire-and-forget merges.
+
+**Scope: Solo Hard only.** Group forfeit consent is deliberately NOT wired — group forfeit
+enforcement is still broken (shadow-row / permission-revoke block), and recording consent for a
+forfeit that does not fire would be the same class of false statement as the copy defects. It
+belongs with the group-correctness block.
+
+**Left alone:** the `deleteUserData` tension. Account deletion still erases this record along with
+the Solo FAGG waiver and the joiner's — accepted remaining legal risk, noted in the
+`recordUninstallForfeitConsent` KDoc and in docs/challenge-risk-inventory.md § C4 so it is findable.
+
+**Deploy: app only** — no rules change (`uninstallForfeitConsents` is not in the user-doc deny-list,
+the owner-update rule already permits it), no CF change, no indexes change.
+
 ### 2026-07-26 — Group Phase 5/6: scheduled starts actually happen now
 
 Two commits. No payout math, no settlement change, and the capture loop was moved but not

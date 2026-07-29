@@ -91,6 +91,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.detox.app.R
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.StakeCapture
 import com.detox.app.presentation.components.AccessibilityDisclosureDialog
 import com.detox.app.presentation.components.AppWebsiteSelectionStep
 import com.detox.app.presentation.components.DetoxHorizontalPicker
@@ -406,6 +407,7 @@ fun ChallengeCreationScreen(
                         appListState = appListState,
                         uiState = uiState,
                         onUpdateMotivation = viewModel::updateMotivationText,
+                        onToggleForfeitConsent = viewModel::toggleUninstallForfeitConsent,
                         onCreateChallenge = viewModel::createChallenge,
                     )
                 }
@@ -1121,8 +1123,19 @@ private fun Step6Duration(
                 unit = stringResource(R.string.challenge_stake_unit),
                 surfaceColor = detoxColors.screenBackground,
             )
+            // The stake picker and the duration picker live in the SAME step, so this line
+            // re-reads the capture boundary on every duration change: above it Stripe charges
+            // the card at creation (80% back on success), below it the stake is only a hold.
+            val chargedUpfront = StakeCapture.isImmediateCapture(state.durationDays)
             Text(
-                text = stringResource(R.string.challenge_stake_warning, state.amountEuros),
+                text = stringResource(
+                    if (chargedUpfront) {
+                        R.string.challenge_stake_warning_upfront
+                    } else {
+                        R.string.challenge_stake_warning_on_breach
+                    },
+                    formatEuroCents(state.amountEuros * 100),
+                ),
                 fontSize = 13.sp,
                 color = detoxColors.danger,
             )
@@ -1189,6 +1202,7 @@ private fun Step7Confirm(
     appListState: AppListState,
     uiState: ChallengeCreationUiState,
     onUpdateMotivation: (String) -> Unit,
+    onToggleForfeitConsent: () -> Unit,
     onCreateChallenge: () -> Unit,
 ) {
     val isLoading = uiState is ChallengeCreationUiState.Loading ||
@@ -1200,7 +1214,9 @@ private fun Step7Confirm(
     var waiverChecked by remember { mutableStateOf(false) }
     // Second mandatory Hard Mode consent: deleting/disabling the app during an active
     // challenge forfeits the stake (server-side went-dark detection). Hard-blocks Start.
-    var forfeitChecked by remember { mutableStateOf(false) }
+    // Unlike the waiver this is NOT local Compose state — the tick is what licenses the
+    // device_dark forfeit, so it is owned by the ViewModel and recorded before the payment.
+    val forfeitChecked = state.uninstallForfeitAcceptedAt != null
 
     Column(
         modifier = Modifier
@@ -1320,7 +1336,7 @@ private fun Step7Confirm(
 
             WizardWaiverCheckboxRow(
                 checked = forfeitChecked,
-                onToggle = { forfeitChecked = !forfeitChecked },
+                onToggle = onToggleForfeitConsent,
                 label = stringResource(R.string.uninstall_forfeit_consent_text),
             )
         }

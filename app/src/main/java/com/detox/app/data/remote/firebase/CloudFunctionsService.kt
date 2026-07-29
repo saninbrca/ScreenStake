@@ -1,6 +1,7 @@
 package com.detox.app.data.remote.firebase
 
 import com.detox.app.domain.model.PaymentIntentData
+import com.detox.app.domain.model.StakeCapture
 import com.detox.app.util.CloudFunctionException
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +109,10 @@ class CloudFunctionsService @Inject constructor(
         val response = callFunction("createPaymentIntent", params)
         val paymentIntentId = response["paymentIntentId"] as String
         val clientSecret = response["clientSecret"] as String
-        val isImmediate = response["isImmediateCapture"] as? Boolean ?: (durationDays > 7)
+        // Fallback only — the CF always returns the flag. Same predicate as the server's
+        // capture_method branch, via the shared mirror (StakeCapture).
+        val isImmediate = response["isImmediateCapture"] as? Boolean
+            ?: StakeCapture.isImmediateCapture(durationDays)
         Timber.d("createPaymentIntent: %s immediate=%s", paymentIntentId, isImmediate)
         Result.success(PaymentIntentData(paymentIntentId, clientSecret, isImmediate))
     } catch (e: Exception) {

@@ -82,6 +82,8 @@ import com.detox.app.domain.model.BlockingType
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.LimitType
+import com.detox.app.domain.model.StakeCapture
+import com.detox.app.presentation.components.formatEuroCents
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.ui.theme.LocalDetoxDarkTheme
 import com.detox.app.ui.theme.detoxColors
@@ -239,21 +241,35 @@ private fun ActiveChallengeContent(
     // ── Dialogs (business logic unchanged) ────────────────────────────────────
     if (showAbandonDialog) {
         if (isHardMode && challenge.amountCents != null) {
+            val isGroupRow = challenge.groupChallengeId != null
+            // Same capture boundary as every other money surface (StakeCapture), never re-derived:
+            //  - group  → the buy-in was captured by startGroupChallenge. This screen's abandon
+            //             touches NEITHER the participants array NOR Stripe, so the copy states the
+            //             charge that already happened and claims nothing about where the money goes.
+            //  - >7 day → auto-captured at creation; abandoning just keeps it.
+            //  - ≤7 day → still a hold, captured by the capture-gated abandon in the ViewModel.
+            val messageRes = when {
+                isGroupRow -> R.string.active_challenge_abandon_group_message
+                StakeCapture.isStakeChargedWhileActive(challenge) ->
+                    R.string.active_challenge_abandon_hard_charged_message
+                else -> R.string.active_challenge_abandon_hard_message
+            }
             AlertDialog(
                 onDismissRequest = { showAbandonDialog = false },
                 title = { Text(stringResource(R.string.active_challenge_abandon_confirm_title)) },
                 text = {
-                    Text(
-                        stringResource(
-                            R.string.active_challenge_abandon_hard_message,
-                            challenge.amountCents / 100f
-                        )
-                    )
+                    Text(stringResource(messageRes, formatEuroCents(challenge.amountCents)))
                 },
                 confirmButton = {
                     TextButton(onClick = { showAbandonDialog = false; onAbandon() }) {
                         Text(
-                            text = stringResource(R.string.active_challenge_abandon_hard_yes),
+                            // "Yes, lose my money" is a money claim this screen cannot make for a
+                            // group row — nothing is captured or forfeited on that path.
+                            text = if (isGroupRow) {
+                                stringResource(R.string.active_challenge_abandon_confirm_yes)
+                            } else {
+                                stringResource(R.string.active_challenge_abandon_hard_yes)
+                            },
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

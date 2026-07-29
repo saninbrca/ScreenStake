@@ -382,12 +382,16 @@ private fun GroupDetailContent(
 
     // Quit confirmation dialog (business logic unchanged)
     if (showQuitDialog) {
-        val amountEuros = gc.buyInCents / 100
+        // Only reachable while the challenge is ACTIVE, and a group only becomes ACTIVE after
+        // startGroupChallenge has captured EVERY participant's hold — so the buy-in is already
+        // charged here and failParticipant captures nothing new (its PI is already "succeeded").
+        // Giving up just moves that money into the pot (completeGroupChallenge → failedPot).
+        val buyIn = formatEuroCents(gc.buyInCents)
         AlertDialog(
             onDismissRequest = { showQuitDialog = false },
             title = { Text(stringResource(R.string.group_detail_quit_dialog_title)) },
             text = {
-                Text(stringResource(R.string.group_detail_quit_dialog_message, amountEuros))
+                Text(stringResource(R.string.group_detail_quit_dialog_message, buyIn))
             },
             confirmButton = {
                 Button(

@@ -45,10 +45,24 @@ fun LimitExceededOverlay(
     limitMinutes: Int = 0,
     /** Current consecutive-day streak (before today). Hidden when 0. */
     streak: Int = 0,
+    /**
+     * True for the local mirror row of a group challenge. A group NEVER auto-fails on a limit
+     * breach (`DailyEvaluationWorker.evaluateGroupChallenge` records the day for stats only) —
+     * the buy-in is forfeited to the pot only by giving up in the group detail screen.
+     */
+    isGroupChallenge: Boolean = false,
+    /** True when the stake already left the card — see [com.detox.app.domain.model.StakeCapture]. */
+    isStakeAlreadyCharged: Boolean = false,
     onStop: () -> Unit
 ) {
     @Suppress("KotlinConstantConditions")
     val isHardMode = challengeMode == ChallengeMode.HARD && amountCents != null
+
+    // This overlay engages at `>=` the limit (CheckDailyLimitUseCase) while settlement only loses
+    // at `>` (DailyEvaluationWorker.computeLimitExceeded, TIME) — the two predicates are MEANT to
+    // diverge. So REACHING the limit is still a win and must never be told as a loss: only the
+    // strictly-over case may talk about losing money, and it uses settlement's own comparison.
+    val limitExceeded = todayMinutes > limitMinutes
     val bgColor = Color(0xFF0A0A0A)
     val accentColor = if (isHardMode) Color(0xFFFF4444) else Color(0xFF00C853)
 
@@ -79,8 +93,11 @@ fun LimitExceededOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                val title = if (isHardMode && amountCents != null) {
-                    stringResource(R.string.limit_exceeded_hard_title, amountCents / 100f)
+                // "You're losing €X" is only true for a solo Hard Mode challenge that is actually
+                // OVER its limit; at the limit, and for a group (which never auto-fails), the
+                // neutral title is the honest one.
+                val title = if (isHardMode && amountCents != null && limitExceeded && !isGroupChallenge) {
+                    stringResource(R.string.limit_exceeded_hard_title, formatEuroCents(amountCents))
                 } else {
                     stringResource(R.string.limit_exceeded_title)
                 }
@@ -110,10 +127,21 @@ fun LimitExceededOverlay(
                     )
                 }
 
-                val message = if (isHardMode) {
-                    stringResource(R.string.limit_exceeded_hard_message)
-                } else {
-                    stringResource(R.string.limit_exceeded_message)
+                val message = when {
+                    !isHardMode || amountCents == null ->
+                        stringResource(R.string.limit_exceeded_message)
+                    // Still a win: blocked for today, stake untouched.
+                    !limitExceeded ->
+                        stringResource(R.string.limit_exceeded_hard_reached_message, formatEuroCents(amountCents))
+                    // Group: the day is recorded for the leaderboard, nothing is charged.
+                    isGroupChallenge ->
+                        stringResource(R.string.limit_exceeded_group_message, formatEuroCents(amountCents))
+                    // Solo loss — the money either already left the card at creation, or gets
+                    // captured on the loss path at the daily evaluation.
+                    isStakeAlreadyCharged ->
+                        stringResource(R.string.limit_exceeded_hard_lost_charged_message, formatEuroCents(amountCents))
+                    else ->
+                        stringResource(R.string.limit_exceeded_hard_lost_capture_message, formatEuroCents(amountCents))
                 }
                 Text(
                     text = message,

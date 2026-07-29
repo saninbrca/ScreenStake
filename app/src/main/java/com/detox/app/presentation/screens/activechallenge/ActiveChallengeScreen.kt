@@ -934,7 +934,16 @@ private fun ActiveChallengeContent(
         AbrechnungSoloCard(challenge = challenge)
 
         // ── Challenge aufgeben (text only, no button background) ─────────────
-        if (challenge.status == ChallengeStatus.ACTIVE) {
+        // SOLO ONLY — group shadow rows deliberately have no abandon affordance here,
+        // mirroring the group gate on [showLimitSection] above. This screen cannot abandon
+        // a group challenge: the action skips capture (correct — the buy-in belongs to the
+        // completeGroupChallenge prize-pool flow), but then writes a dead-letter
+        // markChallengeFailed("group_<id>") against a doc that does not exist, leaves the
+        // participant ACTIVE in groupChallenges/{id}.participants — so settlement classifies
+        // them a WINNER — and the row resurrects as active on the next listener restart.
+        // The real, money-authoritative quit path is GroupChallengeDetailScreen → the
+        // failParticipant CF, which is capture-gated and surfaces its own failure state.
+        if (challenge.status == ChallengeStatus.ACTIVE && challenge.groupChallengeId == null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

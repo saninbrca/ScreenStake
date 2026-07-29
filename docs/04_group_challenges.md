@@ -667,16 +667,44 @@ Navigate to FriendsHubScreen
 Failed participant stays visible in leaderboard (greyed out / strikethrough)
 ```
 
-### Permission Violation Capture (Group Participants)
+### Permission Violation Capture (Group Participants) — ⚠ DOES NOT EXIST
 
-Group Challenge participants are also subject to server-side permission violation capture.
+**Group permission-loss enforcement is NOT implemented.** A group participant who revokes
+Accessibility or Overlay permission is never failed and their buy-in is never forfeited. This
+section previously described the intended design as if it were shipped; per
+[invariants.md](invariants.md) ("if a rule conflicts with code, the code is ground truth") it is
+corrected here to what the code actually does.
 
-- If a participant loses Accessibility or Overlay permission while the challenge is active,
-  `permissionLostAt` is written to `users/{uid}/permissionStatus/current` by `PermissionCheckWorker`.
-- `checkPermissionViolations` CF queries all active Hard Mode + Group Challenge participants.
-- After 24h without permission restore: Stripe capture triggered server-side for that participant.
-- `failReason: "permission_violation"` written to challenge document.
-- UsageStats backup path also applies: usage > 1 min → `usageViolationDetectedAt` → capture after 1h.
+What actually happens today:
+
+- The marker IS written: `permissionLostAt` → `users/{uid}/permissionStatus/current`
+  (`PermissionCheckWorker.checkAccessibilityPermission`). This part works.
+- **Client — deliberately excluded.** `failAllHardChallenges` selects SOLO Hard Mode only, via
+  `isSoloHardPermissionFailEligible` (`mode == HARD && groupChallengeId == null`). A group shadow
+  row carries `mode = "hard"` and the participant's buy-in PI, so this exclusion is load-bearing:
+  without it the worker would capture the buy-in while the group doc still lists the participant
+  as active, and `completeGroupChallenge` would then refund them as a winner. (Commit `e63de64`.)
+- **Server — dead code.** `runPermissionViolationCheck` has a group branch, but it queries
+  `collectionGroup("participants")` filtered on `userId` + `status`. Those fields do not exist on
+  the documents it reaches: `participants` is TWO different things — the money array on
+  `groupChallenges/{groupId}` (identity + `amountCents` + `paymentIntentId` + `status`, CF-only)
+  and the client-writable **stats** sub-collection `groupChallenges/{groupId}/participants/{uid}`,
+  whose `firestore.rules` whitelist permits only leaderboard counters and day stamps. The
+  collection-group query hits the stats sub-collection, so it matches **zero documents, always**,
+  and the loop body has never executed.
+- The run then stamps `capturedAt` on the marker unconditionally, even though nothing was
+  captured — and a marker carrying `capturedAt` is skipped forever after. **Any future fix keyed
+  on the same marker must account for markers already stamped by this dead path.**
+- The UsageStats backup pass (`usageViolationDetectedAt` → capture after 1h) is **solo-only** as
+  well — it iterates `users/{uid}/challenges` with `mode == "hard"`, where group rows never live
+  (the group shadow row exists only in local Room).
+
+The only way a participant ever becomes `failed` today is the manual "Aufgeben" button on
+`GroupChallengeDetailScreen` → the capture-gated `failParticipant` CF.
+
+> **Before `groupChallengeEnabled` goes true**, this gap must be closed — the fix belongs in the
+> group settlement CFs (routed through `failParticipant`'s capture gate and `settleLockAt` fence),
+> never on the client capture path.
 
 ---
 

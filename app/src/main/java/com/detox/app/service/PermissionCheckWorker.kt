@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.detox.app.R
 import com.detox.app.data.remote.firebase.CloudFunctionsService
+import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.model.GroupChallengeStatus
@@ -349,7 +350,11 @@ class PermissionCheckWorker @AssistedInject constructor(
         }
 
         for (challenge in challenges) {
-            if (challenge.mode != ChallengeMode.HARD) continue
+            // Solo Hard Mode ONLY. Group shadow rows are routed out here, exactly as
+            // DailyEvaluationWorker routes them out before its Hard path — see
+            // [isSoloHardPermissionFailEligible] for why the previous mode-only filter was a
+            // double-capture landmine.
+            if (!isSoloHardPermissionFailEligible(challenge)) continue
 
             val paymentIntentId = challenge.stripePaymentIntentId
             if (paymentIntentId != null) {
@@ -461,3 +466,27 @@ class PermissionCheckWorker @AssistedInject constructor(
             }
     }
 }
+
+/**
+ * Selection predicate for the 24h-permission-loss capture path (`failAllHardChallenges`):
+ * **SOLO Hard Mode only** — `mode == HARD && groupChallengeId == null`. Same intent as invariant
+ * #5 (abandon) and as [DailyEvaluationWorker], which routes group shadow rows out before its Hard
+ * path.
+ *
+ * Why the `groupChallengeId == null` half is load-bearing: a group shadow row
+ * (`id = "group_<groupId>"`, written by `GroupChallengeRepositoryImpl.syncToTracking`) carries
+ * `mode = "hard"` and the participant's **buy-in** PaymentIntent, so a mode-only filter puts it
+ * straight into the capture branch. Nothing today depends on that — group permission-loss
+ * enforcement belongs to the group settlement CFs (`failParticipant`), never to this worker.
+ *
+ * Before this predicate the only thing stopping a group capture was an accident:
+ * [ChallengeSettlementGuard] reads `users/{uid}/challenges/group_<groupId>`, that doc does not
+ * exist (group state lives in the top-level `groupChallenges` collection), and the fail-safe
+ * "unconfirmed" branch returns SKIP. The day anything materializes that parent doc (a sync, a
+ * debug tool, a schema change) the skip flips into: capture the buy-in + mark the shadow FAILED,
+ * while the group doc still lists the participant as active — so `completeGroupChallenge` later
+ * refunds them as a winner (captured stake + refund + pot share). The exclusion is now explicit,
+ * not incidental.
+ */
+internal fun isSoloHardPermissionFailEligible(challenge: Challenge): Boolean =
+    challenge.mode == ChallengeMode.HARD && challenge.groupChallengeId == null

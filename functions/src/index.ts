@@ -1266,11 +1266,9 @@ export const cancelGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
 // status write) and #28 (the merge runs in a transaction, Stripe stays outside it) are
 // relocated, never reordered.
 //
-// `reason` is DIAGNOSTIC ONLY in this step — it is logged, never persisted. The
-// participants array has no failReason field (see the Participant interface) and the
-// merge below writes only `status` and `failedAt`, exactly as before. Step 7 owns the
-// decision of whether a server-initiated forfeit should also persist its reason; adding
-// the field here would not be the zero-behaviour-change extraction this step is meant to be.
+// `reason` is logged AND persisted as `failReason` on the participant entry, so a
+// self-quit ("self_quit") and a server-initiated forfeit ("permission_violation") are
+// distinguishable in the stored data — see the merge below.
 async function forfeitParticipant(
   groupId: string,
   userId: string,
@@ -1363,8 +1361,16 @@ async function forfeitParticipant(
     if (!mine) return "missing" as const;
     if (mine["status"] === "failed") return "already" as const;
     if (mine["status"] !== "active") return "settled" as const;
+    // `failReason` makes a self-quit and a server-initiated forfeit distinguishable in the
+    // stored data. Until now a group forfeit recorded no cause at all, while a solo loss
+    // has always carried one (markChallengeFailed writes failReason) — so a user asking
+    // "why was my stake taken?" had nothing to point at. Additive: it never affects
+    // classification, since isPaidWinner gates on `status` alone and "failed" is not on
+    // its allowlist, and settlement's failed branch spreads `p` so the reason survives.
     const merged = freshParticipants.map((p) =>
-      p["userId"] === userId ? { ...p, status: "failed", failedAt: Date.now() } : p
+      p["userId"] === userId
+        ? { ...p, status: "failed", failedAt: Date.now(), failReason: reason }
+        : p
     );
     tx.update(docRef, { participants: merged });
     return "failed" as const;

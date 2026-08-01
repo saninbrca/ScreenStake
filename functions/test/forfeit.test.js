@@ -232,11 +232,10 @@ describe("idempotency and the transactional merge", () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe("the reason parameter", () => {
-  test("is diagnostic only — it is NOT persisted on the participant entry", async () => {
-    // Pins the Step-5 contract deliberately: the extraction added the parameter for Step 7
-    // (permission_violation) but changed nothing about what is written. The merge still
-    // writes only status + failedAt. If Step 7 decides a server forfeit should be
-    // auditable, persisting it is a deliberate change that must flip this assertion.
+  test("is persisted as failReason, making a forfeit's cause auditable", async () => {
+    // Was pinned as NOT written (the Step-5 extraction deliberately changed nothing).
+    // Step 7 flips it: a group forfeit now records its cause, closing the asymmetry with
+    // solo losses, which have always carried a failReason via markChallengeFailed.
     seedGroup();
     setStripe(makeStripe({ log, status: { pi_u1: "succeeded" } }));
 
@@ -244,17 +243,26 @@ describe("the reason parameter", () => {
 
     const p = byId("u1");
     assert.equal(p.status, "failed");
-    assert.equal(p.failReason, undefined, "no failReason is written today");
+    assert.equal(p.failReason, "permission_violation");
     assert.deepEqual(Object.keys(p).sort(), [
-      "amountCents", "displayName", "failedAt", "paymentIntentId", "status", "userId",
+      "amountCents", "displayName", "failReason", "failedAt", "paymentIntentId", "status", "userId",
     ]);
   });
 
-  test("does not change the money path — any reason forfeits identically", async () => {
+  test("a self-quit is distinguishable from a server forfeit in the stored data", async () => {
     seedGroup();
     setStripe(makeStripe({ log, status: { pi_u1: "succeeded" } }));
-    const res = await forfeitParticipant(GID, "u1", "anything_at_all");
+
+    await forfeitParticipant(GID, "u1", "self_quit");
+
+    assert.equal(byId("u1").failReason, "self_quit");
+  });
+
+  test("failReason does not affect classification — a failed participant is still never paid", async () => {
+    seedGroup();
+    setStripe(makeStripe({ log, status: { pi_u1: "succeeded" } }));
+    const res = await forfeitParticipant(GID, "u1", "permission_violation");
     assert.deepEqual(res, { success: true });
-    assert.equal(byId("u1").status, "failed");
+    assert.equal(byId("u1").status, "failed", "isPaidWinner gates on status alone");
   });
 });

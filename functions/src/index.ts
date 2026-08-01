@@ -1743,6 +1743,37 @@ export const deleteGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
 
 // ── completeGroupChallenge ─────────────────────────────────────────────────────
 
+// ── isPaidWinner ───────────────────────────────────────────────────────────────
+// THE definition of "this participant receives a winner payout", used by BOTH the payout
+// divisor and the payout loop in the someone-failed settlement path. One predicate, two
+// call sites, by construction: the set that gets paid and the set that is divided by are
+// the same set, so nobody can ever be paid while being invisible to the division.
+//
+// It is an ALLOWLIST, not `!failed`, because the participants array carries five statuses
+// and two of them are neither winner nor loser:
+//   active     — in the challenge, never self-failed          → paid
+//   completed  — settled winner, nobody-failed path           → paid (idempotent re-settle)
+//   success    — settled winner, someone-failed path          → paid (idempotent re-settle)
+//   failed     — self-failed via failParticipant; funds the pot → NOT paid
+//   refunded   — challenge cancelled before it started, stake already returned by
+//                terminalizeWaitingGroupChallenge             → NOT paid, NOT divided by
+//
+// The bug this closes: the loop used to treat every non-"failed" participant as a winner
+// while the divisor counted only active|completed, so a "success" entry — a status this
+// very path writes — took a full share the division never accounted for, and a 900-cent
+// pot paid out 1800. "refunded" was the same hole with worse consequences (a second
+// payout to somebody already made whole). Anything not on this list is now left
+// untouched rather than optimistically paid, so a future status added elsewhere fails
+// closed instead of silently draining the pot.
+//
+// Deliberately NOT used for `nobodyFailed`, which stays active|completed: a "success"
+// entry proves the someone-failed path already ran, so the 100%-refund branch must not
+// be reachable with one present.
+function isPaidWinner(p: Record<string, unknown>): boolean {
+  const status = p["status"];
+  return status === "active" || status === "completed" || status === "success";
+}
+
 // ── runGroupChallengeSettlement ────────────────────────────────────────────────
 // The settlement sequence, lifted out of the completeGroupChallenge HTTP handler so a
 // caller without a user context can run it. Same split as runGroupChallengeStart /
@@ -1882,12 +1913,11 @@ async function runGroupChallengeSettlement(groupId: string): Promise<Record<stri
     }
   };
 
-  // "active" = still in the challenge; "completed" = CF already marked them on a prior run.
-  // Both statuses mean the participant did NOT fail — include both when counting winners.
+  // The payout divisor. Same predicate the payout loop below gates on ([isPaidWinner]) —
+  // that shared definition is what guarantees the paid set and the divided-by set are
+  // identical. Losers stay exactly `status === "failed"`: only a real forfeit funds the pot.
   const failedParticipants = participants.filter((p) => p["status"] === "failed");
-  const successParticipants = participants.filter(
-    (p) => p["status"] === "active" || p["status"] === "completed"
-  );
+  const successParticipants = participants.filter(isPaidWinner);
 
   // Per docs/09_payout_and_fees.md: nobodyFailed iff every participant is active OR completed.
   // Stricter than failedParticipants.length === 0 — a stale "success" status (from a partial
@@ -1996,6 +2026,17 @@ async function runGroupChallengeSettlement(groupId: string): Promise<Record<stri
   const updatedParticipants = await Promise.all(participants.map(async (p) => {
     if (p["status"] === "failed") {
       return { ...p, status: "failed", payoutStatus: "lost", finalPayout: 0 };
+    }
+    // Neither a loser nor a payable winner (today: only "refunded", i.e. a stake already
+    // returned when a WAITING challenge was cancelled). Left EXACTLY as-is — untouched,
+    // unpaid, and absent from the divisor above. Paying somebody the division cannot see
+    // is precisely what over-distributes the pot, so this branch fails closed.
+    if (!isPaidWinner(p)) {
+      functions.logger.warn(
+        "completeGroupChallenge: participant is neither failed nor a payable winner — left untouched, not paid",
+        { groupId, userId: p["userId"], status: p["status"] }
+      );
+      return p;
     }
 
     const userId = p["userId"] as string;

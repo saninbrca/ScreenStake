@@ -468,18 +468,12 @@ describe("fail-vs-settle photo finish", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe("LATENT ISSUE — surfaced, deliberately not fixed", () => {
-  test('a stale "success" status is PAID a bonus but NOT counted in the divisor', async () => {
-    // The winners map at index.ts:1987 treats every non-"failed" participant as a winner,
-    // but `successParticipants` (the bonus divisor) counts only "active" | "completed".
-    // A participant carrying "success" — the status the someone-failed path itself writes —
-    // is therefore paid a full share while being invisible to the division, so the pot is
-    // over-distributed.
-    //
-    // Currently UNREACHABLE in production: commitSettlement writes the participant statuses
-    // and doc.status="completed" in one transaction, so a re-run is stopped by the
-    // already_completed guard. It becomes reachable the moment anything can leave "success"
-    // behind on a non-completed doc. Reported, NOT fixed in this pass.
+describe("winner set and payout divisor are the same set (isPaidWinner)", () => {
+  test('a "success" participant is counted in the divisor, so the pot is never over-distributed', async () => {
+    // Was the pinned over-distribution: the payout loop paid every non-"failed" participant
+    // while the divisor counted only active|completed, so a "success" entry — a status this
+    // very path writes — took a share the division never accounted for (900-cent pot → 1800
+    // paid). Both sites now gate on isPaidWinner, so "success" is paid AND divided by.
     const ps = seedGroup({
       participants: [P("u1", "active"), P("u2", "success"), P("u3", "failed")],
     });
@@ -488,13 +482,60 @@ describe("LATENT ISSUE — surfaced, deliberately not fixed", () => {
     await runGroupChallengeSettlement(GID);
 
     const doc = db.read(PATH);
-    assert.equal(doc.appFee, 100);
+    assert.equal(doc.appFee, 100); // unchanged: 10% of the 1000 failed pot
     assert.equal(doc.prizePool, 900);
-    assert.equal(doc.prizePerWinner, 900, "divisor counted only u1");
+    assert.equal(doc.prizePerWinner, 450, "divisor now counts u1 AND u2");
 
-    // Both u1 AND u2 were paid the 900 bonus → 1800 distributed from a 900 pot.
     const bonuses = opsOf("create").map((c) => c.data.amount);
-    assert.deepEqual(bonuses.sort(), [900, 900]);
-    assert.equal(byId("u2").status, "success");
+    assert.deepEqual(bonuses, [450, 450]);
+    const distributed = bonuses.reduce((s, b) => s + b, 0);
+    assert.ok(distributed <= doc.prizePool, `distributed ${distributed} must not exceed pot ${doc.prizePool}`);
+  });
+
+  test('a "refunded" participant is neither paid nor counted — no second payout', async () => {
+    // "refunded" is written by terminalizeWaitingGroupChallenge when a WAITING challenge is
+    // cancelled: the stake is already back. It sat in the same gap as "success", but paying
+    // it would have been a SECOND payout. It is now left untouched.
+    const ps = seedGroup({
+      participants: [P("u1", "active"), P("u2", "refunded"), P("u3", "failed")],
+    });
+    useStripe({ status: allSucceeded(ps) });
+
+    await runGroupChallengeSettlement(GID);
+
+    const doc = db.read(PATH);
+    assert.equal(doc.prizePerWinner, 900, "only u1 is a payable winner");
+    assert.equal(byId("u2").status, "refunded", "left exactly as it was");
+    assert.equal(byId("u2").payoutStatus, undefined, "no payout recorded");
+    assert.equal(byId("u2").finalPayout, undefined);
+    assert.equal(
+      opsOf("stripe.refund.create").filter((r) => r.pi === "pi_u2").length,
+      0,
+      "no second refund for an already-refunded participant"
+    );
+  });
+
+  test("the paid set and the divisor set are identical for a mixed roster", async () => {
+    // Property check: whatever the roster, the number of participants that end up with a
+    // settlement payout must equal the divisor the bonus was computed from.
+    const ps = seedGroup({
+      participants: [
+        P("a", "active"),
+        P("b", "completed"),
+        P("c", "success"),
+        P("d", "refunded"),
+        P("e", "failed"),
+      ],
+    });
+    useStripe({ status: allSucceeded(ps) });
+
+    await runGroupChallengeSettlement(GID);
+
+    const doc = db.read(PATH);
+    const paid = participantsAfter().filter((p) => p.status === "success");
+    assert.equal(paid.length, 3, "a, b and c are paid");
+    assert.equal(doc.prizePerWinner, Math.floor(doc.prizePool / paid.length));
+    const distributed = opsOf("create").reduce((s, c) => s + c.data.amount, 0);
+    assert.ok(distributed <= doc.prizePool, `distributed ${distributed} must not exceed pot ${doc.prizePool}`);
   });
 });

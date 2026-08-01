@@ -2779,6 +2779,148 @@ export const getConnectedAccountStatus = functions.region(REGION).https.onReques
 // and captures their Hard Mode Stripe payments server-side.
 // Called hourly by scheduledPermissionCheck, and as fallback from DailyEvaluationWorker.
 
+// ── runGroupPermissionForfeit (B5) ────────────────────────────────────────────
+// Forfeits a GROUP participant who has been without Accessibility/Overlay permission for
+// 24h. Until now nobody did: the client path routes group rows out on purpose
+// (isSoloHardPermissionFailEligible), and the server block that was supposed to cover them
+// queried the wrong collection and matched zero documents on every run it ever made. A
+// group participant could revoke permissions, stop being enforced, and still settle as a
+// winner.
+//
+// WHY THIS IS A SEPARATE PASS, not a branch inside runPermissionViolationCheck: that loop
+// skips any marker carrying `capturedAt`, and it stamps `capturedAt` UNCONDITIONALLY at the
+// end of every user it processes — including users for whom nothing was captured, which is
+// every group-only participant the dead block "handled". Those markers are already
+// poisoned in production. Reading `capturedAt` here would therefore skip exactly the users
+// this function exists to reach. It has its OWN handled-stamp (`groupForfeitAt`) and never
+// consults `capturedAt`, so a poisoned marker is still fully actionable and the solo path
+// keeps its own semantics untouched.
+//
+// The SIGNAL is the same `permissionLostAt` the client already writes — the same event, so
+// minting a parallel client-written timestamp would only add drift.
+//
+// Money safety:
+//  - Every forfeit goes through forfeitParticipant, so the capture gate (invariant #1/#6),
+//    the terminal-status guard, the settleLockAt fence (#28) and the transactional merge
+//    all apply exactly as they do to a self-quit. Nothing captures Stripe directly here.
+//  - Group buy-ins are captured at start, so the PI is normally already "succeeded":
+//    forfeiting collects nothing new, it moves the stake into the pot. A PI that cannot be
+//    collected makes forfeitParticipant throw and the participant stays ACTIVE — never a
+//    forfeit for money we do not hold.
+//  - The handled-stamp is written ONLY when every group this user is in was forfeited
+//    cleanly. A refusal (capture_failed / settlement_in_progress) leaves the marker
+//    unstamped so the next hourly pass retries, rather than recording "done" for a stake
+//    that was never collected.
+//  - A user with NO active groups is deliberately left unstamped too, so someone who joins
+//    a group later while still permission-less is still caught.
+//
+// Gated on config/app.groupChallengeEnabled, so it is inert until groups launch; a config
+// read failure ⇒ DISABLED, the same money-safe inversion of the fail-OPEN AppConfig
+// contract the other unattended money paths use (invariant #24 does not apply here).
+//
+// The group lookup is `array-contains` on participantUserIds with the status filter applied
+// in memory: array-contains combined with an equality filter would need a composite index,
+// and the per-user result set is a handful of docs. Same equality-only-plus-in-memory shape
+// as the auto-start and settlement schedulers.
+
+interface GroupForfeitTally {
+  enabled: boolean;
+  candidates: number;
+  forfeited: number;
+  refused: number;
+  skipped: number;
+  stamped: number;
+}
+
+async function runGroupPermissionForfeit(): Promise<GroupForfeitTally> {
+  const db = admin.firestore();
+  const now = Date.now();
+  const tally: GroupForfeitTally = {
+    enabled: false, candidates: 0, forfeited: 0, refused: 0, skipped: 0, stamped: 0,
+  };
+
+  try {
+    const cfg = await db.collection("config").doc("app").get();
+    tally.enabled = (cfg.data() ?? {})["groupChallengeEnabled"] === true;
+  } catch (e) {
+    functions.logger.error("groupPermissionForfeit: config/app read failed → DISABLED (fail-safe)", e);
+    tally.enabled = false;
+  }
+  if (!tally.enabled) {
+    functions.logger.info("groupPermissionForfeit: disabled (groupChallengeEnabled !== true) — no-op");
+    return tally;
+  }
+
+  let markers: admin.firestore.QueryDocumentSnapshot[] = [];
+  try {
+    const snap = await db
+      .collectionGroup("permissionStatus")
+      .where("permissionLostAt", "!=", null)
+      .get();
+    markers = snap.docs;
+  } catch (e) {
+    functions.logger.error("groupPermissionForfeit: permissionLostAt query failed — bailing this run", e);
+    return tally;
+  }
+
+  for (const marker of markers) {
+    const data = marker.data();
+    const lostAt: number = data["permissionLostAt"];
+
+    if (!lostAt || (now - lostAt) < MILLIS_PER_DAY) { tally.skipped++; continue; }
+    if (data["permissionRestoredAt"]) { tally.skipped++; continue; }
+    // `capturedAt` is DELIBERATELY not consulted — see the header. This pass owns
+    // `groupForfeitAt` and nothing else.
+    if (data["groupForfeitAt"]) { tally.skipped++; continue; }
+
+    const userId = marker.ref.parent.parent!.id;
+    tally.candidates++;
+
+    let groups: admin.firestore.QueryDocumentSnapshot[] = [];
+    try {
+      const snap = await db
+        .collection("groupChallenges")
+        .where("participantUserIds", "array-contains", userId)
+        .get();
+      groups = snap.docs.filter((g) => g.data()["status"] === "active");
+    } catch (e) {
+      // Cannot enumerate this user's groups → leave the marker unstamped and retry.
+      functions.logger.error("groupPermissionForfeit: group lookup failed — retrying next run", { userId, error: e });
+      continue;
+    }
+
+    let allHandled = groups.length > 0;
+    for (const g of groups) {
+      try {
+        const result = await forfeitParticipant(g.id, userId, "permission_violation");
+        tally.forfeited++;
+        functions.logger.info("groupPermissionForfeit: participant forfeited", {
+          groupId: g.id, userId, hoursWithoutPermission: Math.floor((now - lostAt) / HOUR_MS), result,
+        });
+      } catch (e) {
+        // Capture gate / fence / terminal state refused. The participant stays ACTIVE and
+        // the marker stays unstamped, so the next pass retries.
+        allHandled = false;
+        tally.refused++;
+        functions.logger.warn("groupPermissionForfeit: forfeit refused — participant stays active, retrying next run", {
+          groupId: g.id, userId, error: e,
+        });
+      }
+    }
+
+    if (allHandled) {
+      try {
+        await marker.ref.update({ groupForfeitAt: now, groupForfeitReason: "permission_loss_24h" });
+        tally.stamped++;
+      } catch (e) {
+        functions.logger.error("groupPermissionForfeit: handled-stamp write failed — will re-run", { userId, error: e });
+      }
+    }
+  }
+
+  return tally;
+}
+
 async function runPermissionViolationCheck(): Promise<number> {
   const now = Date.now();
   const twentyFourHours = MILLIS_PER_DAY;
@@ -2839,35 +2981,15 @@ async function runPermissionViolationCheck(): Promise<number> {
       }
     }
 
-    // Group Challenge participants
-    let groupDocs: admin.firestore.QueryDocumentSnapshot[] = [];
-    try {
-      const groups = await db.collectionGroup("participants")
-        .where("userId", "==", userId)
-        .where("status", "==", "active")
-        .get();
-      groupDocs = groups.docs;
-    } catch (e) {
-      // A failed participants query must not abort the run — log and skip group
-      // captures for this user; the solo capture above already ran.
-      functions.logger.error(`checkPermissionViolations: participants query failed for user ${userId}`, e);
-    }
-
-    for (const participant of groupDocs) {
-      const pd = participant.data();
-      if (!pd["paymentIntentId"]) continue;
-      try {
-        await getStripe().paymentIntents.capture(pd["paymentIntentId"]);
-        await participant.ref.update({
-          status: "failed",
-          failReason: "permission_violation",
-          failedAt: now,
-        });
-        functions.logger.info(`checkPermissionViolations: captured group participant user ${userId}`);
-      } catch (e) {
-        functions.logger.error(`checkPermissionViolations: group capture failed`, e);
-      }
-    }
+    // Group participants are NOT handled here — see runGroupPermissionForfeit, which runs
+    // as its own pass with its own handled-stamp. The block that used to sit here queried
+    // collectionGroup("participants") on userId + status, but those fields do not exist on
+    // the documents it reached: that sub-collection holds client-written leaderboard stats
+    // (firestore.rules whitelists only counters and day stamps), while participant identity,
+    // money and status live in the CF-only array on the parent groupChallenges doc. It
+    // matched zero documents on every run since it was written, and it captured Stripe
+    // directly — bypassing the settleLockAt fence and the transactional merge. Removed
+    // rather than repaired: the replacement routes through forfeitParticipant.
 
     // Mark as captured — Admin SDK only field, enforced by Firestore rules on client
     await doc.ref.update({ capturedAt: now, captureReason: "permission_loss_24h" });
@@ -2930,6 +3052,18 @@ async function runPermissionViolationCheck(): Promise<number> {
 
     await doc.ref.update({ usageCapturedAt: now, captureReason: "usage_violation_1h" });
     processed++;
+  }
+
+  // ── Group participants (B5) ────────────────────────────────────────────────
+  // Runs as its own pass so it can reach markers the solo loop has already stamped
+  // `capturedAt` on — see runGroupPermissionForfeit. Isolated in try/catch and kept out of
+  // `processed`: the solo passes above must never be affected by a group-side failure, and
+  // the return contract of this function is unchanged.
+  try {
+    const groupTally = await runGroupPermissionForfeit();
+    functions.logger.info(`groupPermissionForfeit: ${JSON.stringify(groupTally)}`);
+  } catch (e) {
+    functions.logger.error("groupPermissionForfeit: pass threw — solo results are unaffected", e);
   }
 
   return processed;

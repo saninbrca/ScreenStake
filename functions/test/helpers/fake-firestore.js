@@ -54,6 +54,10 @@ class DocRef {
   collection(name) {
     return new CollRef(this.db, `${this.path}/${name}`);
   }
+  /** The collection this document lives in — `ref.parent.parent.id` yields the owning uid. */
+  get parent() {
+    return new CollRef(this.db, this.path.split("/").slice(0, -1).join("/"));
+  }
   _snap() {
     const data = this.db.store.get(this.path);
     return {
@@ -88,37 +92,65 @@ class DocRef {
   }
 }
 
-/** Equality-only query — the single shape the schedulers use (`where(f, "==", v)`). */
+/** Supports the operators the CFs actually use: "==", "!=", "array-contains". */
+function matches(data, [field, op, value]) {
+  const actual = data[field];
+  if (op === "==") return actual === value;
+  // Firestore's `!= null` means "the field exists and is not null".
+  if (op === "!=") return actual !== undefined && actual !== value;
+  if (op === "array-contains") return Array.isArray(actual) && actual.includes(value);
+  throw new Error(`fake-firestore: unsupported operator "${op}"`);
+}
+
 class Query {
-  constructor(db, path, filters) {
+  /** scope "collection" = direct children of `path`; "group" = any collection named `path`. */
+  constructor(db, path, filters, scope) {
     this.db = db;
     this.path = path;
     this.filters = filters;
+    this.scope = scope || "collection";
   }
   where(field, op, value) {
-    if (op !== "==") throw new Error(`fake-firestore: only "==" is supported, got "${op}"`);
-    return new Query(this.db, this.path, [...this.filters, [field, value]]);
+    return new Query(this.db, this.path, [...this.filters, [field, op, value]], this.scope);
+  }
+  _inScope(docPath) {
+    if (this.scope === "group") {
+      // ".../<name>/<docId>" — the collection segment must be the path's second-to-last.
+      const parts = docPath.split("/");
+      return parts.length >= 2 && parts[parts.length - 2] === this.path;
+    }
+    const prefix = `${this.path}/`;
+    // Direct children only — a further "/" means it belongs to a sub-collection.
+    return docPath.startsWith(prefix) && !docPath.slice(prefix.length).includes("/");
   }
   async get() {
-    const prefix = `${this.path}/`;
     const docs = [];
     for (const [p, data] of this.db.store) {
-      // Direct children only — a path with a further "/" belongs to a sub-collection.
-      if (!p.startsWith(prefix) || p.slice(prefix.length).includes("/")) continue;
-      if (!this.filters.every(([f, v]) => data[f] === v)) continue;
+      if (!this._inScope(p)) continue;
+      if (!this.filters.every((f) => matches(data, f))) continue;
       docs.push(new DocRef(this.db, p)._snap());
     }
-    this.db.log.push({ op: "query", path: this.path, filters: this.filters, hits: docs.length });
+    this.db.log.push({
+      op: this.scope === "group" ? "collectionGroup" : "query",
+      path: this.path,
+      filters: this.filters,
+      hits: docs.length,
+    });
     return { docs, empty: docs.length === 0, size: docs.length };
   }
 }
 
 class CollRef extends Query {
   constructor(db, path) {
-    super(db, path, []);
+    super(db, path, [], "collection");
   }
   doc(id) {
     return new DocRef(this.db, `${this.path}/${id}`);
+  }
+  /** The document this collection hangs off, or null for a root collection. */
+  get parent() {
+    const parts = this.path.split("/");
+    return parts.length < 2 ? null : new DocRef(this.db, parts.slice(0, -1).join("/"));
   }
 }
 
@@ -132,6 +164,9 @@ class FakeFirestore {
   }
   collection(name) {
     return new CollRef(this, name);
+  }
+  collectionGroup(name) {
+    return new Query(this, name, [], "group");
   }
   async runTransaction(fn) {
     this.txCount += 1;

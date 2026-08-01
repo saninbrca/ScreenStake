@@ -24,7 +24,11 @@ const { FakeFirestore, FV } = require("./fake-firestore");
 const { facade: stripeFacade } = require("./fake-stripe");
 
 const LIB = path.join(__dirname, "..", "..", "lib", "index.js");
-const TESTABLE = path.join(__dirname, "..", "..", "lib", "index.__testable__.js");
+// PER-PROCESS filename. `node --test` runs each test FILE in its own process, and every one
+// of them generates this artifact at load time — a single shared path is a write race where
+// one process can require() a half-written file (it shows up as a whole test file
+// mysteriously failing to load, and a test count that changes between runs).
+const TESTABLE = path.join(__dirname, "..", "..", "lib", `index.__testable__.${process.pid}.js`);
 
 /** Live Firestore double; swapped per test via `setDb`. */
 let db = new FakeFirestore();
@@ -93,6 +97,7 @@ function install() {
     "runGroupChallengeSettlement",
     "runDueGroupChallengeSettlement",
     "forfeitParticipant",
+    "runGroupPermissionForfeit",
   ]) {
     if (!new RegExp(`\\basync function ${name}\\b`).test(src)) {
       throw new Error(
@@ -104,15 +109,18 @@ function install() {
   fs.writeFileSync(
     TESTABLE,
     src +
-      "\nmodule.exports.__testonly__ = { runGroupChallengeSettlement, runDueGroupChallengeSettlement, forfeitParticipant };\n",
+      "\nmodule.exports.__testonly__ = { runGroupChallengeSettlement, runDueGroupChallengeSettlement, forfeitParticipant, runGroupPermissionForfeit };\n",
     "utf8"
   );
 
   const mod = require(TESTABLE);
+  // The artifact has been loaded into this process; nothing else needs it on disk.
+  process.on("exit", () => { try { fs.unlinkSync(TESTABLE); } catch { /* best effort */ } });
   return {
     runGroupChallengeSettlement: mod.__testonly__.runGroupChallengeSettlement,
     runDueGroupChallengeSettlement: mod.__testonly__.runDueGroupChallengeSettlement,
     forfeitParticipant: mod.__testonly__.forfeitParticipant,
+    runGroupPermissionForfeit: mod.__testonly__.runGroupPermissionForfeit,
     logs,
   };
 }
@@ -123,6 +131,7 @@ module.exports = {
   runGroupChallengeSettlement: loaded.runGroupChallengeSettlement,
   runDueGroupChallengeSettlement: loaded.runDueGroupChallengeSettlement,
   forfeitParticipant: loaded.forfeitParticipant,
+  runGroupPermissionForfeit: loaded.runGroupPermissionForfeit,
   fnLogs: loaded.logs,
   setDb,
 };

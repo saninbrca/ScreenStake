@@ -89,7 +89,11 @@ function install() {
     throw new Error(`${LIB} missing — run \`npm run build\` first (npm test does this).`);
   }
   const src = fs.readFileSync(LIB, "utf8");
-  for (const name of ["runGroupChallengeSettlement", "runDueGroupChallengeSettlement"]) {
+  for (const name of [
+    "runGroupChallengeSettlement",
+    "runDueGroupChallengeSettlement",
+    "forfeitParticipant",
+  ]) {
     if (!new RegExp(`\\basync function ${name}\\b`).test(src)) {
       throw new Error(
         `${name} not found in the build output — it changed shape; ` +
@@ -100,7 +104,7 @@ function install() {
   fs.writeFileSync(
     TESTABLE,
     src +
-      "\nmodule.exports.__testonly__ = { runGroupChallengeSettlement, runDueGroupChallengeSettlement };\n",
+      "\nmodule.exports.__testonly__ = { runGroupChallengeSettlement, runDueGroupChallengeSettlement, forfeitParticipant };\n",
     "utf8"
   );
 
@@ -108,6 +112,7 @@ function install() {
   return {
     runGroupChallengeSettlement: mod.__testonly__.runGroupChallengeSettlement,
     runDueGroupChallengeSettlement: mod.__testonly__.runDueGroupChallengeSettlement,
+    forfeitParticipant: mod.__testonly__.forfeitParticipant,
     logs,
   };
 }
@@ -117,6 +122,7 @@ const loaded = install();
 module.exports = {
   runGroupChallengeSettlement: loaded.runGroupChallengeSettlement,
   runDueGroupChallengeSettlement: loaded.runDueGroupChallengeSettlement,
+  forfeitParticipant: loaded.forfeitParticipant,
   fnLogs: loaded.logs,
   setDb,
 };

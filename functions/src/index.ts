@@ -1242,6 +1242,148 @@ export const cancelGroupChallenge = functions.runWith({ maxInstances: 10 }).regi
   } catch (e) { handleError("cancelGroupChallenge", e, res); }
 });
 
+// ── forfeitParticipant ─────────────────────────────────────────────────────────
+// The forfeit sequence, lifted out of the failParticipant HTTP handler so a caller
+// without a self-present user can run it. Same split as runGroupChallengeStart /
+// startGroupChallenge and runGroupChallengeSettlement / completeGroupChallenge: the body
+// owns everything money-side — the terminal-status guard, the settleLockAt fence, the
+// capture gate (including the already-captured-at-start case) and the transactional
+// participant merge — and returns the exact JSON body the handler used to write.
+//
+// Caller-dependent checks (requireAuth, enforceRateLimit, and the "you can only fail
+// yourself" self-check) stayed in the handler — exactly the parts a server-initiated
+// forfeit has no answer for. Nothing inside the moved body ever referenced the caller:
+// `verifiedUserId` appeared only in those three places, and everything past the
+// self-check ran on `failedUserId`, which is now simply the `userId` parameter.
+//
+// Both exits are HTTP 200 today, so the returned object IS the response payload; every
+// refusal still throws HttpError with its machine-readable code (capture_failed,
+// capture_not_possible, challenge_settled, settlement_in_progress) and is replayed by the
+// handler's handleError. That is what keeps the client's capture-failure copy
+// (group_quit_capture_failed) working unchanged.
+//
+// This is a MOVE, not a rewrite: invariant #1 (the Stripe capture precedes the Firestore
+// status write) and #28 (the merge runs in a transaction, Stripe stays outside it) are
+// relocated, never reordered.
+//
+// `reason` is DIAGNOSTIC ONLY in this step — it is logged, never persisted. The
+// participants array has no failReason field (see the Participant interface) and the
+// merge below writes only `status` and `failedAt`, exactly as before. Step 7 owns the
+// decision of whether a server-initiated forfeit should also persist its reason; adding
+// the field here would not be the zero-behaviour-change extraction this step is meant to be.
+async function forfeitParticipant(
+  groupId: string,
+  userId: string,
+  reason: string,
+): Promise<Record<string, unknown>> {
+  const db = admin.firestore();
+  const docRef = db.collection("groupChallenges").doc(groupId);
+  const doc = await docRef.get();
+  if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
+
+  const gc = doc.data()!;
+  const participants = parseParticipants(gc["participants"]);
+
+  const failedParticipant = participants.find((p) => p["userId"] === userId);
+  if (!failedParticipant) throw new HttpError(404, "You are not a participant of this challenge.");
+
+  // Idempotency: a previous run already captured the stake and wrote the status.
+  if (failedParticipant["status"] === "failed") {
+    functions.logger.info("failParticipant: already failed (idempotent)", { groupId, userId });
+    return { success: true, alreadyFailed: true };
+  }
+
+  // Settlement fence + terminal-state guard, BEFORE any Stripe capture: never
+  // collect a stake for a challenge that is settled/cancelled or that
+  // completeGroupChallenge is settling right now — its fenced snapshot has
+  // already classified winners/losers, and a capture landing underneath it is
+  // the fail-vs-settle conflict. 409 is retryable-after; the lock is TTL-bounded.
+  const gcStatus = gc["status"] as string;
+  if (gcStatus === "completed" || gcStatus === "cancelled") {
+    throw new HttpError(409, "challenge_settled");
+  }
+  if (isSettleLockFresh(gc["settleLockAt"])) {
+    throw new HttpError(409, "settlement_in_progress");
+  }
+
+  // ── CAPTURE GATE (invariants #1 / #6) ──────────────────────────────────────
+  // The status write below runs ONLY after the stake is confirmed captured. Every
+  // non-captured outcome throws, leaving the participant "active" and returning a
+  // machine-readable error code. NEVER write "failed" for money we did not collect:
+  // completeGroupChallenge sums a failed participant's amountCents into failedPot
+  // and pays it to the winners via transfers.create — an uncaptured forfeit would
+  // pay out cash that was never taken in.
+  const paymentIntentId = failedParticipant["paymentIntentId"] as string | undefined;
+  if (paymentIntentId) {
+    let pi: Stripe.PaymentIntent;
+    try {
+      pi = await getStripe().paymentIntents.retrieve(paymentIntentId);
+    } catch (e) {
+      functions.logger.error("failParticipant: PI retrieve failed — participant stays active", { groupId, userId, error: e });
+      throw new HttpError(502, "capture_failed");
+    }
+
+    if (pi.status === "requires_capture") {
+      let captured: Stripe.PaymentIntent;
+      try {
+        captured = await getStripe().paymentIntents.capture(pi.id);
+      } catch (e) {
+        functions.logger.error("failParticipant: capture failed — participant stays active", { groupId, userId, error: e });
+        throw new HttpError(502, "capture_failed");
+      }
+      if (captured.status !== "succeeded") {
+        functions.logger.error("failParticipant: capture returned a non-succeeded status — participant stays active", { groupId, userId, piStatus: captured.status });
+        throw new HttpError(502, "capture_failed");
+      }
+      functions.logger.info("failParticipant: payment captured", { groupId, userId });
+    } else if (pi.status === "succeeded") {
+      // PI was already captured when creator started the challenge — stake is collected.
+      functions.logger.info("failParticipant: PI already captured at challenge start, skipping", { groupId, userId });
+    } else {
+      // canceled / requires_payment_method / processing / … — nothing is collected and
+      // nothing can be collected now. Refuse rather than forfeit an uncollected stake.
+      functions.logger.error("failParticipant: PI not capturable — participant stays active", { groupId, userId, piStatus: pi.status });
+      throw new HttpError(409, "capture_not_possible");
+    }
+  } else {
+    // PI-less legacy participant: there is no stake to collect, so there is nothing to
+    // gate on. This is the one documented no-capture "failed" write (invariant #6).
+    functions.logger.warn("failParticipant: participant has no paymentIntentId — failing without capture (legacy)", { groupId, userId });
+  }
+
+  // Reached only on a confirmed capture (or the PI-less legacy case above).
+  // Transactional merge onto the FRESH array: the old in-memory full replacement
+  // erased any write that landed during the Stripe capture — e.g. a concurrent
+  // self-fail of ANOTHER participant, or a settlement finishing underneath us.
+  const verdict = await db.runTransaction(async (tx) => {
+    const freshDoc = await tx.get(docRef);
+    if (!freshDoc.exists) throw new HttpError(404, "Group challenge not found.");
+    const freshParticipants = parseParticipants(freshDoc.data()!["participants"]);
+    const mine = freshParticipants.find((p) => p["userId"] === userId);
+    if (!mine) return "missing" as const;
+    if (mine["status"] === "failed") return "already" as const;
+    if (mine["status"] !== "active") return "settled" as const;
+    const merged = freshParticipants.map((p) =>
+      p["userId"] === userId ? { ...p, status: "failed", failedAt: Date.now() } : p
+    );
+    tx.update(docRef, { participants: merged });
+    return "failed" as const;
+  });
+
+  if (verdict === "settled" || verdict === "missing") {
+    // Photo finish: the stake WAS captured above, but settlement (or another
+    // writer) already recorded a different outcome for this participant. Do not
+    // overwrite that record — log the conflict for manual correction instead.
+    functions.logger.error(
+      "failParticipant: FAIL-VS-SETTLE CONFLICT — stake captured but participant record already settled; not overwritten, manual review required",
+      { groupId, userId, verdict, conflict: "fail_vs_settle", reason }
+    );
+  } else {
+    functions.logger.info("failParticipant: participant failed", { groupId, userId, verdict, reason });
+  }
+  return { success: true };
+}
+
 // ── failParticipant ────────────────────────────────────────────────────────────
 
 export const failParticipant = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
@@ -1252,113 +1394,7 @@ export const failParticipant = functions.runWith({ maxInstances: 10 }).region(RE
     if (!groupId || !failedUserId) throw new HttpError(400, "groupId and userId are required.");
     if (verifiedUserId !== failedUserId) throw new HttpError(403, "You can only fail yourself.");
 
-    const db = admin.firestore();
-    const docRef = db.collection("groupChallenges").doc(groupId);
-    const doc = await docRef.get();
-    if (!doc.exists) throw new HttpError(404, "Group challenge not found.");
-
-    const gc = doc.data()!;
-    const participants = parseParticipants(gc["participants"]);
-
-    const failedParticipant = participants.find((p) => p["userId"] === failedUserId);
-    if (!failedParticipant) throw new HttpError(404, "You are not a participant of this challenge.");
-
-    // Idempotency: a previous run already captured the stake and wrote the status.
-    if (failedParticipant["status"] === "failed") {
-      functions.logger.info("failParticipant: already failed (idempotent)", { groupId, userId: failedUserId });
-      res.json({ success: true, alreadyFailed: true });
-      return;
-    }
-
-    // Settlement fence + terminal-state guard, BEFORE any Stripe capture: never
-    // collect a stake for a challenge that is settled/cancelled or that
-    // completeGroupChallenge is settling right now — its fenced snapshot has
-    // already classified winners/losers, and a capture landing underneath it is
-    // the fail-vs-settle conflict. 409 is retryable-after; the lock is TTL-bounded.
-    const gcStatus = gc["status"] as string;
-    if (gcStatus === "completed" || gcStatus === "cancelled") {
-      throw new HttpError(409, "challenge_settled");
-    }
-    if (isSettleLockFresh(gc["settleLockAt"])) {
-      throw new HttpError(409, "settlement_in_progress");
-    }
-
-    // ── CAPTURE GATE (invariants #1 / #6) ──────────────────────────────────────
-    // The status write below runs ONLY after the stake is confirmed captured. Every
-    // non-captured outcome throws, leaving the participant "active" and returning a
-    // machine-readable error code. NEVER write "failed" for money we did not collect:
-    // completeGroupChallenge sums a failed participant's amountCents into failedPot
-    // and pays it to the winners via transfers.create — an uncaptured forfeit would
-    // pay out cash that was never taken in.
-    const paymentIntentId = failedParticipant["paymentIntentId"] as string | undefined;
-    if (paymentIntentId) {
-      let pi: Stripe.PaymentIntent;
-      try {
-        pi = await getStripe().paymentIntents.retrieve(paymentIntentId);
-      } catch (e) {
-        functions.logger.error("failParticipant: PI retrieve failed — participant stays active", { groupId, userId: failedUserId, error: e });
-        throw new HttpError(502, "capture_failed");
-      }
-
-      if (pi.status === "requires_capture") {
-        let captured: Stripe.PaymentIntent;
-        try {
-          captured = await getStripe().paymentIntents.capture(pi.id);
-        } catch (e) {
-          functions.logger.error("failParticipant: capture failed — participant stays active", { groupId, userId: failedUserId, error: e });
-          throw new HttpError(502, "capture_failed");
-        }
-        if (captured.status !== "succeeded") {
-          functions.logger.error("failParticipant: capture returned a non-succeeded status — participant stays active", { groupId, userId: failedUserId, piStatus: captured.status });
-          throw new HttpError(502, "capture_failed");
-        }
-        functions.logger.info("failParticipant: payment captured", { groupId, userId: failedUserId });
-      } else if (pi.status === "succeeded") {
-        // PI was already captured when creator started the challenge — stake is collected.
-        functions.logger.info("failParticipant: PI already captured at challenge start, skipping", { groupId, userId: failedUserId });
-      } else {
-        // canceled / requires_payment_method / processing / … — nothing is collected and
-        // nothing can be collected now. Refuse rather than forfeit an uncollected stake.
-        functions.logger.error("failParticipant: PI not capturable — participant stays active", { groupId, userId: failedUserId, piStatus: pi.status });
-        throw new HttpError(409, "capture_not_possible");
-      }
-    } else {
-      // PI-less legacy participant: there is no stake to collect, so there is nothing to
-      // gate on. This is the one documented no-capture "failed" write (invariant #6).
-      functions.logger.warn("failParticipant: participant has no paymentIntentId — failing without capture (legacy)", { groupId, userId: failedUserId });
-    }
-
-    // Reached only on a confirmed capture (or the PI-less legacy case above).
-    // Transactional merge onto the FRESH array: the old in-memory full replacement
-    // erased any write that landed during the Stripe capture — e.g. a concurrent
-    // self-fail of ANOTHER participant, or a settlement finishing underneath us.
-    const verdict = await db.runTransaction(async (tx) => {
-      const freshDoc = await tx.get(docRef);
-      if (!freshDoc.exists) throw new HttpError(404, "Group challenge not found.");
-      const freshParticipants = parseParticipants(freshDoc.data()!["participants"]);
-      const mine = freshParticipants.find((p) => p["userId"] === failedUserId);
-      if (!mine) return "missing" as const;
-      if (mine["status"] === "failed") return "already" as const;
-      if (mine["status"] !== "active") return "settled" as const;
-      const merged = freshParticipants.map((p) =>
-        p["userId"] === failedUserId ? { ...p, status: "failed", failedAt: Date.now() } : p
-      );
-      tx.update(docRef, { participants: merged });
-      return "failed" as const;
-    });
-
-    if (verdict === "settled" || verdict === "missing") {
-      // Photo finish: the stake WAS captured above, but settlement (or another
-      // writer) already recorded a different outcome for this participant. Do not
-      // overwrite that record — log the conflict for manual correction instead.
-      functions.logger.error(
-        "failParticipant: FAIL-VS-SETTLE CONFLICT — stake captured but participant record already settled; not overwritten, manual review required",
-        { groupId, userId: failedUserId, verdict, conflict: "fail_vs_settle" }
-      );
-    } else {
-      functions.logger.info("failParticipant: participant failed", { groupId, userId: failedUserId, verdict });
-    }
-    res.json({ success: true });
+    res.json(await forfeitParticipant(groupId, verifiedUserId, "self_quit"));
   } catch (e) { handleError("failParticipant", e, res); }
 });
 

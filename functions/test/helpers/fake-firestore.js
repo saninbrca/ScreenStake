@@ -88,10 +88,34 @@ class DocRef {
   }
 }
 
-class CollRef {
-  constructor(db, path) {
+/** Equality-only query — the single shape the schedulers use (`where(f, "==", v)`). */
+class Query {
+  constructor(db, path, filters) {
     this.db = db;
     this.path = path;
+    this.filters = filters;
+  }
+  where(field, op, value) {
+    if (op !== "==") throw new Error(`fake-firestore: only "==" is supported, got "${op}"`);
+    return new Query(this.db, this.path, [...this.filters, [field, value]]);
+  }
+  async get() {
+    const prefix = `${this.path}/`;
+    const docs = [];
+    for (const [p, data] of this.db.store) {
+      // Direct children only — a path with a further "/" belongs to a sub-collection.
+      if (!p.startsWith(prefix) || p.slice(prefix.length).includes("/")) continue;
+      if (!this.filters.every(([f, v]) => data[f] === v)) continue;
+      docs.push(new DocRef(this.db, p)._snap());
+    }
+    this.db.log.push({ op: "query", path: this.path, filters: this.filters, hits: docs.length });
+    return { docs, empty: docs.length === 0, size: docs.length };
+  }
+}
+
+class CollRef extends Query {
+  constructor(db, path) {
+    super(db, path, []);
   }
   doc(id) {
     return new DocRef(this.db, `${this.path}/${id}`);

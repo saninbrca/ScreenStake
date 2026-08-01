@@ -89,26 +89,34 @@ function install() {
     throw new Error(`${LIB} missing — run \`npm run build\` first (npm test does this).`);
   }
   const src = fs.readFileSync(LIB, "utf8");
-  if (!/\basync function runGroupChallengeSettlement\b/.test(src)) {
-    throw new Error(
-      "runGroupChallengeSettlement not found in the build output — the extraction changed shape; " +
-        "update test/helpers/load.js before trusting these tests."
-    );
+  for (const name of ["runGroupChallengeSettlement", "runDueGroupChallengeSettlement"]) {
+    if (!new RegExp(`\\basync function ${name}\\b`).test(src)) {
+      throw new Error(
+        `${name} not found in the build output — it changed shape; ` +
+          "update test/helpers/load.js before trusting these tests."
+      );
+    }
   }
   fs.writeFileSync(
     TESTABLE,
-    src + "\nmodule.exports.__testonly__ = { runGroupChallengeSettlement };\n",
+    src +
+      "\nmodule.exports.__testonly__ = { runGroupChallengeSettlement, runDueGroupChallengeSettlement };\n",
     "utf8"
   );
 
   const mod = require(TESTABLE);
-  return { runGroupChallengeSettlement: mod.__testonly__.runGroupChallengeSettlement, logs };
+  return {
+    runGroupChallengeSettlement: mod.__testonly__.runGroupChallengeSettlement,
+    runDueGroupChallengeSettlement: mod.__testonly__.runDueGroupChallengeSettlement,
+    logs,
+  };
 }
 
 const loaded = install();
 
 module.exports = {
   runGroupChallengeSettlement: loaded.runGroupChallengeSettlement,
+  runDueGroupChallengeSettlement: loaded.runDueGroupChallengeSettlement,
   fnLogs: loaded.logs,
   setDb,
 };

@@ -2222,6 +2222,166 @@ export const completeGroupChallenge = functions.runWith({ maxInstances: 10 }).re
   } catch (e) { handleError("completeGroupChallenge", e, res); }
 });
 
+// ── scheduledGroupChallengeSettlement ─────────────────────────────────────────
+// The settlement twin of scheduledGroupChallengeAutoStart. Settles DUE group challenges
+// server-side, independently of any device.
+//
+// The gap this closes: buy-ins are captured for EVERY participant at start
+// (runGroupChallengeStart), but completeGroupChallenge is onRequest-only and driven by
+// three device paths (DailyEvaluationWorker, MainActivity, PermissionCheckWorker). Worse,
+// each of those iterates the LOCAL shadow row, and that row is deleted the moment the
+// participant fails — so a loser's device stops driving settlement entirely. If the
+// remaining devices are quiet after endDate, the captured stakes are simply stranded:
+// money taken, nothing returned, indefinitely. On Huawei with no Play Services that is a
+// realistic path, not a corner case.
+//
+// Shape mirrors runDueGroupChallengeAutoStart exactly: an internal handler run by a pubsub
+// schedule, reading its arm state from config/app. Deliberately NO onRequest twin — this
+// path moves money unattended and every extra entry point is extra surface. Deliberately
+// NO enforceRateLimit: it keys on a verified uid and there is none here. NO client input
+// of any kind reaches it, which is invariant #2 at its strongest — every amount is
+// re-derived from the stored doc inside the body.
+//
+// MONEY-SAFE BY DEFAULT — three states, same two-flag pattern as
+// runDueChallengeReconciliation:
+//   groupSettlementEnabled !== true            → DISABLED (default, and on ANY config
+//                                                read failure). Returns before querying.
+//   enabled + groupSettlementDryRun !== false  → DRY-RUN (default once enabled). Logs
+//                                                what it WOULD settle and calls nothing.
+//   enabled + groupSettlementDryRun === false  → LIVE.
+// A missing or unreadable config must never be read as consent to move money — the
+// deliberate inversion of the user-facing fail-OPEN AppConfig contract (invariant #24
+// does not apply to money paths).
+//
+// DUE-NESS: `expired || allFailed`, computed per doc, mirroring the body's own gate. The
+// query is equality-only on status, so no composite index is required — and the endDate
+// range filter is deliberately NOT used: allFailed settles a group BEFORE endDate, so a
+// `where("endDate","<=",now)` would never find a group whose participants all forfeited
+// early, stranding exactly the captured stakes this function exists to release. Same
+// reasoning that made runDueChallengeReconciliation drop its own endDate filter.
+//
+// Only status == "active" is selected. "waiting" groups still hold UNCAPTURED
+// authorizations (settling one would be meaningless), and "completed"/"cancelled" are
+// terminal — the status filter is what keeps this function off both.
+//
+// CONCURRENCY — this is the second settlement caller, alongside the device path. They
+// cannot double-pay, and the serialisation is the body's, not this function's:
+//   - The settleLockAt fence is a runTransaction that re-reads AND stamps in one step, so
+//     Firestore's optimistic concurrency lets exactly one caller through; the loser
+//     re-reads on retry, sees the fresh stamp and returns settlement_in_progress BEFORE
+//     any Stripe call.
+//   - The lock cannot go stale mid-run: SETTLE_LOCK_TTL_MS is 15 min and a v1 function
+//     cannot run past 9 min, so "expired lock while its owner is still working" is
+//     unreachable rather than merely unlikely.
+//   - If it somehow were reached, the refund_/prize_ idempotency keys replay instead of
+//     paying twice, pendingPayouts.doc(groupId).create() rejects a duplicate ledger
+//     entry, commitSettlement re-reads and merges rather than blind-replacing, and
+//     isPaidWinner fails closed.
+// A run killed by the 60 s default timeout mid-loop is safe by the same mechanics: the
+// in-flight group's stamp is released by the TTL and retried on the next hourly pass;
+// groups already settled are terminal; untouched groups are simply picked up next time.
+//
+// Touches NO payout math, NO fence, NO idempotency key. It only decides WHICH groups the
+// existing body is invoked for.
+
+interface GroupSettlementTally {
+  enabled: boolean;
+  dryRun: boolean;
+  active: number;
+  due: number;
+  settled: number;
+  deferred: number;
+  skipped: number;
+  failed: number;
+}
+
+async function runDueGroupChallengeSettlement(): Promise<GroupSettlementTally> {
+  const db = admin.firestore();
+  const now = Date.now();
+
+  let enabled = false;
+  let dryRun = true;
+  try {
+    const cfg = await db.collection("config").doc("app").get();
+    const data = cfg.data() ?? {};
+    enabled = data["groupSettlementEnabled"] === true;  // default false
+    dryRun = data["groupSettlementDryRun"] !== false;   // default true — only an explicit false disarms
+  } catch (e) {
+    functions.logger.error("groupSettlement: config/app read failed → DISABLED + DRY-RUN (fail-safe)", e);
+    enabled = false;
+    dryRun = true;
+  }
+
+  const tally: GroupSettlementTally = {
+    enabled, dryRun, active: 0, due: 0, settled: 0, deferred: 0, skipped: 0, failed: 0,
+  };
+
+  if (!enabled) {
+    functions.logger.info("groupSettlement: disabled (groupSettlementEnabled !== true) — no-op");
+    return tally;
+  }
+
+  let docs: admin.firestore.QueryDocumentSnapshot[] = [];
+  try {
+    const snap = await db.collection("groupChallenges").where("status", "==", "active").get();
+    docs = snap.docs;
+  } catch (e) {
+    functions.logger.error("groupSettlement: active-challenge query failed — bailing this run", e);
+    return tally;
+  }
+  tally.active = docs.length;
+
+  for (const doc of docs) {
+    const groupId = doc.id;
+    const data = doc.data();
+
+    // Mirrors the body's own due-ness gate. Re-derived from the STORED doc against the
+    // server clock (invariant #2) — no client value is consulted anywhere here.
+    const participants = parseParticipants(data["participants"]);
+    const endDate = tsToMillis(data["endDate"]);
+    const expired = endDate > 0 && endDate <= now;
+    const allFailed = participants.length > 0 && participants.every((p) => p["status"] === "failed");
+
+    if (!expired && !allFailed) {
+      tally.skipped++;
+      continue;
+    }
+    tally.due++;
+
+    const reason = expired ? "expired" : "all_failed";
+    if (dryRun) {
+      functions.logger.info("groupSettlement: DRY-RUN — would settle", {
+        groupId, reason, participants: participants.length, endDate, now,
+      });
+      continue;
+    }
+
+    try {
+      const result = await runGroupChallengeSettlement(groupId);
+      if (result["success"] === true) {
+        tally.settled++;
+        functions.logger.info("groupSettlement: settled", { groupId, reason, result });
+      } else {
+        // The body declined (settlement_in_progress / not_expired) — never an error.
+        tally.deferred++;
+        functions.logger.info("groupSettlement: deferred by the body", { groupId, reason, result });
+      }
+    } catch (e) {
+      tally.failed++;
+      functions.logger.error("groupSettlement: settlement threw — left for the next run", { groupId, reason, error: e });
+    }
+  }
+
+  return tally;
+}
+
+export const scheduledGroupChallengeSettlement = functions.region(REGION)
+  .pubsub.schedule("every 1 hours")
+  .onRun(async () => {
+    const tally = await runDueGroupChallengeSettlement();
+    functions.logger.info(`scheduledGroupChallengeSettlement: ${JSON.stringify(tally)}`);
+  });
+
 // ── pendingPayouts claim protocol ─────────────────────────────────────────────
 // A pendingPayouts doc is the single ledger entry for one owed win. It is consumed
 // by EITHER Connect (claimPendingPayouts) OR manual SEPA (requestGroupPayout).

@@ -21,6 +21,58 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-08-02 — A group challenge that had ended kept blocking the app, offline
+
+**FIXED — enforcement had no local end, and the settled challenge then vanished from History.**
+Reported live: a group challenge that ended 1 Aug still showed the overlay and locked the user out
+of the monitored app at ~00:30 on 2 Aug, with no connectivity. It only cleared when the network came
+back and a Firestore sync ran — and then the challenge disappeared entirely instead of appearing in
+History.
+
+**Cause 1 — nothing on the enforcement path ever read `endDate`.** Blocking is decided purely by
+`status = 'active'` in Room (`ChallengeDao.getActiveChallengeForApp` → `CheckDailyLimitUseCase` →
+`OverlayManager.handleAppOpen`). The only exits from that state were `completeGroupChallenge`
+succeeding in `DailyEvaluationWorker` (which additionally carries a `NetworkType.CONNECTED`
+constraint, so offline it does not even run) or a sync reporting the group COMPLETED. Both need a
+server. Offline, the block was permanent.
+
+**Cause 2 — the shadow row was DELETED, not marked.** `GroupChallengeRepositoryImpl`'s global
+Firestore listener called `challengeDao.deleteById("group_<id>")` on COMPLETED/CANCELLED. History
+reads finished challenges from that table, so the record was simply gone. It also raced the three
+other paths (`refreshFromFirestore`, `FriendsHubViewModel`, `GroupChallengeDetailViewModel`), which
+all call `finishLocalGroupChallenge` and mark it instead — the delete was the odd one out.
+
+**Fix — a local, money-free enforcement end (`ChallengeStatus.ENDED`).**
+`EndExpiredGroupChallengesUseCase` moves a group shadow row past its end date out of `'active'`
+using `DateUtils.hasPassedEnd` (day-key based, and STRICTLY after the last day — settlement fires
+ON the final day via `hasReachedEnd`'s `>=`, but enforcement must cover that whole day). It runs
+from `OverlayManager.handleAppOpen` (before the challenge lookup, so the first app-open after
+midnight is already free), a 60 s sweep in `UsageTrackingService` (covers the website/adult
+blocklists and a plain midnight rollover), and `DashboardViewModel.loadStats`.
+
+**No money path was touched, and none had to be.** The only write is the Room `status` column via
+`endGroupChallengeLocally` — deliberately NOT `updateChallengeStatus`, which would fire a Firestore
+write and materialise a `users/{uid}/challenges/group_*` doc that must never exist (see
+`PermissionCheckWorker.isSoloHardPermissionFailEligible`). Settlement is unaffected because its
+triggers — `MainActivity.checkExpiredGroupChallenges` and
+`PermissionCheckWorker.checkExpiredGroupChallenges` — iterate the `group_challenges` table and its
+`GroupChallengeStatus`, **not** the shadow row. `finishLocalGroupChallenge` overwrites ENDED with
+the real outcome once settlement lands.
+
+**History — mark, never delete.** All four `deleteById` sites (settled, cancelled, and the two
+forfeit paths) now mark the row terminal, and `getFinishedSoloChallenges` includes `'ended'`. Two
+consequences had to be handled with it: the unshown win/loss dialog queries gained a
+`groupChallengeId IS NULL` clause so a now-persisting group row cannot pop the SOLO Hard Mode
+dialog with solo refund copy, and `syncGroupChallengeToLocalTracking` no longer resurrects a
+terminal row (it builds its entity with `status = "active"` and runs on every sync — without the
+guard an ENDED row flipped back to enforcing and the sweep ended it again, a flip-flopping overlay).
+`HistoryDetailScreen` shows neither the refund nor the "stake captured" line for an ENDED row —
+both would be untrue — but the stake plus "settlement runs as soon as you're back online".
+
+**Known trade-off (accepted).** A device clock set forward ends enforcement early and the row is not
+resurrected. Money is unaffected (server-side authority, invariant #2) and ranking is cosmetic
+(#29); the alternative is the permanent offline lock-out this fixes.
+
 ### 2026-07-29 — Four money strings said the opposite of what the code does
 
 **FIXED — copy written for a "hold now, capture on breach" model that only holds below 8 days.**

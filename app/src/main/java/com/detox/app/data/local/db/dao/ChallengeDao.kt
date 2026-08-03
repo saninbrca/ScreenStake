@@ -56,8 +56,17 @@ interface ChallengeDao {
     @Query("UPDATE challenges SET completionShown = 1 WHERE id = :id")
     suspend fun markCompletionShown(id: String)
 
-    /** Returns the first Hard Mode challenge that completed successfully but whose overlay has not yet been shown. */
-    @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'hard' AND completionShown = 0 LIMIT 1")
+    /**
+     * Returns the first SOLO Hard Mode challenge that completed successfully but whose overlay has
+     * not yet been shown.
+     *
+     * The `groupChallengeId IS NULL` half is load-bearing: a group shadow row carries
+     * `mode = 'hard'`, and since group rows now PERSIST as terminal instead of being deleted (so
+     * they show up in History), a mode-only filter would pop the SOLO Hard Mode win dialog — with
+     * solo refund copy — for a group settlement. The group outcome has its own surfaces
+     * (`NotificationHelper.sendGroupChallengePayoutReceived` + the group detail screen).
+     */
+    @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'hard' AND completionShown = 0 AND (groupChallengeId IS NULL OR groupChallengeId = '') LIMIT 1")
     suspend fun getUnshownCompletedHardChallenge(): ChallengeEntity?
 
     /** Returns the first Soft Mode challenge that completed successfully but whose overlay has not yet been shown. */
@@ -68,8 +77,13 @@ interface ChallengeDao {
     @Query("SELECT * FROM challenges WHERE status = 'failed' AND mode = 'soft' AND completionShown = 0 LIMIT 1")
     suspend fun getUnshownFailedSoftChallenge(): ChallengeEntity?
 
-    /** Returns the first Hard Mode challenge that failed but whose overlay has not yet been shown. */
-    @Query("SELECT * FROM challenges WHERE status = 'failed' AND mode = 'hard' AND completionShown = 0 LIMIT 1")
+    /**
+     * Returns the first SOLO Hard Mode challenge that failed but whose overlay has not yet been
+     * shown. `groupChallengeId IS NULL` for the same reason as
+     * [getUnshownCompletedHardChallenge] — a persisted group shadow row must not raise the solo
+     * loss dialog.
+     */
+    @Query("SELECT * FROM challenges WHERE status = 'failed' AND mode = 'hard' AND completionShown = 0 AND (groupChallengeId IS NULL OR groupChallengeId = '') LIMIT 1")
     suspend fun getUnshownFailedHardChallenge(): ChallengeEntity?
 
     @Query("SELECT COUNT(*) FROM challenges WHERE status = 'completed'")
@@ -78,13 +92,28 @@ interface ChallengeDao {
     @Query("SELECT * FROM challenges")
     suspend fun getAllChallengesList(): List<ChallengeEntity>
 
+    /**
+     * ⚠ NEVER call this for a group shadow row (`id = "group_<groupId>"`) — invariant #30. The
+     * History screen reads finished challenges from this table, so deleting the row erases the
+     * challenge from the user's record entirely; that was the "settled group challenge vanished"
+     * bug. Mark it terminal instead (`finishLocalGroupChallenge` / `endGroupChallengeLocally`) —
+     * enforcement stops the same way, since only `status = 'active'` enforces.
+     *
+     * Currently unreferenced, deliberately kept for solo/cleanup use.
+     */
     @Query("DELETE FROM challenges WHERE id = :id")
     suspend fun deleteById(id: String)
 
-    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') ORDER BY endDate DESC LIMIT 3")
+    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed', 'ended') ORDER BY endDate DESC LIMIT 3")
     suspend fun getRecentFinishedChallenges(): List<ChallengeEntity>
 
-    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed') ORDER BY endDate DESC")
+    /**
+     * Everything the History screen shows. `'ended'` is included so a group challenge whose end
+     * date passed on-device is RECORDED and visible while its server settlement is still pending
+     * (see [com.detox.app.domain.model.ChallengeStatus.ENDED]) — the alternative, dropping it until
+     * settlement lands, is exactly the "challenge vanished" bug.
+     */
+    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed', 'ended') ORDER BY endDate DESC")
     suspend fun getFinishedSoloChallenges(): List<ChallengeEntity>
 
     @Query("UPDATE challenges SET endDate = :endDate WHERE id = :id")

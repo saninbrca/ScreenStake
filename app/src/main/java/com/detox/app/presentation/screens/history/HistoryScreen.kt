@@ -200,6 +200,7 @@ private fun HistoryFilterSelector(selected: HistoryFilter, onSelect: (HistoryFil
 private fun HistoryRow(entry: SoloChallengeHistory, onClick: () -> Unit) {
     val entity = entry.entity
     val isCompleted = entity.status == "completed"
+    val isAwaitingSettlement = entity.status == "ended"
     val isGroup = !entity.groupChallengeId.isNullOrBlank()
     val isHard = entity.mode == "hard"
     val dateFormat = remember { SimpleDateFormat("d. MMM yyyy", Locale("de")) }
@@ -244,7 +245,10 @@ private fun HistoryRow(entry: SoloChallengeHistory, onClick: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 TypeBadge(isGroup = isGroup, isHard = isHard)
-                StatusText(isCompleted = isCompleted)
+                StatusText(
+                    isCompleted = isCompleted,
+                    isAwaitingSettlement = isAwaitingSettlement
+                )
             }
         }
     }
@@ -281,13 +285,25 @@ private fun TypeBadge(isGroup: Boolean, isHard: Boolean) {
     }
 }
 
+/**
+ * Win / loss / "ended, not settled yet".
+ *
+ * The third state is a GROUP challenge whose end date passed on-device while its server settlement
+ * has not landed — typically because the phone was offline. It is deliberately neither green nor
+ * red: the outcome genuinely is not known yet, and the stake is still with the server.
+ */
 @Composable
-private fun StatusText(isCompleted: Boolean) {
-    val color = if (isCompleted) detoxColors.success else detoxColors.danger
-    val label = if (isCompleted)
-        stringResource(R.string.verlauf_status_completed)
-    else
-        stringResource(R.string.verlauf_status_failed)
+private fun StatusText(isCompleted: Boolean, isAwaitingSettlement: Boolean) {
+    val color = when {
+        isAwaitingSettlement -> detoxColors.subtext
+        isCompleted -> detoxColors.success
+        else -> detoxColors.danger
+    }
+    val label = when {
+        isAwaitingSettlement -> stringResource(R.string.verlauf_status_awaiting_settlement)
+        isCompleted -> stringResource(R.string.verlauf_status_completed)
+        else -> stringResource(R.string.verlauf_status_failed)
+    }
     Text(
         text = label,
         fontSize = 13.sp,

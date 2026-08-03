@@ -151,6 +151,8 @@ private fun DetailContent(
 ) {
     val context     = LocalContext.current
     val isCompleted = entity.status == "completed"
+    // Group challenge ended on-device, server settlement not in yet (typically: was offline).
+    val isAwaitingSettlement = entity.status == "ended"
     val isHard      = entity.mode == "hard"
     val isGroup     = !entity.groupChallengeId.isNullOrBlank()
     val dateFormat  = remember { SimpleDateFormat("d. MMM yyyy", Locale("de")) }
@@ -177,7 +179,10 @@ private fun DetailContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ModeBadge(isHard = isHard, isGroup = isGroup)
-                StatusLabel(isCompleted = isCompleted)
+                StatusLabel(
+                    isCompleted = isCompleted,
+                    isAwaitingSettlement = isAwaitingSettlement
+                )
             }
             Spacer(Modifier.height(12.dp))
 
@@ -256,7 +261,11 @@ private fun DetailContent(
         val amountCents = entity.amountCents
         if (isHard && amountCents != null && amountCents > 0) {
             DetailCard {
-                HardMoneySection(isCompleted = isCompleted, amountCents = amountCents)
+                HardMoneySection(
+                    isCompleted = isCompleted,
+                    isAwaitingSettlement = isAwaitingSettlement,
+                    amountCents = amountCents
+                )
             }
         }
 
@@ -347,12 +356,17 @@ private fun ModeBadge(isHard: Boolean, isGroup: Boolean) {
 // ── Status label ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun StatusLabel(isCompleted: Boolean) {
-    val color = if (isCompleted) detoxColors.success else detoxColors.danger
-    val label = if (isCompleted)
-        stringResource(R.string.verlauf_status_completed)
-    else
-        stringResource(R.string.verlauf_status_failed)
+private fun StatusLabel(isCompleted: Boolean, isAwaitingSettlement: Boolean) {
+    val color = when {
+        isAwaitingSettlement -> detoxColors.subtext
+        isCompleted -> detoxColors.success
+        else -> detoxColors.danger
+    }
+    val label = when {
+        isAwaitingSettlement -> stringResource(R.string.verlauf_status_awaiting_settlement)
+        isCompleted -> stringResource(R.string.verlauf_status_completed)
+        else -> stringResource(R.string.verlauf_status_failed)
+    }
     Text(text = label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = color)
 }
 
@@ -404,7 +418,30 @@ private fun StatColumn(
 // ── Hard Mode money section ───────────────────────────────────────────────────
 
 @Composable
-private fun HardMoneySection(isCompleted: Boolean, amountCents: Int) {
+private fun HardMoneySection(
+    isCompleted: Boolean,
+    isAwaitingSettlement: Boolean,
+    amountCents: Int,
+) {
+    if (isAwaitingSettlement) {
+        // The challenge is over locally but the server has not settled it, so NEITHER the refund
+        // nor the "stake captured" copy is true yet. Stating either one here would be telling the
+        // user their money is gone (or back) when it is neither. Show the stake and say what
+        // happens next instead.
+        val stake = amountCents / 100.0
+        Text(
+            text = stringResource(R.string.verlauf_hard_pending_settlement, stake),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = detoxColors.label,
+        )
+        Text(
+            text = stringResource(R.string.verlauf_hard_pending_settlement_hint),
+            fontSize = 12.sp,
+            color = detoxColors.subtext,
+        )
+        return
+    }
     if (isCompleted) {
         val refund = floor(amountCents * 0.80) / 100.0
         Text(

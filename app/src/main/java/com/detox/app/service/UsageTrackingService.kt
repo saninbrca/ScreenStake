@@ -25,6 +25,7 @@ import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
+import com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +76,9 @@ class UsageTrackingService : Service() {
 
     @Inject
     lateinit var firestoreService: FirestoreService
+
+    @Inject
+    lateinit var endExpiredGroupChallengesUseCase: EndExpiredGroupChallengesUseCase
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -161,6 +165,29 @@ class UsageTrackingService : Service() {
         startGroupTimeLimitPolling()
         startOverlayPermissionMonitoring()
         startBudgetSessionPolling()
+        startExpiredGroupChallengeSweep()
+    }
+
+    /**
+     * Ends enforcement for group challenges past their end date, on-device and offline.
+     *
+     * [OverlayManager.handleAppOpen] runs the same sweep, which covers the app-open case; this loop
+     * covers everything that does NOT go through it — the tracked-package/domain sets pushed to
+     * [TrackedAppEventBus] (website + adult blocking), the group stat pollers, and simply crossing
+     * midnight while the phone sits idle. Cheap: one indexed Room read, and a write only on the one
+     * tick where a challenge actually rolls over.
+     *
+     * Money-free — see [com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase]. Settlement
+     * keeps running from its own group-table triggers.
+     */
+    private fun startExpiredGroupChallengeSweep() {
+        serviceScope.launch(Dispatchers.IO) {
+            endExpiredGroupChallengesUseCase()
+            while (isActive) {
+                delay(60_000L)
+                endExpiredGroupChallengesUseCase()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

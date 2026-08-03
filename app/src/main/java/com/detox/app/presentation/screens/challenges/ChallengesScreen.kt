@@ -149,11 +149,14 @@ private fun ChallengeHistoryCard(
         ChallengeStatus.ACTIVE -> MaterialTheme.colorScheme.primary
         ChallengeStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
         ChallengeStatus.FAILED -> MaterialTheme.colorScheme.error
+        // Neutral on purpose: the challenge is over but the outcome is not known yet.
+        ChallengeStatus.ENDED -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val statusLabel = when (challenge.status) {
         ChallengeStatus.ACTIVE -> stringResource(R.string.challenge_status_active)
         ChallengeStatus.COMPLETED -> stringResource(R.string.challenge_status_completed)
         ChallengeStatus.FAILED -> stringResource(R.string.challenge_status_failed)
+        ChallengeStatus.ENDED -> stringResource(R.string.challenge_status_ended)
     }
 
     Card(

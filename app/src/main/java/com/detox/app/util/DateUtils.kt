@@ -43,6 +43,23 @@ object DateUtils {
     fun hasReachedEnd(startMs: Long, endMs: Long, now: Long): Boolean =
         dayKey(now) >= dayKey(endMs)
 
+    /**
+     * True once the calendar day of [nowMs] is STRICTLY AFTER the day [endMs] falls on — i.e. the
+     * challenge's last day is fully over. Offline-safe: pure local clock, no network, no server
+     * round-trip. Used by [com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase] and by
+     * OverlayManager's enforcement funnel to stop blocking a group challenge that has run out.
+     *
+     * Strictly `>`, unlike [hasReachedEnd]'s `>=`, and the difference is load-bearing: settlement
+     * fires ON the final day (the 23:59 worker run settles the day's own usage), while ENFORCEMENT
+     * must cover that whole final day. A `>=` here would free the app at 00:00 of the last day.
+     *
+     * Day-key based for the same reason as [hasReachedEnd]: `endMs` is 23:59:59.999 local
+     * ([endOfDayMillis], invariant #18) and a raw millis compare drifts across DST/timezone
+     * changes. Money-free — this predicate never settles, captures, refunds or deletes anything.
+     */
+    fun hasPassedEnd(endMs: Long, nowMs: Long = System.currentTimeMillis()): Boolean =
+        endMs > 0L && dayKey(nowMs) > dayKey(endMs)
+
     /** Midnight (00:00:00.000, local) of the calendar day containing [timestampMs]. */
     fun dayKey(timestampMs: Long): Long = Calendar.getInstance().apply {
         timeInMillis = timestampMs

@@ -50,6 +50,8 @@
 18. **`endDate = endOfDayMillis`** (23:59:59.999), not `now + N×86400000`. (`docs/04`)
 29. **Group stat doc:** a daily value whose day stamp ≠ today reads as **0**, gated ONCE in `withStats` (never at a call site); writes are lazy so a clean day never writes. The opens/time/exceeded paths each own an **independent** day stamp — a shared one silently drops a day. Cumulative = sum over days strictly BEFORE the stamp ⇒ whole-challenge total is `total + daily` **ungated**, which keeps settlement/Stripe out of ranking. Ranking is **cosmetic, self-reported — never gates money**. (`docs/04`)
 
+30. **Group enforcement ends LOCALLY, rows are MARKED not DELETED:** past `endDate` ⇒ `ChallengeStatus.ENDED` via `DateUtils.hasPassedEnd` (day-key, STRICTLY after the last day) — Room `status` column ONLY (`endGroupChallengeLocally`), never `updateChallengeStatus`/Stripe/CF. Safe only because settlement triggers off the `group_challenges` table, NOT the shadow row. Never DELETE a shadow row (it vanishes from History); never resurrect a non-`active` one; never rewrite a settled `completed`/`failed` one. (`docs/04`)
+
 **Huawei compatibility**
 19. **Cloud Functions use `onRequest`** (never `onCall`). (`docs/05`)
 20. **No FCM push** — WorkManager / AlarmManager only. (`docs/05`)

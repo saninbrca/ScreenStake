@@ -60,9 +60,12 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                             GroupChallengeStatus.ACTIVE -> {
                                 val myParticipant = gc.participants.find { it.userId == userId }
                                 if (myParticipant?.status == ParticipantStatus.FAILED) {
-                                    challengeDao.deleteById("group_${gc.groupId}")
+                                    // Mark, never delete — a forfeit is part of the user's record and
+                                    // must stay in History. Enforcement stops all the same: only
+                                    // `status = 'active'` enforces.
+                                    finishLocalGroupChallenge(gc.groupId, succeeded = false)
                                     Timber.d(
-                                        "GroupChallengeRepo: user %s FAILED group %s — deleted local challenge",
+                                        "GroupChallengeRepo: user %s FAILED group %s — local challenge marked failed",
                                         userId, gc.groupId
                                     )
                                 } else {
@@ -75,11 +78,23 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                             }
                             GroupChallengeStatus.COMPLETED, GroupChallengeStatus.CANCELLED -> {
                                 groupChallengeDao.upsert(gc.toEntity())
-                                val localId = "group_${gc.groupId}"
-                                challengeDao.deleteById(localId)
+                                // MARK terminal, never DELETE. Deleting the shadow row here is what
+                                // made a settled group challenge VANISH: the History screen reads
+                                // finished challenges from this table, so a deleted row is simply
+                                // gone from the user's record — and it raced the three other paths
+                                // (refreshFromFirestore / FriendsHubVM / GroupChallengeDetailVM),
+                                // which all call finishLocalGroupChallenge and mark it instead.
+                                // Enforcement stops either way: only `status = 'active'` enforces.
+                                val myParticipant = gc.participants.find { it.userId == userId }
+                                val succeeded = gc.status == GroupChallengeStatus.COMPLETED &&
+                                        myParticipant?.status != ParticipantStatus.FAILED
+                                finishLocalGroupChallenge(gc.groupId, succeeded)
+                                    .onFailure { e ->
+                                        Timber.e(e, "GroupChallengeRepo: finish failed for %s", gc.groupId)
+                                    }
                                 Timber.d(
-                                    "GroupChallengeRepo: upserted group entity + deleted local challenge %s (status=%s)",
-                                    localId, gc.status
+                                    "GroupChallengeRepo: upserted group entity + finished local challenge group_%s (status=%s succeeded=%b)",
+                                    gc.groupId, gc.status, succeeded
                                 )
                             }
                             else -> Unit
@@ -159,9 +174,12 @@ class GroupChallengeRepositoryImpl @Inject constructor(
 
             val localChallengeId = "group_${groupChallenge.groupId}"
             if (userParticipant.status == ParticipantStatus.FAILED) {
-                challengeDao.deleteById(localChallengeId)
+                // Mark terminal instead of deleting, so the forfeit survives in History. This is a
+                // status-column UPDATE — a no-op if no shadow row exists, which is exactly right:
+                // an already-forfeited participant must never have one (re)created below.
+                finishLocalGroupChallenge(groupChallenge.groupId, succeeded = false)
                 Timber.d(
-                    "GroupChallengeRepo: user %s already FAILED group %s — deleted local challenge",
+                    "GroupChallengeRepo: user %s already FAILED group %s — local challenge marked failed",
                     userId, groupChallenge.groupId
                 )
                 return Result.success(Unit)
@@ -195,10 +213,22 @@ class GroupChallengeRepositoryImpl @Inject constructor(
             // onDelete=CASCADE on DailyLogEntity and wiping the Group Challenge DailyLog.
             val existingChallenge = challengeDao.getChallengeById(entity.id)
             if (existingChallenge != null) {
-                challengeDao.updateChallenge(entity)
+                // NEVER resurrect a terminal row. `entity` is built with status = "active", and this
+                // method runs on every group sync — including while the group doc is still ACTIVE
+                // server-side because settlement hasn't run yet. Blindly writing it would flip an
+                // "ended" row (end date passed on-device, see [ChallengeStatus.ENDED]) straight back
+                // to enforcing, and the local sweep would end it again on its next pass: a
+                // flip-flopping overlay that reappears on exactly the challenge that is over.
+                // Same protection for completed/failed, which are settled outcomes.
+                val preserved = if (existingChallenge.status != "active") {
+                    entity.copy(status = existingChallenge.status)
+                } else {
+                    entity
+                }
+                challengeDao.updateChallenge(preserved)
                 Timber.d(
-                    "GroupChallengeRepo: updated (no-delete) group challenge %s → local challenge %s",
-                    groupChallenge.groupId, localChallengeId
+                    "GroupChallengeRepo: updated (no-delete) group challenge %s → local challenge %s (status kept as %s)",
+                    groupChallenge.groupId, localChallengeId, preserved.status
                 )
             } else {
                 challengeDao.insertChallenge(entity)
@@ -224,9 +254,10 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 .forEach { gc ->
                     val myParticipant = gc.participants.find { it.userId == userId }
                     if (myParticipant?.status == ParticipantStatus.FAILED) {
-                        challengeDao.deleteById("group_${gc.groupId}")
+                        // Mark, never delete — see syncGroupChallengeToLocalTracking.
+                        finishLocalGroupChallenge(gc.groupId, succeeded = false)
                         Timber.d(
-                            "GroupChallengeRepo: refreshFromFirestore — user %s FAILED group %s, deleted local challenge",
+                            "GroupChallengeRepo: refreshFromFirestore — user %s FAILED group %s, local challenge marked failed",
                             userId, gc.groupId
                         )
                     } else {
@@ -264,10 +295,22 @@ class GroupChallengeRepositoryImpl @Inject constructor(
         return try {
             val localChallengeId = "group_$groupId"
             val finalStatus = if (succeeded) "completed" else "failed"
+            // completed/failed are the SETTLED outcomes and are immutable — a later snapshot must
+            // never flip a settled win into a loss (or back). "active" and "ended" both settle
+            // normally: "ended" is the local, money-free enforcement stop this overwrites once the
+            // server outcome actually arrives. See [ChallengeStatus.ENDED].
+            val current = challengeDao.getChallengeById(localChallengeId)?.status
+            if (current == "completed" || current == "failed") {
+                Timber.d(
+                    "GroupChallengeRepo: finishLocalGroupChallenge %s — already %s, leaving untouched",
+                    groupId, current
+                )
+                return Result.success(Unit)
+            }
             challengeDao.updateStatus(localChallengeId, finalStatus)
             Timber.d(
-                "GroupChallengeRepo: finishLocalGroupChallenge %s → %s",
-                groupId, finalStatus
+                "GroupChallengeRepo: finishLocalGroupChallenge %s → %s (was %s)",
+                groupId, finalStatus, current
             )
             Result.success(Unit)
         } catch (e: Exception) {

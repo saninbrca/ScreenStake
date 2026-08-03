@@ -105,6 +105,7 @@
     <string name="challenge_status_active">Active</string>
     <string name="challenge_status_completed">Completed</string>
     <string name="challenge_status_failed">Failed</string>
+    <string name="challenge_status_ended">Ended</string>
     <string name="detail_limit_window_val">Time window</string>
     <string name="motivational_quote_1">Every day counts.</string>
     <string name="motivational_quote_2">You are stronger than your phone.</string>
@@ -1759,6 +1760,7 @@
     <string name="verlauf_mode_hard">HARD MODE</string>
     <string name="verlauf_status_completed">✓ Completed</string>
     <string name="verlauf_status_failed">✗ Given up</string>
+    <string name="verlauf_status_awaiting_settlement">Being settled</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d days</string>
     <string name="verlauf_no_end_date">No end date</string>
     <string name="verlauf_stats_time_label">TIME RECLAIMED</string>
@@ -1774,6 +1776,8 @@
     <string name="verlauf_hard_refund_fee" formatted="false">App fee (20%) was withheld</string>
     <string name="verlauf_hard_captured">💸 €%1$.2f charged</string>
     <string name="verlauf_hard_captured_reason">Challenge not passed</string>
+    <string name="verlauf_hard_pending_settlement">⏳ €%1$.2f stake — being settled</string>
+    <string name="verlauf_hard_pending_settlement_hint">The challenge is over. Settlement runs as soon as you\'re back online.</string>
     <string name="verlauf_start_again">Start again</string>
     <string name="verlauf_empty">No completed challenges yet</string>
 

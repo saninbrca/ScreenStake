@@ -218,6 +218,19 @@ class ChallengeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun endGroupChallengeLocally(id: String): Result<Unit> {
+        return try {
+            // Room status column ONLY — no Firestore write, no CF, no Stripe, no delete. See the
+            // interface doc for why this must never go through updateChallengeStatus.
+            challengeDao.updateStatus(id, ChallengeStatus.ENDED.name.lowercase())
+            Timber.i("endGroupChallengeLocally: %s → ended (enforcement stopped, settlement untouched)", id)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "endGroupChallengeLocally: failed for %s", id)
+            Result.failure(e)
+        }
+    }
+
     private fun ChallengeEntity.toDomain(): Challenge {
         val type = runCatching { BlockingType.valueOf(blockingType.uppercase()) }
             .getOrDefault(BlockingType.APP)

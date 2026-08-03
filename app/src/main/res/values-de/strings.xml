@@ -89,6 +89,7 @@
     <string name="challenge_status_active">Aktiv</string>
     <string name="challenge_status_completed">Abgeschlossen</string>
     <string name="challenge_status_failed">Fehlgeschlagen</string>
+    <string name="challenge_status_ended">Beendet</string>
     <string name="detail_limit_window_val">Zeitfenster</string>
     <string name="motivational_quote_1">Jeder Tag zählt.</string>
     <string name="motivational_quote_2">Du bist stärker als dein Handy.</string>
@@ -1702,6 +1703,7 @@
     <string name="verlauf_mode_hard">HARD MODE</string>
     <string name="verlauf_status_completed">✓ Geschafft</string>
     <string name="verlauf_status_failed">✗ Aufgegeben</string>
+    <string name="verlauf_status_awaiting_settlement">Wird abgerechnet</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d Tage</string>
     <string name="verlauf_no_end_date">Kein Enddatum</string>
     <string name="verlauf_stats_time_label">ZEIT ZURÜCKGEWONNEN</string>
@@ -1717,6 +1719,8 @@
     <string name="verlauf_hard_refund_fee" formatted="false">App-Gebühr (20%) wurde einbehalten</string>
     <string name="verlauf_hard_captured">💸 €%1$.2f eingezogen</string>
     <string name="verlauf_hard_captured_reason">Challenge nicht bestanden</string>
+    <string name="verlauf_hard_pending_settlement">⏳ %1$.2f € Einsatz — wird abgerechnet</string>
+    <string name="verlauf_hard_pending_settlement_hint">Die Challenge ist vorbei. Die Abrechnung läuft, sobald du wieder online bist.</string>
     <string name="verlauf_start_again">Nochmal starten</string>
     <string name="verlauf_empty">Noch keine abgeschlossenen Challenges</string>
 

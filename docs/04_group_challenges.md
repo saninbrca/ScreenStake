@@ -732,6 +732,58 @@ Winners prompted to submit IBAN in Profile for payout
 
 ---
 
+### Enforcement ends LOCALLY, settlement stays server-side (invariant #30)
+
+**These are two separate clocks and must never be collapsed into one.** Settlement is money and is
+server-authoritative, so it may wait for connectivity. Enforcement is a blocking overlay on the
+user's phone and may NOT — a challenge that is over must stop blocking with no network at all.
+
+Before 2026-08-02 they were the same switch, and the result was a live incident: a group challenge
+that ended 1 Aug still blocked the monitored app at 00:30 on 2 Aug because the device was offline.
+Nothing on the enforcement path read `endDate`; the only exit from `status = 'active'` was a server
+round-trip.
+
+```
+LOCAL (no network)                        SERVER (may wait for connectivity)
+─────────────────────                     ─────────────────────────────────
+dayKey(now) > dayKey(endDate)             MainActivity.checkExpiredGroupChallenges
+  → DateUtils.hasPassedEnd                PermissionCheckWorker.checkExpiredGroupChallenges
+  → EndExpiredGroupChallengesUseCase        ↓ (both iterate the `group_challenges` TABLE)
+  → ChallengeStatus.ENDED                 completeGroupChallenge CF
+  → Room `status` column ONLY               ↓
+     (endGroupChallengeLocally)           finishLocalGroupChallenge
+        ↓                                   → ENDED overwritten with completed/failed
+  overlay stops, app usable
+  row stays in History as "being settled"
+```
+
+**Why ending enforcement cannot strand a payout:** the two settlement triggers key on the
+`group_challenges` table and its `GroupChallengeStatus`, **not** on the shadow row. The shadow row's
+status is enforcement state only. ⚠ If a settlement trigger is ever re-keyed onto the shadow row,
+ENDED silently stops it firing and the buy-in is stranded until the PI expires.
+
+**`hasPassedEnd` vs `hasReachedEnd` — the off-by-one-day is deliberate.** `hasReachedEnd` is `>=`
+(settlement fires ON the final day: the 23:59 worker settles that day's own usage). `hasPassedEnd`
+is `>` (enforcement must cover the whole final day). Both compare day keys, never raw millis —
+`endDate` is 23:59:59.999 local (invariant #18).
+
+**Rows are MARKED, never DELETED.** Four sites used to `challengeDao.deleteById("group_<id>")`
+(settled, cancelled, and two forfeit paths). History reads finished challenges from that table, so
+a delete erased the challenge from the user's record entirely. All four now mark terminal. Three
+consequences ride along and must stay:
+
+| Guard | Why |
+|---|---|
+| `getUnshownCompleted/FailedHardChallenge` require `groupChallengeId IS NULL` | a group shadow row carries `mode = 'hard'`; a persisting one would pop the SOLO Hard Mode dialog with solo refund copy |
+| `syncGroupChallengeToLocalTracking` preserves a non-`active` status | it builds its entity with `status = "active"` and runs on every sync — otherwise an ENDED row flips back to enforcing and the sweep ends it again: a flip-flopping overlay |
+| `finishLocalGroupChallenge` refuses to rewrite `completed`/`failed`, but still settles `ended` | settled outcomes are immutable; ENDED is the pending state that must still resolve |
+
+**Accepted trade-off:** a device clock set forward ends enforcement early, and the row is not
+resurrected. Money is unaffected (server-side authority, invariant #2) and ranking is cosmetic
+(invariant #29). The alternative is the permanent offline lock-out above.
+
+---
+
 ## Winner Payout Flow (Manual)
 
 → Full payout flow: see docs/09_payout_and_fees.md

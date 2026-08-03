@@ -12,6 +12,7 @@ import com.detox.app.domain.model.DailyLog
 import com.detox.app.domain.model.DailyStats
 import com.detox.app.domain.repository.ChallengeRepository
 import com.detox.app.domain.repository.DailyLogRepository
+import com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.domain.usecase.GetDailyStatsUseCase
 import com.detox.app.domain.usecase.SettleEndedSoftChallengesUseCase
@@ -90,6 +91,7 @@ class DashboardViewModel @Inject constructor(
     private val appConfigRepository: AppConfigRepository,
     private val firestore: FirebaseFirestore,
     private val settleEndedSoftChallengesUseCase: SettleEndedSoftChallengesUseCase,
+    private val endExpiredGroupChallengesUseCase: EndExpiredGroupChallengesUseCase,
 ) : ViewModel() {
 
     // ── Soft update banner ──────────────────────────────────────────────────────
@@ -242,6 +244,10 @@ class DashboardViewModel @Inject constructor(
             // active cards and surfaces its success/fail dialog this same session. Open-ended
             // challenges are never touched (they run indefinitely).
             settleEndedSoftChallengesUseCase()
+            // Same backstop for GROUP challenges, and deliberately not conditional on the sync above
+            // having reached the network: a group challenge past its end date stops enforcing from
+            // the local clock alone. Money-free — it never settles, captures, refunds or deletes.
+            endExpiredGroupChallengesUseCase()
             refreshStats()
             // First authoritative state is now set: the Room observer may update it from here on.
             initialLoadComplete = true

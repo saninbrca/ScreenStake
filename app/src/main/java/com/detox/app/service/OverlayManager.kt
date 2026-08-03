@@ -43,6 +43,7 @@ import com.detox.app.domain.repository.PaymentRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
+import com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.presentation.components.BlockingScreenOverlay
 import com.detox.app.presentation.components.BudgetSelectionOverlay
@@ -86,6 +87,7 @@ class OverlayManager @Inject constructor(
     private val firebaseAuthService: FirebaseAuthService,
     private val cloudFunctionsService: CloudFunctionsService,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
+    private val endExpiredGroupChallengesUseCase: EndExpiredGroupChallengesUseCase,
     private val criticalPackageResolver: CriticalPackageResolver,
     @ApplicationScope private val appScope: CoroutineScope,
 ) {
@@ -409,6 +411,12 @@ class OverlayManager @Inject constructor(
         }
         // Authoritative daily reset: clear stale yesterday state before any read/write below.
         ensureDailyStateFresh()
+        // A group challenge past its end date stops enforcing HERE, on the device, with no network:
+        // this drops the shadow row out of `status = 'active'` so the lookup below finds nothing and
+        // no overlay is built. Runs before the challenge lookup so the very first app-open after
+        // midnight is already free — the offline lock-out this fixes happened at 00:30. Money-free:
+        // settles/captures/refunds/deletes nothing (see [EndExpiredGroupChallengesUseCase]).
+        endExpiredGroupChallengesUseCase()
         if (isOverlayVisible) {
             Timber.d("Overlay visible=$isOverlayVisible, skipping new overlay for $packageName (after ${android.os.SystemClock.elapsedRealtime() - tEnter}ms)")
             return

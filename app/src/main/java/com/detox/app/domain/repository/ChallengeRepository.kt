@@ -20,7 +20,18 @@ interface ChallengeRepository {
         status: ChallengeStatus,
         failReason: String? = null
     ): Result<Unit>
-    /** Returns all challenges (active + completed + failed) ordered by createdAt DESC. */
+    /**
+     * Marks a GROUP shadow row [ChallengeStatus.ENDED] — LOCAL ONLY, money-free.
+     *
+     * Deliberately NOT [updateChallengeStatus]: that one fires a Firestore write, and for a group
+     * shadow row (`id = "group_<groupId>"`) that would materialise a `users/{uid}/challenges/group_*`
+     * doc which is supposed to never exist (see `PermissionCheckWorker.isSoloHardPermissionFailEligible`
+     * for what materialising it breaks). This writes the Room `status` column and nothing else — no
+     * Stripe, no Cloud Function, no delete, no `failReason`.
+     */
+    suspend fun endGroupChallengeLocally(id: String): Result<Unit>
+
+    /** Returns all challenges (active + completed + failed + ended) ordered by createdAt DESC. */
     fun getAllChallenges(): Flow<List<Challenge>>
     /** Marks the congratulations overlay as shown so it won't appear again. */
     suspend fun markCompletionShown(id: String): Result<Unit>

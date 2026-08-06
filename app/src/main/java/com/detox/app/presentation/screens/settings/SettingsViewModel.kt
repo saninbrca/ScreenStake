@@ -19,6 +19,7 @@ import com.detox.app.data.remote.firebase.FirestoreService
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
 import com.detox.app.domain.repository.ChallengeRepository
+import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.presentation.screens.profile.IbanData
 import com.detox.app.presentation.screens.profile.IbanSaveState
 import com.detox.app.ui.theme.ThemeMode
@@ -31,6 +32,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -80,6 +82,7 @@ class SettingsViewModel @Inject constructor(
     private val firebaseAuthService: FirebaseAuthService,
     private val firestoreService: FirestoreService,
     private val challengeRepository: ChallengeRepository,
+    private val dailyLogRepository: DailyLogRepository,
     private val database: DetoxDatabase,
     private val firebaseAuth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
@@ -378,29 +381,129 @@ class SettingsViewModel @Inject constructor(
     // ── Data Export ────────────────────────────────────────────────────────────
 
     /**
-     * Builds a JSON string of all challenges + daily logs and returns it
-     * for the caller to share via a system share sheet.
+     * Builds the GDPR (Art. 15) data export and returns it for the caller to share via the system
+     * share sheet. READ-ONLY throughout — it queries and serialises, and writes nothing anywhere.
+     *
+     * It used to export active challenges only and — despite saying otherwise — no daily logs at
+     * all, so a user exercising their right of access got back a fraction of what the privacy
+     * policy discloses. It now covers every category the policy lists that is reachable from the
+     * client, and names the ones that are not in `notIncluded` rather than quietly dropping them.
+     *
+     * Every read is scoped to the signed-in uid. The one place co-participant data could leak —
+     * `group_challenges.participantsJson` — is dropped in [DataExportJson].
+     *
+     * Firestore reads are best-effort: offline or rules-denied, the export still returns everything
+     * held locally. A partial export beats a failed one, and the gap is visible because the section
+     * is `null` rather than absent.
      */
     suspend fun buildExportJson(): String = withContext(Dispatchers.IO) {
-        val sb = StringBuilder()
-        sb.append("{\n  \"challenges\": [\n")
-        val challengesResult = challengeRepository.getActiveChallengesList()
-        val challenges = challengesResult.getOrNull() ?: emptyList()
-        challenges.forEachIndexed { idx, c ->
-            sb.append("    {")
-            sb.append("\"id\":\"${c.id}\",")
-            sb.append("\"app\":\"${c.appDisplayName}\",")
-            sb.append("\"mode\":\"${c.mode.name}\",")
-            sb.append("\"limitType\":\"${c.limitType.name}\",")
-            sb.append("\"limitValueMinutes\":${c.limitValueMinutes},")
-            sb.append("\"status\":\"${c.status.name}\",")
-            sb.append("\"startDate\":${c.startDate},")
-            sb.append("\"endDate\":${c.endDate}")
-            sb.append("}")
-            if (idx < challenges.lastIndex) sb.append(",")
-            sb.append("\n")
+        val uid = firebaseAuthService.currentUserId()
+        val authUser = firebaseAuth.currentUser
+
+        // ── Challenges: ALL statuses (active + completed + failed + ended) ──────
+        val challenges = runCatching { challengeRepository.getAllChallenges().first() }
+            .getOrElse { e ->
+                Timber.w(e, "Export: could not read challenges")
+                emptyList()
+            }
+
+        // ── Daily logs: every log of every challenge above ──────────────────────
+        val dailyLogs = challenges.flatMap { c ->
+            runCatching { dailyLogRepository.getLogsForChallengeOnce(c.id) }
+                .getOrElse { e ->
+                    Timber.w(e, "Export: could not read daily logs for %s", c.id)
+                    emptyList()
+                }
         }
-        sb.append("  ]\n}")
-        sb.toString()
+
+        val groupChallenges = runCatching { database.groupChallengeDao().getAllList() }
+            .getOrElse { e ->
+                Timber.w(e, "Export: could not read group challenges")
+                emptyList()
+            }
+
+        // ── Account + consent record, from users/{uid} ──────────────────────────
+        val userDoc: Map<String, Any?> = if (uid == null) emptyMap() else
+            runCatching {
+                firestore.collection("users").document(uid).get().await().data.orEmpty()
+            }.getOrElse { e ->
+                Timber.w(e, "Export: could not read user document")
+                emptyMap()
+            }
+
+        val account = linkedMapOf<String, Any?>(
+            "firebaseUid" to uid,
+            "email" to (authUser?.email ?: userDoc["email"]?.toString()),
+            "displayName" to (authUser?.displayName ?: userDoc["displayName"]?.toString()),
+            "username" to userDoc["username"]?.toString(),
+            "signInProviders" to (authUser?.providerData?.map { it.providerId } ?: emptyList()),
+            "accountCreatedAt" to userDoc["createdAt"]?.toString(),
+            "fcmToken" to userDoc["fcmToken"]?.toString(),
+            "consent" to linkedMapOf<String, Any?>(
+                "acceptedTerms" to userDoc["consentAGB"],
+                "acceptedPrivacyPolicy" to userDoc["consentDatenschutz"],
+                "confirmedAge18" to userDoc["consentAge18"],
+                "consentTimestamp" to userDoc["consentTimestamp"]?.toString(),
+            ),
+        )
+
+        // ── Permission status + circumvention detection ─────────────────────────
+        // Both privacy-policy categories live in this one doc: the permission-loss/restore
+        // timestamps and the heartbeat, plus `usageViolationDetectedAt`, which is what the policy
+        // calls circumvention detection.
+        val permissionStatus: Map<String, Any?>? = if (uid == null) null else
+            runCatching {
+                firestore.collection("users").document(uid)
+                    .collection("permissionStatus").document("current")
+                    .get().await().data?.mapValues { it.value?.toString() }
+            }.getOrElse { e ->
+                Timber.w(e, "Export: could not read permission status")
+                null
+            }
+
+        DataExportJson.build(
+            generatedAt = System.currentTimeMillis(),
+            appVersion = BuildConfig.VERSION_NAME,
+            account = account,
+            challenges = challenges,
+            dailyLogs = dailyLogs,
+            groupChallenges = groupChallenges,
+            permissionStatus = permissionStatus,
+            notIncluded = NOT_INCLUDED_CATEGORIES,
+            selfUserId = uid,
+        )
+    }
+
+    private companion object {
+        /**
+         * Disclosed-as-collected categories the app cannot put in a client-side export, each with
+         * the reason. Listed rather than silently omitted so the export never overstates itself —
+         * and so the user knows what to ask for by email.
+         */
+        val NOT_INCLUDED_CATEGORIES: List<Map<String, Any?>> = listOf(
+            linkedMapOf(
+                "category" to "Support requests",
+                "reason" to "Held in the supportTickets collection. Firestore rules allow an " +
+                    "owner to read a ticket by id but not to list their own, so the app cannot " +
+                    "enumerate them. Request them via the contact address in the privacy policy.",
+            ),
+            linkedMapOf(
+                "category" to "Firebase Installations ID",
+                "reason" to "A technical installation identifier issued and rotated by Firebase " +
+                    "itself. It is not stored in your account data and has no stable value to " +
+                    "export.",
+            ),
+            linkedMapOf(
+                "category" to "Crash diagnostics (Sentry)",
+                "reason" to "Crash and error reports are sent to Sentry and are not readable " +
+                    "from the app.",
+            ),
+            linkedMapOf(
+                "category" to "Other group participants",
+                "reason" to "Usernames and progress of the other members of your group " +
+                    "challenges are their personal data, not yours, so they are excluded by " +
+                    "design. Your own participation appears under challenges and dailyLogs.",
+            ),
+        )
     }
 }

@@ -21,6 +21,42 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-08-06 — The GDPR data export handed over a fraction of what it claimed
+
+**FIXED — active challenges only, and no daily logs at all.** `SettingsViewModel.buildExportJson`
+said "all challenges + daily logs" in its own KDoc and delivered neither: it read
+`getActiveChallengesList()`, so every completed / failed / ended challenge — the bulk of a
+long-standing user's history — was absent, and daily logs were never gathered at all. For a
+right-of-access (Art. 15) feature that is a straight under-delivery, and it contradicted the
+finite-legal privacy pages, which were just made honest about what is collected.
+
+**Now exported**, cross-checked against the 12 categories the privacy policy discloses: account
+identity (Firebase UID, email, username, sign-in providers, account creation), the FCM push token,
+the consent record (terms / privacy / 18+ plus timestamp), ALL challenges of EVERY status with
+their full configuration, ALL daily logs, group challenge configuration, and
+`permissionStatus/current` — which carries both the "permission status" and "circumvention
+detection" (`usageViolationDetectedAt`) categories.
+
+**Deliberately absent, and now NAMED in a `notIncluded` section rather than silently dropped:**
+support requests (Firestore rules give the owner `read` by id but `list` is admin-only, so the
+client cannot enumerate its own tickets — that one is a genuine client-side impossibility, not an
+oversight), the Firebase Installations ID (rotating technical identifier, not stored account data),
+Sentry crash diagnostics, and other group participants' data.
+
+**Scope guard:** `group_challenges.participantsJson` holds co-participants' user ids, usernames and
+progress — THEIR personal data. It is dropped, and `creatorUserId` is reduced to a `createdByYou`
+boolean so another user's UID cannot ride along. Tests assert the leak paths stay closed.
+
+**Serialisation moved to `DataExportJson`**, a pure object with no Android/Firebase dependencies, so
+the part that must be complete is unit-testable on the JVM (no Robolectric here, and `org.json` is
+stubbed in JVM tests — hence hand-built JSON, as before). It also fixes an unescaped-string bug that
+predates this change: `appDisplayName` and `customMotivation` are free text, so a single `"` in a
+motivation produced a file no parser could open.
+
+Read-only throughout — no challenge, settlement or money code touched. Firestore reads are
+best-effort: offline, the export still returns everything held locally, with the missing section
+`null` rather than absent.
+
 ### 2026-08-06 — A finished Soft SOLO challenge kept blocking too, until you opened Finite
 
 **FIXED — the group end trigger existed; solo never got one.** Follow-up to the 2026-08-02 group

@@ -224,3 +224,43 @@ to keep beating honestly they must keep the **real** app installed and running (
 enforcement + real `dailyLogs`), and forging the field requires reverse-engineering the doc path rather
 than just deleting the app — so it strictly raises the bar over the old delete-and-win path. Accepted,
 not closed.
+
+---
+
+## GDPR data export (Art. 15 right of access) — 2026-08-06
+
+**Where:** `SettingsViewModel.buildExportJson()` gathers, `DataExportJson` serialises. Reached from
+Settings → "Export data", delivered through the system share sheet as `application/json`.
+
+**Rule: the export must cover everything the privacy policy discloses as collected, or NAME what it
+cannot cover.** These are the same list, and they drift apart silently — the pre-fix version claimed
+"all challenges + daily logs" while shipping active challenges only and zero logs. When a data
+category is added to the app, it belongs in the export AND in the privacy pages (`finite-legal`), or
+in `NOT_INCLUDED_CATEGORIES` with a reason.
+
+| Disclosed category | In the export |
+|---|---|
+| Email, Firebase UID, username | `account` (FirebaseAuth + `users/{uid}`) |
+| Push token (FCM) | `account.fcmToken` |
+| Records of consent | `account.consent` (terms / privacy / 18+ / timestamp) |
+| Challenge configuration | `challenges` — **every status**, full config incl. free-text motivation |
+| App usage data | `dailyLogs` — every log of every challenge, flat, each with `challengeId` |
+| Permission status | `permissionStatus` (`users/{uid}/permissionStatus/current`) |
+| Circumvention detection | same doc — `usageViolationDetectedAt` |
+| Support requests | ✗ `notIncluded` — rules allow owner `read` by id, `list` is admin-only |
+| Firebase Installations ID | ✗ `notIncluded` — rotating technical id, not stored account data |
+| Crash diagnostics (Sentry) | ✗ `notIncluded` — held by the processor, not readable in-app |
+
+**Never export another user's data.** `group_challenges.participantsJson` holds co-participants'
+ids, usernames and progress — dropped entirely, and `creatorUserId` is reduced to a `createdByYou`
+boolean so a foreign UID cannot ride along. The exporting user's own group participation is covered
+by the shadow row in `challenges` plus its `dailyLogs`.
+
+**READ-ONLY.** The export queries and serialises; it writes nothing, and touches no challenge,
+settlement or Stripe path. Firestore reads are best-effort — offline it still returns everything
+held in Room, with the unreachable section `null` rather than missing.
+
+**Escaping is load-bearing.** `appDisplayName`, `customMotivation` and domains are user free text.
+`DataExportJson` does RFC 8259 escaping; the previous raw concatenation produced an unopenable file
+from a single `"`. `org.json` is deliberately not used — it is stubbed in JVM unit tests (no
+Robolectric in this project), and keeping the writer pure is what makes the completeness testable.

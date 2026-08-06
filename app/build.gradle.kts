@@ -145,8 +145,13 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
+    // NOTE: firebase-analytics is deliberately NOT included. It pulls in
+    // play-services-measurement, which adds the AD_ID / ACCESS_ADSERVICES_* /
+    // install-referrer permissions and collects an advertising identifier — neither is
+    // acceptable for a privacy-focused app with no ads. Do not re-add it; if product
+    // analytics are ever needed, pick something that does not touch the advertising ID
+    // and update the privacy policy (docs: finite-legal/datenschutz.html) first.
     implementation(libs.firebase.messaging.ktx)
-    implementation(libs.firebase.analytics.ktx)
 
     // Google Sign-In
     implementation(libs.play.services.auth)

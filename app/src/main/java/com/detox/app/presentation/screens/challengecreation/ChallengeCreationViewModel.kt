@@ -8,7 +8,6 @@ import com.detox.app.BuildConfig
 import com.detox.app.R
 import com.detox.app.data.local.db.dao.PendingHardChallengeDao
 import com.detox.app.data.local.db.entity.PendingHardChallengeEntity
-import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.repository.AppConfig
 import com.detox.app.data.repository.AppConfigRepository
@@ -200,7 +199,6 @@ class ChallengeCreationViewModel @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val usageStatsRepository: UsageStatsRepository,
     private val firebaseAuthService: FirebaseAuthService,
-    private val analyticsService: AnalyticsService,
     private val pendingHardChallengeDao: PendingHardChallengeDao,
     appConfigRepository: AppConfigRepository,
     @ApplicationContext private val context: Context,
@@ -815,11 +813,6 @@ class ChallengeCreationViewModel @Inject constructor(
                 isPartialBlockOnly = false,
             ).fold(
                 onSuccess = { result ->
-                    analyticsService.logChallengeCreated(
-                        mode = "soft",
-                        limitType = fields.limitType.name.lowercase(),
-                        durationDays = s.durationDays,
-                    )
                     UsageTrackingService.start(context)
                     _uiState.value = ChallengeCreationUiState.Success(result.challengeId)
                 },
@@ -1014,11 +1007,6 @@ class ChallengeCreationViewModel @Inject constructor(
                     // Legal: persist the FAGG § 18 withdrawal-rights waiver consent alongside the
                     // challenge doc (merge update of two fields onto the now-existing doc).
                     logWithdrawalWaiver(result.challengeId)
-                    analyticsService.logChallengeCreated(
-                        mode = "hard",
-                        limitType = pending.limitType.lowercase(),
-                        durationDays = pending.durationDays,
-                    )
                     UsageTrackingService.start(context)
                     confirmedPaymentIntentId = null
                     confirmedChallengeId = null

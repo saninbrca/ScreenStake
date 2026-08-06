@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.domain.model.Challenge
 import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.ChallengeStatus
@@ -65,7 +64,6 @@ sealed interface ActiveChallengeUiState {
 class ActiveChallengeViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val challengeRepository: ChallengeRepository,
-    private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
     private val paymentRepository: PaymentRepository,
@@ -259,7 +257,6 @@ class ActiveChallengeViewModel @Inject constructor(
     fun abandonChallenge() {
         viewModelScope.launch {
             val challenge = (uiState.value as? ActiveChallengeUiState.Success)?.challenge
-            val mode = challenge?.mode?.name?.lowercase() ?: "unknown"
 
             // Abandoning is a LOSS. For a solo Hard Mode challenge with a live pre-auth the stake MUST
             // be captured before we mark FAILED — the confirm dialog already told the user "€X wird
@@ -277,7 +274,7 @@ class ActiveChallengeViewModel @Inject constructor(
                 paymentRepository.capturePayment(paymentIntentId!!)
                     .onSuccess {
                         // CRITICAL ORDER: FAILED + navigation happen ONLY after a confirmed capture.
-                        markFailedAndFinish(mode)
+                        markFailedAndFinish()
                     }
                     .onFailure { e ->
                         // Real failure (network / Stripe / non-capturable PI). Leave the challenge ACTIVE
@@ -287,7 +284,7 @@ class ActiveChallengeViewModel @Inject constructor(
                     }
             } else {
                 // Soft Mode, group challenge, or no pre-auth → no money to capture; behave as before.
-                markFailedAndFinish(mode)
+                markFailedAndFinish()
             }
         }
     }
@@ -299,11 +296,10 @@ class ActiveChallengeViewModel @Inject constructor(
      * is already gone but the row stays ACTIVE — surfaced as an error; a retry/worker cycle reconciles
      * it (capturePayment is idempotent, so re-running abandon is safe).
      */
-    private suspend fun markFailedAndFinish(mode: String) {
+    private suspend fun markFailedAndFinish() {
         challengeRepository.updateChallengeStatus(challengeId, ChallengeStatus.FAILED, "abandon")
             .onSuccess {
                 Timber.d("Challenge $challengeId abandoned")
-                analyticsService.logChallengeAbandoned(mode)
                 _abandonStatus.value = AbandonState.Idle
                 _abandonState.value = true
             }

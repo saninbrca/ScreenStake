@@ -21,7 +21,6 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.detox.app.R
-import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.system.CriticalPackageResolver
@@ -79,7 +78,6 @@ class OverlayManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val checkDailyLimitUseCase: CheckDailyLimitUseCase,
     private val paymentRepository: PaymentRepository,
-    private val analyticsService: AnalyticsService,
     private val dailyLogRepository: DailyLogRepository,
     private val usageStatsRepository: UsageStatsRepository,
     private val challengeRepository: ChallengeRepository,
@@ -1264,7 +1262,6 @@ class OverlayManager @Inject constructor(
 
         val composeView = createSessionComposeView(
             onBack = {
-                analyticsService.logBlockingScreenAction("back_button")
                 val pkg = challenge.appPackageName ?: ""
                 sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$pkg").apply()
                 cancelSessionTimer()
@@ -1284,7 +1281,6 @@ class OverlayManager @Inject constructor(
                     amountCents = challenge.amountCents,
                     showStakeWarning = showStakeWarning,
                     onStayStrong = {
-                        analyticsService.logBlockingScreenAction("skipped")
                         val pkg = challenge.appPackageName ?: ""
                         sessionPrefs.edit().remove("$SESSION_END_KEY_PREFIX$pkg").apply()
                         cancelSessionTimer()
@@ -1294,7 +1290,6 @@ class OverlayManager @Inject constructor(
                         goHome()
                     },
                     onOpenAnyway = {
-                        analyticsService.logBlockingScreenAction("opened_anyway")
                         val pkg = challenge.appPackageName ?: ""
                         AppDetectionAccessibilityService.allowTemporarily(pkg)
                         val sessionDuration = challenge.sessionDurationMinutes.takeIf { it > 0 } ?: 5
@@ -1358,7 +1353,6 @@ class OverlayManager @Inject constructor(
             return
         }
 
-        analyticsService.logLimitExceeded("hard", (challenge.appPackageName ?: ""))
         dismissOverlay()
 
         scope.launch {
@@ -1781,8 +1775,6 @@ class OverlayManager @Inject constructor(
             exceededAppsToday.add(it)
             TrackedAppEventBus.markPackageFreeForToday(it)
         }
-
-        analyticsService.logLimitExceeded("soft_${reason}", challenge.appPackageName ?: "")
 
         // Mark the loss result as shown so the Dashboard's getUnshownFailedSoftChallenge poll does
         // not emit a second navigation for the same loss (the navigation below is the single show).

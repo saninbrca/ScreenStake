@@ -13,7 +13,6 @@ import androidx.work.workDataOf
 import com.detox.app.R
 import com.detox.app.data.local.db.dao.ChallengeDao
 import com.detox.app.data.local.db.dao.GroupChallengeDao
-import com.detox.app.data.remote.firebase.AnalyticsService
 import com.detox.app.data.remote.firebase.CloudFunctionsService
 import com.detox.app.data.remote.firebase.FirebaseAuthService
 import com.detox.app.data.remote.firebase.FirestoreService
@@ -51,7 +50,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
     private val dailyLogRepository: DailyLogRepository,
     private val usageStatsRepository: UsageStatsRepository,
     private val paymentRepository: PaymentRepository,
-    private val analyticsService: AnalyticsService,
     private val cloudFunctionsService: CloudFunctionsService,
     private val firebaseAuthService: FirebaseAuthService,
     private val groupChallengeRepository: GroupChallengeRepository,
@@ -194,8 +192,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         "DailyEvaluationWorker: '${challenge.appDisplayName}' already " +
                                 "evaluated today — skipping payment logic"
                     )
-                    val durationDays = ((challenge.endDate - challenge.startDate) /
-                            DateUtils.MILLIS_PER_DAY).toInt()
                     if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                         // Whole-challenge verdict (server rule), not today's row alone.
                         val violated = challengeViolated(challenge.id, existingRealLog.limitExceeded)
@@ -289,13 +285,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             challenge.id, finalStatus,
                             failReason = if (finalStatus == ChallengeStatus.FAILED) "limit_exceeded" else null
                         )
-                        val mode = challenge.mode.name.lowercase()
                         NotificationHelper.createChannels(applicationContext)
                         if (finalStatus == ChallengeStatus.COMPLETED) {
-                            analyticsService.logChallengeCompleted(
-                                mode = mode,
-                                durationDays = durationDays
-                            )
                             if (challenge.mode == ChallengeMode.HARD && challenge.amountCents != null) {
                                 val refundAmount = floor(challenge.amountCents * 0.80).toInt()
                                 val feeCents = challenge.amountCents - refundAmount
@@ -310,7 +301,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 )
                             }
                         } else {
-                            analyticsService.logChallengeFailed(mode)
                             if (challenge.mode == ChallengeMode.SOFT) {
                                 val streak = getChallengeStreakUseCase(challenge)
                                 // Mark shown so the Dashboard's getUnshownFailedSoftChallenge poll
@@ -470,8 +460,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         continue
                     }
 
-                    val durationDays = ((challenge.endDate - challenge.startDate) /
-                            DateUtils.MILLIS_PER_DAY).toInt()
                     if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                         val finalStatus = if (violated) {
                             ChallengeStatus.FAILED
@@ -482,12 +470,8 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             challenge.id, finalStatus,
                             failReason = if (finalStatus == ChallengeStatus.FAILED) "limit_exceeded" else null
                         )
-                        val mode = challenge.mode.name.lowercase()
                         NotificationHelper.createChannels(applicationContext)
                         if (finalStatus == ChallengeStatus.COMPLETED) {
-                            analyticsService.logChallengeCompleted(
-                                mode = mode, durationDays = durationDays
-                            )
                             if (challenge.isRedemption && challenge.refundAmountCents != null) {
                                 NotificationHelper.sendRedemptionCompleted(
                                     applicationContext, challenge.appDisplayName, challenge.refundAmountCents
@@ -506,7 +490,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 )
                             }
                         } else {
-                            analyticsService.logChallengeFailed(mode)
                             if (challenge.isRedemption) {
                                 NotificationHelper.sendRedemptionFailed(applicationContext, challenge.appDisplayName, challengeId = challenge.id)
                             }
@@ -631,7 +614,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                                 // redemption fields set just above survive untouched.
                                 challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED, "limit_exceeded")
                                     .onFailure { e -> Timber.e(e, "Failed to mark FAILED after capture for ${challenge.id}") }
-                                analyticsService.logChallengeFailed("hard")
                                 hardModeFailHandled = true
                             }
                             .onFailure { e ->
@@ -734,8 +716,6 @@ class DailyEvaluationWorker @AssistedInject constructor(
                 }
 
                 // ── Update challenge status if end date reached ─────────────────
-                val durationDays = ((challenge.endDate - challenge.startDate) /
-                        DateUtils.MILLIS_PER_DAY).toInt()
                 if (DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) {
                     val finalStatus = if (violated) {
                         ChallengeStatus.FAILED
@@ -743,21 +723,12 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         ChallengeStatus.COMPLETED
                     }
                     // Skip if a Hard Mode loss already flipped status→FAILED above (post-capture) —
-                    // avoids a duplicate updateChallengeStatus / logChallengeFailed for the same fail.
+                    // avoids a duplicate updateChallengeStatus for the same fail.
                     if (!(hardModeFailHandled && finalStatus == ChallengeStatus.FAILED)) {
                         challengeRepository.updateChallengeStatus(
                             challenge.id, finalStatus,
                             failReason = if (finalStatus == ChallengeStatus.FAILED) "limit_exceeded" else null
                         )
-                        val mode = challenge.mode.name.lowercase()
-                        if (finalStatus == ChallengeStatus.COMPLETED) {
-                            analyticsService.logChallengeCompleted(
-                                mode = mode,
-                                durationDays = durationDays
-                            )
-                        } else {
-                            analyticsService.logChallengeFailed(mode)
-                        }
                     }
                     Timber.d(
                         "Challenge ${challenge.appDisplayName} ended with status: $finalStatus"

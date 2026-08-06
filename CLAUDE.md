@@ -52,6 +52,8 @@
 
 30. **Group enforcement ends LOCALLY, rows are MARKED not DELETED:** past `endDate` ⇒ `ChallengeStatus.ENDED` via `DateUtils.hasPassedEnd` (day-key, STRICTLY after the last day) — Room `status` column ONLY (`endGroupChallengeLocally`), never `updateChallengeStatus`/Stripe/CF. Safe only because settlement triggers off the `group_challenges` table, NOT the shadow row. Never DELETE a shadow row (it vanishes from History); never resurrect a non-`active` one; never rewrite a settled `completed`/`failed` one. (`docs/04`)
 
+31. **Soft SOLO ends locally via `hasPassedEnd` (`>`), Hard solo NEVER:** enforcement-path callers (`handleAppOpen` + 60s sweep) MUST pass `Trigger.ENFORCEMENT_STOP`; `SETTLEMENT`'s `>=` frees the app a day early. Soft settles for real (`updateChallengeStatus` — money-free, doc exists). Hard solo must keep `status = 'active'` — the worker finds its capture/refund work by that status. (`docs/02`)
+
 **Huawei compatibility**
 19. **Cloud Functions use `onRequest`** (never `onCall`). (`docs/05`)
 20. **No FCM push** — WorkManager / AlarmManager only. (`docs/05`)

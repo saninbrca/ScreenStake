@@ -16,7 +16,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Behavioural tests for the on-app-open soft backstop. The backstop must:
+ * Behavioural tests for the soft backstop, under both [SettleEndedSoftChallengesUseCase.Trigger]
+ * grades. The backstop must:
  *  - finalise a fixed-end SOFT challenge whose endDate has passed — FAILED iff ANY DailyLog in the
  *    challenge's history recorded a limit breach, otherwise COMPLETED, and
  *  - NEVER touch open-ended, Hard, staked (stripePaymentIntentId), or group challenges.
@@ -209,6 +210,95 @@ class SettleEndedSoftChallengesUseCaseTest {
             Result.success(listOf(challenge("future1", startDate = now, endDate = now + 5 * day)))
 
         useCase()
+
+        coVerify(exactly = 0) { challengeRepository.updateChallengeStatus(any(), any(), any()) }
+    }
+
+    // ── ENFORCEMENT_STOP trigger ────────────────────────────────────────────────
+    // Reached from the overlay funnel and the 60 s sweep, at arbitrary times of day, so that a
+    // finished Soft SOLO challenge stops blocking offline without the user opening Finite. The
+    // predicate difference from SETTLEMENT is the entire point and the first two tests pin it.
+
+    /** A challenge whose LAST day is today: `hasReachedEnd` is already true, `hasPassedEnd` is not. */
+    private fun endsTodayChallenge(id: String = "soft1") =
+        challenge(id, startDate = now - 3 * day, endDate = DateUtils.endOfDayMillis(now, 1))
+
+    @Test
+    fun `ENFORCEMENT_STOP does not free a soft solo challenge on its final day`() = runTest {
+        // The trap this trigger exists for: SETTLEMENT's `>=` fires ON the last day, so running it
+        // from the enforcement path at 00:05 would end blocking a full day early and settle on a
+        // history still being written.
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(endsTodayChallenge()))
+
+        useCase(SettleEndedSoftChallengesUseCase.Trigger.ENFORCEMENT_STOP)
+
+        coVerify(exactly = 0) { challengeRepository.updateChallengeStatus(any(), any(), any()) }
+    }
+
+    @Test
+    fun `SETTLEMENT still settles on the final day — default behaviour unchanged`() = runTest {
+        // Same challenge, other trigger: the 23:59 worker and the Dashboard backstop must keep
+        // settling on the final day exactly as before.
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(endsTodayChallenge()))
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.COMPLETED, null)
+        }
+    }
+
+    @Test
+    fun `ENFORCEMENT_STOP settles a soft solo challenge once its last day is fully over`() = runTest {
+        // Default helper endDate is two days ago — strictly past the end.
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns
+            listOf(dailyLog(limitExceeded = false))
+
+        useCase(SettleEndedSoftChallengesUseCase.Trigger.ENFORCEMENT_STOP)
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.COMPLETED, null)
+        }
+    }
+
+    @Test
+    fun `ENFORCEMENT_STOP keeps the verdict — a breached history still settles as FAILED`() = runTest {
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns
+            listOf(dailyLog(limitExceeded = true))
+
+        useCase(SettleEndedSoftChallengesUseCase.Trigger.ENFORCEMENT_STOP)
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.FAILED, "limit_exceeded")
+        }
+    }
+
+    @Test
+    fun `ENFORCEMENT_STOP never touches hard, staked, group or open-ended rows`() = runTest {
+        // The enforcement path sees every active row, so the money-free guards matter more here
+        // than anywhere: Hard solo must keep status='active' (DailyEvaluationWorker finds its
+        // capture/refund work by that status) and a group row has its own end mechanism.
+        val start = now - 10 * day
+        coEvery { challengeRepository.getActiveChallengesList() } returns Result.success(
+            listOf(
+                challenge("hard1", mode = ChallengeMode.HARD),
+                challenge("staked1", stripePaymentIntentId = "pi_123"),
+                challenge("group1", groupChallengeId = "g_123"),
+                challenge(
+                    "open1",
+                    startDate = start,
+                    endDate = DateUtils.endOfDayMillis(start, DateUtils.NO_END_DATE_DAYS)
+                ),
+            )
+        )
+
+        useCase(SettleEndedSoftChallengesUseCase.Trigger.ENFORCEMENT_STOP)
 
         coVerify(exactly = 0) { challengeRepository.updateChallengeStatus(any(), any(), any()) }
     }

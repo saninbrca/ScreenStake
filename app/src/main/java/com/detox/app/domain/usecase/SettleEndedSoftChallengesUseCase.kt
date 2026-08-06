@@ -9,11 +9,14 @@ import timber.log.Timber
 import javax.inject.Inject
 
 /**
- * On-app-open backstop that finalises FIXED-END-DATE Soft Mode challenges whose end date passed
- * while the app was closed (or while the EMUI-throttled periodic [DailyEvaluationWorker] failed to
- * run). This is an ADDITIONAL safety net — it never replaces the worker, and it re-uses the worker's
- * exact end-of-challenge trigger ([DateUtils.hasReachedEnd]) and status decision so the two paths
- * can never diverge.
+ * Backstop that finalises FIXED-END-DATE Soft Mode challenges whose end date passed while the app
+ * was closed (or while the EMUI-throttled periodic [DailyEvaluationWorker] failed to run). This is
+ * an ADDITIONAL safety net — it never replaces the worker, and it re-uses the worker's status
+ * decision so the two paths can never diverge.
+ *
+ * Runs under two different [Trigger] grades, which differ ONLY in the end-date predicate; see the
+ * enum. Everything below the predicate — guards, verdict, write — is identical, deliberately: a
+ * second parallel implementation is exactly how the two paths would drift apart.
  *
  * Strictly SOFT-only and money-free:
  *  - `mode == SOFT` && `stripePaymentIntentId == null` — never touches Hard Mode capture/refund/
@@ -31,7 +34,28 @@ class SettleEndedSoftChallengesUseCase @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val dailyLogRepository: DailyLogRepository,
 ) {
-    suspend operator fun invoke() {
+    /**
+     * Which end-date predicate fires the settlement. The distinction is load-bearing and is the
+     * whole reason this parameter exists — see [DateUtils.hasReachedEnd] vs [DateUtils.hasPassedEnd].
+     */
+    enum class Trigger {
+        /**
+         * [DateUtils.hasReachedEnd] (`>=`) — fires ON the final day, matching the 23:59
+         * [DailyEvaluationWorker] run whose own usage IS part of the challenge. Correct for a
+         * once-a-day-at-23:59 caller and for the Dashboard backstop that stands in for it.
+         */
+        SETTLEMENT,
+
+        /**
+         * [DateUtils.hasPassedEnd] (`>`) — fires only once the final day is FULLY over. Required for
+         * anything on the enforcement path, which is reached at arbitrary times: `>=` invoked at
+         * 00:05 on the last day would free the app a full day early AND settle on a history that is
+         * still being written. Same predicate the group enforcement-stop uses.
+         */
+        ENFORCEMENT_STOP,
+    }
+
+    suspend operator fun invoke(trigger: Trigger = Trigger.SETTLEMENT) {
         val now = System.currentTimeMillis()
         val challenges = challengeRepository.getActiveChallengesList().getOrElse { e ->
             Timber.w(e, "SettleEndedSoftChallenges: could not read active challenges — skipping")
@@ -47,9 +71,16 @@ class SettleEndedSoftChallengesUseCase @Inject constructor(
             // Open-ended challenges are streak-based and run forever — never auto-complete.
             if (DateUtils.isOpenEnded(challenge.startDate, challenge.endDate)) continue
 
-            // Same end-of-challenge trigger the worker uses. Naturally handles the 23:59-wrinkle:
-            // whenever the app is opened after endDate has passed, this fires immediately.
-            if (!DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)) continue
+            val ended = when (trigger) {
+                // Same end-of-challenge trigger the worker uses. Naturally handles the
+                // 23:59-wrinkle: whenever the app is opened after endDate has passed, this fires
+                // immediately.
+                Trigger.SETTLEMENT ->
+                    DateUtils.hasReachedEnd(challenge.startDate, challenge.endDate, now)
+                Trigger.ENFORCEMENT_STOP ->
+                    DateUtils.hasPassedEnd(challenge.endDate, now)
+            }
+            if (!ended) continue
 
             // Whole-challenge verdict, matching DailyEvaluationWorker.challengeViolated and the
             // server's `logsSnap.docs.some(d => d.limitExceeded === true)`. Fail-open on a read
@@ -70,8 +101,8 @@ class SettleEndedSoftChallengesUseCase @Inject constructor(
                 Timber.e(e, "SettleEndedSoftChallenges: failed to finalise %s", challenge.id)
             }.onSuccess {
                 Timber.i(
-                    "SettleEndedSoftChallenges: %s reached end → %s (on-app-open backstop)",
-                    challenge.id, finalStatus
+                    "SettleEndedSoftChallenges: %s reached end → %s (trigger=%s)",
+                    challenge.id, finalStatus, trigger
                 )
             }
         }

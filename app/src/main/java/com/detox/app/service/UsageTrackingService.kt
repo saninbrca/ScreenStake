@@ -26,6 +26,7 @@ import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.domain.repository.GroupChallengeRepository
 import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase
+import com.detox.app.domain.usecase.SettleEndedSoftChallengesUseCase
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +80,9 @@ class UsageTrackingService : Service() {
 
     @Inject
     lateinit var endExpiredGroupChallengesUseCase: EndExpiredGroupChallengesUseCase
+
+    @Inject
+    lateinit var settleEndedSoftChallengesUseCase: SettleEndedSoftChallengesUseCase
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -165,29 +169,43 @@ class UsageTrackingService : Service() {
         startGroupTimeLimitPolling()
         startOverlayPermissionMonitoring()
         startBudgetSessionPolling()
-        startExpiredGroupChallengeSweep()
+        startExpiredChallengeSweep()
     }
 
     /**
-     * Ends enforcement for group challenges past their end date, on-device and offline.
+     * Ends enforcement for challenges past their end date — GROUP rows and SOFT SOLO rows —
+     * on-device and offline.
      *
-     * [OverlayManager.handleAppOpen] runs the same sweep, which covers the app-open case; this loop
-     * covers everything that does NOT go through it — the tracked-package/domain sets pushed to
+     * [OverlayManager.handleAppOpen] runs the same two sweeps, which covers the app-open case; this
+     * loop covers everything that does NOT go through it — the tracked-package/domain sets pushed to
      * [TrackedAppEventBus] (website + adult blocking), the group stat pollers, and simply crossing
-     * midnight while the phone sits idle. Cheap: one indexed Room read, and a write only on the one
-     * tick where a challenge actually rolls over.
+     * midnight while the phone sits idle. Cheap: one indexed Room read each, and a write only on the
+     * one tick where a challenge actually rolls over.
      *
-     * Money-free — see [com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase]. Settlement
-     * keeps running from its own group-table triggers.
+     * Neither call can reach Stripe. The group one settles nothing at all (see
+     * [com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase]); the Soft one settles a
+     * money-free Soft SOLO challenge and filters Hard and group rows out itself. Hard solo is
+     * deliberately NOT covered here — it needs a mechanism that leaves `status = 'active'` intact,
+     * because [DailyEvaluationWorker] finds its capture/refund work by that very status.
      */
-    private fun startExpiredGroupChallengeSweep() {
+    private fun startExpiredChallengeSweep() {
         serviceScope.launch(Dispatchers.IO) {
-            endExpiredGroupChallengesUseCase()
+            sweepExpiredChallenges()
             while (isActive) {
                 delay(60_000L)
-                endExpiredGroupChallengesUseCase()
+                sweepExpiredChallenges()
             }
         }
+    }
+
+    private suspend fun sweepExpiredChallenges() {
+        endExpiredGroupChallengesUseCase()
+        // ENFORCEMENT_STOP, never the default: the settlement predicate (`>=`) fires ON the final
+        // day, which on a 60 s loop means freeing the app at 00:00 of a day the user still has to
+        // get through.
+        settleEndedSoftChallengesUseCase(
+            SettleEndedSoftChallengesUseCase.Trigger.ENFORCEMENT_STOP
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

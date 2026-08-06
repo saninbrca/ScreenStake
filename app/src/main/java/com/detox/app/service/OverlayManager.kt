@@ -43,6 +43,7 @@ import com.detox.app.domain.repository.UsageStatsRepository
 import com.detox.app.domain.usecase.CheckDailyLimitUseCase
 import com.detox.app.domain.usecase.DailyLimitStatus
 import com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase
+import com.detox.app.domain.usecase.SettleEndedSoftChallengesUseCase
 import com.detox.app.domain.usecase.GetChallengeStreakUseCase
 import com.detox.app.presentation.components.BlockingScreenOverlay
 import com.detox.app.presentation.components.BudgetSelectionOverlay
@@ -86,6 +87,7 @@ class OverlayManager @Inject constructor(
     private val cloudFunctionsService: CloudFunctionsService,
     private val getChallengeStreakUseCase: GetChallengeStreakUseCase,
     private val endExpiredGroupChallengesUseCase: EndExpiredGroupChallengesUseCase,
+    private val settleEndedSoftChallengesUseCase: SettleEndedSoftChallengesUseCase,
     private val criticalPackageResolver: CriticalPackageResolver,
     @ApplicationScope private val appScope: CoroutineScope,
 ) {
@@ -415,6 +417,14 @@ class OverlayManager @Inject constructor(
         // midnight is already free — the offline lock-out this fixes happened at 00:30. Money-free:
         // settles/captures/refunds/deletes nothing (see [EndExpiredGroupChallengesUseCase]).
         endExpiredGroupChallengesUseCase()
+        // Same for a finished SOFT SOLO challenge, and for the same reason: nothing on this path
+        // reads endDate, so past its end the overlay kept blocking until the user opened Finite and
+        // the Dashboard backstop ran. ENFORCEMENT_STOP, never the default: the settlement predicate
+        // (`>=`) would free the app at 00:00 on the challenge's LAST day. Hard and group rows are
+        // filtered out inside the use case — Soft is money-free and never reaches Stripe.
+        settleEndedSoftChallengesUseCase(
+            SettleEndedSoftChallengesUseCase.Trigger.ENFORCEMENT_STOP
+        )
         if (isOverlayVisible) {
             Timber.d("Overlay visible=$isOverlayVisible, skipping new overlay for $packageName (after ${android.os.SystemClock.elapsedRealtime() - tEnter}ms)")
             return

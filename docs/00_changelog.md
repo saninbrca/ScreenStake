@@ -21,6 +21,54 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-08-06 — A finished Soft SOLO challenge kept blocking too, until you opened Finite
+
+**FIXED — the group end trigger existed; solo never got one.** Follow-up to the 2026-08-02 group
+incident below, from an investigation asking whether solo had the same defect. It does, in a weaker
+form: the enforcement gate reads only `status = 'active'` for solo as well (`endDate` appears
+nowhere on `getActiveChallengeForApp` → `CheckDailyLimitUseCase` → `OverlayManager.handleAppOpen`),
+and the only thing that ended a Soft solo challenge locally was `SettleEndedSoftChallengesUseCase`
+— triggered from `DashboardViewModel.loadStats` and nowhere else. So a user past their end date who
+opened the blocked app without opening Finite kept getting the overlay, offline or on (the 23:59
+`DailyEvaluationWorker` is EMUI-throttled, which is why that backstop exists in the first place).
+
+**Fix — the same two enforcement-path triggers the group end already uses:**
+`OverlayManager.handleAppOpen` (before the challenge lookup) and the 60 s sweep in
+`UsageTrackingService` (`startExpiredGroupChallengeSweep` → `startExpiredChallengeSweep`, now running
+both). The Dashboard call is unchanged.
+
+**The trap, and why the use case gained a `Trigger` parameter rather than a sibling:**
+`SettleEndedSoftChallengesUseCase` used `hasReachedEnd` (`>=`), which fires ON the final day —
+correct for a 23:59 worker run whose own usage belongs to the challenge, and wrong for a caller
+reached at arbitrary times. Called from the overlay funnel at 00:05 it would have freed the app a
+full day early and settled on a history still being written. The enforcement callers pass
+`Trigger.ENFORCEMENT_STOP` (`DateUtils.hasPassedEnd`, `>`, the group predicate); `Trigger.SETTLEMENT`
+keeps `>=` and stays the default, so the worker and Dashboard paths are byte-identical to before.
+Guards, verdict and write are shared — a parallel implementation is how the two would drift apart.
+
+**Soft solo DOES settle for real here** (`updateChallengeStatus` → Room first, Firestore/CF
+fire-and-forget, hence offline-safe), unlike the group shadow row's Room-only `ENDED`. That is
+correct and not an inconsistency: Soft is money-free and `challenges/{id}` genuinely exists, so
+writing `status` is legitimate. The challenge lands in History settled, as it should.
+
+**Hard solo deliberately NOT covered, and it must not be bolted onto this path.** Its existing
+guards (`mode != SOFT`, `stripePaymentIntentId != null`) already exclude it. The group's Room-only
+`ENDED` trick is ALSO wrong for it: `DailyEvaluationWorker` finds its capture/refund work via
+`getActiveChallengesList()` (`status = 'active'`), so any status change strands the money — group is
+safe only because settlement triggers off the `group_challenges` table. Hard solo needs a
+suppression mechanism that leaves `status = 'active'` intact; tracked separately. In release it is
+unreachable for new challenges anyway (`MONEY_FEATURES_ENABLED = false`).
+
+**KNOWN, NOT FIXED — the Dashboard trigger can still settle a Soft solo challenge on its final
+day.** `Trigger.SETTLEMENT`'s `>=` is by design for the 23:59 worker, but the Dashboard runs it
+whenever the app is opened: opening Finite at 09:00 on the last day settles the challenge there and
+then, ending enforcement early and judging a day whose logs are incomplete. Pre-existing, out of
+scope for this pass, deliberately left alone. Fixing it means splitting the Dashboard's own trigger
+— note that simply switching it to `>` would delay every settlement by a day.
+
+Adds invariant #31. Tests: `SettleEndedSoftChallengesUseCaseTest` gains five cases, incl. the
+final-day regression guard in both directions.
+
 ### 2026-08-02 — A group challenge that had ended kept blocking the app, offline
 
 **FIXED — enforcement had no local end, and the settled challenge then vanished from History.**

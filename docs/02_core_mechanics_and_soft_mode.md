@@ -523,8 +523,42 @@ the dialog checks):
   groupChallengeId==null`; **open-ended challenges (`DateUtils.isOpenEnded`) are never completed**.
 - Reuses the worker's exact trigger `DateUtils.hasReachedEnd(start, end, now)` (worker + backstop
   both route through it, so the two paths cannot diverge).
-- FAILED iff today's DailyLog has `limitExceeded`, else COMPLETED — an additional net, never a
-  worker replacement.
+- FAILED iff ANY DailyLog in the challenge's history has `limitExceeded`, else COMPLETED — matching
+  `DailyEvaluationWorker.challengeViolated` and the server's reconciliation rule. An additional net,
+  never a worker replacement. (Reading only *today's* row let a challenge that broke its limit on an
+  earlier day settle as a win.)
+
+#### Enforcement-stop trigger for Soft SOLO (2026-08-06) — invariant #31
+
+The Dashboard backstop above only runs when the user opens Finite. Past its end date, a Soft solo
+challenge therefore kept showing the overlay for anyone who just opened the blocked app — the solo
+half of the 2026-08-02 group incident. The same use case now also runs from the two enforcement-path
+sites the group end uses: `OverlayManager.handleAppOpen` (before the challenge lookup) and the 60 s
+sweep in `UsageTrackingService.startExpiredChallengeSweep`. Fully offline — `updateChallengeStatus`
+writes Room first and fires the Firestore/CF sync fire-and-forget.
+
+**Those callers MUST pass `Trigger.ENFORCEMENT_STOP`.** The two grades differ only in the predicate:
+
+| Trigger | Predicate | Callers |
+|---|---|---|
+| `SETTLEMENT` (default) | `hasReachedEnd` (`>=`) — fires ON the final day | `DailyEvaluationWorker` (23:59), `DashboardViewModel.loadStats` |
+| `ENFORCEMENT_STOP` | `hasPassedEnd` (`>`) — only once the last day is fully over | `OverlayManager.handleAppOpen`, the 60 s sweep |
+
+`>=` is right for a run at 23:59 on the last day, whose usage IS part of the challenge. Reached from
+the enforcement path at 00:05 it would free the app a full day early and settle on a history still
+being written. Same distinction, same reason, as the group end (`docs/04`, invariant #30).
+
+**Hard solo is excluded and must stay excluded** (`mode != SOFT`, `stripePaymentIntentId != null`).
+The group's Room-only `ENDED` mark is not a substitute: `DailyEvaluationWorker` finds its
+capture/refund work via `getActiveChallengesList()` (`status = 'active'`), so any status change
+strands the money — group survives that only because its settlement triggers off the
+`group_challenges` table. Hard solo needs enforcement suppression that leaves `status = 'active'`
+intact; tracked separately.
+
+**Known, not fixed:** the Dashboard's own `SETTLEMENT` trigger can still settle a Soft solo
+challenge on its final day (open Finite at 09:00 on the last day → settled there and then, on
+incomplete logs). Pre-existing; switching it to `>` would delay every settlement by a day, so it
+needs its own decision.
 
 **`ChallengeSuccessDialog` (May 2026 — replaces both success overlays):** the old fullscreen
 `SoftModeSuccessOverlay` and `HardModeSuccessOverlay` blocked the entire Dashboard, could not be

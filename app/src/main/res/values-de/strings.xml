@@ -352,6 +352,7 @@
     <string name="auth_hide_password">Passwort verbergen</string>
     <string name="auth_forgot_password">Passwort vergessen?</string>
     <string name="auth_forgot_password_sent">E-Mail wurde gesendet. Prüfe auch deinen Spam-Ordner.</string>
+    <string name="auth_forgot_password_google_hint">Mit Google registriert? Dann gibt es kein Passwort zum Zurücksetzen — nutze einfach „Mit Google fortfahren“.</string>
 
     <!-- Auth — inline validation errors -->
     <string name="auth_error_email_empty">Bitte E-Mail-Adresse eingeben</string>
@@ -905,6 +906,7 @@
     <string name="settings_password_reset_sent">E-Mail wurde gesendet</string>
     <string name="settings_password_reset_confirm">Eine E-Mail wurde an %1$s gesendet. Prüfe auch deinen Spam-Ordner.</string>
     <string name="settings_password_reset_cooldown">Erneut senden (%1$ds)</string>
+    <string name="settings_password_reset_failed">E-Mail konnte nicht gesendet werden. Bitte versuche es erneut.</string>
     <string name="settings_delete_reauth_message">Bitte gib dein Passwort ein um fortzufahren.</string>
     <string name="settings_delete_reauth_password_label">Passwort</string>
     <string name="settings_delete_reauth_wrong_password">Falsches Passwort</string>

@@ -371,6 +371,7 @@
     <string name="auth_hide_password">Hide password</string>
     <string name="auth_forgot_password">Forgot password?</string>
     <string name="auth_forgot_password_sent">Email sent. Check your spam folder too.</string>
+    <string name="auth_forgot_password_google_hint">Signed up with Google? Then there is no password to reset — just use “Continue with Google”.</string>
 
     <!-- Auth — inline validation errors -->
     <string name="auth_error_email_empty">Please enter your email address</string>
@@ -934,6 +935,7 @@
     <string name="settings_password_reset_sent">Email sent</string>
     <string name="settings_password_reset_confirm">An email was sent to %1$s. Check your spam folder too.</string>
     <string name="settings_password_reset_cooldown">Resend (%1$ds)</string>
+    <string name="settings_password_reset_failed">Could not send the email. Please try again.</string>
     <string name="settings_delete_reauth_message">Please enter your password to continue.</string>
     <string name="settings_delete_reauth_password_label">Password</string>
     <string name="settings_delete_reauth_wrong_password">Wrong password</string>

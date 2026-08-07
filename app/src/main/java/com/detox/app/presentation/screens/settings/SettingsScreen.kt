@@ -395,22 +395,30 @@ fun SettingsScreen(
                     labelSize = 14
                 )
                 IosRowDivider()
-                // Passwort ändern (inline confirmation + 60s cooldown)
-                val pwCooldown = state.passwordResetCooldownSeconds
-                val pwSubtitle = when {
-                    pwCooldown > 0 ->
-                        stringResource(R.string.settings_password_reset_cooldown, pwCooldown)
-                    state.passwordResetMessage != null -> state.passwordResetMessage!!
-                    else -> stringResource(R.string.settings_change_password_subtitle)
+                // Passwort ändern (inline confirmation + 60s cooldown).
+                // Hidden for Google-Sign-In-only accounts: they have no password, so a reset
+                // email would never arrive. Its divider is inside the gate so hiding the row
+                // can't leave two dividers stacked.
+                if (state.hasPasswordProvider) {
+                    val pwCooldown = state.passwordResetCooldownSeconds
+                    val pwError = state.passwordResetError
+                    val pwSubtitle = when {
+                        pwError != null -> pwError
+                        pwCooldown > 0 ->
+                            stringResource(R.string.settings_password_reset_cooldown, pwCooldown)
+                        state.passwordResetMessage != null -> state.passwordResetMessage!!
+                        else -> stringResource(R.string.settings_change_password_subtitle)
+                    }
+                    IosRow(
+                        iconContent = { IosIconBox(Icons.Filled.Lock, detoxColors.tileNeutral) },
+                        label = stringResource(R.string.settings_change_password),
+                        subtitle = pwSubtitle,
+                        subtitleColor = if (pwError != null) detoxColors.danger else detoxColors.subtext,
+                        showChevron = pwCooldown == 0,
+                        onClick = { if (pwCooldown == 0) viewModel.sendPasswordReset() }
+                    )
+                    IosRowDivider()
                 }
-                IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Lock, detoxColors.tileNeutral) },
-                    label = stringResource(R.string.settings_change_password),
-                    subtitle = pwSubtitle,
-                    showChevron = pwCooldown == 0,
-                    onClick = { if (pwCooldown == 0) viewModel.sendPasswordReset() }
-                )
-                IosRowDivider()
                 // Abmelden
                 IosRow(
                     iconContent = { IosIconBox(Icons.AutoMirrored.Filled.ExitToApp, detoxColors.danger) },
@@ -830,6 +838,7 @@ private fun IosRow(
     labelColor: Color = detoxColors.label,
     labelSize: Int = 16,
     subtitle: String? = null,
+    subtitleColor: Color = detoxColors.subtext,
     trailingContent: (@Composable () -> Unit)? = null,
     showChevron: Boolean = false,
     onClick: (() -> Unit)? = null
@@ -855,7 +864,7 @@ private fun IosRow(
                 Text(
                     text = subtitle,
                     fontSize = 14.sp,
-                    color = detoxColors.subtext
+                    color = subtitleColor
                 )
             }
         }

@@ -342,6 +342,17 @@ private fun LoginForm(
                 color = detoxColors.success,
                 modifier = Modifier.fillMaxWidth()
             )
+            // Google accounts have no password, so no reset email is sent for them. Shown with
+            // the confirmation because that is the moment a Google user would otherwise wait
+            // for an email that never arrives.
+            Text(
+                text = stringResource(R.string.auth_forgot_password_google_hint),
+                fontSize = 12.sp,
+                color = detoxColors.subtext,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp)
+            )
         }
 
         Text(

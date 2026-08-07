@@ -23,7 +23,9 @@ import com.detox.app.domain.repository.DailyLogRepository
 import com.detox.app.presentation.screens.profile.IbanData
 import com.detox.app.presentation.screens.profile.IbanSaveState
 import com.detox.app.ui.theme.ThemeMode
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -66,7 +68,14 @@ data class SettingsState(
     val isLoading: Boolean = false,
     val showDeleteConfirmDialog: Boolean = false,
     val showLogoutConfirmDialog: Boolean = false,
+    /**
+     * Whether the account actually has an email/password credential. Google-Sign-In-only
+     * accounts have no password, so the "change password" row must stay hidden for them —
+     * a reset email would never arrive.
+     */
+    val hasPasswordProvider: Boolean = false,
     val passwordResetMessage: String? = null,
+    val passwordResetError: String? = null,
     val passwordResetCooldownSeconds: Int = 0,
     val deleteReauthError: String? = null,
     val deleteReauthLoading: Boolean = false
@@ -115,6 +124,11 @@ class SettingsViewModel @Inject constructor(
             s.copy(
                 displayName = currentUser?.displayName ?: "",
                 email = currentUser?.email ?: "",
+                // Same providerData source the GDPR export reads. An account may have both
+                // (Google linked to an email/password login), so look for "password" rather
+                // than assuming a single provider.
+                hasPasswordProvider = currentUser?.providerData
+                    ?.any { it.providerId == EmailAuthProvider.PROVIDER_ID } == true,
                 groupParticipantFailedEnabled = notifPrefs.getBoolean(KEY_GROUP_PARTICIPANT_FAILED, true),
                 challengeUpdatesEnabled = prefs.getBoolean(KEY_CHALLENGE_UPDATES, true),
                 friendAlertsEnabled = prefs.getBoolean(KEY_FRIEND_ALERTS, true),
@@ -215,16 +229,36 @@ class SettingsViewModel @Inject constructor(
         val email = _state.value.email.ifBlank { return }
         if (_state.value.passwordResetCooldownSeconds > 0) return
         viewModelScope.launch {
+            // Unlike the logged-out auth screen, there is no account-enumeration concern here:
+            // the user is already authenticated and this is their own address. Report the real
+            // outcome instead of claiming an email was sent that Firebase may never have sent.
             firebaseAuthService.sendPasswordReset(email)
-            // Always confirm inline (success regardless, to avoid user enumeration).
-            _state.update {
-                it.copy(
-                    passwordResetMessage = context.getString(
-                        R.string.settings_password_reset_confirm, email
-                    )
-                )
-            }
-            startPasswordResetCooldown()
+                .onSuccess {
+                    _state.update {
+                        it.copy(
+                            passwordResetMessage = context.getString(
+                                R.string.settings_password_reset_confirm, email
+                            ),
+                            passwordResetError = null
+                        )
+                    }
+                    startPasswordResetCooldown()
+                }
+                .onFailure { e ->
+                    // FirebaseAuthException maps to "session expired" in ErrorMessages, which is
+                    // wrong copy for a failed send — use the dedicated message for those and let
+                    // the shared mapper handle the network/offline case.
+                    val message =
+                        if (e is FirebaseAuthException) {
+                            context.getString(R.string.settings_password_reset_failed)
+                        } else {
+                            ErrorMessages.from(context, e, R.string.settings_password_reset_failed)
+                        }
+                    // No cooldown on failure — the user must be able to retry immediately.
+                    _state.update {
+                        it.copy(passwordResetMessage = null, passwordResetError = message)
+                    }
+                }
         }
     }
 

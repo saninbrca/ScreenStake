@@ -233,6 +233,59 @@ fun WizardLimitTypeCard(
     }
 }
 
+// ── Info bullet row ───────────────────────────────────────────────────────────
+
+/**
+ * One explanatory bullet: tinted icon circle + body copy, in a hairline card.
+ *
+ * Same geometry and tokens as [WizardLimitTypeCard] (40dp circle, 22dp glyph, 14dp padding,
+ * [WizardCardShape], `cardBackground`/`cardBorder`) minus the selection affordances — this row is
+ * read-only, so it has no press feedback, no border animation and no check mark.
+ */
+@Composable
+fun WizardInfoBulletRow(
+    icon: ImageVector,
+    iconTint: Color,
+    iconBg: Color,
+    text: String,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(WizardCardShape)
+            .background(detoxColors.cardBackground)
+            .border(0.5.dp, detoxColors.cardBorder, WizardCardShape)
+            .padding(14.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(iconBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Text(
+                text = text,
+                fontSize = 14.sp,
+                color = detoxColors.label,
+                lineHeight = 20.sp,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
 // ── Review-summary row ────────────────────────────────────────────────────────
 
 @Composable

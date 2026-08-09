@@ -1,5 +1,6 @@
 package com.detox.app.presentation.screens.challengecreation
 
+import com.detox.app.domain.model.ChallengeMode
 import com.detox.app.domain.model.LimitType
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -7,9 +8,11 @@ import org.junit.Test
 /**
  * Verifies the per-path visible-step lists that drive wizard navigation and the
  * "Schritt X von Y" counter (see [visibleSteps]):
- *  - APP: all 7 steps; with TIME_WINDOW the step-4 value picker is skipped.
+ *  - APP: all parameter steps; with TIME_WINDOW the step-4 value picker is skipped.
  *  - Block-only (Website tab — custom domains and/or adult): 24/7 hard block, so the
  *    minute-limit steps (3+4) AND the time-window step (5) are skipped.
+ *  - SOFT: every path additionally carries [STEP_SOFT_INFO] between the last parameter step
+ *    and [STEP_REVIEW]. Hard Mode paths must stay byte-identical to before that step existed.
  *
  * Testing the extracted pure function (like [Step2BlockingSourceGateTest]) exercises the
  * exact production logic without constructing the Hilt-injected ViewModel.
@@ -70,5 +73,61 @@ class VisibleStepsTest {
             blockAdultContent = true,
         )
         assertEquals(listOf(1, 2, 6, 7), visibleSteps(state))
+    }
+
+    // ── Soft-only info step ──────────────────────────────────────────────────────
+
+    @Test
+    fun `soft app path gets the info step just before review`() {
+        val state = ChallengeCreationState(
+            activeTab = 0,
+            limitType = LimitType.TIME,
+            selectedMode = ChallengeMode.SOFT,
+        )
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, STEP_SOFT_INFO, STEP_REVIEW), visibleSteps(state))
+    }
+
+    @Test
+    fun `soft TIME_WINDOW path gets the info step just before review`() {
+        val state = ChallengeCreationState(
+            activeTab = 0,
+            limitType = LimitType.TIME_WINDOW,
+            selectedMode = ChallengeMode.SOFT,
+        )
+        assertEquals(listOf(1, 2, 3, 5, 6, STEP_SOFT_INFO, STEP_REVIEW), visibleSteps(state))
+    }
+
+    @Test
+    fun `soft website block path gets the info step just before review`() {
+        val state = ChallengeCreationState(
+            activeTab = 1,
+            manualDomains = listOf("reddit.com"),
+            selectedMode = ChallengeMode.SOFT,
+        )
+        assertEquals(listOf(1, 2, 6, STEP_SOFT_INFO, STEP_REVIEW), visibleSteps(state))
+    }
+
+    @Test
+    fun `hard path never gets the info step`() {
+        val state = ChallengeCreationState(
+            activeTab = 0,
+            limitType = LimitType.TIME,
+            selectedMode = ChallengeMode.HARD,
+        )
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, 7), visibleSteps(state))
+        assertEquals(false, visibleSteps(state).contains(STEP_SOFT_INFO))
+    }
+
+    @Test
+    fun `info step is the second-to-last entry so review always ends the wizard`() {
+        listOf(
+            ChallengeCreationState(activeTab = 0, limitType = LimitType.TIME, selectedMode = ChallengeMode.SOFT),
+            ChallengeCreationState(activeTab = 0, limitType = LimitType.TIME_WINDOW, selectedMode = ChallengeMode.SOFT),
+            ChallengeCreationState(activeTab = 1, blockAdultContent = true, selectedMode = ChallengeMode.SOFT),
+        ).forEach { state ->
+            val steps = visibleSteps(state)
+            assertEquals(STEP_REVIEW, steps.last())
+            assertEquals(STEP_SOFT_INFO, steps[steps.lastIndex - 1])
+        }
     }
 }

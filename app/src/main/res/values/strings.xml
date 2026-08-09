@@ -1658,6 +1658,20 @@
     <string name="wizard_duration_title">Challenge duration</string>
     <string name="wizard_duration_days_unit">days</string>
 
+    <!-- Wizard Soft-info step — "How your challenge works" (SOFT challenges only) -->
+    <string name="wizard_soft_info_title">How your challenge works</string>
+    <!-- apps/sites · limit · duration, e.g. "Instagram, TikTok · 60 min / day · 14 days" -->
+    <string name="wizard_soft_info_config_format">%1$s · %2$s · %3$s</string>
+    <string name="wizard_soft_info_lock">Once you reach your daily limit, that\'s it for %1$s for the rest of the day — there is no way around it. The lock lifts at midnight.</string>
+    <string name="wizard_soft_info_lock_window">Outside your time window, %1$s stays locked — there is no way around it. It opens up again at %2$s.</string>
+    <string name="wizard_soft_info_lock_always">%1$s stays blocked around the clock for the whole challenge — there is no way around it.</string>
+    <string name="wizard_soft_info_fail">Landing exactly on your limit is fine. But going over on even ONE day means the WHOLE challenge counts as failed — there are no grace days.</string>
+    <string name="wizard_soft_info_no_usage_limit">There is no daily limit you could go over here, so this challenge can\'t fail on usage. It only ends early if you give it up yourself.</string>
+    <string name="wizard_soft_info_result">You\'ll see your result when the challenge ends on %1$s.</string>
+    <string name="wizard_soft_info_open_ended">This challenge runs until you end it yourself.</string>
+    <string name="wizard_soft_info_tip_time">Tip: “Open anyway” gives you a short session — that session can carry you past your limit.</string>
+    <string name="wizard_soft_info_cta">Got it</string>
+
     <!-- Wizard Step 7 — Review -->
     <string name="wizard_review_title">Review &amp; start</string>
     <string name="wizard_review_mode_label">Mode</string>

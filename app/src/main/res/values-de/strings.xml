@@ -1606,6 +1606,20 @@
     <string name="wizard_duration_title">Challenge-Dauer</string>
     <string name="wizard_duration_days_unit">Tage</string>
 
+    <!-- Wizard Soft-info step — "So läuft deine Challenge" (nur SOFT-Challenges) -->
+    <string name="wizard_soft_info_title">So läuft deine Challenge</string>
+    <!-- Apps/Seiten · Limit · Dauer, z. B. "Instagram, TikTok · 60 Min / Tag · 14 Tage" -->
+    <string name="wizard_soft_info_config_format">%1$s · %2$s · %3$s</string>
+    <string name="wizard_soft_info_lock">Sobald du dein Tageslimit erreichst, ist Schluss mit %1$s für den Rest des Tages — ohne Notausgang. Die Sperre löst sich um Mitternacht.</string>
+    <string name="wizard_soft_info_lock_window">Außerhalb deines Zeitfensters bleibt %1$s gesperrt — ohne Notausgang. Ab %2$s ist der Zugriff wieder frei.</string>
+    <string name="wizard_soft_info_lock_always">%1$s bleibt während der gesamten Challenge rund um die Uhr blockiert — ohne Notausgang.</string>
+    <string name="wizard_soft_info_fail">Genau am Limit ist okay. Aber gehst du an nur EINEM Tag drüber, gilt die GANZE Challenge als nicht geschafft — es gibt keine Gnaden-Tage.</string>
+    <string name="wizard_soft_info_no_usage_limit">Hier gibt es kein Tageslimit, das du überschreiten könntest — diese Challenge kann also nicht an deiner Nutzung scheitern. Sie endet nur vorzeitig, wenn du selbst aufgibst.</string>
+    <string name="wizard_soft_info_result">Dein Ergebnis siehst du, wenn die Challenge am %1$s endet.</string>
+    <string name="wizard_soft_info_open_ended">Diese Challenge läuft, bis du sie selbst beendest.</string>
+    <string name="wizard_soft_info_tip_time">Tipp: „Trotzdem öffnen“ gibt dir eine kurze Session — die kann dich über dein Limit bringen.</string>
+    <string name="wizard_soft_info_cta">Verstanden</string>
+
     <!-- Wizard Step 7 — Review -->
     <string name="wizard_review_title">Überprüfen &amp; starten</string>
     <string name="wizard_review_mode_label">Modus</string>

@@ -42,11 +42,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.AllInclusive
 import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -98,6 +102,7 @@ import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.WIZARD_TRANSITION_MS
 import com.detox.app.presentation.components.WizardFeeBreakdownCard
 import com.detox.app.presentation.components.WizardHeader
+import com.detox.app.presentation.components.WizardInfoBulletRow
 import com.detox.app.presentation.components.WizardLimitTypeCard
 import com.detox.app.presentation.components.WizardMissingPermissionRow
 import com.detox.app.presentation.components.WizardSummaryDividerRow
@@ -111,11 +116,15 @@ import com.detox.app.presentation.components.weekdayShortLabel
 import com.detox.app.presentation.components.TimeSpinnerPicker
 import com.detox.app.presentation.util.pressScaleFeedback
 import com.detox.app.ui.theme.detoxColors
+import com.detox.app.util.DateUtils
 import com.detox.app.util.FeatureFlags
 import com.detox.app.util.HapticManager
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import com.stripe.android.paymentsheet.rememberPaymentSheet
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 // Icon circles use the soft* family (one tinted container per hue, soft*Icon glyph).
@@ -314,8 +323,9 @@ fun ChallengeCreationScreen(
         Column(modifier = Modifier.fillMaxSize()) {
 
             // The displayed "Schritt X von Y" counter is the position within the path's
-            // visible-step list (APP: 7, APP+TIME_WINDOW: 6, Website/Adult block path: 4),
-            // so skipped internal steps never surface as a visibly missing number.
+            // visible-step list (Hard — APP: 7, APP+TIME_WINDOW: 6, Website/Adult block path: 4;
+            // Soft adds the STEP_SOFT_INFO explainer, so each is one longer), so skipped internal
+            // steps never surface as a visibly missing number.
             val steps = visibleSteps(state)
             val displayedTotal = steps.size
             val displayedStep = (steps.indexOf(state.currentStep) + 1).coerceAtLeast(1)
@@ -332,7 +342,11 @@ fun ChallengeCreationScreen(
             AnimatedContent(
                 targetState = state.currentStep,
                 transitionSpec = {
-                    val direction = if (targetState > initialState) 1 else -1
+                    // Direction comes from the POSITION in [visibleSteps], not from comparing step
+                    // ids: STEP_SOFT_INFO (8) sits before STEP_REVIEW (7), so an id compare would
+                    // slide the review step in backwards.
+                    val direction =
+                        if (steps.indexOf(targetState) >= steps.indexOf(initialState)) 1 else -1
                     // ~300ms ease-out, synced with the WizardHeader progress-bar animation so the
                     // bar fill and the step content move together.
                     (slideInHorizontally(animationSpec = tween(WIZARD_TRANSITION_MS, easing = WizardTransitionEasing)) { it * direction } +
@@ -402,7 +416,11 @@ fun ChallengeCreationScreen(
                         stakeMin = appConfig.hardModeMinStake,
                         stakeMax = appConfig.hardModeMaxStake,
                     )
-                    7 -> Step7Confirm(
+                    STEP_SOFT_INFO -> StepSoftInfo(
+                        state = state,
+                        appListState = appListState,
+                    )
+                    STEP_REVIEW -> Step7Confirm(
                         state = state,
                         appListState = appListState,
                         uiState = uiState,
@@ -413,7 +431,11 @@ fun ChallengeCreationScreen(
                 }
             }
 
-            if (state.currentStep < TOTAL_STEPS) {
+            // Every step except the LAST one in the path gets the bottom CTA; the review step ends
+            // the wizard with its own "Start challenge" button. Keyed on the list's last entry
+            // rather than a numeric constant, because STEP_SOFT_INFO's id is greater than the
+            // review step's while sitting before it.
+            if (state.currentStep != steps.last()) {
                 val context = LocalContext.current
                 HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -436,7 +458,13 @@ fun ChallengeCreationScreen(
                         ),
                     ) {
                         Text(
-                            text = stringResource(R.string.wizard_btn_next),
+                            text = stringResource(
+                                if (state.currentStep == STEP_SOFT_INFO) {
+                                    R.string.wizard_soft_info_cta
+                                } else {
+                                    R.string.wizard_btn_next
+                                }
+                            ),
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                         )
@@ -1194,6 +1222,156 @@ private fun Step6Duration(
     }
 }
 
+// ── Concrete-configuration labels (shared by the info step and the review step) ───────────────
+
+/**
+ * Human label for what this challenge targets: the selected app names, or — on the Website tab —
+ * the blocked domains ("Adult-Block" when adult blocking is the only source). Three or more
+ * entries collapse to "A, B +N".
+ *
+ * Extracted from the review step so the info step names EXACTLY the same thing; two hand-rolled
+ * copies of this `when` is precisely how the two screens would start telling different stories.
+ */
+@Composable
+private fun wizardTargetSummary(state: ChallengeCreationState, appListState: AppListState): String {
+    val isBlockPath = state.activeTab == 1
+    val appNames = appListState.trackableApps
+        .filter { it.packageName in state.selectedApps }
+        .map { it.appName }
+    val targetNames = if (isBlockPath) state.manualDomains else appNames
+    return when {
+        isBlockPath && targetNames.isEmpty() -> stringResource(R.string.adult_block_display_name)
+        targetNames.size == 1 -> targetNames[0]
+        targetNames.size == 2 -> "${targetNames[0]}, ${targetNames[1]}"
+        targetNames.size >= 3 -> stringResource(
+            R.string.wizard_review_apps_overflow_format,
+            targetNames[0], targetNames[1], targetNames.size - 2,
+        )
+        state.selectedApps.isNotEmpty() ->
+            stringResource(R.string.wizard_review_apps_count, state.selectedApps.size)
+        else -> stringResource(R.string.wizard_review_apps_count, 0)
+    }
+}
+
+/** Human label for the configured limit. Block-path challenges are always-on, so they read 24/7. */
+@Composable
+private fun wizardLimitSummary(state: ChallengeCreationState): String =
+    if (state.activeTab == 1) stringResource(R.string.wizard_review_always_blocked)
+    else when (state.limitType) {
+        LimitType.TIME        -> stringResource(R.string.wizard_review_limit_time_format, state.limitValueMinutes)
+        LimitType.SESSIONS    -> stringResource(R.string.wizard_review_limit_sessions_format, state.limitValueSessions, state.sessionDurationMinutes)
+        LimitType.TIME_BUDGET -> stringResource(R.string.wizard_review_limit_budget_format, state.dailyBudgetMinutes)
+        LimitType.TIME_WINDOW -> stringResource(R.string.wizard_limit_window_title)
+        null                  -> "—"
+    }
+
+// ── Soft-only info step: "How your challenge works" ───────────────────────────
+
+/**
+ * Plain-language explainer of what the user is about to commit to, shown for SOFT challenges only
+ * (see [visibleSteps]) once every parameter is chosen, so the copy can name the real apps, limit
+ * and end date. Read-only: it changes nothing and gates nothing — the "Got it" CTA in the wizard
+ * footer simply advances to the review step, whose existing Start button is the acknowledgment.
+ *
+ * The copy BRANCHES because the three Soft paths genuinely have different rules, and a single
+ * wording would be false for two of them:
+ *  - Usage limits (TIME / SESSIONS / TIME_BUDGET): a daily limit exists, so the lock-at-limit and
+ *    the one-day-over-fails-everything rules both apply.
+ *  - TIME_WINDOW, and the Website/adult block path (persisted as TIME_WINDOW with no window — see
+ *    `ChallengeCreationViewModel.submissionFields`): `DailyEvaluationWorker.computeLimitExceeded`
+ *    returns `false` for TIME_WINDOW, so these challenges can NEVER record a limit breach and can
+ *    never fail on usage. Telling those users "one day over loses everything" would be a lie.
+ */
+@Composable
+internal fun StepSoftInfo(
+    state: ChallengeCreationState,
+    appListState: AppListState,
+) {
+    val isBlockPath = state.activeTab == 1
+    val isWindowOnly = !isBlockPath && state.limitType == LimitType.TIME_WINDOW
+    val hasUsageLimit = !isBlockPath && !isWindowOnly
+
+    val targetLabel = wizardTargetSummary(state, appListState)
+    val limitLabel = wizardLimitSummary(state)
+    val durationLabel = if (state.noEndDate) stringResource(R.string.challenge_no_end_date)
+        else stringResource(R.string.wizard_review_days_format, state.durationDays)
+
+    // Same resolution the challenge itself will get: DateUtils.endOfDayMillis(now, durationDays),
+    // mirroring CreateChallengeUseCase. Recomputed only when the duration changes.
+    val endDateLabel = remember(state.durationDays) {
+        SimpleDateFormat("d. MMM yyyy", Locale.getDefault())
+            .format(Date(DateUtils.endOfDayMillis(System.currentTimeMillis(), state.durationDays)))
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.wizard_soft_info_title),
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = detoxColors.label,
+        )
+        // Concrete one-liner: what · how much · how long, from the choices just made.
+        Text(
+            text = stringResource(
+                R.string.wizard_soft_info_config_format,
+                targetLabel, limitLabel, durationLabel,
+            ),
+            fontSize = 14.sp,
+            color = detoxColors.subtext,
+            lineHeight = 20.sp,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+
+        WizardInfoBulletRow(
+            icon = Icons.Outlined.Lock,
+            iconTint = detoxColors.softBlueIcon,
+            iconBg = detoxColors.softBlueBg,
+            text = when {
+                hasUsageLimit -> stringResource(R.string.wizard_soft_info_lock, targetLabel)
+                isWindowOnly -> stringResource(
+                    R.string.wizard_soft_info_lock_window,
+                    targetLabel,
+                    state.scheduleStart.takeIf { it.length == 5 } ?: state.scheduleStart,
+                )
+                else -> stringResource(R.string.wizard_soft_info_lock_always, targetLabel)
+            },
+        )
+
+        WizardInfoBulletRow(
+            icon = Icons.Outlined.WarningAmber,
+            iconTint = detoxColors.softOrangeIcon,
+            iconBg = detoxColors.softOrangeBg,
+            text = if (hasUsageLimit) stringResource(R.string.wizard_soft_info_fail)
+                else stringResource(R.string.wizard_soft_info_no_usage_limit),
+        )
+
+        WizardInfoBulletRow(
+            icon = if (state.noEndDate) Icons.Outlined.AllInclusive else Icons.Outlined.EventAvailable,
+            iconTint = detoxColors.softPurpleIcon,
+            iconBg = detoxColors.softPurpleBg,
+            text = if (state.noEndDate) stringResource(R.string.wizard_soft_info_open_ended)
+                else stringResource(R.string.wizard_soft_info_result, endDateLabel),
+        )
+
+        // TIME only: "Open anyway" grants a session that can run PAST the limit — the one action
+        // the app offers that can cost the challenge. The other limit types cap at the limit.
+        if (state.limitType == LimitType.TIME && !isBlockPath) {
+            WizardInfoBulletRow(
+                icon = Icons.Outlined.Lightbulb,
+                iconTint = detoxColors.softGreenIcon,
+                iconBg = detoxColors.softGreenBg,
+                text = stringResource(R.string.wizard_soft_info_tip_time),
+            )
+        }
+    }
+}
+
 // ── Step 7: Confirm ───────────────────────────────────────────────────────────
 
 @Composable
@@ -1249,32 +1427,10 @@ private fun Step7Confirm(
                 // for adult-only) and the limit row reads "Immer blockiert" — these challenges skip
                 // the limit/schedule steps and are hard-blocked 24/7.
                 val isBlockPath = state.activeTab == 1
-                val appNames = appListState.trackableApps
-                    .filter { it.packageName in state.selectedApps }
-                    .map { it.appName }
                 val targetLabel = if (isBlockPath) stringResource(R.string.wizard_review_blocked_label)
                     else stringResource(R.string.wizard_review_apps_label)
-                val targetNames = if (isBlockPath) state.manualDomains else appNames
-                val appsLabel = when {
-                    isBlockPath && targetNames.isEmpty() -> stringResource(R.string.adult_block_display_name)
-                    targetNames.size == 1 -> targetNames[0]
-                    targetNames.size == 2 -> "${targetNames[0]}, ${targetNames[1]}"
-                    targetNames.size >= 3 -> stringResource(
-                        R.string.wizard_review_apps_overflow_format,
-                        targetNames[0], targetNames[1], targetNames.size - 2,
-                    )
-                    state.selectedApps.isNotEmpty() ->
-                        stringResource(R.string.wizard_review_apps_count, state.selectedApps.size)
-                    else -> stringResource(R.string.wizard_review_apps_count, 0)
-                }
-                val limitLabel = if (isBlockPath) stringResource(R.string.wizard_review_always_blocked)
-                    else when (state.limitType) {
-                        LimitType.TIME        -> stringResource(R.string.wizard_review_limit_time_format, state.limitValueMinutes)
-                        LimitType.SESSIONS    -> stringResource(R.string.wizard_review_limit_sessions_format, state.limitValueSessions, state.sessionDurationMinutes)
-                        LimitType.TIME_BUDGET -> stringResource(R.string.wizard_review_limit_budget_format, state.dailyBudgetMinutes)
-                        LimitType.TIME_WINDOW -> stringResource(R.string.wizard_limit_window_title)
-                        null                  -> "—"
-                    }
+                val appsLabel = wizardTargetSummary(state, appListState)
+                val limitLabel = wizardLimitSummary(state)
                 val durationLabel = if (state.noEndDate) stringResource(R.string.challenge_no_end_date)
                     else stringResource(R.string.wizard_review_days_format, state.durationDays)
 

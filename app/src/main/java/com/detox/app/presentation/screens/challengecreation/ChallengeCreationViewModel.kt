@@ -58,7 +58,21 @@ val APP_DOMAIN_MAP: Map<String, List<String>> = mapOf(
     "com.linkedin.android"       to listOf("linkedin.com"),
 )
 
-const val TOTAL_STEPS = 7
+/**
+ * Internal step id of the "Review & start" step. It stays 7 — the id is a stable CONTENT key, not
+ * a position, and [visibleSteps] is the single authority on ordering (see [STEP_SOFT_INFO]).
+ */
+const val STEP_REVIEW = 7
+
+/**
+ * Internal step id of the Soft-only "How your challenge works" step. Numerically AFTER
+ * [STEP_REVIEW] but positioned BEFORE it in [visibleSteps], so the list is deliberately not
+ * ascending — which is why navigation walks it by INDEX
+ * ([ChallengeCreationViewModel.goNext]/[ChallengeCreationViewModel.goBack]) rather than by
+ * comparing ids. Renumbering Review instead would have re-keyed a long-established content id
+ * across the `when(step)` switch, [ChallengeCreationViewModel.canGoNext] and the tests.
+ */
+const val STEP_SOFT_INFO = 8
 
 /**
  * Step-2 gate predicate: true when the ACTIVE tab has a real blocking source that will actually be
@@ -81,21 +95,32 @@ internal fun step2HasValidBlockingSource(
 }
 
 /**
- * Ordered list of internal step ids (1..7) visible for the current wizard path. The internal ids
- * stay stable content keys (the screen's `when(step)` switch and [ChallengeCreationViewModel.canGoNext]
- * key on them); only membership changes per path:
+ * Ordered list of internal step ids visible for the current wizard path. The internal ids stay
+ * stable content keys (the screen's `when(step)` switch and [ChallengeCreationViewModel.canGoNext]
+ * key on them); only membership and ORDER change per path:
  *  - APP (Apps tab): all steps; with [LimitType.TIME_WINDOW] the step-4 value picker is skipped
  *    (the window is configured on the schedule step).
  *  - Block-only (Website tab — custom domains and/or adult): the challenge is a 24/7 hard block,
  *    so both the minute-limit steps (3+4) AND the time-window step (5) are skipped.
+ *  - SOFT only: [STEP_SOFT_INFO] sits between the last parameter step and [STEP_REVIEW], so the
+ *    lockout/fail rules are explained once every parameter is known and the copy can name the
+ *    actual apps, limit and end date. Hard Mode already carries its own consent gate on the review
+ *    step and is deliberately left untouched — its paths are byte-identical to before.
  *
- * [ChallengeCreationViewModel.goNext]/[ChallengeCreationViewModel.goBack] walk this list, and the
- * displayed "Schritt X von Y" counter is the position in it — pure so it is unit-testable.
+ * [ChallengeCreationViewModel.goNext]/[ChallengeCreationViewModel.goBack] walk this list BY INDEX,
+ * and the displayed "Schritt X von Y" counter is the position in it — pure so it is unit-testable.
  */
-internal fun visibleSteps(state: ChallengeCreationState): List<Int> = when {
-    state.activeTab == 1 -> listOf(1, 2, 6, 7)
-    state.limitType == LimitType.TIME_WINDOW -> listOf(1, 2, 3, 5, 6, 7)
-    else -> listOf(1, 2, 3, 4, 5, 6, 7)
+internal fun visibleSteps(state: ChallengeCreationState): List<Int> {
+    val parameterSteps = when {
+        state.activeTab == 1 -> listOf(1, 2, 6)
+        state.limitType == LimitType.TIME_WINDOW -> listOf(1, 2, 3, 5, 6)
+        else -> listOf(1, 2, 3, 4, 5, 6)
+    }
+    return if (state.selectedMode == ChallengeMode.SOFT) {
+        parameterSteps + STEP_SOFT_INFO + STEP_REVIEW
+    } else {
+        parameterSteps + STEP_REVIEW
+    }
 }
 
 // ── App list sub-state ────────────────────────────────────────────────────────
@@ -500,15 +525,35 @@ class ChallengeCreationViewModel @Inject constructor(
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
-    // Navigation walks [visibleSteps] (nearest visible neighbour), so per-path skips — TIME_WINDOW's
-    // missing step 4, the block-only paths' missing 3/4/5 — need no special cases here. Internal
-    // indices stay 1..7 as content identifiers; the screen derives the displayed counter from the
-    // same list.
+    // Navigation walks [visibleSteps] by INDEX (previous/next entry in the list), so per-path skips
+    // — TIME_WINDOW's missing step 4, the block-only paths' missing 3/4/5 — need no special cases
+    // here. Index-walking, not id-comparison: [STEP_SOFT_INFO] is numerically 8 but positioned
+    // before [STEP_REVIEW] (7), so `firstOrNull { it > currentStep }` would dead-end on it. The ids
+    // are content identifiers; this list is the only ordering authority, and the screen derives the
+    // displayed counter and the slide direction from the same list.
+    //
+    // The `indexOf == -1` fallbacks cover the transient case where the current step just left the
+    // list (e.g. switching tab/limit type re-shapes the path) — nearest visible neighbour, exactly
+    // as before.
     fun goBack() = _state.update { s ->
-        s.copy(currentStep = visibleSteps(s).lastOrNull { it < s.currentStep } ?: 1)
+        val steps = visibleSteps(s)
+        val index = steps.indexOf(s.currentStep)
+        val target = when {
+            index > 0 -> steps[index - 1]
+            index == 0 -> s.currentStep
+            else -> steps.lastOrNull { it < s.currentStep } ?: steps.firstOrNull() ?: 1
+        }
+        s.copy(currentStep = target)
     }
     fun goNext() = _state.update { s ->
-        s.copy(currentStep = visibleSteps(s).firstOrNull { it > s.currentStep } ?: s.currentStep)
+        val steps = visibleSteps(s)
+        val index = steps.indexOf(s.currentStep)
+        val target = when {
+            index >= 0 && index < steps.lastIndex -> steps[index + 1]
+            index >= 0 -> s.currentStep
+            else -> steps.firstOrNull { it > s.currentStep } ?: s.currentStep
+        }
+        s.copy(currentStep = target)
     }
 
     fun canGoNext(): Boolean {
@@ -529,7 +574,9 @@ class ChallengeCreationViewModel @Inject constructor(
                 s.scheduleStart.length == 5 && s.scheduleEnd.length == 5
             else true
             6 -> s.durationError == null
-            7 -> true
+            // Read-only explainer — nothing to validate; "Got it" always advances to review.
+            STEP_SOFT_INFO -> true
+            STEP_REVIEW -> true
             else -> false
         }
     }

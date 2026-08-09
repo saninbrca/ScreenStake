@@ -1613,6 +1613,15 @@
     <string name="wizard_soft_info_title">So läuft deine Challenge</string>
     <!-- Apps/Seiten · Limit · Dauer, z. B. "Instagram, TikTok · 60 Min / Tag · 14 Tage" -->
     <string name="wizard_soft_info_config_format">%1$s · %2$s · %3$s</string>
+    <!-- Zeilen-Titel: nur Scan-Ebene. Sie benennen den Satz darunter und dürfen nie eine eigene
+         Aussage treffen — die geprüften Regeln stehen in den Body-Strings. -->
+    <string name="wizard_soft_info_lock_title">Die tägliche Sperre</string>
+    <string name="wizard_soft_info_lock_window_title">Die Sperre</string>
+    <string name="wizard_soft_info_lock_always_title">Die Blockierung</string>
+    <string name="wizard_soft_info_fail_title">Keine Gnaden-Tage</string>
+    <string name="wizard_soft_info_no_usage_limit_title">Nichts, woran du scheitern kannst</string>
+    <string name="wizard_soft_info_result_title">Dein Ergebnis</string>
+    <string name="wizard_soft_info_tip_title">Gut zu wissen</string>
     <string name="wizard_soft_info_lock">Sobald du dein Tageslimit erreichst, ist Schluss mit %1$s für den Rest des Tages — ohne Notausgang. Die Sperre löst sich um Mitternacht.</string>
     <string name="wizard_soft_info_lock_window">Außerhalb deines Zeitfensters bleibt %1$s gesperrt — ohne Notausgang. Ab %2$s ist der Zugriff wieder frei.</string>
     <string name="wizard_soft_info_lock_always">%1$s bleibt während der gesamten Challenge rund um die Uhr blockiert — ohne Notausgang.</string>

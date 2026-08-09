@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -236,25 +237,35 @@ fun WizardLimitTypeCard(
 // ── Info bullet row ───────────────────────────────────────────────────────────
 
 /**
- * One explanatory bullet: tinted icon circle + body copy, in a hairline card.
+ * One explanatory row: tinted icon circle + a scannable [title] over its supporting [text].
  *
  * Same geometry and tokens as [WizardLimitTypeCard] (40dp circle, 22dp glyph, 14dp padding,
- * [WizardCardShape], `cardBackground`/`cardBorder`) minus the selection affordances — this row is
- * read-only, so it has no press feedback, no border animation and no check mark.
+ * [WizardCardShape], `cardBackground`/`cardBorder`) and the same 15sp-SemiBold-label over
+ * subtext type pair, minus the selection affordances — this row is read-only, so it has no press
+ * feedback, no border animation and no check mark.
+ *
+ * [borderColor]/[borderWidth]/[titleColor] default to the neutral card. Overriding them is how a
+ * caller marks ONE row as the one that matters, reusing the wizard's own "this card is special"
+ * idiom (the accent border [WizardLimitTypeCard] uses for selection) instead of a fill tint — a
+ * tinted fill would swallow the icon circle, which is drawn from the same soft* family.
  */
 @Composable
 fun WizardInfoBulletRow(
     icon: ImageVector,
     iconTint: Color,
     iconBg: Color,
+    title: String,
     text: String,
+    titleColor: Color = detoxColors.label,
+    borderColor: Color = detoxColors.cardBorder,
+    borderWidth: Dp = 0.5.dp,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(WizardCardShape)
             .background(detoxColors.cardBackground)
-            .border(0.5.dp, detoxColors.cardBorder, WizardCardShape)
+            .border(borderWidth, borderColor, WizardCardShape)
             .padding(14.dp),
     ) {
         Row(
@@ -275,13 +286,24 @@ fun WizardInfoBulletRow(
                     modifier = Modifier.size(22.dp),
                 )
             }
-            Text(
-                text = text,
-                fontSize = 14.sp,
-                color = detoxColors.label,
-                lineHeight = 20.sp,
+            Column(
                 modifier = Modifier.weight(1f),
-            )
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = titleColor,
+                    lineHeight = 20.sp,
+                )
+                Text(
+                    text = text,
+                    fontSize = 14.sp,
+                    color = detoxColors.subtext,
+                    lineHeight = 20.sp,
+                )
+            }
         }
     }
 }

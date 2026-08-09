@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -1308,14 +1309,16 @@ internal fun StepSoftInfo(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Header block. Same 22sp-bold-over-subtext opening as steps 3–6 — this step earns its
+        // extra weight from the cards below, not from a bespoke title treatment.
         Text(
             text = stringResource(R.string.wizard_soft_info_title),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = detoxColors.label,
         )
+        Spacer(modifier = Modifier.height(6.dp))
         // Concrete one-liner: what · how much · how long, from the choices just made.
         Text(
             text = stringResource(
@@ -1326,48 +1329,81 @@ internal fun StepSoftInfo(
             color = detoxColors.subtext,
             lineHeight = 20.sp,
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        // Deliberately larger than the 10dp card-to-card gap below, so the header reads as a
+        // header instead of as two more entries in the stack.
+        Spacer(modifier = Modifier.height(20.dp))
 
-        WizardInfoBulletRow(
-            icon = Icons.Outlined.Lock,
-            iconTint = detoxColors.softBlueIcon,
-            iconBg = detoxColors.softBlueBg,
-            text = when {
-                hasUsageLimit -> stringResource(R.string.wizard_soft_info_lock, targetLabel)
-                isWindowOnly -> stringResource(
-                    R.string.wizard_soft_info_lock_window,
-                    targetLabel,
-                    state.scheduleStart.takeIf { it.length == 5 } ?: state.scheduleStart,
-                )
-                else -> stringResource(R.string.wizard_soft_info_lock_always, targetLabel)
-            },
-        )
-
-        WizardInfoBulletRow(
-            icon = Icons.Outlined.WarningAmber,
-            iconTint = detoxColors.softOrangeIcon,
-            iconBg = detoxColors.softOrangeBg,
-            text = if (hasUsageLimit) stringResource(R.string.wizard_soft_info_fail)
-                else stringResource(R.string.wizard_soft_info_no_usage_limit),
-        )
-
-        WizardInfoBulletRow(
-            icon = if (state.noEndDate) Icons.Outlined.AllInclusive else Icons.Outlined.EventAvailable,
-            iconTint = detoxColors.softPurpleIcon,
-            iconBg = detoxColors.softPurpleBg,
-            text = if (state.noEndDate) stringResource(R.string.wizard_soft_info_open_ended)
-                else stringResource(R.string.wizard_soft_info_result, endDateLabel),
-        )
-
-        // TIME only: "Open anyway" grants a session that can run PAST the limit — the one action
-        // the app offers that can cost the challenge. The other limit types cap at the limit.
-        if (state.limitType == LimitType.TIME && !isBlockPath) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             WizardInfoBulletRow(
-                icon = Icons.Outlined.Lightbulb,
-                iconTint = detoxColors.softGreenIcon,
-                iconBg = detoxColors.softGreenBg,
-                text = stringResource(R.string.wizard_soft_info_tip_time),
+                icon = Icons.Outlined.Lock,
+                iconTint = detoxColors.softBlueIcon,
+                iconBg = detoxColors.softBlueBg,
+                title = when {
+                    hasUsageLimit -> stringResource(R.string.wizard_soft_info_lock_title)
+                    isWindowOnly -> stringResource(R.string.wizard_soft_info_lock_window_title)
+                    else -> stringResource(R.string.wizard_soft_info_lock_always_title)
+                },
+                text = when {
+                    hasUsageLimit -> stringResource(R.string.wizard_soft_info_lock, targetLabel)
+                    isWindowOnly -> stringResource(
+                        R.string.wizard_soft_info_lock_window,
+                        targetLabel,
+                        state.scheduleStart.takeIf { it.length == 5 } ?: state.scheduleStart,
+                    )
+                    else -> stringResource(R.string.wizard_soft_info_lock_always, targetLabel)
+                },
             )
+
+            // The one row that gets emphasis. On the usage-limit paths this is the rule nobody
+            // expects and the entire reason the step exists, so it carries an accent border and an
+            // accent title — the wizard's own "this card is not like the others" signal. Amber
+            // from the existing softOrange family, never `danger`: this is a heads-up before an
+            // opt-in, not an error. The no-usage-limit variant is reassurance, not a warning, so
+            // it stays a neutral row.
+            val isRuleWarning = hasUsageLimit
+            WizardInfoBulletRow(
+                icon = if (isRuleWarning) Icons.Outlined.WarningAmber else Icons.Outlined.Shield,
+                // Green, not orange, when the row is reassurance ("nothing to fail on"): an amber
+                // shield reads as a caution the sentence next to it isn't making.
+                iconTint = if (isRuleWarning) detoxColors.softOrangeIcon else detoxColors.softGreenIcon,
+                iconBg = if (isRuleWarning) detoxColors.softOrangeBg else detoxColors.softGreenBg,
+                title = if (isRuleWarning) stringResource(R.string.wizard_soft_info_fail_title)
+                    else stringResource(R.string.wizard_soft_info_no_usage_limit_title),
+                text = if (isRuleWarning) stringResource(R.string.wizard_soft_info_fail)
+                    else stringResource(R.string.wizard_soft_info_no_usage_limit),
+                // Border uses softOrangeText, NOT softOrangeIcon: the icon token is the vivid
+                // glyph orange (#FF6B35 in light) and at 1.5dp it read as an error state, while
+                // dark's (#FFAB8A) read as a calm accent — the same rule looking alarming in one
+                // theme and gentle in the other. The text token is the emphasis-on-background
+                // orange in both, so the border and the title now match each other and the two
+                // themes carry equal weight.
+                titleColor = if (isRuleWarning) detoxColors.softOrangeText else detoxColors.label,
+                borderColor = if (isRuleWarning) detoxColors.softOrangeText else detoxColors.cardBorder,
+                borderWidth = if (isRuleWarning) 1.5.dp else 0.5.dp,
+            )
+
+            WizardInfoBulletRow(
+                icon = if (state.noEndDate) Icons.Outlined.AllInclusive else Icons.Outlined.EventAvailable,
+                iconTint = detoxColors.softPurpleIcon,
+                iconBg = detoxColors.softPurpleBg,
+                title = if (state.noEndDate) stringResource(R.string.challenge_no_end_date)
+                    else stringResource(R.string.wizard_soft_info_result_title),
+                text = if (state.noEndDate) stringResource(R.string.wizard_soft_info_open_ended)
+                    else stringResource(R.string.wizard_soft_info_result, endDateLabel),
+            )
+
+            // TIME only: "Open anyway" grants a session that can run PAST the limit — the one
+            // action the app offers that can cost the challenge. The other limit types cap at the
+            // limit.
+            if (state.limitType == LimitType.TIME && !isBlockPath) {
+                WizardInfoBulletRow(
+                    icon = Icons.Outlined.Lightbulb,
+                    iconTint = detoxColors.softGreenIcon,
+                    iconBg = detoxColors.softGreenBg,
+                    title = stringResource(R.string.wizard_soft_info_tip_title),
+                    text = stringResource(R.string.wizard_soft_info_tip_time),
+                )
+            }
         }
     }
 }

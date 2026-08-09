@@ -32,6 +32,7 @@ object NotificationHelper {
     private const val NOTIF_ID_USAGE_80_BASE     = 5000
     private const val NOTIF_ID_GROUP_BASE        = 7000
     private const val NOTIF_ID_PERMISSION_FAILED      = 9002
+    private const val NOTIF_ID_PERMISSION_PAUSED      = 9003
     private const val NOTIF_ID_PERMISSION_WARNING_BASE = 9010  // 9010..9013 for levels 0-3
     private const val NOTIF_ID_USAGE_VIOLATION        = 9040
     private const val NOTIF_ID_HEARTBEAT_WARNING      = 9050
@@ -326,6 +327,12 @@ object NotificationHelper {
         }
     }
 
+    /**
+     * Money-loss notice for the permission deadline. Only for users who actually had a solo Hard
+     * challenge in play — the body says the stake was charged, which is false for anyone else.
+     * See [sendPermissionEnforcementPaused] for the Soft counterpart and [PermissionCheckWorker]
+     * for the branch.
+     */
     fun sendPermissionFailed(context: Context) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
@@ -344,6 +351,40 @@ object NotificationHelper {
             Timber.d("Permission failed notification posted")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping permission failed notification")
+        }
+    }
+
+    /**
+     * Soft-challenge counterpart to [sendPermissionFailed], posted when the permission deadline
+     * passes and the user has an active SOFT challenge.
+     *
+     * A Soft challenge is NOT failed by permission loss — `PermissionCheckWorker
+     * .failAllHardChallenges` only touches solo Hard rows, so the challenge stays `active` and
+     * enforcement merely stops happening. The old behaviour posted [sendPermissionFailed]'s
+     * "❌ Challenge failed / your stake has been charged" to these users, which was false twice
+     * over (nothing failed, and Soft has no stake). The copy here says what is actually true and
+     * explicitly denies the failure, because that is the wrong belief being corrected.
+     *
+     * Its own notification id, so a user holding BOTH a Hard and a Soft challenge gets both
+     * messages instead of one overwriting the other.
+     */
+    fun sendPermissionEnforcementPaused(context: Context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val body = context.getString(R.string.notif_permission_paused_body)
+        val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_permission_paused_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(buildDeepLinkIntent(context, NOTIF_ID_PERMISSION_PAUSED, "profile"))
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_PERMISSION_PAUSED, notification)
+            Timber.d("Permission enforcement-paused notification posted")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping permission paused notification")
         }
     }
 

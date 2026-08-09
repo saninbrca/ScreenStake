@@ -34,6 +34,9 @@
     <string name="notification_worker_evaluating">Challenge wird ausgewertet…</string>
     <string name="notification_worker_checking_permissions">Berechtigungen werden geprüft…</string>
     <string name="notification_permission_failed_title">❌ Challenge fehlgeschlagen</string>
+    <!-- Soft-Challenges scheitern nie an fehlenden Berechtigungen — die Durchsetzung stoppt nur. -->
+    <string name="notif_permission_paused_title">⏸️ Challenge nicht mehr geschützt</string>
+    <string name="notif_permission_paused_body">Die nötige Berechtigung ist zu lange deaktiviert, deshalb kann Finite nichts mehr blockieren. Deine Challenge läuft weiter — sie ist nicht fehlgeschlagen. Schalte die Berechtigung wieder ein, damit du wieder geschützt bist.</string>
     <string name="notification_permission_urgent_title">🔴 Deine Challenge endet bald!</string>
     <string name="notification_permission_urgent_body">Die erforderliche Erlaubnis fehlt seit zu langer Zeit. Behebe es jetzt oder deine Challenge wird automatisch beendet.</string>
     <string name="notification_permission_restored">✅ Perfekt! Deine Challenge läuft weiter.</string>

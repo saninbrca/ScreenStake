@@ -170,11 +170,38 @@ class PermissionCheckWorker @AssistedInject constructor(
         }
 
         if (elapsed >= effectiveDeadlineMs) {
-            Timber.d("Challenge failed: permission missing too long")
+            Timber.d("Permission deadline reached: permission missing too long")
+            // Snapshot BEFORE the fail pass — afterwards the Hard rows this affects are gone from
+            // the active list. Read purely to decide WHICH notification is true; nothing here
+            // changes what fails.
+            val affected = challengeRepository.getActiveChallengesList().getOrElse { e ->
+                Timber.e(e, "PermissionCheckWorker: could not load challenges for deadline notice")
+                emptyList()
+            }
+            val notices = permissionDeadlineNotices(affected)
+
             failAllHardChallenges()
             prefs.edit().clear().apply()
             cancelPermissionWarnings()
-            NotificationHelper.sendPermissionFailed(applicationContext)
+
+            // Tell each challenge type the truth about ITSELF. This used to be one unconditional
+            // "❌ Challenge failed — your stake has been charged", which was false for everyone
+            // except a solo Hard holder: failAllHardChallenges touches solo Hard rows ONLY, so a
+            // Soft challenge is never failed here (it stays active, enforcement just stops), and a
+            // user with no challenges at all had nothing to fail either.
+            //
+            // Both can be posted in the same pass on purpose — Hard and Soft challenges coexist
+            // freely (creation only blocks re-using the same PACKAGE, see the wizard's
+            // conflictingPackages), and each message is then independently true.
+            if (notices.hardFailed) {
+                NotificationHelper.sendPermissionFailed(applicationContext)
+            }
+            if (notices.softPaused) {
+                NotificationHelper.sendPermissionEnforcementPaused(applicationContext)
+            }
+            if (!notices.hardFailed && !notices.softPaused) {
+                Timber.d("PermissionCheckWorker: deadline reached with no affected challenge — no notice")
+            }
         }
 
         return Result.success()
@@ -490,3 +517,39 @@ class PermissionCheckWorker @AssistedInject constructor(
  */
 internal fun isSoloHardPermissionFailEligible(challenge: Challenge): Boolean =
     challenge.mode == ChallengeMode.HARD && challenge.groupChallengeId == null
+
+/** Which permission-deadline notices are TRUE — see [permissionDeadlineNotices]. */
+internal data class PermissionDeadlineNotices(
+    /** A solo Hard challenge was put through the capture/fail pass: "failed, stake charged". */
+    val hardFailed: Boolean,
+    /** A Soft challenge is left un-enforced but still active: "not protected, still running". */
+    val softPaused: Boolean,
+)
+
+/**
+ * Decides which deadline notification actually tells the truth, given the challenges that were
+ * active when the 24h permission deadline hit.
+ *
+ * This exists because the worker used to post ONE unconditional "❌ Challenge failed — your stake
+ * has been charged", while `failAllHardChallenges` only ever touches solo Hard rows. A Soft-only
+ * user was therefore told their challenge had failed and their stake was taken when neither had
+ * happened — the challenge stays `active` and enforcement merely stops. A user with no active
+ * challenge at all got the same message about nothing.
+ *
+ * Both flags can be true at once and both notices are then posted: Hard and Soft challenges
+ * coexist freely (creation only rejects re-using the same PACKAGE), so the Hard message must not
+ * be suppressed to fix the Soft one.
+ *
+ * Group shadow rows are excluded from BOTH: their permission handling belongs to the group
+ * settlement CFs, exactly as in [isSoloHardPermissionFailEligible].
+ *
+ * Deliberately does NOT try to report whether a Hard capture succeeded: [hardFailed] mirrors the
+ * pre-existing "had a solo Hard challenge in play" trigger one-for-one, so the Hard path's
+ * notification behaviour is unchanged by this function.
+ */
+internal fun permissionDeadlineNotices(challenges: List<Challenge>) = PermissionDeadlineNotices(
+    hardFailed = challenges.any { isSoloHardPermissionFailEligible(it) },
+    softPaused = challenges.any {
+        it.mode == ChallengeMode.SOFT && it.groupChallengeId == null
+    },
+)

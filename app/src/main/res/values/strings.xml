@@ -34,6 +34,9 @@
     <string name="notification_worker_evaluating">Evaluating your challenge…</string>
     <string name="notification_worker_checking_permissions">Checking permissions…</string>
     <string name="notification_permission_failed_title">❌ Challenge failed</string>
+    <!-- Soft challenges are never failed by permission loss — enforcement just stops. -->
+    <string name="notif_permission_paused_title">⏸️ Challenge no longer protected</string>
+    <string name="notif_permission_paused_body">The required permission has been off for too long, so Finite can\'t block anything. Your challenge is still running — it has not failed. Turn the permission back on to be protected again.</string>
     <string name="notification_permission_urgent_title">🔴 Your challenge ends soon!</string>
     <string name="notification_permission_urgent_body">A required permission has been missing for too long. Fix it now or your challenge will end automatically.</string>
     <string name="notification_permission_restored">✅ Perfect! Your challenge is back on track.</string>

@@ -609,6 +609,9 @@ class OverlayManager @Inject constructor(
                     contextHeader = contextHeader,
                     opensUsed = confirmedOpens,
                     maxOpens = maxOpens,
+                    // Display only — the SAME value startSessionTimer is called with below, so the
+                    // overlay can never advertise a session length the timer doesn't grant.
+                    sessionMinutes = challenge.sessionDurationMinutes,
                     motivationText = challenge.customMotivation?.takeIf { it.isNotBlank() },
                     onYes = {
                         val newCount =

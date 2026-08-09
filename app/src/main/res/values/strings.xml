@@ -1445,6 +1445,9 @@
     <string name="overlay_v2_label_sessions">of %1$d opens used today</string>
     <!-- "Calm Authority" redesign: hero shows REMAINING opens, so the sub-label is "übrig"-framed -->
     <string name="overlay_v2_label_sessions_remaining">opens left</string>
+    <!-- Stage 1 only: every open is a timed session (OverlayManager starts the countdown on the
+         "open anyway" tap), and the hero count alone never said so. -->
+    <string name="overlay_v2_label_session_length">%1$d min per session</string>
     <string name="overlay_v2_label_time">of %1$d minutes used today</string>
     <string name="overlay_v2_label_budget">of %1$d minutes available today</string>
 
@@ -1637,7 +1640,7 @@
     <string name="wizard_limit_time_title">Time limit</string>
     <string name="wizard_limit_time_desc">Block after X minutes per day.</string>
     <string name="wizard_limit_sessions_title">Session limit</string>
-    <string name="wizard_limit_sessions_desc">Block after X conscious opens per day.</string>
+    <string name="wizard_limit_sessions_desc">Block after X conscious opens per day — Y minutes each.</string>
     <string name="wizard_limit_budget_title">Daily budget</string>
     <string name="wizard_limit_budget_desc">Split your available time across the day.</string>
     <string name="wizard_limit_window_title">Time window only</string>
@@ -1650,12 +1653,32 @@
     <string name="wizard_set_limit_budget_unit">minutes daily budget</string>
     <string name="wizard_set_limit_session_label">How long per session?</string>
     <string name="wizard_set_limit_session_unit">minutes per session</string>
+    <!-- SESSIONS only: the two pickers are opens and minutes-per-session, so the daily total
+         (their product) is the one number the user cannot read off the screen. Display only —
+         nothing enforces or settles against it. -->
+    <string name="wizard_set_limit_sessions_total">%1$d × %2$d min = %3$d min per day</string>
+    <!-- TIME / TIME_BUDGET: the picker unit already says "per day", so a total would restate it.
+         This is the 14-day average for the app the figure was measured on — named, never implied
+         to cover a whole multi-app selection. -->
+    <string name="wizard_set_limit_current_average">Right now you use %1$s about %2$d min/day.</string>
 
     <!-- Wizard Step 5 — Schedule -->
     <string name="wizard_schedule_title">Usage schedule</string>
     <string name="wizard_schedule_subtitle">Restrict tracking to specific hours and days — or skip this step.</string>
     <string name="wizard_schedule_days_hint">No selection = every day.</string>
     <string name="wizard_schedule_placeholder">Set time window</string>
+    <!-- TIME_WINDOW only: the window IS the limit, and there is no minute cap inside it — so the
+         effect line states the window's length in hours and never implies an allowance. -->
+    <string name="wizard_window_length_format">%1$s–%2$s · %3$s per day</string>
+    <plurals name="wizard_window_length_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <plurals name="wizard_window_length_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="wizard_window_length_hours_minutes">%1$d h %2$d min</string>
 
     <!-- Wizard Step 6 — Duration -->
     <string name="wizard_duration_title">Challenge duration</string>
@@ -1672,6 +1695,7 @@
     <string name="wizard_soft_info_lock_always_title">The block</string>
     <string name="wizard_soft_info_fail_title">No grace days</string>
     <string name="wizard_soft_info_no_usage_limit_title">Nothing to fail on</string>
+    <string name="wizard_soft_info_sessions_title">Your opens are capped</string>
     <string name="wizard_soft_info_result_title">Your result</string>
     <string name="wizard_soft_info_tip_title">Good to know</string>
     <string name="wizard_soft_info_lock">Once you reach your daily limit, that\'s it for %1$s for the rest of the day — there is no way around it. The lock lifts at midnight.</string>
@@ -1679,6 +1703,10 @@
     <string name="wizard_soft_info_lock_always">%1$s stays blocked around the clock for the whole challenge — there is no way around it.</string>
     <string name="wizard_soft_info_fail">Landing exactly on your limit is fine. But going over on even ONE day means the WHOLE challenge counts as failed — there are no grace days.</string>
     <string name="wizard_soft_info_no_usage_limit">There is no daily limit you could go over here, so this challenge can\'t fail on usage. It only ends early if you give it up yourself.</string>
+    <!-- SESSIONS variant of the rule row. The generic fail rule would be misleading here: the
+         overlay hard-caps conscious opens at the limit, so the "one day over" case it warns about
+         is unreachable — the honest rule is that time cannot fail this challenge at all. -->
+    <string name="wizard_soft_info_sessions">Every open is a session on a timer. When it runs out you\'re back at the gate — opening again uses up one of your daily opens, and once they\'re gone the app stays locked until midnight. Time can\'t fail this challenge: you can only lose it by giving it up yourself.</string>
     <string name="wizard_soft_info_result">You\'ll see your result when the challenge ends on %1$s.</string>
     <string name="wizard_soft_info_open_ended">This challenge runs until you end it yourself.</string>
     <string name="wizard_soft_info_tip_time">Tip: “Open anyway” gives you a short session — that session can carry you past your limit.</string>

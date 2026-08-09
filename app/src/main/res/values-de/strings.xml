@@ -1398,6 +1398,9 @@
     <string name="overlay_v2_label_sessions">von %1$d Öffnungen heute verbraucht</string>
     <!-- "Calm Authority" redesign: hero shows REMAINING opens, so the sub-label is "übrig"-framed -->
     <string name="overlay_v2_label_sessions_remaining">Öffnungen übrig</string>
+    <!-- Nur Stage 1: Jede Öffnung ist eine Session auf Zeit (OverlayManager startet den Countdown
+         beim „Trotzdem öffnen“-Tap) — die Hero-Zahl allein hat das nie gesagt. -->
+    <string name="overlay_v2_label_session_length">%1$d Min pro Session</string>
     <string name="overlay_v2_label_time">von %1$d Minuten heute verbraucht</string>
     <string name="overlay_v2_label_budget">von %1$d Minuten heute verfügbar</string>
 
@@ -1585,7 +1588,7 @@
     <string name="wizard_limit_time_title">Zeit-Limit</string>
     <string name="wizard_limit_time_desc">Nach X Minuten pro Tag blockieren.</string>
     <string name="wizard_limit_sessions_title">Session-Limit</string>
-    <string name="wizard_limit_sessions_desc">Nach X bewussten Öffnungen pro Tag blockieren.</string>
+    <string name="wizard_limit_sessions_desc">Nach X bewussten Öffnungen pro Tag blockieren — je Y Minuten.</string>
     <string name="wizard_limit_budget_title">Tagesbudget</string>
     <string name="wizard_limit_budget_desc">Verfügbare Zeit über den Tag aufteilen.</string>
     <string name="wizard_limit_window_title">Nur Zeitfenster</string>
@@ -1598,12 +1601,32 @@
     <string name="wizard_set_limit_budget_unit">Minuten Tagesbudget</string>
     <string name="wizard_set_limit_session_label">Wie lange pro Session?</string>
     <string name="wizard_set_limit_session_unit">Minuten pro Session</string>
+    <!-- Nur SESSIONS: Die beiden Picker sind Öffnungen und Minuten pro Session — die Tagessumme
+         (ihr Produkt) ist die einzige Zahl, die nicht auf dem Schirm steht. Nur Anzeige — nichts
+         erzwingt oder wertet danach aus. -->
+    <string name="wizard_set_limit_sessions_total">%1$d × %2$d Min = %3$d Min pro Tag</string>
+    <!-- TIME / TIME_BUDGET: Die Picker-Einheit sagt bereits „pro Tag“, eine Summe würde sie nur
+         wiederholen. Das hier ist der 14-Tage-Schnitt der App, für die er gemessen wurde —
+         benannt, nie so getan, als gälte er für eine ganze Mehrfach-Auswahl. -->
+    <string name="wizard_set_limit_current_average">Aktuell nutzt du %1$s etwa %2$d Min/Tag.</string>
 
     <!-- Wizard Step 5 — Schedule -->
     <string name="wizard_schedule_title">Nutzungsplan</string>
     <string name="wizard_schedule_subtitle">Schränke das Tracking auf bestimmte Stunden und Tage ein — oder überspringe diesen Schritt.</string>
     <string name="wizard_schedule_days_hint">Keine Auswahl = jeden Tag.</string>
     <string name="wizard_schedule_placeholder">Zeitfenster festlegen</string>
+    <!-- Nur TIME_WINDOW: Das Fenster IST das Limit, innerhalb gibt es keine Minuten-Obergrenze —
+         die Effekt-Zeile nennt daher die Fensterlänge in Stunden und suggeriert nie ein Kontingent. -->
+    <string name="wizard_window_length_format">%1$s–%2$s · %3$s pro Tag</string>
+    <plurals name="wizard_window_length_hours">
+        <item quantity="one">%1$d Stunde</item>
+        <item quantity="other">%1$d Stunden</item>
+    </plurals>
+    <plurals name="wizard_window_length_minutes">
+        <item quantity="one">%1$d Minute</item>
+        <item quantity="other">%1$d Minuten</item>
+    </plurals>
+    <string name="wizard_window_length_hours_minutes">%1$d Std %2$d Min</string>
 
     <!-- Wizard Step 6 — Duration -->
     <string name="wizard_duration_title">Challenge-Dauer</string>
@@ -1620,6 +1643,7 @@
     <string name="wizard_soft_info_lock_always_title">Die Blockierung</string>
     <string name="wizard_soft_info_fail_title">Keine Gnaden-Tage</string>
     <string name="wizard_soft_info_no_usage_limit_title">Nichts, woran du scheitern kannst</string>
+    <string name="wizard_soft_info_sessions_title">Deine Öffnungen sind gedeckelt</string>
     <string name="wizard_soft_info_result_title">Dein Ergebnis</string>
     <string name="wizard_soft_info_tip_title">Gut zu wissen</string>
     <string name="wizard_soft_info_lock">Sobald du dein Tageslimit erreichst, ist Schluss mit %1$s für den Rest des Tages — ohne Notausgang. Die Sperre löst sich um Mitternacht.</string>
@@ -1627,6 +1651,10 @@
     <string name="wizard_soft_info_lock_always">%1$s bleibt während der gesamten Challenge rund um die Uhr blockiert — ohne Notausgang.</string>
     <string name="wizard_soft_info_fail">Genau am Limit ist okay. Aber gehst du an nur EINEM Tag drüber, gilt die GANZE Challenge als nicht geschafft — es gibt keine Gnaden-Tage.</string>
     <string name="wizard_soft_info_no_usage_limit">Hier gibt es kein Tageslimit, das du überschreiten könntest — diese Challenge kann also nicht an deiner Nutzung scheitern. Sie endet nur vorzeitig, wenn du selbst aufgibst.</string>
+    <!-- SESSIONS-Variante der Regel-Zeile. Die generische Fail-Regel wäre hier irreführend: Das
+         Overlay deckelt die bewussten Öffnungen hart am Limit — der „einen Tag drüber“-Fall, vor
+         dem sie warnt, ist gar nicht erreichbar. Ehrlich ist: An der Zeit kann sie nicht scheitern. -->
+    <string name="wizard_soft_info_sessions">Jede Öffnung ist eine Session auf Zeit. Läuft sie ab, stehst du wieder vor der Sperre — erneut öffnen kostet eine deiner Tages-Öffnungen, und sind die aufgebraucht, bleibt die App bis Mitternacht zu. An der Zeit kann diese Challenge nicht scheitern: Verlieren kannst du sie nur, wenn du selbst aufgibst.</string>
     <string name="wizard_soft_info_result">Dein Ergebnis siehst du, wenn die Challenge am %1$s endet.</string>
     <string name="wizard_soft_info_open_ended">Diese Challenge läuft, bis du sie selbst beendest.</string>
     <string name="wizard_soft_info_tip_time">Tipp: „Trotzdem öffnen“ gibt dir eine kurze Session — die kann dich über dein Limit bringen.</string>

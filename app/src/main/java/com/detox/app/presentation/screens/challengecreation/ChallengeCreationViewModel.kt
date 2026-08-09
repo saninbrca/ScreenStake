@@ -165,6 +165,11 @@ data class ChallengeCreationState(
     val sessionDurationMinutes: Int = 5,
     val dailyBudgetMinutes: Int = 10,
     val avgDailyMinutes: Int = 0,
+    /**
+     * Package [avgDailyMinutes] was measured for; null = no figure loaded yet. Display only — the
+     * step-4 hint names this app, so the figure and the name can never come apart.
+     */
+    val avgDailyMinutesPackage: String? = null,
     val limitMinutesError: String? = null,
     val limitSessionsError: String? = null,
     val sessionMinutesError: String? = null,
@@ -359,12 +364,21 @@ class ChallengeCreationViewModel @Inject constructor(
             }
             s.copy(selectedApps = newSelected, domainToggles = newToggles)
         }
-        val firstPkg = _state.value.selectedApps.firstOrNull() ?: return
-        if (_state.value.avgDailyMinutes == 0) {
+        // The 14-day average is measured for ONE package (the first selected), and step 4 now shows
+        // it — so it must be keyed to the package it was measured on, not just cached once. The old
+        // `if (avgDailyMinutes == 0)` guard kept the very first app's figure forever: deselect it,
+        // pick another, and the number on screen belonged to an app that is no longer in the
+        // challenge. Same reason the empty selection clears it instead of returning early.
+        val firstPkg = _state.value.selectedApps.firstOrNull()
+        if (firstPkg == null) {
+            _state.update { it.copy(avgDailyMinutes = 0, avgDailyMinutesPackage = null) }
+            return
+        }
+        if (_state.value.avgDailyMinutesPackage != firstPkg) {
             viewModelScope.launch {
                 val stats = usageStatsRepository.getAppUsageStats(14)
                 val avg = stats.firstOrNull { it.packageName == firstPkg }?.avgDailyMinutes?.toInt() ?: 0
-                _state.update { it.copy(avgDailyMinutes = avg) }
+                _state.update { it.copy(avgDailyMinutes = avg, avgDailyMinutesPackage = firstPkg) }
             }
         }
     }

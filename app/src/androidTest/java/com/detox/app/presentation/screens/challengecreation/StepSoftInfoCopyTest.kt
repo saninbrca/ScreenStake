@@ -17,8 +17,12 @@ import org.junit.Test
  *
  * The branches are not cosmetic — they are the difference between telling the truth and lying to
  * the user about their own challenge:
- *  - TIME / SESSIONS / TIME_BUDGET record `limitExceeded` days, so the "one day over fails the
- *    whole challenge" rule applies.
+ *  - TIME / TIME_BUDGET record `limitExceeded` days, so the "one day over fails the whole
+ *    challenge" rule applies.
+ *  - SESSIONS has a daily limit but cannot exceed it: `OverlayManager.handleSessionLimitApp` caps
+ *    conscious opens AT the limit and `DailyEvaluationWorker` settles on
+ *    `consciousOpens > maxSessions`. The generic fail rule would warn about an unreachable case,
+ *    so this path gets its own rule row.
  *  - TIME_WINDOW — and the Website/adult block path, which persists as TIME_WINDOW (see
  *    `ChallengeCreationViewModel.submissionFields`) — hit `DailyEvaluationWorker
  *    .computeLimitExceeded`'s `LimitType.TIME_WINDOW -> false` arm and can NEVER fail on usage.
@@ -61,9 +65,10 @@ class StepSoftInfoCopyTest {
 
     private val failRule get() = context.getString(R.string.wizard_soft_info_fail)
     private val noUsageLimit get() = context.getString(R.string.wizard_soft_info_no_usage_limit)
+    private val sessionsRule get() = context.getString(R.string.wizard_soft_info_sessions)
     private val timeTip get() = context.getString(R.string.wizard_soft_info_tip_time)
 
-    // ── Usage-limit paths: the fail rule applies ─────────────────────────────────
+    // ── Exceedable limits: the fail rule applies ─────────────────────────────────
 
     @Test
     fun timeLimit_showsFailRuleAndTip() {
@@ -71,13 +76,7 @@ class StepSoftInfoCopyTest {
         composeRule.onNodeWithText(failRule).assertIsDisplayed()
         composeRule.onNodeWithText(timeTip).assertIsDisplayed()
         composeRule.onNodeWithText(noUsageLimit).assertDoesNotExist()
-    }
-
-    @Test
-    fun sessionLimit_showsFailRuleButNoTip() {
-        show(softAppState(LimitType.SESSIONS))
-        composeRule.onNodeWithText(failRule).assertIsDisplayed()
-        composeRule.onNodeWithText(timeTip).assertDoesNotExist()
+        composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
     }
 
     @Test
@@ -85,6 +84,18 @@ class StepSoftInfoCopyTest {
         show(softAppState(LimitType.TIME_BUDGET))
         composeRule.onNodeWithText(failRule).assertIsDisplayed()
         composeRule.onNodeWithText(timeTip).assertDoesNotExist()
+        composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
+    }
+
+    // ── Capped limit: the fail rule would warn about an unreachable case ─────────
+
+    @Test
+    fun sessionLimit_showsTheCappedRuleInsteadOfTheFailRule() {
+        show(softAppState(LimitType.SESSIONS))
+        composeRule.onNodeWithText(sessionsRule).assertIsDisplayed()
+        composeRule.onNodeWithText(failRule).assertDoesNotExist()
+        composeRule.onNodeWithText(timeTip).assertDoesNotExist()
+        composeRule.onNodeWithText(noUsageLimit).assertDoesNotExist()
     }
 
     // ── Paths that cannot fail on usage: the fail rule must NOT appear ───────────
@@ -94,6 +105,7 @@ class StepSoftInfoCopyTest {
         show(softAppState(LimitType.TIME_WINDOW))
         composeRule.onNodeWithText(noUsageLimit).assertIsDisplayed()
         composeRule.onNodeWithText(failRule).assertDoesNotExist()
+        composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
         composeRule.onNodeWithText(timeTip).assertDoesNotExist()
     }
 
@@ -112,6 +124,7 @@ class StepSoftInfoCopyTest {
         )
         composeRule.onNodeWithText(noUsageLimit).assertIsDisplayed()
         composeRule.onNodeWithText(failRule).assertDoesNotExist()
+        composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
         composeRule.onNodeWithText(timeTip).assertDoesNotExist()
     }
 

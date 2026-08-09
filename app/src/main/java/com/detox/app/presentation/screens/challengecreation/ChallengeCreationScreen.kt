@@ -82,6 +82,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -393,6 +394,7 @@ fun ChallengeCreationScreen(
                     )
                     4 -> Step4LimitValues(
                         state = state,
+                        appListState = appListState,
                         onUpdateLimitMinutes = viewModel::updateLimitMinutes,
                         onUpdateLimitSessions = viewModel::updateLimitSessions,
                         onUpdateSessionDuration = viewModel::updateSessionDurationMinutes,
@@ -751,9 +753,54 @@ private fun Step3LimitType(
 
 // ── Step 4: Limit values ──────────────────────────────────────────────────────
 
+/**
+ * One derived "here is what that actually means per day" line under a picker.
+ *
+ * Read-only by construction: every value it shows is computed from wizard state that is already on
+ * screen. Nothing enforces, gates or settles against these numbers — [CheckDailyLimitUseCase] and
+ * [DailyEvaluationWorker] keep deriving their own from the persisted challenge.
+ */
 @Composable
-private fun Step4LimitValues(
+private fun WizardLimitEffectLine(text: String) {
+    Text(
+        text = text,
+        fontSize = 13.sp,
+        color = detoxColors.subtext,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/**
+ * "Right now you use Instagram about 96 min/day" — the 14-day average the ViewModel already loads
+ * on app selection and has never shown anywhere.
+ *
+ * Deliberately NOT a computed daily total: for TIME and TIME_BUDGET the picker unit already reads
+ * "per day", so restating the picked number would say nothing. The figure the user cannot read off
+ * the screen is their own current usage, which is what makes the limit choice meaningful.
+ *
+ * The average covers ONE package (see `ChallengeCreationViewModel.applyToggleApp`), so the copy
+ * names that app rather than implying it spans a multi-app selection. Null — row hidden — when
+ * there is no usable figure (no usage history, stats unavailable, or nothing selected yet).
+ */
+@Composable
+private fun currentAverageLine(
     state: ChallengeCreationState,
+    appListState: AppListState,
+): String? {
+    if (state.avgDailyMinutes <= 0) return null
+    val pkg = state.avgDailyMinutesPackage ?: return null
+    val appName = appListState.trackableApps
+        .firstOrNull { it.packageName == pkg }?.appName ?: return null
+    return stringResource(R.string.wizard_set_limit_current_average, appName, state.avgDailyMinutes)
+}
+
+@Composable
+// internal, not private: [WizardEffectLineRenderTest] renders it in both themes — same reason
+// [StepSoftInfo] is internal.
+internal fun Step4LimitValues(
+    state: ChallengeCreationState,
+    appListState: AppListState,
     onUpdateLimitMinutes: (Int) -> Unit,
     onUpdateLimitSessions: (Int) -> Unit,
     onUpdateSessionDuration: (Int) -> Unit,
@@ -773,6 +820,9 @@ private fun Step4LimitValues(
             color = detoxColors.label,
         )
 
+        // Null → the row is simply not rendered; see [currentAverageLine].
+        val averageLine = currentAverageLine(state, appListState)
+
         when (state.limitType) {
             LimitType.TIME -> {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -783,13 +833,24 @@ private fun Step4LimitValues(
                     unit = stringResource(R.string.wizard_set_limit_minutes_unit),
                     surfaceColor = detoxColors.screenBackground,
                 )
+                if (averageLine != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    WizardLimitEffectLine(averageLine)
+                }
             }
 
             LimitType.SESSIONS -> {
+                // Both pickers coerce their displayed value, so the total is computed from the SAME
+                // locals the pickers render — the line can never total up numbers the user isn't
+                // looking at. Plain state reads (no `remember`): either picker's change recomposes
+                // this block and the product recomputes with it.
+                val sessions = state.limitValueSessions.coerceAtMost(20)
+                val sessionMinutes = state.sessionDurationMinutes.coerceAtMost(30)
+
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
                     values = (1..20).toList(),
-                    selectedValue = state.limitValueSessions.coerceAtMost(20),
+                    selectedValue = sessions,
                     onValueChange = onUpdateLimitSessions,
                     unit = stringResource(R.string.wizard_set_limit_opens_unit),
                     surfaceColor = detoxColors.screenBackground,
@@ -804,10 +865,19 @@ private fun Step4LimitValues(
                 Spacer(modifier = Modifier.height(8.dp))
                 DetoxHorizontalPicker(
                     values = (1..30).toList(),
-                    selectedValue = state.sessionDurationMinutes.coerceAtMost(30),
+                    selectedValue = sessionMinutes,
                     onValueChange = onUpdateSessionDuration,
                     unit = stringResource(R.string.wizard_set_limit_session_unit),
                     surfaceColor = detoxColors.screenBackground,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                WizardLimitEffectLine(
+                    stringResource(
+                        R.string.wizard_set_limit_sessions_total,
+                        sessions,
+                        sessionMinutes,
+                        sessions * sessionMinutes,
+                    )
                 )
             }
 
@@ -820,6 +890,10 @@ private fun Step4LimitValues(
                     unit = stringResource(R.string.wizard_set_limit_budget_unit),
                     surfaceColor = detoxColors.screenBackground,
                 )
+                if (averageLine != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    WizardLimitEffectLine(averageLine)
+                }
             }
 
             // Unreachable in normal flow: goNext/goBack skip internal step 4 for TIME_WINDOW
@@ -875,7 +949,8 @@ private fun ScheduleTimeColumn(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Step5Schedule(
+// internal for the same reason as [Step4LimitValues] — see [WizardEffectLineRenderTest].
+internal fun Step5Schedule(
     scheduleStart: String,
     scheduleEnd: String,
     activeDays: Set<String>,
@@ -969,6 +1044,32 @@ private fun Step5Schedule(
 
         if (timeError != null) {
             Text(text = timeError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+        }
+
+        // Effect line, TIME_WINDOW only (isRequired IS the TIME_WINDOW gate — see the call site).
+        // For that type the window is the whole limit, so its LENGTH is the number the user is
+        // actually choosing. Stated in hours on purpose: there is no minute allowance inside the
+        // window, and a "X min per day" phrasing would invent one. Hidden while the window is
+        // incomplete or inverted, so it never renders a negative or half-typed span.
+        if (isRequired && startSet && endSet && timeError == null) {
+            val windowMinutes = (endH * 60 + endM) - (startH * 60 + startM)
+            val hours = windowMinutes / 60
+            val minutes = windowMinutes % 60
+            val lengthLabel = when {
+                minutes == 0 -> pluralStringResource(R.plurals.wizard_window_length_hours, hours, hours)
+                hours == 0 -> pluralStringResource(R.plurals.wizard_window_length_minutes, minutes, minutes)
+                else -> stringResource(R.string.wizard_window_length_hours_minutes, hours, minutes)
+            }
+            Text(
+                text = stringResource(
+                    R.string.wizard_window_length_format,
+                    scheduleStart,
+                    scheduleEnd,
+                    lengthLabel,
+                ),
+                fontSize = 13.sp,
+                color = detoxColors.subtext,
+            )
         }
 
         // Weekday circles inside a card, with the "no selection = every day" hint below them.
@@ -1274,10 +1375,13 @@ private fun wizardLimitSummary(state: ChallengeCreationState): String =
  * and end date. Read-only: it changes nothing and gates nothing — the "Got it" CTA in the wizard
  * footer simply advances to the review step, whose existing Start button is the acknowledgment.
  *
- * The copy BRANCHES because the three Soft paths genuinely have different rules, and a single
- * wording would be false for two of them:
- *  - Usage limits (TIME / SESSIONS / TIME_BUDGET): a daily limit exists, so the lock-at-limit and
- *    the one-day-over-fails-everything rules both apply.
+ * The copy BRANCHES because the Soft paths genuinely have different rules, and a single wording
+ * would be false for most of them:
+ *  - TIME / TIME_BUDGET: a daily limit exists and can be exceeded, so the lock-at-limit and the
+ *    one-day-over-fails-everything rules both apply.
+ *  - SESSIONS: the limit exists but is hard-capped by the overlay (conscious opens can never pass
+ *    it), so the fail rule is unreachable — that path gets its own rule row saying what actually
+ *    ends the challenge. See the `isSessions` branch below.
  *  - TIME_WINDOW, and the Website/adult block path (persisted as TIME_WINDOW with no window — see
  *    `ChallengeCreationViewModel.submissionFields`): `DailyEvaluationWorker.computeLimitExceeded`
  *    returns `false` for TIME_WINDOW, so these challenges can NEVER record a limit breach and can
@@ -1360,17 +1464,32 @@ internal fun StepSoftInfo(
             // from the existing softOrange family, never `danger`: this is a heads-up before an
             // opt-in, not an error. The no-usage-limit variant is reassurance, not a warning, so
             // it stays a neutral row.
-            val isRuleWarning = hasUsageLimit
+            //
+            // SESSIONS is a usage limit but takes the reassurance shape, because the warning would
+            // describe a case it cannot reach: `OverlayManager.handleSessionLimitApp` hard-caps
+            // conscious opens AT the limit (Stage 2 has no bypass), and the settlement predicate is
+            // `consciousOpens > maxSessions` (`DailyEvaluationWorker`) — so "one day over" never
+            // happens, and the per-session countdown ends a session without ever recording a
+            // breach. Telling those users the whole challenge dies if they go over is as false as
+            // showing the rule to a TIME_WINDOW challenge.
+            val isSessions = hasUsageLimit && state.limitType == LimitType.SESSIONS
+            val isRuleWarning = hasUsageLimit && !isSessions
             WizardInfoBulletRow(
                 icon = if (isRuleWarning) Icons.Outlined.WarningAmber else Icons.Outlined.Shield,
                 // Green, not orange, when the row is reassurance ("nothing to fail on"): an amber
                 // shield reads as a caution the sentence next to it isn't making.
                 iconTint = if (isRuleWarning) detoxColors.softOrangeIcon else detoxColors.softGreenIcon,
                 iconBg = if (isRuleWarning) detoxColors.softOrangeBg else detoxColors.softGreenBg,
-                title = if (isRuleWarning) stringResource(R.string.wizard_soft_info_fail_title)
-                    else stringResource(R.string.wizard_soft_info_no_usage_limit_title),
-                text = if (isRuleWarning) stringResource(R.string.wizard_soft_info_fail)
-                    else stringResource(R.string.wizard_soft_info_no_usage_limit),
+                title = when {
+                    isRuleWarning -> stringResource(R.string.wizard_soft_info_fail_title)
+                    isSessions -> stringResource(R.string.wizard_soft_info_sessions_title)
+                    else -> stringResource(R.string.wizard_soft_info_no_usage_limit_title)
+                },
+                text = when {
+                    isRuleWarning -> stringResource(R.string.wizard_soft_info_fail)
+                    isSessions -> stringResource(R.string.wizard_soft_info_sessions)
+                    else -> stringResource(R.string.wizard_soft_info_no_usage_limit)
+                },
                 // Border uses softOrangeText, NOT softOrangeIcon: the icon token is the vivid
                 // glyph orange (#FF6B35 in light) and at 1.5dp it read as an error state, while
                 // dark's (#FFAB8A) read as a calm accent — the same rule looking alarming in one

@@ -85,6 +85,12 @@ fun SessionIntentionOverlay(
     contextHeader: String,
     opensUsed: Int,
     maxOpens: Int,
+    /**
+     * Length of the session this tap buys, in minutes — the countdown `OverlayManager` starts on
+     * "open anyway" (`startSessionTimer`, challenge.sessionDurationMinutes). Shown because the
+     * hero count alone never said the open is timed. <= 0 hides the line.
+     */
+    sessionMinutes: Int = 0,
     /** The user's own custom motivation ("why"). Null/blank = not shown. */
     motivationText: String? = null,
     onYes: () -> Unit,
@@ -199,6 +205,20 @@ fun SessionIntentionOverlay(
                     color = TextSecond,
                     textAlign = TextAlign.Center
                 )
+
+                // ── What one open actually buys — the session length ───────────────
+                // Dimmer (#555) and smaller than the sub-label above it: this is the quiet
+                // qualifier on the hero, not a second headline.
+                if (sessionMinutes > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.overlay_v2_label_session_length, sessionMinutes),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = TextHint,
+                        textAlign = TextAlign.Center
+                    )
+                }
 
                 Spacer(Modifier.height(30.dp))
 

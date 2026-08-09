@@ -465,10 +465,11 @@ class OverlayManager @Inject constructor(
             Timber.d("Group challenge check: pkg=$packageName challengeType=GROUP limitType=${challenge.limitType}")
         }
 
-        // 80 % approach warning for TIME. This is the single app-open funnel, and the
-        // session-timer expiry paths re-enter checkDailyLimitUseCase from here too, so a user who
-        // stays inside the app is still re-evaluated every sessionDurationMinutes rather than only
-        // on the next cold open. The other two limit types cross elsewhere: SESSIONS on the
+        // 80 % approach warning for TIME. This is the app-open funnel; the session-timer expiry
+        // paths run their own checkDailyLimitUseCase and jump straight to
+        // dispatchOverlayForLimitType, so they re-evaluate the LIMIT every sessionDurationMinutes
+        // but do not pass this warning — a user who never leaves the app first sees it on their
+        // next cold open. The other two limit types cross elsewhere: SESSIONS on the
         // conscious-open tap (status.todayOpens is stale by one at this point), TIME_BUDGET on the
         // 10 s tick — CheckDailyLimitUseCase deliberately reports the FULL budget as remaining for
         // TIME_BUDGET, so it could never cross 80 % here. TIME_WINDOW has no usage limit at all.
@@ -484,20 +485,54 @@ class OverlayManager @Inject constructor(
         }
 
         // Single unified dispatch for ALL limit types AND ALL challenge types
-        when (challenge.limitType) {
-            LimitType.SESSIONS    -> handleSessionLimitApp(status, scope)
-            LimitType.TIME_BUDGET -> handleTimeBudgetApp(status, scope)
-            LimitType.TIME -> {
-                when {
-                    status.limitExceeded || exceededAppsToday.contains(packageName) -> {
-                        Timber.d("Fix2: TIME_LIMIT exceeded — showLimitExceededOverlay (groupId=$groupChallengeId)")
-                        showLimitExceededOverlay(status, scope)
-                    }
-                    else ->
-                        showBlockingOverlay(status, scope)
-                }
+        dispatchOverlayForLimitType(packageName, status, scope)
+    }
+
+    /**
+     * Picks the overlay for a freshly-evaluated [status] — the ONLY place the limit type decides
+     * which screen the user sees.
+     *
+     * Extracted from [handleAppOpen] so the session-timer expiry paths land exactly where a fresh
+     * open would ([startSessionTimer], [restorePersistedSessionTimers]). Both used to call
+     * [handleSessionLimitApp] unconditionally, which is right for SESSIONS and wrong for everything
+     * else: a TIME challenge has `limitValueSessions == null`, so `maxOpens` fell to 0, `0 >= 0`
+     * chose Stage 2, and a user who took the "open anyway" grant at 2 of 60 minutes was shown
+     * "Enough for today — you'll get fresh opens tomorrow" with 58 minutes still on the clock.
+     * Routing only: nothing here counts an open, starts a timer, or touches money.
+     *
+     * [packageName] is the package that triggered this evaluation, NOT `challenge.appPackageName` —
+     * a multi-app challenge is one limit shared by several packages, and the TIME branch's
+     * `exceededAppsToday` lookup has to key on the one actually in the foreground.
+     *
+     * Deliberately does NOT carry [handleAppOpen]'s pre-dispatch guards (freed/hard-locked/failed
+     * group, daily-state refresh, 80 % notification). Those belong to the app-open funnel; the
+     * expiry callers run their own foreground and overlay-visibility checks first, and each handler
+     * keeps the guards that are its own (e.g. `failedSessionAppsToday` inside
+     * [handleSessionLimitApp]).
+     */
+    private suspend fun dispatchOverlayForLimitType(
+        packageName: String,
+        status: DailyLimitStatus,
+        scope: CoroutineScope
+    ) {
+        val challenge = status.challenge
+        val route = resolveOverlayRoute(
+            limitType = challenge.limitType,
+            limitExceeded = status.limitExceeded,
+            exceededEarlierToday = exceededAppsToday.contains(packageName),
+        )
+        when (route) {
+            OverlayRoute.SESSION_LIMIT -> handleSessionLimitApp(status, scope)
+            OverlayRoute.TIME_BUDGET -> handleTimeBudgetApp(status, scope)
+            OverlayRoute.TIME_LIMIT_EXCEEDED -> {
+                Timber.d(
+                    "Fix2: TIME_LIMIT exceeded — showLimitExceededOverlay " +
+                            "(groupId=${challenge.groupChallengeId})"
+                )
+                showLimitExceededOverlay(status, scope)
             }
-            LimitType.TIME_WINDOW -> showTimeWindowOverlay(status, scope)
+            OverlayRoute.TIME_FRICTION -> showBlockingOverlay(status, scope)
+            OverlayRoute.TIME_WINDOW -> showTimeWindowOverlay(status, scope)
         }
     }
 
@@ -808,11 +843,15 @@ class OverlayManager @Inject constructor(
             if (currentForeground == packageName) {
                 Timber.d(
                     "OverlayManager: $packageName still in foreground on timer expiry " +
-                            "— re-showing Stage 1"
+                            "— re-evaluating for its limit type"
                 )
                 val result = checkDailyLimitUseCase(packageName)
                 if (result.isSuccess) {
-                    handleSessionLimitApp(result.getOrThrow(), scope)
+                    // Dispatch by limit type, exactly as a fresh open would: SESSIONS gets its
+                    // Stage 1/2 flow, TIME gets the minute-count decision (friction vs
+                    // limit-exceeded). The re-check above already produced the status — this
+                    // routes it, it does not recompute anything.
+                    dispatchOverlayForLimitType(packageName, result.getOrThrow(), scope)
                 } else {
                     Timber.w(
                         "OverlayManager: failed to re-check limit on timer expiry for $packageName"
@@ -879,7 +918,11 @@ class OverlayManager @Inject constructor(
                             ?: TrackedAppEventBus.currentForegroundPackage.value
                         if (currentForeground == packageName && currentOverlayView == null) {
                             val result = checkDailyLimitUseCase(packageName)
-                            if (result.isSuccess) handleSessionLimitApp(result.getOrThrow(), scope)
+                            // Same per-type routing as the live timer above — a restored timer must
+                            // not put a TIME user on the SESSIONS "enough for today" screen either.
+                            if (result.isSuccess) {
+                                dispatchOverlayForLimitType(packageName, result.getOrThrow(), scope)
+                            }
                         } else {
                             Timber.d(
                                 "OverlayManager: $packageName not in foreground after restored " +
@@ -1939,4 +1982,41 @@ class OverlayManager @Inject constructor(
             lifecycleRegistry.handleLifecycleEvent(event)
         }
     }
+}
+
+/** The overlay a given evaluation leads to. One entry per screen [OverlayManager] can show. */
+internal enum class OverlayRoute {
+    /** SESSIONS Stage 1 / Stage 2, decided inside `handleSessionLimitApp` by the open count. */
+    SESSION_LIMIT,
+    TIME_BUDGET,
+    /** TIME, still under the daily minutes: the friction overlay that offers "open anyway". */
+    TIME_FRICTION,
+    /** TIME, at or past the daily minutes: the limit-exceeded screen. */
+    TIME_LIMIT_EXCEEDED,
+    TIME_WINDOW,
+}
+
+/**
+ * Which overlay an evaluated limit leads to. Pure, so the routing can be pinned in a unit test —
+ * [OverlayManager] itself needs a WindowManager, Room and a live foreground app.
+ *
+ * The bug this pins: the session-timer expiry paths called `handleSessionLimitApp` regardless of
+ * limit type. For TIME, `limitValueSessions` is null ⇒ `maxOpens` 0 ⇒ `0 >= 0` ⇒ Stage 2, so a
+ * user who took the "open anyway" grant at 2 of 60 minutes was told "Enough for today — you'll get
+ * fresh opens tomorrow" with 58 minutes left. TIME must never resolve to [SESSION_LIMIT].
+ *
+ * [exceededEarlierToday] is the in-memory `exceededAppsToday` latch: once a TIME limit has been
+ * broken today the exceeded screen stays, even if a later UsageStats read dips back under.
+ */
+internal fun resolveOverlayRoute(
+    limitType: LimitType,
+    limitExceeded: Boolean,
+    exceededEarlierToday: Boolean,
+): OverlayRoute = when (limitType) {
+    LimitType.SESSIONS -> OverlayRoute.SESSION_LIMIT
+    LimitType.TIME_BUDGET -> OverlayRoute.TIME_BUDGET
+    LimitType.TIME ->
+        if (limitExceeded || exceededEarlierToday) OverlayRoute.TIME_LIMIT_EXCEEDED
+        else OverlayRoute.TIME_FRICTION
+    LimitType.TIME_WINDOW -> OverlayRoute.TIME_WINDOW
 }

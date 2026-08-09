@@ -1,10 +1,15 @@
 package com.detox.app.presentation.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,6 +51,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -231,6 +237,139 @@ fun WizardLimitTypeCard(
                 )
             }
         }
+    }
+}
+
+// ── Derived-result row ────────────────────────────────────────────────────────
+
+/**
+ * "What you just chose actually means THIS" — a computed consequence of the inputs above it.
+ *
+ * Third member of the wizard's card family, and deliberately built on the exact chassis of
+ * [WizardInfoBulletRow] / [WizardLimitTypeCard] (40dp icon circle, 22dp glyph, 14dp padding,
+ * [WizardCardShape], `cardBackground` over a 0.5dp `cardBorder`) so a step reads as one stack of
+ * cards rather than as inputs with loose grey text underneath. It differs from the info row in what
+ * the type does: the info row is a title over a paragraph, this is a small [caption] over a [value]
+ * the eye is meant to land on FIRST.
+ *
+ * [prominent] is the rank inside the family, not a separate style: `true` is for the result the
+ * user is actively steering (its inputs are right above it and it changes as they scroll), `false`
+ * for a result that merely restates a setting. Rank is carried by the value's size alone — both
+ * keep the same chassis, so they still read as siblings. For context that is NOT a result of the
+ * inputs, use [WizardHintLine] instead; it sits a rank below this and has no card.
+ *
+ * The value cross-fades on change so a live recomputation is visible rather than an instant
+ * substitution, and uses tabular figures so digits do not jitter while a picker is being scrolled.
+ */
+@Composable
+fun WizardResultRow(
+    icon: ImageVector,
+    iconTint: Color,
+    iconBg: Color,
+    caption: String?,
+    value: String,
+    prominent: Boolean = false,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(WizardCardShape)
+            .background(detoxColors.cardBackground)
+            .border(0.5.dp, detoxColors.cardBorder, WizardCardShape)
+            .padding(14.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(iconBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                if (caption != null) {
+                    Text(
+                        text = caption,
+                        fontSize = 13.sp,
+                        color = detoxColors.subtext,
+                        style = TextStyle(fontFeatureSettings = "tnum"),
+                    )
+                }
+                AnimatedContent(
+                    targetState = value,
+                    transitionSpec = {
+                        // Short, non-bouncy: this fires on every picker detent, so anything longer
+                        // would lag behind a fast scroll. clip = false keeps the row from being
+                        // visibly re-measured when the digit count changes (9 → 10 min).
+                        (fadeIn(tween(120)) togetherWith fadeOut(tween(90)))
+                            .using(SizeTransform(clip = false))
+                    },
+                    label = "wizard_result_value",
+                ) { shown ->
+                    Text(
+                        text = shown,
+                        fontSize = if (prominent) 20.sp else 17.sp,
+                        fontWeight = if (prominent) FontWeight.Bold else FontWeight.SemiBold,
+                        color = detoxColors.label,
+                        style = TextStyle(fontFeatureSettings = "tnum"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Quiet one-liner of context that is NOT a result of the inputs — today's reality the user is
+ * choosing against, e.g. what they currently average.
+ *
+ * The lowest rank of the [WizardResultRow] family: same icon-then-text reading order, but no card,
+ * no circle and body-sized subtext, so it can sit under an input without ever competing with it.
+ * A card here would out-weigh the picker it belongs to and read as a second limit.
+ */
+@Composable
+fun WizardHintLine(
+    icon: ImageVector,
+    text: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // Top, not Center: the sentence wraps to two lines on narrow screens, and a centred icon
+        // would float off on its own beside the block instead of marking where the note starts.
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = detoxColors.subtext,
+            // 2dp nudge puts the glyph on the cap-height rather than the line box top.
+            modifier = Modifier.padding(top = 2.dp).size(14.dp),
+        )
+        Text(
+            // 12sp is the wizard's existing hint size (the weekday card's "no selection = every
+            // day"), so this matches an established rank instead of inventing one — and it earns
+            // back the width the glyph costs, which at 13sp broke a one-line sentence into a
+            // two-line block with an orphan.
+            text = text,
+            fontSize = 12.sp,
+            color = detoxColors.subtext,
+            lineHeight = 17.sp,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

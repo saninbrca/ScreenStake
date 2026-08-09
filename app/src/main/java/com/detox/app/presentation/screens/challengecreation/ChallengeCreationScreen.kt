@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.AllInclusive
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Schedule
@@ -104,7 +105,9 @@ import com.detox.app.presentation.components.DetoxHorizontalPicker
 import com.detox.app.presentation.components.WIZARD_TRANSITION_MS
 import com.detox.app.presentation.components.WizardFeeBreakdownCard
 import com.detox.app.presentation.components.WizardHeader
+import com.detox.app.presentation.components.WizardHintLine
 import com.detox.app.presentation.components.WizardInfoBulletRow
+import com.detox.app.presentation.components.WizardResultRow
 import com.detox.app.presentation.components.WizardLimitTypeCard
 import com.detox.app.presentation.components.WizardMissingPermissionRow
 import com.detox.app.presentation.components.WizardSummaryDividerRow
@@ -754,21 +757,20 @@ private fun Step3LimitType(
 // ── Step 4: Limit values ──────────────────────────────────────────────────────
 
 /**
- * One derived "here is what that actually means per day" line under a picker.
+ * Splits a derived line into the inputs it restates and the result it computes, on the separator
+ * the string itself carries ("3 × 3 Min = 9 Min pro Tag", "09:00–22:00 · 13 Std pro Tag").
  *
- * Read-only by construction: every value it shows is computed from wizard state that is already on
- * screen. Nothing enforces, gates or settles against these numbers — [CheckDailyLimitUseCase] and
- * [DailyEvaluationWorker] keep deriving their own from the persisted challenge.
+ * The separator's job — dividing what you chose from what it costs — is done by the two type sizes
+ * in [WizardResultRow] instead, so the glyph itself is dropped while every word stays exactly as
+ * authored in `strings.xml`. Falls back to (null, whole string) when the separator is absent, so a
+ * reworded string degrades to today's single flat line rather than breaking.
  */
-@Composable
-private fun WizardLimitEffectLine(text: String) {
-    Text(
-        text = text,
-        fontSize = 13.sp,
-        color = detoxColors.subtext,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth(),
-    )
+internal fun splitDerivedLine(text: String, separator: Char): Pair<String?, String> {
+    val index = text.indexOf(separator)
+    if (index < 0) return null to text
+    val caption = text.take(index).trim()
+    val value = text.substring(index + 1).trim()
+    return if (caption.isEmpty() || value.isEmpty()) null to text else caption to value
 }
 
 /**
@@ -834,8 +836,8 @@ internal fun Step4LimitValues(
                     surfaceColor = detoxColors.screenBackground,
                 )
                 if (averageLine != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    WizardLimitEffectLine(averageLine)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    WizardHintLine(icon = Icons.Outlined.Insights, text = averageLine)
                 }
             }
 
@@ -870,14 +872,27 @@ internal fun Step4LimitValues(
                     unit = stringResource(R.string.wizard_set_limit_session_unit),
                     surfaceColor = detoxColors.screenBackground,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                WizardLimitEffectLine(
+                // The payoff of the two pickers above, and the only element on this step the user
+                // is actively steering — so it gets the family's strongest rank (prominent) and
+                // the green of the SESSIONS limit-type card, keeping the type's color identity
+                // from step 3.
+                Spacer(modifier = Modifier.height(20.dp))
+                val (totalCaption, totalValue) = splitDerivedLine(
                     stringResource(
                         R.string.wizard_set_limit_sessions_total,
                         sessions,
                         sessionMinutes,
                         sessions * sessionMinutes,
-                    )
+                    ),
+                    separator = '=',
+                )
+                WizardResultRow(
+                    icon = Icons.Outlined.TouchApp,
+                    iconTint = detoxColors.softGreenIcon,
+                    iconBg = detoxColors.softGreenBg,
+                    caption = totalCaption,
+                    value = totalValue,
+                    prominent = true,
                 )
             }
 
@@ -891,8 +906,8 @@ internal fun Step4LimitValues(
                     surfaceColor = detoxColors.screenBackground,
                 )
                 if (averageLine != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    WizardLimitEffectLine(averageLine)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    WizardHintLine(icon = Icons.Outlined.Insights, text = averageLine)
                 }
             }
 
@@ -1060,15 +1075,24 @@ internal fun Step5Schedule(
                 hours == 0 -> pluralStringResource(R.plurals.wizard_window_length_minutes, minutes, minutes)
                 else -> stringResource(R.string.wizard_window_length_hours_minutes, hours, minutes)
             }
-            Text(
-                text = stringResource(
+            // Same family as the SESSIONS total, one rank down: this restates a setting rather
+            // than computing something the user is steering with a picker. Blue keeps the
+            // TIME_WINDOW limit-type card's color identity from step 3.
+            val (windowCaption, windowValue) = splitDerivedLine(
+                stringResource(
                     R.string.wizard_window_length_format,
                     scheduleStart,
                     scheduleEnd,
                     lengthLabel,
                 ),
-                fontSize = 13.sp,
-                color = detoxColors.subtext,
+                separator = '·',
+            )
+            WizardResultRow(
+                icon = Icons.Outlined.CalendarToday,
+                iconTint = detoxColors.softBlueIcon,
+                iconBg = detoxColors.softBlueBg,
+                caption = windowCaption,
+                value = windowValue,
             )
         }
 

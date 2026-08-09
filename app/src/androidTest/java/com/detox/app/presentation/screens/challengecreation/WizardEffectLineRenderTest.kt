@@ -105,18 +105,24 @@ class WizardEffectLineRenderTest {
     )
 
     // ── SESSIONS: opens × minutes = the daily total ──────────────────────────────
+    // The row splits the authored string on its separator (inputs as caption, result as the
+    // emphasized value), so both halves are asserted rather than the joined sentence.
 
     @Test
     fun sessions_totalIsTheProduct_light() {
         showStep4(dark = false, state = sessionsState(3, 3))
-        composeRule.onNodeWithText(sessionsTotal(3, 3)).assertIsDisplayed()
+        val (caption, value) = splitDerivedLine(sessionsTotal(3, 3), '=')
+        composeRule.onNodeWithText(caption!!).assertIsDisplayed()
+        composeRule.onNodeWithText(value).assertIsDisplayed()
         capture("sessions-3x3", dark = false)
     }
 
     @Test
     fun sessions_totalIsTheProduct_dark() {
         showStep4(dark = true, state = sessionsState(5, 10))
-        composeRule.onNodeWithText(sessionsTotal(5, 10)).assertIsDisplayed()
+        val (caption, value) = splitDerivedLine(sessionsTotal(5, 10), '=')
+        composeRule.onNodeWithText(caption!!).assertIsDisplayed()
+        composeRule.onNodeWithText(value).assertIsDisplayed()
         capture("sessions-5x10", dark = true)
     }
 
@@ -189,10 +195,14 @@ class WizardEffectLineRenderTest {
     private fun hours(n: Int) = context.resources
         .getQuantityString(R.plurals.wizard_window_length_hours, n, n)
 
+    /** The emphasized half of the window row — what the split leaves as the value. */
+    private fun windowValue(start: String, end: String, length: String) =
+        splitDerivedLine(windowLine(start, end, length), '·').second
+
     @Test
     fun window_showsWholeHours_light() {
         showStep5(dark = false, start = "09:00", end = "22:00", isWindow = true)
-        composeRule.onNodeWithText(windowLine("09:00", "22:00", hours(13))).assertIsDisplayed()
+        composeRule.onNodeWithText(windowValue("09:00", "22:00", hours(13))).assertIsDisplayed()
         capture("window-13h", dark = false)
     }
 
@@ -201,7 +211,7 @@ class WizardEffectLineRenderTest {
         showStep5(dark = true, start = "09:00", end = "22:30", isWindow = true)
         composeRule
             .onNodeWithText(
-                windowLine(
+                windowValue(
                     "09:00", "22:30",
                     context.getString(R.string.wizard_window_length_hours_minutes, 13, 30)
                 )
@@ -214,7 +224,7 @@ class WizardEffectLineRenderTest {
     @Test
     fun optionalSchedule_showsNoWindowLine() {
         showStep5(dark = false, start = "09:00", end = "22:00", isWindow = false)
-        composeRule.onNodeWithText(windowLine("09:00", "22:00", hours(13))).assertDoesNotExist()
+        composeRule.onNodeWithText(windowValue("09:00", "22:00", hours(13))).assertDoesNotExist()
         capture("schedule-optional", dark = false)
     }
 
@@ -222,7 +232,7 @@ class WizardEffectLineRenderTest {
     @Test
     fun invertedWindow_showsNoWindowLine() {
         showStep5(dark = false, start = "22:00", end = "09:00", isWindow = true)
-        composeRule.onNodeWithText(windowLine("22:00", "09:00", hours(-13))).assertDoesNotExist()
+        composeRule.onNodeWithText(windowValue("22:00", "09:00", hours(-13))).assertDoesNotExist()
         capture("window-inverted", dark = false)
     }
 }

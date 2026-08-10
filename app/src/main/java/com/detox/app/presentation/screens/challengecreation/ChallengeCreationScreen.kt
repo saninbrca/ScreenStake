@@ -1,6 +1,6 @@
-package com.detox.app.presentation.screens.challengecreation
+package com.finite.focus.presentation.screens.challengecreation
 
-import com.detox.app.BuildConfig
+import com.finite.focus.BuildConfig
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -95,35 +95,35 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import com.detox.app.R
-import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.domain.model.LimitType
-import com.detox.app.domain.model.StakeCapture
-import com.detox.app.presentation.components.AccessibilityDisclosureDialog
-import com.detox.app.presentation.components.AppWebsiteSelectionStep
-import com.detox.app.presentation.components.DetoxHorizontalPicker
-import com.detox.app.presentation.components.WIZARD_TRANSITION_MS
-import com.detox.app.presentation.components.WizardFeeBreakdownCard
-import com.detox.app.presentation.components.WizardHeader
-import com.detox.app.presentation.components.WizardHintLine
-import com.detox.app.presentation.components.WizardInfoBulletRow
-import com.detox.app.presentation.components.WizardResultRow
-import com.detox.app.presentation.components.WizardLimitTypeCard
-import com.detox.app.presentation.components.WizardMissingPermissionRow
-import com.detox.app.presentation.components.WizardSummaryDividerRow
-import com.detox.app.presentation.components.WizardTransitionEasing
-import com.detox.app.presentation.components.WizardWaiverCheckboxRow
-import com.detox.app.presentation.components.formatEuroCents
-import com.detox.app.presentation.components.SCHEDULE_WEEKDAYS
-import com.detox.app.presentation.components.activeDaysSummary
-import com.detox.app.presentation.components.timeWindowSummary
-import com.detox.app.presentation.components.weekdayShortLabel
-import com.detox.app.presentation.components.TimeSpinnerPicker
-import com.detox.app.presentation.util.pressScaleFeedback
-import com.detox.app.ui.theme.detoxColors
-import com.detox.app.util.DateUtils
-import com.detox.app.util.FeatureFlags
-import com.detox.app.util.HapticManager
+import com.finite.focus.R
+import com.finite.focus.domain.model.ChallengeMode
+import com.finite.focus.domain.model.LimitType
+import com.finite.focus.domain.model.StakeCapture
+import com.finite.focus.presentation.components.AccessibilityDisclosureDialog
+import com.finite.focus.presentation.components.AppWebsiteSelectionStep
+import com.finite.focus.presentation.components.DetoxHorizontalPicker
+import com.finite.focus.presentation.components.WIZARD_TRANSITION_MS
+import com.finite.focus.presentation.components.WizardFeeBreakdownCard
+import com.finite.focus.presentation.components.WizardHeader
+import com.finite.focus.presentation.components.WizardHintLine
+import com.finite.focus.presentation.components.WizardInfoBulletRow
+import com.finite.focus.presentation.components.WizardResultRow
+import com.finite.focus.presentation.components.WizardLimitTypeCard
+import com.finite.focus.presentation.components.WizardMissingPermissionRow
+import com.finite.focus.presentation.components.WizardSummaryDividerRow
+import com.finite.focus.presentation.components.WizardTransitionEasing
+import com.finite.focus.presentation.components.WizardWaiverCheckboxRow
+import com.finite.focus.presentation.components.formatEuroCents
+import com.finite.focus.presentation.components.SCHEDULE_WEEKDAYS
+import com.finite.focus.presentation.components.activeDaysSummary
+import com.finite.focus.presentation.components.timeWindowSummary
+import com.finite.focus.presentation.components.weekdayShortLabel
+import com.finite.focus.presentation.components.TimeSpinnerPicker
+import com.finite.focus.presentation.util.pressScaleFeedback
+import com.finite.focus.ui.theme.detoxColors
+import com.finite.focus.util.DateUtils
+import com.finite.focus.util.FeatureFlags
+import com.finite.focus.util.HapticManager
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import com.stripe.android.paymentsheet.rememberPaymentSheet
@@ -1410,6 +1410,12 @@ private fun wizardLimitSummary(state: ChallengeCreationState): String =
  *    `ChallengeCreationViewModel.submissionFields`): `DailyEvaluationWorker.computeLimitExceeded`
  *    returns `false` for TIME_WINDOW, so these challenges can NEVER record a limit breach and can
  *    never fail on usage. Telling those users "one day over loses everything" would be a lie.
+ *
+ * The permission-loss row is the ONE rule that crosses every branch above — it is the only way a
+ * SESSIONS / TIME_WINDOW / block-path challenge can be lost at all — so it renders unconditionally.
+ * Its own copy branches on whether the challenge has an observable package, because the
+ * usage-evidence gate that protects app-target users cannot protect a website/block challenge; see
+ * the row itself.
  */
 @Composable
 internal fun StepSoftInfo(
@@ -1523,6 +1529,42 @@ internal fun StepSoftInfo(
                 titleColor = if (isRuleWarning) detoxColors.softOrangeText else detoxColors.label,
                 borderColor = if (isRuleWarning) detoxColors.softOrangeText else detoxColors.cardBorder,
                 borderWidth = if (isRuleWarning) 1.5.dp else 0.5.dp,
+            )
+
+            // The SECOND way to lose, and the only one that applies to EVERY Soft path. Turning off
+            // the required permission stops Finite blocking anything, so leaving it off is the
+            // cleanest way to "win" without doing the work — past a 24h grace it now ends the
+            // challenge instead.
+            //
+            // This row is not optional on the reassurance paths, it is what makes them honest:
+            // SESSIONS, TIME_WINDOW and the block path show "nothing to fail on" rows above, because
+            // none of them can record a usage breach. Permission loss is their FIRST and ONLY fail
+            // cause, so omitting it here would leave those users believing their challenge cannot be
+            // lost at all.
+            //
+            // The copy branches on whether the challenge has an observable package, matching
+            // `PermissionCheckWorker.failAllSoftChallenges` exactly:
+            //  - App targets: the fail additionally requires that the blocked apps were actually
+            //    OPENED while unprotected (the usage-evidence gate), so an OS-killed service on
+            //    EMUI costs an honest user nothing. Promising that safety net means stating it.
+            //  - Website / adult-block: no package to observe ⇒ no evidence is obtainable ⇒ the
+            //    deadline alone ends the challenge. Showing those users the app-target copy would
+            //    promise a protection they do not get.
+            // Carries the same amber accent as the fail rule above — it is the same class of fact.
+            val hasObservablePackages = !isBlockPath && state.selectedApps.isNotEmpty()
+            WizardInfoBulletRow(
+                icon = Icons.Outlined.WarningAmber,
+                iconTint = detoxColors.softOrangeIcon,
+                iconBg = detoxColors.softOrangeBg,
+                title = stringResource(R.string.wizard_soft_info_permission_title),
+                text = if (hasObservablePackages) {
+                    stringResource(R.string.wizard_soft_info_permission_apps)
+                } else {
+                    stringResource(R.string.wizard_soft_info_permission_block)
+                },
+                titleColor = detoxColors.softOrangeText,
+                borderColor = detoxColors.softOrangeText,
+                borderWidth = 1.5.dp,
             )
 
             WizardInfoBulletRow(

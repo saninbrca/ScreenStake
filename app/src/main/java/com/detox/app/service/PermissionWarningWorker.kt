@@ -1,4 +1,4 @@
-package com.detox.app.service
+package com.finite.focus.service
 
 import android.app.PendingIntent
 import android.content.Context
@@ -7,7 +7,8 @@ import android.provider.Settings
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.detox.app.MainActivity
+import com.finite.focus.MainActivity
+import com.finite.focus.domain.repository.ChallengeRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import timber.log.Timber
@@ -16,6 +17,7 @@ import timber.log.Timber
 class PermissionWarningWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
+    private val challengeRepository: ChallengeRepository,
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -40,8 +42,20 @@ class PermissionWarningWorker @AssistedInject constructor(
         val elapsed = System.currentTimeMillis() - lostAt
         Timber.d("Warning sent: level=$level, elapsed=${elapsed / 3_600_000}h")
 
+        // Level 2 is the only rung whose copy names the stake, so it needs to know whether there is
+        // one. Resolved through the SAME predicate the deadline pass selects on
+        // ([permissionAudience]), so a warning can never describe a population the deadline does not
+        // act on. Fail-safe on an unreadable list: assume no Hard challenge and send the money-free
+        // body — a Soft user must never be told about a stake they do not have.
+        val hardInPlay = challengeRepository.getActiveChallengesList()
+            .getOrElse { e ->
+                Timber.w(e, "PermissionWarningWorker: could not load challenges — using money-free copy")
+                emptyList()
+            }
+            .let { permissionAudience(it).hasHard }
+
         val actionIntent = buildMainActivityIntent(level)
-        NotificationHelper.sendPermissionWarning(applicationContext, level, actionIntent)
+        NotificationHelper.sendPermissionWarning(applicationContext, level, actionIntent, hardInPlay)
 
         return Result.success()
     }

@@ -34,9 +34,12 @@
     <string name="notification_worker_evaluating">Evaluating your challenge…</string>
     <string name="notification_worker_checking_permissions">Checking permissions…</string>
     <string name="notification_permission_failed_title">❌ Challenge failed</string>
-    <!-- Soft challenges are never failed by permission loss — enforcement just stops. -->
+    <!-- Soft deadline, FAILED branch: permission off past the deadline AND the blocked apps were used. -->
+    <string name="notif_permission_soft_failed_title">❌ Challenge failed</string>
+    <string name="notif_permission_soft_failed_body">The required permission was off for too long and you kept opening your blocked apps in that time. Your challenge has ended.</string>
+    <!-- Soft deadline, SURVIVED branch: unprotected, but the blocked apps were never opened. -->
     <string name="notif_permission_paused_title">⏸️ Challenge no longer protected</string>
-    <string name="notif_permission_paused_body">The required permission has been off for too long, so Finite can\'t block anything. Your challenge is still running — it has not failed. Turn the permission back on to be protected again.</string>
+    <string name="notif_permission_paused_body">The required permission has been off for too long, so Finite can\'t block anything. Your challenge is still running — you didn\'t open your blocked apps, so it has not failed. Turn the permission back on to be protected again.</string>
     <string name="notification_permission_urgent_title">🔴 Your challenge ends soon!</string>
     <string name="notification_permission_urgent_body">A required permission has been missing for too long. Fix it now or your challenge will end automatically.</string>
     <string name="notification_permission_restored">✅ Perfect! Your challenge is back on track.</string>
@@ -98,6 +101,8 @@
     <string name="notification_permission_warning_1_body">The longer you wait, the more you risk. Tap here to fix it.</string>
     <string name="notification_permission_warning_2_title">⏰ Time is running out…</string>
     <string name="notification_permission_warning_2_body">Your challenge and your stake are at risk. Act now, before it\'s too late!</string>
+    <!-- Money-free level-2 body for users with no stake in play (Soft only). -->
+    <string name="notification_permission_warning_2_soft_body">Your challenge is at risk. Act now, before it\'s too late!</string>
     <string name="notification_permission_warning_3_title">🔴 Final warning!</string>
     <string name="notification_permission_warning_3_body">Your challenge will end automatically soon. Open Finite right away.</string>
     <string name="notification_fix_now">Fix it now →</string>
@@ -1048,6 +1053,13 @@
     <string name="notif_perm_warn_12h_body">12 hours left until your stake is charged automatically.</string>
     <string name="notif_perm_warn_23h_title">💸 Your stake will be charged in 1 hour</string>
     <string name="notif_perm_warn_23h_body">Enable the permission now — or you\'ll lose your stake.</string>
+    <!-- Soft escalation ladder: same urgency as the Hard one above, no stake wording. -->
+    <string name="notif_perm_warn_6h_soft_title">🔴 Permission still missing</string>
+    <string name="notif_perm_warn_6h_soft_body">18 hours left — re-enable the permission or your challenge will fail.</string>
+    <string name="notif_perm_warn_12h_soft_title">🚨 Final warning</string>
+    <string name="notif_perm_warn_12h_soft_body">12 hours left — re-enable the permission or your challenge will fail.</string>
+    <string name="notif_perm_warn_23h_soft_title">⏳ Your challenge fails in 1 hour</string>
+    <string name="notif_perm_warn_23h_soft_body">Re-enable the permission now — or your challenge will fail.</string>
 
     <!-- Heartbeat (went-dark forfeit) throttle nudge -->
     <string name="notif_heartbeat_warn_title">⚠️ Finite has gone quiet</string>
@@ -1702,11 +1714,17 @@
     <string name="wizard_soft_info_lock_window">Outside your time window, %1$s stays locked — there is no way around it. It opens up again at %2$s.</string>
     <string name="wizard_soft_info_lock_always">%1$s stays blocked around the clock for the whole challenge — there is no way around it.</string>
     <string name="wizard_soft_info_fail">Landing exactly on your limit is fine. But going over on even ONE day means the WHOLE challenge counts as failed — there are no grace days.</string>
-    <string name="wizard_soft_info_no_usage_limit">There is no daily limit you could go over here, so this challenge can\'t fail on usage. It only ends early if you give it up yourself.</string>
+    <string name="wizard_soft_info_no_usage_limit">There is no daily limit you could go over here, so this challenge can\'t fail on usage. It only ends early if you give it up yourself — or if you leave the required permission off.</string>
     <!-- SESSIONS variant of the rule row. The generic fail rule would be misleading here: the
          overlay hard-caps conscious opens at the limit, so the "one day over" case it warns about
          is unreachable — the honest rule is that time cannot fail this challenge at all. -->
-    <string name="wizard_soft_info_sessions">Every open is a session on a timer. When it runs out you\'re back at the gate — opening again uses up one of your daily opens, and once they\'re gone the app stays locked until midnight. Time can\'t fail this challenge: you can only lose it by giving it up yourself.</string>
+    <string name="wizard_soft_info_sessions">Every open is a session on a timer. When it runs out you\'re back at the gate — opening again uses up one of your daily opens, and once they\'re gone the app stays locked until midnight. Time can\'t fail this challenge: you can only lose it by giving it up yourself — or by leaving the required permission off.</string>
+    <!-- Permission-loss row: the one fail cause shared by every Soft path. The two bodies mirror
+         PermissionCheckWorker.failAllSoftChallenges — app targets get the usage-evidence gate,
+         website/block challenges have no package to observe and so fail on the deadline alone. -->
+    <string name="wizard_soft_info_permission_title">Keep the permission on</string>
+    <string name="wizard_soft_info_permission_apps">Finite needs its permission to block anything. If you switch it off, you get 24 hours to turn it back on. Miss that, and the challenge only fails if you actually opened your blocked apps while it was off — so a phone that kills the permission on its own costs you nothing.</string>
+    <string name="wizard_soft_info_permission_block">Finite needs its permission to block anything. If you switch it off, you get 24 hours to turn it back on — miss that, and the challenge counts as failed. Website blocking has no app usage to check against, so the deadline is what counts here.</string>
     <string name="wizard_soft_info_result">You\'ll see your result when the challenge ends on %1$s.</string>
     <string name="wizard_soft_info_open_ended">This challenge runs until you end it yourself.</string>
     <string name="wizard_soft_info_tip_time">Tip: “Open anyway” gives you a short session — that session can carry you past your limit.</string>

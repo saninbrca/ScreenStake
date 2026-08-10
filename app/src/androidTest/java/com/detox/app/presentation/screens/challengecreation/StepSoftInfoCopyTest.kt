@@ -1,14 +1,15 @@
-package com.detox.app.presentation.screens.challengecreation
+﻿package com.finite.focus.presentation.screens.challengecreation
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
-import com.detox.app.R
-import com.detox.app.domain.model.AppUsageInfo
-import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.domain.model.LimitType
-import com.detox.app.ui.theme.DetoxTheme
+import com.finite.focus.R
+import com.finite.focus.domain.model.AppUsageInfo
+import com.finite.focus.domain.model.ChallengeMode
+import com.finite.focus.domain.model.LimitType
+import com.finite.focus.ui.theme.DetoxTheme
 import org.junit.Rule
 import org.junit.Test
 
@@ -52,6 +53,18 @@ class StepSoftInfoCopyTest {
         }
     }
 
+    /**
+     * Asserts [text] is present and displayable, scrolling the step to it first.
+     *
+     * The step is a `verticalScroll` Column whose row count varies by branch, so on a smaller
+     * device (the P30 this suite runs on) the last rows sit below the fold — a bare
+     * `assertIsDisplayed` would then fail on copy that is perfectly correct. `performScrollTo`
+     * still fails loudly if the node does not exist at all, so the assertion keeps its teeth.
+     */
+    private fun assertShown(text: String) {
+        composeRule.onNodeWithText(text).performScrollTo().assertIsDisplayed()
+    }
+
     private fun softAppState(limitType: LimitType) = ChallengeCreationState(
         selectedMode = ChallengeMode.SOFT,
         activeTab = 0,
@@ -67,14 +80,26 @@ class StepSoftInfoCopyTest {
     private val noUsageLimit get() = context.getString(R.string.wizard_soft_info_no_usage_limit)
     private val sessionsRule get() = context.getString(R.string.wizard_soft_info_sessions)
     private val timeTip get() = context.getString(R.string.wizard_soft_info_tip_time)
+    private val permissionApps get() = context.getString(R.string.wizard_soft_info_permission_apps)
+    private val permissionBlock get() = context.getString(R.string.wizard_soft_info_permission_block)
+
+    private fun websiteBlockState() = ChallengeCreationState(
+        selectedMode = ChallengeMode.SOFT,
+        activeTab = 1,
+        manualDomains = listOf("reddit.com"),
+        // A stale TIME pick from an earlier Apps-tab visit must not resurrect the fail
+        // rule or the tip — the block path always persists as TIME_WINDOW.
+        limitType = LimitType.TIME,
+        durationDays = 14,
+    )
 
     // ── Exceedable limits: the fail rule applies ─────────────────────────────────
 
     @Test
     fun timeLimit_showsFailRuleAndTip() {
         show(softAppState(LimitType.TIME))
-        composeRule.onNodeWithText(failRule).assertIsDisplayed()
-        composeRule.onNodeWithText(timeTip).assertIsDisplayed()
+        assertShown(failRule)
+        assertShown(timeTip)
         composeRule.onNodeWithText(noUsageLimit).assertDoesNotExist()
         composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
     }
@@ -82,7 +107,7 @@ class StepSoftInfoCopyTest {
     @Test
     fun budgetLimit_showsFailRuleButNoTip() {
         show(softAppState(LimitType.TIME_BUDGET))
-        composeRule.onNodeWithText(failRule).assertIsDisplayed()
+        assertShown(failRule)
         composeRule.onNodeWithText(timeTip).assertDoesNotExist()
         composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
     }
@@ -92,7 +117,7 @@ class StepSoftInfoCopyTest {
     @Test
     fun sessionLimit_showsTheCappedRuleInsteadOfTheFailRule() {
         show(softAppState(LimitType.SESSIONS))
-        composeRule.onNodeWithText(sessionsRule).assertIsDisplayed()
+        assertShown(sessionsRule)
         composeRule.onNodeWithText(failRule).assertDoesNotExist()
         composeRule.onNodeWithText(timeTip).assertDoesNotExist()
         composeRule.onNodeWithText(noUsageLimit).assertDoesNotExist()
@@ -103,7 +128,7 @@ class StepSoftInfoCopyTest {
     @Test
     fun timeWindow_neverClaimsTheChallengeCanFailOnUsage() {
         show(softAppState(LimitType.TIME_WINDOW))
-        composeRule.onNodeWithText(noUsageLimit).assertIsDisplayed()
+        assertShown(noUsageLimit)
         composeRule.onNodeWithText(failRule).assertDoesNotExist()
         composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
         composeRule.onNodeWithText(timeTip).assertDoesNotExist()
@@ -111,21 +136,45 @@ class StepSoftInfoCopyTest {
 
     @Test
     fun websiteBlock_neverClaimsTheChallengeCanFailOnUsage() {
-        show(
-            ChallengeCreationState(
-                selectedMode = ChallengeMode.SOFT,
-                activeTab = 1,
-                manualDomains = listOf("reddit.com"),
-                // A stale TIME pick from an earlier Apps-tab visit must not resurrect the fail
-                // rule or the tip — the block path always persists as TIME_WINDOW.
-                limitType = LimitType.TIME,
-                durationDays = 14,
-            )
-        )
-        composeRule.onNodeWithText(noUsageLimit).assertIsDisplayed()
+        show(websiteBlockState())
+        assertShown(noUsageLimit)
         composeRule.onNodeWithText(failRule).assertDoesNotExist()
         composeRule.onNodeWithText(sessionsRule).assertDoesNotExist()
         composeRule.onNodeWithText(timeTip).assertDoesNotExist()
+    }
+
+    // ── Permission loss: the one fail cause that crosses EVERY branch ────────────
+    // Prolonged permission loss now fails a Soft challenge. On the three branches above that show
+    // reassurance rows ("nothing to fail on", "your opens are capped") this is the FIRST and ONLY
+    // way to lose, so omitting it would leave those users believing the challenge cannot be lost.
+
+    private fun assertAppTargetPermissionRule(limitType: LimitType) {
+        show(softAppState(limitType))
+        assertShown(permissionApps)
+        composeRule.onNodeWithText(permissionBlock).assertDoesNotExist()
+    }
+
+    @Test
+    fun permissionRule_showsOnTimeLimit() = assertAppTargetPermissionRule(LimitType.TIME)
+
+    @Test
+    fun permissionRule_showsOnBudgetLimit() = assertAppTargetPermissionRule(LimitType.TIME_BUDGET)
+
+    /** The capped path: its own rule row says time cannot fail it — this is what CAN. */
+    @Test
+    fun permissionRule_showsOnSessionLimit() = assertAppTargetPermissionRule(LimitType.SESSIONS)
+
+    /** The "nothing to fail on" path: permission loss is its only fail cause. */
+    @Test
+    fun permissionRule_showsOnTimeWindow() = assertAppTargetPermissionRule(LimitType.TIME_WINDOW)
+
+    @Test
+    fun permissionRule_websiteBlockGetsTheDeadlineOnlyVariant() {
+        // No observable package ⇒ the usage-evidence gate has nothing to check ⇒ these challenges
+        // fail on the deadline alone. Promising them the app-target safety net would be false.
+        show(websiteBlockState())
+        assertShown(permissionBlock)
+        composeRule.onNodeWithText(permissionApps).assertDoesNotExist()
     }
 
     // ── End-date vs open-ended ───────────────────────────────────────────────────
@@ -133,8 +182,6 @@ class StepSoftInfoCopyTest {
     @Test
     fun openEnded_replacesTheResultDateLine() {
         show(softAppState(LimitType.TIME).copy(noEndDate = true))
-        composeRule
-            .onNodeWithText(context.getString(R.string.wizard_soft_info_open_ended))
-            .assertIsDisplayed()
+        assertShown(context.getString(R.string.wizard_soft_info_open_ended))
     }
 }

@@ -1,4 +1,4 @@
-package com.detox.app.service
+package com.finite.focus.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,9 +9,9 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import com.detox.app.R
-import com.detox.app.util.DateUtils
-import com.detox.app.util.FeatureFlags
+import com.finite.focus.R
+import com.finite.focus.util.DateUtils
+import com.finite.focus.util.FeatureFlags
 import timber.log.Timber
 
 /**
@@ -33,7 +33,11 @@ object NotificationHelper {
     private const val NOTIF_ID_GROUP_BASE        = 7000
     private const val NOTIF_ID_PERMISSION_FAILED      = 9002
     private const val NOTIF_ID_PERMISSION_PAUSED      = 9003
+    private const val NOTIF_ID_PERMISSION_SOFT_FAILED = 9004
     private const val NOTIF_ID_PERMISSION_WARNING_BASE = 9010  // 9010..9013 for levels 0-3
+    // Hard escalations occupy 9020..9022 (BASE + 10/11/12); the Soft ones get their own slots so a
+    // user holding both types receives both messages instead of one overwriting the other.
+    private const val NOTIF_ID_PERMISSION_ESCALATION_SOFT_BASE = 9030  // 9030..9032 for 6h/12h/23h
     private const val NOTIF_ID_USAGE_VIOLATION        = 9040
     private const val NOTIF_ID_HEARTBEAT_WARNING      = 9050
 
@@ -299,12 +303,29 @@ object NotificationHelper {
 
     // ── Overlay permission notifications ──────────────────────────────────────
 
-    fun sendPermissionWarning(context: Context, level: Int, actionIntent: PendingIntent) {
+    /**
+     * The staged 0h/2h/6h/12h warning ladder (`PermissionWarningWorker`).
+     *
+     * [hardInPlay] only switches level 2. Levels 0, 1 and 3 are already money-free ("at risk",
+     * "paused", "will end automatically soon") and are true for both challenge types — level 3 in
+     * particular became true for Soft as well once prolonged permission loss started failing Soft
+     * challenges. Level 2 is the only rung that names the stake, which is false for a Soft-only
+     * user, so it gets a money-free body that keeps the same urgency.
+     */
+    fun sendPermissionWarning(
+        context: Context,
+        level: Int,
+        actionIntent: PendingIntent,
+        hardInPlay: Boolean,
+    ) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val (title, body) = when (level) {
             0 -> context.getString(R.string.notification_permission_warning_0_title) to context.getString(R.string.notification_permission_warning_0_body)
             1 -> context.getString(R.string.notification_permission_warning_1_title) to context.getString(R.string.notification_permission_warning_1_body)
-            2 -> context.getString(R.string.notification_permission_warning_2_title) to context.getString(R.string.notification_permission_warning_2_body)
+            2 -> context.getString(R.string.notification_permission_warning_2_title) to context.getString(
+                if (hardInPlay) R.string.notification_permission_warning_2_body
+                else R.string.notification_permission_warning_2_soft_body
+            )
             3 -> context.getString(R.string.notification_permission_warning_3_title) to context.getString(R.string.notification_permission_warning_3_body)
             else -> return
         }
@@ -355,18 +376,51 @@ object NotificationHelper {
     }
 
     /**
-     * Soft-challenge counterpart to [sendPermissionFailed], posted when the permission deadline
-     * passes and the user has an active SOFT challenge.
+     * Soft-challenge loss notice, posted when the permission deadline passes AND
+     * `PermissionCheckWorker.failAllSoftChallenges` actually failed at least one Soft challenge —
+     * i.e. the permission was off past the deadline *and* the blocked apps were used during the
+     * unprotected window.
      *
-     * A Soft challenge is NOT failed by permission loss — `PermissionCheckWorker
-     * .failAllHardChallenges` only touches solo Hard rows, so the challenge stays `active` and
-     * enforcement merely stops happening. The old behaviour posted [sendPermissionFailed]'s
-     * "❌ Challenge failed / your stake has been charged" to these users, which was false twice
-     * over (nothing failed, and Soft has no stake). The copy here says what is actually true and
-     * explicitly denies the failure, because that is the wrong belief being corrected.
+     * Money-free by construction: Soft has no stake, so this says the challenge ended, never that
+     * anything was charged. [sendPermissionFailed] remains the Hard/stake counterpart, and
+     * [sendPermissionEnforcementPaused] the one for a Soft challenge that survived the deadline.
      *
-     * Its own notification id, so a user holding BOTH a Hard and a Soft challenge gets both
-     * messages instead of one overwriting the other.
+     * Its own notification id, so a user holding several challenge types receives every message
+     * that is true of them instead of one overwriting the others.
+     */
+    fun sendPermissionSoftFailed(context: Context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val body = context.getString(R.string.notif_permission_soft_failed_body)
+        val notification = NotificationCompat.Builder(context, CHANNEL_MILESTONES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_permission_soft_failed_title))
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(buildDeepLinkIntent(context, NOTIF_ID_PERMISSION_SOFT_FAILED, "profile"))
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_PERMISSION_SOFT_FAILED, notification)
+            Timber.d("Permission soft-failed notification posted")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping permission soft-failed notification")
+        }
+    }
+
+    /**
+     * Posted when the permission deadline passes and a Soft challenge SURVIVED it: the challenge is
+     * eligible to fail, but there was no evidence its blocked apps were opened while unprotected,
+     * so `failAllSoftChallenges` left it ACTIVE.
+     *
+     * This message used to describe every Soft holder, back when permission loss could not fail a
+     * Soft challenge at all. It now describes the narrower — and much more important — honest case:
+     * the EMUI user whose accessibility service the OS killed and who never touched the blocked
+     * apps. For them "still running, it has not failed" is still exactly true, and it is the whole
+     * reason the usage-evidence gate exists. See [sendPermissionSoftFailed] for the other branch.
+     *
+     * Both Soft notices can be posted in the same pass: a user holding two Soft challenges can
+     * genuinely have one failed and one survived.
      */
     fun sendPermissionEnforcementPaused(context: Context) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
@@ -449,6 +503,49 @@ object NotificationHelper {
             Timber.d("Permission escalation notification posted: stage=$stage")
         } catch (e: SecurityException) {
             Timber.w("POST_NOTIFICATIONS not granted, skipping permission escalation notification")
+        }
+    }
+
+    /**
+     * Soft counterpart to [sendPermissionEscalation], on the same 6h/12h/23h ladder.
+     *
+     * Same urgency, no money: the Hard copy counts down to "your stake is charged", which is false
+     * for a Soft holder, so this counts down to "your challenge will fail" instead — the thing that
+     * is actually about to happen to them. Its own notification-id block, so a user holding both
+     * types gets both warnings rather than one clobbering the other.
+     */
+    fun sendPermissionEscalationSoft(context: Context, stage: String) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val (title, body) = when (stage) {
+            "6h"  -> context.getString(R.string.notif_perm_warn_6h_soft_title)  to context.getString(R.string.notif_perm_warn_6h_soft_body)
+            "12h" -> context.getString(R.string.notif_perm_warn_12h_soft_title) to context.getString(R.string.notif_perm_warn_12h_soft_body)
+            "23h" -> context.getString(R.string.notif_perm_warn_23h_soft_title) to context.getString(R.string.notif_perm_warn_23h_soft_body)
+            else  -> return
+        }
+        val notifId = NOTIF_ID_PERMISSION_ESCALATION_SOFT_BASE +
+                when (stage) { "6h" -> 0; "12h" -> 1; else -> 2 }
+        val intent = android.content.Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context, notifId, intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .addAction(0, context.getString(R.string.notif_accessibility_fix_action), pendingIntent)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+            Timber.d("Permission escalation (soft) notification posted: stage=$stage")
+        } catch (e: SecurityException) {
+            Timber.w("POST_NOTIFICATIONS not granted, skipping soft permission escalation notification")
         }
     }
 

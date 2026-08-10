@@ -35,8 +35,10 @@
     <string name="notification_worker_checking_permissions">Berechtigungen werden geprüft…</string>
     <string name="notification_permission_failed_title">❌ Challenge fehlgeschlagen</string>
     <!-- Soft-Challenges scheitern nie an fehlenden Berechtigungen — die Durchsetzung stoppt nur. -->
+    <string name="notif_permission_soft_failed_title">❌ Challenge fehlgeschlagen</string>
+    <string name="notif_permission_soft_failed_body">Die nötige Berechtigung war zu lange deaktiviert und du hast in dieser Zeit deine blockierten Apps weiter geöffnet. Deine Challenge ist beendet.</string>
     <string name="notif_permission_paused_title">⏸️ Challenge nicht mehr geschützt</string>
-    <string name="notif_permission_paused_body">Die nötige Berechtigung ist zu lange deaktiviert, deshalb kann Finite nichts mehr blockieren. Deine Challenge läuft weiter — sie ist nicht fehlgeschlagen. Schalte die Berechtigung wieder ein, damit du wieder geschützt bist.</string>
+    <string name="notif_permission_paused_body">Die nötige Berechtigung ist zu lange deaktiviert, deshalb kann Finite nichts mehr blockieren. Deine Challenge läuft weiter — du hast deine blockierten Apps nicht geöffnet, sie ist also nicht fehlgeschlagen. Schalte die Berechtigung wieder ein, damit du wieder geschützt bist.</string>
     <string name="notification_permission_urgent_title">🔴 Deine Challenge endet bald!</string>
     <string name="notification_permission_urgent_body">Die erforderliche Erlaubnis fehlt seit zu langer Zeit. Behebe es jetzt oder deine Challenge wird automatisch beendet.</string>
     <string name="notification_permission_restored">✅ Perfekt! Deine Challenge läuft weiter.</string>
@@ -83,6 +85,7 @@
     <string name="notification_permission_warning_1_body">Je länger du wartest, desto mehr riskierst du. Tippe hier, um es zu beheben.</string>
     <string name="notification_permission_warning_2_title">⏰ Zeit läuft ab…</string>
     <string name="notification_permission_warning_2_body">Deine Challenge und dein Einsatz sind in Gefahr. Handle jetzt, bevor es zu spät ist!</string>
+    <string name="notification_permission_warning_2_soft_body">Deine Challenge ist in Gefahr. Handle jetzt, bevor es zu spät ist!</string>
     <string name="notification_permission_warning_3_title">🔴 Letzte Warnung!</string>
     <string name="notification_permission_warning_3_body">Deine Challenge wird bald automatisch beendet. Öffne Finite sofort.</string>
     <string name="notification_fix_now">Jetzt beheben →</string>
@@ -1017,6 +1020,12 @@
     <string name="notif_perm_warn_12h_body">Noch 12 Stunden bis dein Einsatz automatisch eingezogen wird.</string>
     <string name="notif_perm_warn_23h_title">💸 In 1 Stunde wird dein Einsatz eingezogen</string>
     <string name="notif_perm_warn_23h_body">Aktiviere die Berechtigung jetzt — sonst verlierst du deinen Einsatz.</string>
+    <string name="notif_perm_warn_6h_soft_title">🔴 Berechtigung fehlt weiterhin</string>
+    <string name="notif_perm_warn_6h_soft_body">Noch 18 Stunden — aktiviere die Berechtigung wieder, sonst schlägt deine Challenge fehl.</string>
+    <string name="notif_perm_warn_12h_soft_title">🚨 Letzte Warnung</string>
+    <string name="notif_perm_warn_12h_soft_body">Noch 12 Stunden — aktiviere die Berechtigung wieder, sonst schlägt deine Challenge fehl.</string>
+    <string name="notif_perm_warn_23h_soft_title">⏳ In 1 Stunde schlägt deine Challenge fehl</string>
+    <string name="notif_perm_warn_23h_soft_body">Aktiviere die Berechtigung jetzt wieder — sonst schlägt deine Challenge fehl.</string>
 
     <!-- Heartbeat (went-dark forfeit) throttle nudge -->
     <string name="notif_heartbeat_warn_title">⚠️ Finite meldet sich nicht mehr</string>
@@ -1650,11 +1659,14 @@
     <string name="wizard_soft_info_lock_window">Außerhalb deines Zeitfensters bleibt %1$s gesperrt — ohne Notausgang. Ab %2$s ist der Zugriff wieder frei.</string>
     <string name="wizard_soft_info_lock_always">%1$s bleibt während der gesamten Challenge rund um die Uhr blockiert — ohne Notausgang.</string>
     <string name="wizard_soft_info_fail">Genau am Limit ist okay. Aber gehst du an nur EINEM Tag drüber, gilt die GANZE Challenge als nicht geschafft — es gibt keine Gnaden-Tage.</string>
-    <string name="wizard_soft_info_no_usage_limit">Hier gibt es kein Tageslimit, das du überschreiten könntest — diese Challenge kann also nicht an deiner Nutzung scheitern. Sie endet nur vorzeitig, wenn du selbst aufgibst.</string>
+    <string name="wizard_soft_info_no_usage_limit">Hier gibt es kein Tageslimit, das du überschreiten könntest — diese Challenge kann also nicht an deiner Nutzung scheitern. Sie endet nur vorzeitig, wenn du selbst aufgibst — oder wenn du die nötige Berechtigung deaktiviert lässt.</string>
     <!-- SESSIONS-Variante der Regel-Zeile. Die generische Fail-Regel wäre hier irreführend: Das
          Overlay deckelt die bewussten Öffnungen hart am Limit — der „einen Tag drüber“-Fall, vor
          dem sie warnt, ist gar nicht erreichbar. Ehrlich ist: An der Zeit kann sie nicht scheitern. -->
-    <string name="wizard_soft_info_sessions">Jede Öffnung ist eine Session auf Zeit. Läuft sie ab, stehst du wieder vor der Sperre — erneut öffnen kostet eine deiner Tages-Öffnungen, und sind die aufgebraucht, bleibt die App bis Mitternacht zu. An der Zeit kann diese Challenge nicht scheitern: Verlieren kannst du sie nur, wenn du selbst aufgibst.</string>
+    <string name="wizard_soft_info_sessions">Jede Öffnung ist eine Session auf Zeit. Läuft sie ab, stehst du wieder vor der Sperre — erneut öffnen kostet eine deiner Tages-Öffnungen, und sind die aufgebraucht, bleibt die App bis Mitternacht zu. An der Zeit kann diese Challenge nicht scheitern: Verlieren kannst du sie nur, wenn du selbst aufgibst — oder wenn du die nötige Berechtigung deaktiviert lässt.</string>
+    <string name="wizard_soft_info_permission_title">Lass die Berechtigung an</string>
+    <string name="wizard_soft_info_permission_apps">Ohne ihre Berechtigung kann Finite nichts blockieren. Schaltest du sie ab, hast du 24 Stunden, sie wieder zu aktivieren. Verstreicht die Frist, schlägt die Challenge nur dann fehl, wenn du deine blockierten Apps in dieser Zeit auch wirklich geöffnet hast — ein Handy, das die Berechtigung von selbst beendet, kostet dich also nichts.</string>
+    <string name="wizard_soft_info_permission_block">Ohne ihre Berechtigung kann Finite nichts blockieren. Schaltest du sie ab, hast du 24 Stunden, sie wieder zu aktivieren — verstreicht die Frist, gilt die Challenge als nicht geschafft. Beim Website-Blocken gibt es keine App-Nutzung zum Gegenprüfen, hier zählt allein die Frist.</string>
     <string name="wizard_soft_info_result">Dein Ergebnis siehst du, wenn die Challenge am %1$s endet.</string>
     <string name="wizard_soft_info_open_ended">Diese Challenge läuft, bis du sie selbst beendest.</string>
     <string name="wizard_soft_info_tip_time">Tipp: „Trotzdem öffnen“ gibt dir eine kurze Session — die kann dich über dein Limit bringen.</string>

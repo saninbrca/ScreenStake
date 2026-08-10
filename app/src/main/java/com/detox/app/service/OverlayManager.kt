@@ -1,4 +1,4 @@
-package com.detox.app.service
+package com.finite.focus.service
 
 import android.content.Context
 import android.content.Intent
@@ -20,47 +20,47 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.detox.app.R
-import com.detox.app.data.remote.firebase.CloudFunctionsService
-import com.detox.app.data.remote.firebase.FirebaseAuthService
-import com.detox.app.data.system.CriticalPackageResolver
-import com.detox.app.di.ApplicationScope
-import com.detox.app.domain.model.Challenge
-import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.domain.model.ChallengeStatus
-import com.detox.app.domain.model.DailyLog
-import com.detox.app.domain.model.groupRankingComparator
-import com.detox.app.domain.model.groupRankingMetricComparator
-import com.detox.app.domain.model.GroupChallengeStatus
-import com.detox.app.domain.model.LimitType
-import com.detox.app.domain.model.ParticipantStatus
-import com.detox.app.domain.model.StakeCapture
-import com.detox.app.domain.repository.ChallengeRepository
-import com.detox.app.domain.repository.DailyLogRepository
-import com.detox.app.domain.repository.GroupChallengeRepository
-import com.detox.app.domain.repository.PaymentRepository
-import com.detox.app.domain.repository.UsageStatsRepository
-import com.detox.app.domain.usecase.CheckDailyLimitUseCase
-import com.detox.app.domain.usecase.DailyLimitStatus
-import com.detox.app.domain.usecase.EndExpiredGroupChallengesUseCase
-import com.detox.app.domain.usecase.SettleEndedSoftChallengesUseCase
-import com.detox.app.domain.usecase.GetChallengeStreakUseCase
-import com.detox.app.presentation.components.BlockingScreenOverlay
-import com.detox.app.presentation.components.BudgetSelectionOverlay
-import com.detox.app.presentation.components.HardModeLockoutOverlay
-import com.detox.app.presentation.components.LimitExceededOverlay
-import com.detox.app.presentation.components.SessionIntentionOverlay
-import com.detox.app.presentation.components.SessionLimitReachedOverlay
-import com.detox.app.presentation.components.TauntOverlay
-import com.detox.app.presentation.components.TimeWindowOverlay
-import com.detox.app.ui.theme.DetoxTheme
+import com.finite.focus.R
+import com.finite.focus.data.remote.firebase.CloudFunctionsService
+import com.finite.focus.data.remote.firebase.FirebaseAuthService
+import com.finite.focus.data.system.CriticalPackageResolver
+import com.finite.focus.di.ApplicationScope
+import com.finite.focus.domain.model.Challenge
+import com.finite.focus.domain.model.ChallengeMode
+import com.finite.focus.domain.model.ChallengeStatus
+import com.finite.focus.domain.model.DailyLog
+import com.finite.focus.domain.model.groupRankingComparator
+import com.finite.focus.domain.model.groupRankingMetricComparator
+import com.finite.focus.domain.model.GroupChallengeStatus
+import com.finite.focus.domain.model.LimitType
+import com.finite.focus.domain.model.ParticipantStatus
+import com.finite.focus.domain.model.StakeCapture
+import com.finite.focus.domain.repository.ChallengeRepository
+import com.finite.focus.domain.repository.DailyLogRepository
+import com.finite.focus.domain.repository.GroupChallengeRepository
+import com.finite.focus.domain.repository.PaymentRepository
+import com.finite.focus.domain.repository.UsageStatsRepository
+import com.finite.focus.domain.usecase.CheckDailyLimitUseCase
+import com.finite.focus.domain.usecase.DailyLimitStatus
+import com.finite.focus.domain.usecase.EndExpiredGroupChallengesUseCase
+import com.finite.focus.domain.usecase.SettleEndedSoftChallengesUseCase
+import com.finite.focus.domain.usecase.GetChallengeStreakUseCase
+import com.finite.focus.presentation.components.BlockingScreenOverlay
+import com.finite.focus.presentation.components.BudgetSelectionOverlay
+import com.finite.focus.presentation.components.HardModeLockoutOverlay
+import com.finite.focus.presentation.components.LimitExceededOverlay
+import com.finite.focus.presentation.components.SessionIntentionOverlay
+import com.finite.focus.presentation.components.SessionLimitReachedOverlay
+import com.finite.focus.presentation.components.TauntOverlay
+import com.finite.focus.presentation.components.TimeWindowOverlay
+import com.finite.focus.ui.theme.DetoxTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.detox.app.util.DateUtils
-import com.detox.app.util.resolveAppsDisplayName
+import com.finite.focus.util.DateUtils
+import com.finite.focus.util.resolveAppsDisplayName
 import timber.log.Timber
 import java.util.Calendar
 import java.util.UUID
@@ -356,7 +356,7 @@ class OverlayManager @Inject constructor(
     // ── Budget session expiry: show overlay immediately ────────────────────────
 
     /**
-     * Called by [com.detox.app.service.UsageTrackingService] when a DAILY_BUDGET session timer
+     * Called by [com.finite.focus.service.UsageTrackingService] when a DAILY_BUDGET session timer
      * expires. Shows [BudgetSelectionOverlay] (budget remaining) or [SessionLimitReachedOverlay]
      * (budget exhausted) over whatever is currently on screen, including the home screen.
      *
@@ -1199,7 +1199,7 @@ class OverlayManager @Inject constructor(
     private fun persistBudgetSession(
         packageName: String,
         selectedMinutes: Int,
-        challenge: com.detox.app.domain.model.Challenge
+        challenge: com.finite.focus.domain.model.Challenge
     ) {
         val now = System.currentTimeMillis()
         budgetSessionPrefs.edit()
@@ -1243,7 +1243,7 @@ class OverlayManager @Inject constructor(
             onBack = { dismissOverlay("website_back") }
         ) {
             DetoxTheme(darkTheme = true) {
-                com.detox.app.presentation.components.WebsiteBlockedOverlay(
+                com.finite.focus.presentation.components.WebsiteBlockedOverlay(
                     domain = domain,
                     challengeName = blockingChallenge?.appDisplayName,
                     streak = streak,
@@ -1284,7 +1284,7 @@ class OverlayManager @Inject constructor(
             onBack = { dismissOverlay("adult_back") }
         ) {
             DetoxTheme(darkTheme = true) {
-                com.detox.app.presentation.components.WebsiteBlockedOverlay(
+                com.finite.focus.presentation.components.WebsiteBlockedOverlay(
                     domain = domain,
                     challengeName = blockingChallenge?.appDisplayName,
                     streak = 0,
@@ -1808,42 +1808,6 @@ class OverlayManager @Inject constructor(
      */
     private suspend fun getStreak(challenge: Challenge): Int =
         getChallengeStreakUseCase(challenge)
-
-    /**
-     * Marks a Soft Mode challenge as FAILED, syncs to Firestore, suppresses overlays for the
-     * tracked package(s) for the rest of the day, and launches the fail-result screen.
-     */
-    private suspend fun markSoftChallengeFailed(challenge: Challenge, reason: String) {
-        val streak = getStreak(challenge)
-        Timber.i("Soft Mode failed: challengeId=${challenge.id} streak=$streak days reason=$reason")
-
-        challengeRepository.updateChallengeStatus(challenge.id, ChallengeStatus.FAILED, "limit_exceeded")
-            .onFailure { Timber.e(it, "markSoftChallengeFailed: failed to update status for ${challenge.id}") }
-
-        challenge.appPackageName?.let {
-            failedSessionAppsToday.add(it)
-            exceededAppsToday.add(it)
-            TrackedAppEventBus.markPackageFreeForToday(it)
-            AppDetectionAccessibilityService.allowTemporarily(it)
-        }
-        challenge.appPackageNames.forEach {
-            failedSessionAppsToday.add(it)
-            exceededAppsToday.add(it)
-            TrackedAppEventBus.markPackageFreeForToday(it)
-        }
-
-        // Mark the loss result as shown so the Dashboard's getUnshownFailedSoftChallenge poll does
-        // not emit a second navigation for the same loss (the navigation below is the single show).
-        challengeRepository.markCompletionShown(challenge.id)
-            .onFailure { Timber.e(it, "markSoftChallengeFailed: failed to mark completionShown for ${challenge.id}") }
-
-        TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
-        val launchIntent = Intent(context, com.detox.app.MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        context.startActivity(launchIntent)
-        dismissOverlay()
-    }
 
     /**
      * Builds the context header string shown at the top of every overlay (CHANGE 1).

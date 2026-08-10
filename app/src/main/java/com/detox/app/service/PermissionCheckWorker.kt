@@ -1,5 +1,6 @@
-package com.detox.app.service
+package com.finite.focus.service
 
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.provider.Settings
@@ -9,15 +10,16 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.detox.app.R
-import com.detox.app.data.remote.firebase.CloudFunctionsService
-import com.detox.app.domain.model.Challenge
-import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.domain.model.ChallengeStatus
-import com.detox.app.domain.model.GroupChallengeStatus
-import com.detox.app.domain.repository.ChallengeRepository
-import com.detox.app.domain.repository.GroupChallengeRepository
-import com.detox.app.util.FeatureFlags
+import com.finite.focus.R
+import com.finite.focus.data.remote.firebase.CloudFunctionsService
+import com.finite.focus.domain.model.Challenge
+import com.finite.focus.domain.model.ChallengeMode
+import com.finite.focus.domain.model.ChallengeStatus
+import com.finite.focus.domain.model.GroupChallengeStatus
+import com.finite.focus.domain.repository.ChallengeRepository
+import com.finite.focus.domain.repository.GroupChallengeRepository
+import com.finite.focus.util.DateUtils
+import com.finite.focus.util.FeatureFlags
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -45,8 +47,6 @@ class PermissionCheckWorker @AssistedInject constructor(
         private const val PREFS = "detox_permission"
         private const val KEY_LOST_AT = "permissionLostAt"
         private const val KEY_IGNORED = "userOpenedAndIgnored"
-        private const val DEADLINE_MS = 24 * 60 * 60 * 1_000L
-        private const val ACCELERATE_THRESHOLD_MS = 12 * 60 * 60 * 1_000L
         private const val USAGE_VIOLATION_PREFS = "detox_usage_violation"
         private const val KEY_USAGE_VIOLATION_AT = "usageViolationDetectedAt"
         private const val FOREGROUND_NOTIF_ID = 9101
@@ -158,48 +158,63 @@ class PermissionCheckWorker @AssistedInject constructor(
             setData("elapsed", elapsed)
         })
 
-        val effectiveDeadlineMs = calculateEffectiveDeadlineMs(elapsed, ignored)
+        // ONE snapshot per cycle, read BEFORE any fail pass (afterwards the rows this affects are
+        // gone from the active list). It drives three things that must never disagree about who is
+        // affected: which escalation copy is true, whether the deadline may be halved, and what
+        // actually gets failed.
+        val activeChallenges = challengeRepository.getActiveChallengesList().getOrElse { e ->
+            Timber.e(e, "PermissionCheckWorker: could not load active challenges")
+            emptyList()
+        }
+        val audience = permissionAudience(activeChallenges)
 
-        Timber.d("Effective deadline: ${effectiveDeadlineMs / 3_600_000}h")
+        val effectiveDeadlineMs = calculateEffectiveDeadlineMs(elapsed, ignored, audience.hasHard)
 
-        // Send staged escalation notifications based on elapsed time
-        when {
-            elapsed >= 23 * 3_600_000L -> NotificationHelper.sendPermissionEscalation(applicationContext, "23h")
-            elapsed >= 12 * 3_600_000L -> NotificationHelper.sendPermissionEscalation(applicationContext, "12h")
-            elapsed >= 6  * 3_600_000L -> NotificationHelper.sendPermissionEscalation(applicationContext, "6h")
+        Timber.d("Effective deadline: ${effectiveDeadlineMs / 3_600_000}h (audience=$audience)")
+
+        // Staged escalation notifications, addressed per challenge type. Hard keeps its stake
+        // wording; Soft gets money-free copy in the "will fail" direction. Both are posted when the
+        // user holds both (separate notification ids), exactly as the deadline notices below do —
+        // fixing the Soft copy must never mute the Hard warning. A user with NO active challenge
+        // now gets nothing, because there is nothing to warn them about.
+        val stage = when {
+            elapsed >= 23 * 3_600_000L -> "23h"
+            elapsed >= 12 * 3_600_000L -> "12h"
+            elapsed >= 6  * 3_600_000L -> "6h"
+            else -> null
+        }
+        if (stage != null) {
+            if (audience.hasHard) NotificationHelper.sendPermissionEscalation(applicationContext, stage)
+            if (audience.hasSoft) NotificationHelper.sendPermissionEscalationSoft(applicationContext, stage)
         }
 
         if (elapsed >= effectiveDeadlineMs) {
             Timber.d("Permission deadline reached: permission missing too long")
-            // Snapshot BEFORE the fail pass — afterwards the Hard rows this affects are gone from
-            // the active list. Read purely to decide WHICH notification is true; nothing here
-            // changes what fails.
-            val affected = challengeRepository.getActiveChallengesList().getOrElse { e ->
-                Timber.e(e, "PermissionCheckWorker: could not load challenges for deadline notice")
-                emptyList()
-            }
-            val notices = permissionDeadlineNotices(affected)
 
+            val softOutcome = failAllSoftChallenges(activeChallenges, lostAt, now)
             failAllHardChallenges()
             prefs.edit().clear().apply()
             cancelPermissionWarnings()
 
             // Tell each challenge type the truth about ITSELF. This used to be one unconditional
             // "❌ Challenge failed — your stake has been charged", which was false for everyone
-            // except a solo Hard holder: failAllHardChallenges touches solo Hard rows ONLY, so a
-            // Soft challenge is never failed here (it stays active, enforcement just stops), and a
-            // user with no challenges at all had nothing to fail either.
+            // except a solo Hard holder.
             //
-            // Both can be posted in the same pass on purpose — Hard and Soft challenges coexist
+            // Several can be posted in the same pass on purpose — Hard and Soft challenges coexist
             // freely (creation only blocks re-using the same PACKAGE, see the wizard's
-            // conflictingPackages), and each message is then independently true.
-            if (notices.hardFailed) {
+            // conflictingPackages), and each message is then independently true. The two Soft
+            // notices are mutually exclusive PER CHALLENGE but not per user: someone holding two
+            // Soft challenges can genuinely have one failed (they used its apps) and one survived.
+            if (audience.hasHard) {
                 NotificationHelper.sendPermissionFailed(applicationContext)
             }
-            if (notices.softPaused) {
+            if (softOutcome.failed.isNotEmpty()) {
+                NotificationHelper.sendPermissionSoftFailed(applicationContext)
+            }
+            if (softOutcome.survived.isNotEmpty()) {
                 NotificationHelper.sendPermissionEnforcementPaused(applicationContext)
             }
-            if (!notices.hardFailed && !notices.softPaused) {
+            if (!audience.hasHard && softOutcome.failed.isEmpty() && softOutcome.survived.isEmpty()) {
                 Timber.d("PermissionCheckWorker: deadline reached with no affected challenge — no notice")
             }
         }
@@ -359,16 +374,13 @@ class PermissionCheckWorker @AssistedInject constructor(
         packageName
     }
 
-    private fun calculateEffectiveDeadlineMs(elapsed: Long, ignored: Int): Long {
-        // If user has already ignored a warning and we're still within the first 12h,
-        // cut the remaining time in half to accelerate the deadline.
-        return if (ignored >= 1 && elapsed < ACCELERATE_THRESHOLD_MS) {
-            val remaining = (DEADLINE_MS - elapsed) / 2
-            elapsed + remaining
-        } else {
-            DEADLINE_MS
-        }
-    }
+    /**
+     * The deadline this cycle enforces. Delegates to [effectiveDeadlineMs] — kept as an instance
+     * method so the worker reads the same way it always did; the logic lives at file scope so it is
+     * unit-testable without a WorkManager harness.
+     */
+    private fun calculateEffectiveDeadlineMs(elapsed: Long, ignored: Int, hardInPlay: Boolean): Long =
+        effectiveDeadlineMs(elapsed, ignored, hardInPlay)
 
     private suspend fun failAllHardChallenges() {
         val challenges = challengeRepository.getActiveChallengesList().getOrElse { e ->
@@ -426,6 +438,90 @@ class PermissionCheckWorker @AssistedInject constructor(
                     }
             }
         }
+    }
+
+    /**
+     * Soft counterpart to [failAllHardChallenges], run on the SAME deadline branch and the same
+     * [effectiveDeadlineMs]. Money-free end to end: no `capturePayment`, no
+     * [ChallengeSettlementGuard], no Stripe, no server call.
+     *
+     * The settlement guard is deliberately absent. It exists to defer to a SERVER settlement before
+     * a CLIENT capture; there is no server settlement for Soft (`runPermissionViolationCheck` skips
+     * `mode !== "hard"`). Adding it would put a Firestore read on a money-free path and — worse —
+     * make the fail unable to land while offline, which is the one property the write path was
+     * chosen for.
+     *
+     * Two guards stand between an eligible challenge and a FAILED write:
+     *
+     *  1. **Already ended** ⇒ skip. A Soft challenge whose end date passed while the app was closed
+     *     is still `active` in Room (the worker was EMUI-throttled, the app was not opened). Failing
+     *     it here would stamp a fabricated loss on a challenge the user had already WON. It belongs
+     *     to `SettleEndedSoftChallengesUseCase`, which settles it on its real verdict. Uses
+     *     [DateUtils.hasPassedEnd] (`>`, strictly after the last day) behind an [DateUtils.isOpenEnded]
+     *     check, exactly as the enforcement-stop path does — open-ended challenges never end and so
+     *     stay eligible.
+     *  2. **No usage evidence** ⇒ survive. See [usedBlockedPackagesInWindow].
+     *
+     * Website / adult-block challenges (`appPackageNames` empty — `BlockingType.WEBSITE` persists no
+     * packages) have NO observable package, so guard 2 has nothing to look at. They fall back to the
+     * time-only rule and fail on the deadline alone. This is disclosed up front: the Soft info step
+     * shows those users a different permission row than app-target users, saying exactly that.
+     */
+    private suspend fun failAllSoftChallenges(
+        challenges: List<Challenge>,
+        permissionLostAt: Long,
+        now: Long,
+    ): SoftDeadlineOutcome {
+        val failed = mutableListOf<String>()
+        val survived = mutableListOf<String>()
+
+        for (challenge in challenges) {
+            if (!isSoloSoftPermissionFailEligible(challenge)) continue
+
+            if (!DateUtils.isOpenEnded(challenge.startDate, challenge.endDate) &&
+                DateUtils.hasPassedEnd(challenge.endDate, now)
+            ) {
+                Timber.d(
+                    "failAllSoftChallenges: '${challenge.id}' already past its end date — " +
+                            "leaving it for settlement, not failing it"
+                )
+                continue
+            }
+
+            val watched = challenge.appPackageNames.filter { it.isNotBlank() }.toSet()
+            val hasEvidence = if (watched.isEmpty()) {
+                // No observable package (website / adult-block): time-only rule.
+                true
+            } else {
+                usedBlockedPackagesInWindow(
+                    applicationContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager,
+                    watched,
+                    permissionLostAt,
+                    now,
+                )
+            }
+
+            if (!hasEvidence) {
+                Timber.i(
+                    "failAllSoftChallenges: '${challenge.id}' unprotected but its apps were never " +
+                            "opened in the window — NOT failing"
+                )
+                survived += challenge.id
+                continue
+            }
+
+            challengeRepository
+                .updateChallengeStatus(challenge.id, ChallengeStatus.FAILED, "permission_violation")
+                .onSuccess {
+                    Timber.i("failAllSoftChallenges: '${challenge.id}' → FAILED (permission_violation)")
+                    failed += challenge.id
+                }
+                .onFailure { e ->
+                    Timber.e(e, "failAllSoftChallenges: status update failed for ${challenge.id}")
+                }
+        }
+
+        return SoftDeadlineOutcome(failed = failed, survived = survived)
     }
 
     private suspend fun checkAccessibilityPermission() {
@@ -518,38 +614,164 @@ class PermissionCheckWorker @AssistedInject constructor(
 internal fun isSoloHardPermissionFailEligible(challenge: Challenge): Boolean =
     challenge.mode == ChallengeMode.HARD && challenge.groupChallengeId == null
 
-/** Which permission-deadline notices are TRUE — see [permissionDeadlineNotices]. */
-internal data class PermissionDeadlineNotices(
-    /** A solo Hard challenge was put through the capture/fail pass: "failed, stake charged". */
-    val hardFailed: Boolean,
-    /** A Soft challenge is left un-enforced but still active: "not protected, still running". */
-    val softPaused: Boolean,
+/**
+ * Selection predicate for the Soft side of the permission deadline (`failAllSoftChallenges`):
+ * **SOLO Soft Mode only**.
+ *
+ * Mirrors [isSoloHardPermissionFailEligible] clause for clause, with one addition:
+ * `stripePaymentIntentId == null`. That clause is the money fence. This path is money-free by
+ * construction — it never calls `capturePayment` and never consults [ChallengeSettlementGuard] —
+ * so a row that somehow carries a PaymentIntent must not be able to reach it and record a loss
+ * while the stake sits uncaptured. Same guard, same reason, as
+ * `SettleEndedSoftChallengesUseCase`'s Soft-only filter.
+ *
+ * `groupChallengeId == null` keeps group shadow rows with the group settlement CFs, exactly as on
+ * the Hard side.
+ */
+internal fun isSoloSoftPermissionFailEligible(challenge: Challenge): Boolean =
+    challenge.mode == ChallengeMode.SOFT &&
+            challenge.groupChallengeId == null &&
+            challenge.stripePaymentIntentId == null
+
+/** Who is affected by this permission-loss window — see [permissionAudience]. */
+internal data class PermissionAudience(
+    /** At least one solo Hard challenge is in play: money is at risk, stake wording is true. */
+    val hasHard: Boolean,
+    /** At least one solo Soft challenge is in play: money-free "will fail" wording is true. */
+    val hasSoft: Boolean,
 )
 
 /**
- * Decides which deadline notification actually tells the truth, given the challenges that were
- * active when the 24h permission deadline hit.
+ * Resolves who the permission-loss messaging is actually addressed to, from the challenges that
+ * were active when the cycle ran.
  *
- * This exists because the worker used to post ONE unconditional "❌ Challenge failed — your stake
- * has been charged", while `failAllHardChallenges` only ever touches solo Hard rows. A Soft-only
- * user was therefore told their challenge had failed and their stake was taken when neither had
- * happened — the challenge stays `active` and enforcement merely stops. A user with no active
- * challenge at all got the same message about nothing.
- *
- * Both flags can be true at once and both notices are then posted: Hard and Soft challenges
- * coexist freely (creation only rejects re-using the same PACKAGE), so the Hard message must not
- * be suppressed to fix the Soft one.
+ * Built on the two fail-selection predicates rather than a second set of mode checks, so the
+ * warnings a user receives can never describe a different population than the one the deadline
+ * actually acts on. Both flags can be true at once and both message sets are then sent: Hard and
+ * Soft challenges coexist freely (creation only rejects re-using the same PACKAGE), so the Soft
+ * copy must never mute the Hard copy.
  *
  * Group shadow rows are excluded from BOTH: their permission handling belongs to the group
- * settlement CFs, exactly as in [isSoloHardPermissionFailEligible].
- *
- * Deliberately does NOT try to report whether a Hard capture succeeded: [hardFailed] mirrors the
- * pre-existing "had a solo Hard challenge in play" trigger one-for-one, so the Hard path's
- * notification behaviour is unchanged by this function.
+ * settlement CFs.
  */
-internal fun permissionDeadlineNotices(challenges: List<Challenge>) = PermissionDeadlineNotices(
-    hardFailed = challenges.any { isSoloHardPermissionFailEligible(it) },
-    softPaused = challenges.any {
-        it.mode == ChallengeMode.SOFT && it.groupChallengeId == null
-    },
+internal fun permissionAudience(challenges: List<Challenge>) = PermissionAudience(
+    hasHard = challenges.any { isSoloHardPermissionFailEligible(it) },
+    hasSoft = challenges.any { isSoloSoftPermissionFailEligible(it) },
 )
+
+/**
+ * The deadline a permission-loss window is judged against.
+ *
+ * The dismissal-halving is **Hard-only**. It exists as an anti-cheat accelerator: a user who keeps
+ * opening the app while the permission is off is assumed to be stalling, so the remaining grace is
+ * halved. But [MainActivity.trackPermissionIgnore] counts *"opened the app while the permission was
+ * off"* — NOT *"saw the warning and refused"*. On EMUI/Huawei, where the OS itself kills the
+ * accessibility service, a Soft user who opens the app to find out what happened would have their
+ * grace cut to as little as ~12h for something they did not do, and Soft has no stake to justify
+ * the trade. A Hard user accepted that trade at creation (the uninstall-forfeit consent) and there
+ * is real money to protect, so Hard keeps it unchanged.
+ *
+ * When BOTH are in play there is still exactly ONE deadline, and it is the Hard one — Soft rides
+ * along on the halved window. That is deliberate: two deadlines would mean two `permissionLostAt`
+ * clocks and two prefs-clear points, which is precisely the kind of divergence this worker has
+ * been consolidated to avoid.
+ */
+internal fun effectiveDeadlineMs(elapsed: Long, ignored: Int, hardInPlay: Boolean): Long =
+    if (hardInPlay && ignored >= 1 && elapsed < PERMISSION_ACCELERATE_THRESHOLD_MS) {
+        // Cut the REMAINING time in half to accelerate the deadline.
+        elapsed + (PERMISSION_DEADLINE_MS - elapsed) / 2
+    } else {
+        PERMISSION_DEADLINE_MS
+    }
+
+internal const val PERMISSION_DEADLINE_MS = 24 * 60 * 60 * 1_000L
+internal const val PERMISSION_ACCELERATE_THRESHOLD_MS = 12 * 60 * 60 * 1_000L
+
+/** What the Soft pass actually did, per challenge — see [PermissionCheckWorker.failAllSoftChallenges]. */
+internal data class SoftDeadlineOutcome(
+    /** Ids marked FAILED: evidence showed the blocked apps were used while unprotected. */
+    val failed: List<String>,
+    /** Ids left ACTIVE: eligible and still running, but no evidence of use. */
+    val survived: List<String>,
+)
+
+/**
+ * The fairness gate for the Soft permission-fail: did the user actually USE a blocked package
+ * during the unprotected window?
+ *
+ * The exploit being closed is "turn the permission off, use the blocked app freely, still win" —
+ * and that exploit *requires usage*. Failing on elapsed time alone would also punish the honest
+ * EMUI case, where the OS kills the accessibility service on its own and the user never touches
+ * the blocked app. This predicate is what separates the two.
+ *
+ * Counts `ACTIVITY_RESUMED` events for the challenge's OWN packages, over exactly
+ * [since]..[now] — the unprotected window. `queryEvents` is used rather than `queryUsageStats`
+ * because event streams are clipped to the requested range, whereas `queryUsageStats` returns
+ * whole DAILY buckets that can spill usage from BEFORE the permission was lost into the window and
+ * manufacture evidence against a user who stopped in time.
+ *
+ * FAIL-SAFE in the honest direction, matching invariant #8's stance on missing data: a thrown
+ * query, a revoked `PACKAGE_USAGE_STATS` grant, or an empty stream all read as "no evidence" and
+ * the challenge SURVIVES. Unreadable evidence must never manufacture a loss.
+ *
+ * Note this is NOT the `USAGE_VIOLATION_PREFS` latch written by
+ * [PermissionCheckWorker.checkAndReportUsageViolation]. That latch is the right *signal* but the
+ * wrong *shape* to gate on: it is global rather than per-challenge (it would fail an innocent
+ * challenge because a different challenge's app was used — the exact unfairness this gate exists
+ * to remove), it only ever runs when ACCESSIBILITY is off (so an overlay-only revocation records
+ * nothing), it latches once and never updates, and it is cleared on every cycle in which
+ * accessibility is enabled. This queries the same underlying UsageStats source directly, scoped to
+ * one challenge and one window.
+ */
+internal fun usedBlockedPackagesInWindow(
+    usageStatsManager: UsageStatsManager,
+    watchedPackages: Set<String>,
+    since: Long,
+    now: Long,
+): Boolean = hasUsageEvidence(watchedPackages, since, now) {
+    queryForegroundedPackages(usageStatsManager, since, now)
+}
+
+/**
+ * The decision half of [usedBlockedPackagesInWindow], split out from the framework query so the
+ * rule that costs a user their challenge is unit-testable without an Android runtime.
+ *
+ * [foregroundedPackages] is evaluated LAZILY and only once every cheap guard has passed, so an
+ * ineligible window never issues a usage query.
+ */
+internal fun hasUsageEvidence(
+    watchedPackages: Set<String>,
+    since: Long,
+    now: Long,
+    foregroundedPackages: () -> Sequence<String>,
+): Boolean {
+    if (watchedPackages.isEmpty()) return false
+    // A non-positive or inverted window is unusable (a clock change, or prefs written this cycle).
+    // Treat it as "no evidence" rather than querying an undefined range.
+    if (since <= 0L || now <= since) return false
+    return foregroundedPackages().any { it in watchedPackages }
+}
+
+/**
+ * Packages brought to the foreground in [since]..[now]. Returns an EMPTY sequence on any failure —
+ * a thrown query or a revoked `PACKAGE_USAGE_STATS` grant reads as "no evidence", never as a loss.
+ */
+private fun queryForegroundedPackages(
+    usageStatsManager: UsageStatsManager,
+    since: Long,
+    now: Long,
+): Sequence<String> = try {
+    val events = usageStatsManager.queryEvents(since, now)
+    sequence {
+        val event = UsageEvents.Event()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                yield(event.packageName)
+            }
+        }
+    }
+} catch (e: Exception) {
+    Timber.e(e, "queryForegroundedPackages: usage query failed — treating as NO evidence")
+    emptySequence()
+}

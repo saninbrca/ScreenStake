@@ -1,9 +1,10 @@
-package com.detox.app.service
+package com.finite.focus.service
 
-import com.detox.app.domain.model.Challenge
-import com.detox.app.domain.model.ChallengeMode
-import com.detox.app.domain.model.ChallengeStatus
-import com.detox.app.domain.model.LimitType
+import com.finite.focus.domain.model.Challenge
+import com.finite.focus.domain.model.ChallengeMode
+import com.finite.focus.domain.model.ChallengeStatus
+import com.finite.focus.domain.model.LimitType
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,6 +21,17 @@ import org.junit.Test
 class PermissionFailSelectionTest {
 
     private fun challenge(
+        id: String,
+        mode: ChallengeMode,
+        groupChallengeId: String? = null,
+        stripePaymentIntentId: String? = "pi_123",
+    ) = softChallenge(id, mode, groupChallengeId, stripePaymentIntentId)
+
+    /** Soft rows are money-free: a Soft challenge never carries a PaymentIntent in practice. */
+    private fun soft(id: String, groupChallengeId: String? = null) =
+        softChallenge(id, ChallengeMode.SOFT, groupChallengeId, stripePaymentIntentId = null)
+
+    private fun softChallenge(
         id: String,
         mode: ChallengeMode,
         groupChallengeId: String? = null,
@@ -69,58 +81,125 @@ class PermissionFailSelectionTest {
     }
 
     @Test
-    fun `soft mode is never touched by the permission capture path`() {
+    fun `soft mode is never touched by the permission CAPTURE path`() {
+        // Soft can now be FAILED by permission loss, but never through the money path: the capture
+        // branch stays solo-Hard-only, so no Soft row can ever reach capturePayment.
         assertFalse(isSoloHardPermissionFailEligible(challenge("soft1", ChallengeMode.SOFT)))
     }
 
-    // ── Deadline notification selection ──────────────────────────────────────────
-    // The capture path above is SOLO-HARD-ONLY, but the 24h notification used to be posted
-    // unconditionally as "❌ Challenge failed — your stake has been charged". These pin the
-    // notice to what actually happened to each challenge type.
+    // ── Soft fail selection ──────────────────────────────────────────────────────
 
     @Test
-    fun `soft-only user is told enforcement stopped, never that the challenge failed`() {
-        val notices = permissionDeadlineNotices(listOf(challenge("soft1", ChallengeMode.SOFT)))
-        assertTrue(notices.softPaused)
-        // The lie this fix exists to remove: nothing was failed and there is no stake to charge.
-        assertFalse(notices.hardFailed)
+    fun `solo soft mode is eligible for the money-free fail path`() {
+        assertTrue(isSoloSoftPermissionFailEligible(soft("soft1")))
     }
 
     @Test
-    fun `hard-only user keeps the failed-and-charged notice`() {
-        val notices = permissionDeadlineNotices(listOf(challenge("hard1", ChallengeMode.HARD)))
-        assertTrue(notices.hardFailed)
-        assertFalse(notices.softPaused)
+    fun `hard rows never enter the money-free soft path`() {
+        // The money fence in the other direction: a Hard row must never be failed without a capture.
+        assertFalse(isSoloSoftPermissionFailEligible(challenge("hard1", ChallengeMode.HARD)))
     }
 
     @Test
-    fun `a user holding both gets both notices - fixing soft must not mute hard`() {
-        val notices = permissionDeadlineNotices(
-            listOf(
-                challenge("hard1", ChallengeMode.HARD),
-                challenge("soft1", ChallengeMode.SOFT),
+    fun `a soft row carrying a PaymentIntent is excluded - no FAILED without a capture`() {
+        // Should not exist, but if it ever did, the money-free path must refuse it: it neither
+        // captures nor consults the settlement guard, so it would record a loss on an uncaptured stake.
+        assertFalse(
+            isSoloSoftPermissionFailEligible(
+                softChallenge("soft_with_pi", ChallengeMode.SOFT, stripePaymentIntentId = "pi_999")
             )
         )
-        assertTrue(notices.hardFailed)
-        assertTrue(notices.softPaused)
     }
 
     @Test
-    fun `no active challenge means no notice at all`() {
-        val notices = permissionDeadlineNotices(emptyList())
-        assertFalse(notices.hardFailed)
-        assertFalse(notices.softPaused)
+    fun `group soft shadow rows stay with the group settlement CFs`() {
+        assertFalse(isSoloSoftPermissionFailEligible(soft("group_g_3", groupChallengeId = "g_3")))
+    }
+
+    // ── Dismissal-halving exemption (Addition 2) ─────────────────────────────────
+    // trackPermissionIgnore counts "opened the app while the permission was off", NOT "saw the
+    // warning and refused". Halving that grace is an anti-cheat trade a Hard user accepted at
+    // creation; a Soft user has no stake and may simply own a phone that killed the service.
+
+    @Test
+    fun `hard keeps the dismissal-halving`() {
+        val elapsed = 4 * 3_600_000L
+        val halved = effectiveDeadlineMs(elapsed, ignored = 1, hardInPlay = true)
+        assertTrue("expected an accelerated deadline", halved < PERMISSION_DEADLINE_MS)
+        // elapsed + (24h - elapsed)/2 = 4h + 10h = 14h
+        assertEquals(14 * 3_600_000L, halved)
     }
 
     @Test
-    fun `group shadow rows trigger neither notice`() {
-        val notices = permissionDeadlineNotices(
+    fun `soft-only audience always gets the full 24h grace`() {
+        assertEquals(
+            PERMISSION_DEADLINE_MS,
+            effectiveDeadlineMs(4 * 3_600_000L, ignored = 1, hardInPlay = false)
+        )
+        assertEquals(
+            PERMISSION_DEADLINE_MS,
+            effectiveDeadlineMs(4 * 3_600_000L, ignored = 5, hardInPlay = false)
+        )
+    }
+
+    @Test
+    fun `no dismissal means the full deadline for everyone`() {
+        assertEquals(
+            PERMISSION_DEADLINE_MS,
+            effectiveDeadlineMs(4 * 3_600_000L, ignored = 0, hardInPlay = true)
+        )
+    }
+
+    @Test
+    fun `halving never applies past the acceleration threshold`() {
+        val elapsed = PERMISSION_ACCELERATE_THRESHOLD_MS + 1
+        assertEquals(PERMISSION_DEADLINE_MS, effectiveDeadlineMs(elapsed, 1, hardInPlay = true))
+    }
+
+    // ── Audience selection (drives escalation copy + the halving) ────────────────
+    // The escalations used to be posted unconditionally in stake wording. These pin the audience to
+    // the SAME predicates the deadline pass selects on, so a warning can never describe a
+    // population the deadline does not act on.
+
+    @Test
+    fun `soft-only user is never addressed in stake wording`() {
+        val audience = permissionAudience(listOf(soft("soft1")))
+        assertTrue(audience.hasSoft)
+        assertFalse(audience.hasHard)
+    }
+
+    @Test
+    fun `hard-only user keeps the stake wording`() {
+        val audience = permissionAudience(listOf(challenge("hard1", ChallengeMode.HARD)))
+        assertTrue(audience.hasHard)
+        assertFalse(audience.hasSoft)
+    }
+
+    @Test
+    fun `a user holding both is in both audiences - fixing soft must not mute hard`() {
+        val audience = permissionAudience(
+            listOf(challenge("hard1", ChallengeMode.HARD), soft("soft1"))
+        )
+        assertTrue(audience.hasHard)
+        assertTrue(audience.hasSoft)
+    }
+
+    @Test
+    fun `no active challenge means nobody is warned`() {
+        val audience = permissionAudience(emptyList())
+        assertFalse(audience.hasHard)
+        assertFalse(audience.hasSoft)
+    }
+
+    @Test
+    fun `group shadow rows put nobody in either audience`() {
+        val audience = permissionAudience(
             listOf(
                 challenge("group_g_1", ChallengeMode.HARD, groupChallengeId = "g_1"),
-                challenge("group_g_2", ChallengeMode.SOFT, groupChallengeId = "g_2"),
+                soft("group_g_2", groupChallengeId = "g_2"),
             )
         )
-        assertFalse(notices.hardFailed)
-        assertFalse(notices.softPaused)
+        assertFalse(audience.hasHard)
+        assertFalse(audience.hasSoft)
     }
 }

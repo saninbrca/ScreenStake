@@ -1,0 +1,1714 @@
+package com.finite.focus.presentation.screens.groupchallenge.detail
+
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.finite.focus.R
+import com.finite.focus.domain.model.GroupChallenge
+import com.finite.focus.domain.model.GroupChallengeStatus
+import com.finite.focus.domain.model.LimitType
+import com.finite.focus.domain.model.Participant
+import com.finite.focus.domain.model.ParticipantStatus
+import com.finite.focus.domain.model.cleanDays
+import com.finite.focus.domain.model.elapsedDays
+import com.finite.focus.domain.model.groupRankingComparator
+import com.finite.focus.domain.model.groupRankingMetricComparator
+import com.finite.focus.domain.model.hasWon
+import com.finite.focus.presentation.components.AvatarCircle
+import com.finite.focus.presentation.components.DuBadge
+import com.finite.focus.presentation.components.GroupParticipantRow
+import com.finite.focus.presentation.components.formatEuroCents
+import com.finite.focus.presentation.screens.activechallenge.DetoxCard
+import com.finite.focus.ui.theme.DetoxPodiumColors
+import com.finite.focus.ui.theme.detoxColors
+import androidx.compose.ui.graphics.vector.ImageVector
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import kotlin.math.floor
+import timber.log.Timber
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GroupChallengeDetailScreen(
+    onBack: () -> Unit,
+    onNavigateToProfile: () -> Unit = {},
+    onNavigateToFriendsHub: () -> Unit = {},
+    onNavigateToResults: (groupId: String) -> Unit = {},
+    viewModel: GroupChallengeDetailViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val startState by viewModel.startState.collectAsStateWithLifecycle()
+    val nudgeEvent by viewModel.nudgeEvent.collectAsStateWithLifecycle()
+    val winDialogInfo by viewModel.winDialogInfo.collectAsStateWithLifecycle()
+    val quitState by viewModel.quitState.collectAsStateWithLifecycle()
+    val leaveState by viewModel.leaveState.collectAsStateWithLifecycle()
+    val deleteState by viewModel.deleteState.collectAsStateWithLifecycle()
+    val currentUserId = viewModel.currentUserId
+    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    // Navigate to results screen once — marks podium shown before navigating to prevent re-show
+    // on system-back without tapping "Weiter".
+    val navigatedToResults = remember { mutableStateOf(false) }
+    LaunchedEffect(uiState) {
+        val s = uiState
+        if (!navigatedToResults.value &&
+            s is GroupDetailUiState.Success &&
+            s.groupChallenge.status == GroupChallengeStatus.COMPLETED &&
+            viewModel.shouldShowPodium
+        ) {
+            navigatedToResults.value = true
+            viewModel.markPodiumShown()
+            onNavigateToResults(s.groupChallenge.groupId)
+        }
+    }
+
+    LaunchedEffect(startState) {
+        when (startState) {
+            is StartChallengeState.Success -> {
+                Toast.makeText(context, context.getString(R.string.group_started_toast), Toast.LENGTH_LONG).show()
+                viewModel.clearStartError()
+            }
+            is StartChallengeState.Error -> {
+                snackbarHostState.showSnackbar((startState as StartChallengeState.Error).message)
+                viewModel.clearStartError()
+            }
+            else -> Unit
+        }
+    }
+
+    // PaymentNotReady dialog
+    if (startState is StartChallengeState.PaymentNotReady) {
+        AlertDialog(
+            onDismissRequest = { viewModel.resetStartState() },
+            title = { Text(stringResource(R.string.group_start_payment_not_ready_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.group_start_payment_not_ready_body,
+                        (startState as StartChallengeState.PaymentNotReady).displayName
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.resetStartState() }) {
+                    Text(stringResource(R.string.group_start_payment_not_ready_button))
+                }
+            }
+        )
+    }
+
+    LaunchedEffect(nudgeEvent) {
+        val msg = nudgeEvent
+        if (msg != null) {
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearNudgeEvent()
+        }
+    }
+
+    LaunchedEffect(quitState) {
+        when (val qs = quitState) {
+            is QuitState.Success -> {
+                viewModel.clearQuitState()
+                onNavigateToFriendsHub()
+            }
+            is QuitState.Error -> {
+                snackbarHostState.showSnackbar(qs.message)
+                viewModel.clearQuitState()
+            }
+            else -> Unit
+        }
+    }
+
+    LaunchedEffect(leaveState) {
+        when (val ls = leaveState) {
+            is LeaveState.Success -> {
+                viewModel.clearLeaveState()
+                onNavigateToFriendsHub()
+            }
+            is LeaveState.Error -> {
+                snackbarHostState.showSnackbar(ls.message)
+                viewModel.clearLeaveState()
+            }
+            else -> Unit
+        }
+    }
+
+    LaunchedEffect(deleteState) {
+        when (val ds = deleteState) {
+            is DeleteState.Success -> {
+                viewModel.clearDeleteState()
+                onNavigateToFriendsHub()
+            }
+            is DeleteState.Error -> {
+                snackbarHostState.showSnackbar(ds.message)
+                viewModel.clearDeleteState()
+            }
+            else -> Unit
+        }
+    }
+
+    // Win dialog (business logic unchanged)
+    winDialogInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissWinDialog() },
+            title = {
+                Text(
+                    text = if (info.bonusCents > 0)
+                        stringResource(R.string.group_won_amount_title, info.bonusCents / 100)
+                    else stringResource(R.string.group_result_won_title)
+                )
+            },
+            text = {
+                Text(
+                    text = if (info.hasIban)
+                        stringResource(R.string.group_win_iban_present)
+                    else stringResource(R.string.group_win_iban_missing)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissWinDialog() }) { Text(stringResource(R.string.ok)) }
+            },
+            dismissButton = if (!info.hasIban) {
+                {
+                    TextButton(onClick = {
+                        viewModel.dismissWinDialog()
+                        onNavigateToProfile()
+                    }) { Text(stringResource(R.string.enter_iban_now)) }
+                }
+            } else null
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {},
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.nav_back),
+                            tint = detoxColors.label
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = detoxColors.screenBackground)
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = detoxColors.screenBackground
+    ) { innerPadding ->
+        when (val state = uiState) {
+            GroupDetailUiState.Loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) { CircularProgressIndicator() }
+            }
+            is GroupDetailUiState.Error -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = state.message, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            is GroupDetailUiState.Success -> {
+                val myParticipant = state.groupChallenge.participants
+                    .find { it.userId == currentUserId }
+                val isCurrentUserFailed = myParticipant?.status == ParticipantStatus.FAILED
+                GroupDetailContent(
+                    gc = state.groupChallenge,
+                    currentUserId = currentUserId,
+                    myStreak = state.myStreak,
+                    myOpensToday = state.myOpensToday,
+                    myTimeUsedMinutes = state.myTimeUsedMinutes,
+                    isStarting = startState is StartChallengeState.Loading,
+                    isCurrentUserFailed = isCurrentUserFailed,
+                    isQuitting = quitState is QuitState.Loading,
+                    isLeaving = leaveState is LeaveState.Loading,
+                    isDeleting = deleteState is DeleteState.Loading,
+                    onStartChallenge = viewModel::startChallenge,
+                    onQuit = viewModel::quitChallenge,
+                    onLeave = viewModel::leaveChallenge,
+                    onDelete = viewModel::deleteChallenge,
+                    onNavigateToProfile = onNavigateToProfile,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupDetailContent(
+    gc: GroupChallenge,
+    currentUserId: String?,
+    myStreak: Int,
+    myOpensToday: Int,
+    myTimeUsedMinutes: Int,
+    isStarting: Boolean,
+    isCurrentUserFailed: Boolean,
+    isQuitting: Boolean,
+    isLeaving: Boolean,
+    isDeleting: Boolean,
+    onStartChallenge: () -> Unit,
+    onQuit: () -> Unit,
+    onLeave: () -> Unit,
+    onDelete: () -> Unit,
+    onNavigateToProfile: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val now = System.currentTimeMillis()
+    var showQuitDialog by remember { mutableStateOf(false) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    val remainingMs = gc.endDate - now
+    val remainingDays = remainingMs / (24L * 60 * 60 * 1000)
+    val remainingHours = (remainingMs % (24L * 60 * 60 * 1000)) / (60 * 60 * 1000)
+    val endTimeStr = remember(gc.endDate) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(gc.endDate))
+    }
+    val endDateValid = gc.endDate > Calendar.getInstance().apply { set(2024, 0, 1) }.timeInMillis && gc.endDate > now
+    val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
+
+    LaunchedEffect(gc.endDate) {
+        Timber.d("GroupDetail: endDate=${gc.endDate} remaining=${remainingDays}d ${remainingHours}h")
+    }
+
+    // Failed participants sink to the bottom; everyone else takes the shared
+    // whole-challenge ordering (see groupRankingComparator — do not inline a sort here).
+    val ranking = groupRankingComparator(gc)
+    val rankingMetric = groupRankingMetricComparator(gc)
+    val sorted = gc.participants.sortedWith(
+        compareBy<Participant> { it.status == ParticipantStatus.FAILED }.then(ranking)
+    )
+    Timber.d("Leaderboard sorted: ${sorted.map { "${it.displayName}:${it.status}" }}")
+
+    // WAITING roster order — creator first, then join order. joinedAt is the SORT KEY only: a date
+    // under every name is a second line of text nobody acts on, and the ordering already encodes it.
+    // Nothing to rank on before a challenge starts, which is exactly why the leaderboard's sort
+    // (and its row) cannot be reused here.
+    val roster = gc.participants.sortedWith(
+        compareByDescending<Participant> { it.userId == gc.creatorUserId }
+            .thenBy { it.joinedAt }
+    )
+
+    // Standard competition ranking (1,1,3 — not 1,2,3) for active participants only.
+    // Failed participants get rank 0 (displayed as "—"). Ties are decided by the
+    // comparator itself, so the rank map can never disagree with the sort order.
+    val rankMap: Map<String, Int> = buildMap {
+        val active = sorted.filter { it.status != ParticipantStatus.FAILED }
+        active.forEachIndexed { index, participant ->
+            val rank = if (index > 0 && rankingMetric.compare(participant, active[index - 1]) == 0) {
+                this[active[index - 1].userId]!!
+            } else {
+                index + 1
+            }
+            put(participant.userId, rank)
+        }
+    }
+
+    // Quit confirmation dialog (business logic unchanged)
+    if (showQuitDialog) {
+        // Only reachable while the challenge is ACTIVE, and a group only becomes ACTIVE after
+        // startGroupChallenge has captured EVERY participant's hold — so the buy-in is already
+        // charged here and failParticipant captures nothing new (its PI is already "succeeded").
+        // Giving up just moves that money into the pot (completeGroupChallenge → failedPot).
+        val buyIn = formatEuroCents(gc.buyInCents)
+        AlertDialog(
+            onDismissRequest = { showQuitDialog = false },
+            title = { Text(stringResource(R.string.group_detail_quit_dialog_title)) },
+            text = {
+                Text(stringResource(R.string.group_detail_quit_dialog_message, buyIn))
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showQuitDialog = false; onQuit() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.group_detail_quit_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQuitDialog = false }) {
+                    Text(stringResource(R.string.group_detail_quit_cancel))
+                }
+            }
+        )
+    }
+
+    // Leave confirmation dialog (WAITING, non-creator)
+    if (showLeaveDialog) {
+        val amountStr = "€%,.2f".format(gc.buyInCents / 100.0)
+            .replace(",", "X").replace(".", ",").replace("X", ".")
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            title = { Text(stringResource(R.string.group_leave_dialog_title)) },
+            text = { Text(stringResource(R.string.group_leave_dialog_body, amountStr)) },
+            confirmButton = {
+                Button(
+                    onClick = { showLeaveDialog = false; onLeave() },
+                    colors = ButtonDefaults.buttonColors(containerColor = detoxColors.danger)
+                ) {
+                    Text(stringResource(R.string.group_leave_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }) {
+                    Text(stringResource(R.string.group_leave_dialog_cancel))
+                }
+            }
+        )
+    }
+
+    // Delete confirmation dialog (WAITING, creator only)
+    if (showDeleteDialog) {
+        val participantCount = gc.participants.size
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(stringResource(R.string.group_delete_dialog_title)) },
+            text = { Text(stringResource(R.string.group_delete_dialog_body, participantCount)) },
+            confirmButton = {
+                Button(
+                    onClick = { showDeleteDialog = false; onDelete() },
+                    colors = ButtonDefaults.buttonColors(containerColor = detoxColors.danger)
+                ) {
+                    Text(stringResource(R.string.group_delete_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(stringResource(R.string.group_delete_dialog_cancel))
+                }
+            }
+        )
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(detoxColors.screenBackground),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+
+        // ── Failed user banner ─────────────────────────────────────────────────
+        if (isCurrentUserFailed) {
+            item { FailedUserBanner(gc) }
+        }
+
+        // ── Card 1: Header ─────────────────────────────────────────────────────
+        item {
+            GroupHeaderCard(
+                gc = gc,
+                remainingDays = remainingDays,
+                currentUserId = currentUserId,
+                endDateValid = endDateValid,
+                dateFmt = dateFmt,
+                isCurrentUserFailed = isCurrentUserFailed,
+                onShare = {
+                    val shareText = context.getString(
+                        R.string.group_create_share_text,
+                        gc.code, gc.appDisplayName, gc.durationDays, gc.buyInCents / 100
+                    )
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(intent, context.getString(R.string.group_create_share_chooser))
+                    )
+                }
+            )
+        }
+
+        // ── Result summary for COMPLETED / CANCELLED (existing, unchanged) ─────
+        if (gc.status == GroupChallengeStatus.COMPLETED || gc.status == GroupChallengeStatus.CANCELLED) {
+            item {
+                ResultSummaryCard(
+                    gc = gc,
+                    currentUserId = currentUserId,
+                    onConnectBank = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-33208.web.app/connect"))
+                        )
+                    }
+                )
+            }
+            if (gc.status == GroupChallengeStatus.COMPLETED) {
+                val myParticipantResult = gc.participants.find { it.userId == currentUserId }
+                if (myParticipantResult != null && myParticipantResult.status != ParticipantStatus.FAILED) {
+                    item {
+                        PayoutResultCard(
+                            participant = myParticipantResult,
+                            gc = gc,
+                            onConnectBank = {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://detox-33208.web.app/connect"))
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Waiting-room roster (WAITING) ──────────────────────────────────────
+        // Same slot and the same grouped-card idiom the leaderboard uses below, so the screen
+        // does not grow a second visual vocabulary. Free slots are rendered as rows too: that is
+        // what makes the cap visible and gives the creator a reason to keep sharing the code.
+        if (gc.status == GroupChallengeStatus.WAITING) {
+            val freeSlots = (gc.maxParticipants - roster.size).coerceAtLeast(0)
+            val rowCount = roster.size + freeSlots
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.group_detail_roster_section),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.W500,
+                        color = detoxColors.subtext,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.group_detail_participants_val,
+                            roster.size, gc.maxParticipants
+                        ),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.W500,
+                        color = detoxColors.subtext
+                    )
+                }
+            }
+
+            items(count = rowCount, key = { i ->
+                if (i < roster.size) "roster_${roster[i].userId}" else "roster_free_$i"
+            }) { index ->
+                val participant = roster.getOrNull(index)
+                val isFirst = index == 0
+                val isLast = index == rowCount - 1
+                val shape = when {
+                    isFirst && isLast -> RoundedCornerShape(16.dp)
+                    isFirst -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                    isLast -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+                    else -> RoundedCornerShape(0.dp)
+                }
+                val isCurrentUser = participant != null && participant.userId == currentUserId
+                val rowBg = if (isCurrentUser) detoxColors.selectedSurface else detoxColors.cardBackground
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = shape,
+                    colors = CardDefaults.cardColors(containerColor = rowBg),
+                    elevation = CardDefaults.cardElevation(0.dp),
+                    border = BorderStroke(0.5.dp, detoxColors.cardBorder)
+                ) {
+                    GroupParticipantRow(
+                        displayName = participant?.let { p ->
+                            p.displayName.takeIf { it.isNotBlank() }
+                                ?: p.userId.substringBefore('@').ifBlank { p.userId }
+                        },
+                        emptySlotLabel = stringResource(R.string.group_roster_empty_slot),
+                        isCurrentUser = isCurrentUser,
+                        subLabel = if (participant != null && participant.userId == gc.creatorUserId)
+                            stringResource(R.string.group_roster_creator) else null,
+                    )
+                    if (!isLast) {
+                        HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                    }
+                }
+            }
+
+            if (gc.creatorUserId == currentUserId) {
+                item {
+                    WaitingCreatorActions(
+                        canStart = roster.size >= 2,
+                        isStarting = isStarting,
+                        isDeleting = isDeleting,
+                        onStartChallenge = onStartChallenge,
+                        onDelete = { showDeleteDialog = true },
+                    )
+                }
+            }
+        }
+
+        // ── Leaderboard section (ACTIVE or COMPLETED) ──────────────────────────
+        if (gc.status == GroupChallengeStatus.ACTIVE || gc.status == GroupChallengeStatus.COMPLETED) {
+            item {
+                Text(
+                    text = stringResource(R.string.group_detail_leaderboard_section),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.W500,
+                    color = detoxColors.subtext,
+                    letterSpacing = 0.5.sp
+                )
+            }
+
+            if (gc.participants.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.group_detail_no_participants),
+                        fontSize = 14.sp,
+                        color = detoxColors.subtext
+                    )
+                }
+            } else {
+                itemsIndexed(
+                    items = sorted,
+                    key = { _, p -> "lb_${p.userId}" }
+                ) { index, participant ->
+                    val isFirst = index == 0
+                    val isLast = index == sorted.lastIndex
+                    val shape = when {
+                        isFirst && isLast -> RoundedCornerShape(16.dp)
+                        isFirst -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                        isLast -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+                        else -> RoundedCornerShape(0.dp)
+                    }
+                    val rowBg = if (participant.userId == currentUserId) detoxColors.selectedSurface else detoxColors.cardBackground
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem(placementSpec = tween(300)),
+                        shape = shape,
+                        colors = CardDefaults.cardColors(containerColor = rowBg),
+                        elevation = CardDefaults.cardElevation(0.dp),
+                        border = BorderStroke(0.5.dp, detoxColors.cardBorder)
+                    ) {
+                        LeaderboardRow(
+                            rank = rankMap[participant.userId] ?: 0,
+                            participant = participant,
+                            gc = gc,
+                            isCurrentUser = participant.userId == currentUserId
+                        )
+                        if (!isLast) {
+                            HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── My session section (ACTIVE, not failed) ────────────────────────────
+        if (gc.status == GroupChallengeStatus.ACTIVE && !isCurrentUserFailed) {
+            item {
+                Text(
+                    text = stringResource(R.string.group_detail_session_section),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.W500,
+                    color = detoxColors.subtext
+                )
+            }
+            item {
+                // Own progress reads from Room DailyLog (myOpensToday / myTimeUsedMinutes),
+                // NOT from Firestore participants array which can lag.
+                SessionCard(
+                    gc = gc,
+                    myOpensToday = myOpensToday,
+                    myTimeUsedMinutes = myTimeUsedMinutes
+                )
+            }
+        }
+
+        // ── Abrechnung (payout breakdown) ─────────────────────────────────────
+        item {
+            AbrechnungGroupCard(gc = gc, currentUserId = currentUserId)
+        }
+
+        // ── Challenge aufgeben (text only, #FF3B30) ────────────────────────────
+        if (gc.status == GroupChallengeStatus.ACTIVE && !isCurrentUserFailed) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showQuitDialog = true }
+                        .padding(top = 16.dp, bottom = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isQuitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            text = stringResource(R.string.group_detail_quit_button),
+                            fontSize = 14.sp,
+                            color = detoxColors.danger
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Challenge verlassen (WAITING, non-creator only) ────────────────────
+        if (gc.status == GroupChallengeStatus.WAITING && gc.creatorUserId != currentUserId) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isLeaving) { showLeaveDialog = true }
+                        .padding(top = 16.dp, bottom = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isLeaving) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            text = stringResource(R.string.group_leave_button),
+                            fontSize = 14.sp,
+                            color = detoxColors.danger
+                        )
+                    }
+                }
+            }
+        }
+
+    }
+}
+
+// ── Card 1: Group header ──────────────────────────────────────────────────────
+
+@Composable
+private fun GroupHeaderCard(
+    gc: GroupChallenge,
+    remainingDays: Long,
+    currentUserId: String?,
+    endDateValid: Boolean,
+    dateFmt: SimpleDateFormat,
+    /** Drives the give-up branch of the stats row — an eliminated participant's share is 0. */
+    isCurrentUserFailed: Boolean,
+    onShare: () -> Unit,
+) {
+    DetoxCard {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Badge + duration/days label
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                GroupStatusBadge(gc.status)
+                val rightLabel = when (gc.status) {
+                    GroupChallengeStatus.ACTIVE ->
+                        if (endDateValid) stringResource(R.string.group_detail_remaining_days, remainingDays)
+                        else "–"
+                    GroupChallengeStatus.WAITING ->
+                        stringResource(R.string.group_detail_duration_label, gc.durationDays)
+                    else -> ""
+                }
+                if (rightLabel.isNotEmpty()) {
+                    Text(text = rightLabel, fontSize = 12.sp, color = detoxColors.subtext)
+                }
+            }
+
+            // App name
+            Text(
+                text = gc.appDisplayName,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = detoxColors.label,
+                letterSpacing = (-0.3).sp
+            )
+
+            // Limit subtitle
+            val limitSubtitle = when (gc.limitType) {
+                LimitType.SESSIONS ->
+                    stringResource(R.string.group_detail_limit_sessions, gc.limitValueSessions ?: 0)
+                LimitType.TIME ->
+                    stringResource(R.string.group_detail_limit_time, gc.limitValueMinutes)
+                LimitType.TIME_BUDGET ->
+                    stringResource(R.string.group_detail_limit_budget, gc.limitValueMinutes)
+                LimitType.TIME_WINDOW ->
+                    stringResource(R.string.group_detail_limit_window)
+            }
+            Text(text = limitSubtitle, fontSize = 13.sp, color = detoxColors.subtext)
+
+            // Stats row (3 columns) — only for ACTIVE
+            if (gc.status == GroupChallengeStatus.ACTIVE) {
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+
+                // Mirrors `completeGroupChallenge` (functions/src/index.ts) — the same maths
+                // `maxPossibleWinCents` mirrors for the wizard's ceiling, but evaluated against the
+                // CURRENT standings instead of a full lobby of failures:
+                //   distributable = failedPot − floor(failedPot × 0.10)
+                //   winner        = floor(ownStake × 0.80) + distributable / winners
+                //   nobody failed = the `nobodyFailed` branch returns 100% of every stake
+                //   failed        = 0
+                // DISPLAY ONLY — nothing here settles anything and no Stripe/payout path reads it.
+                //
+                // This row used to show `sumOf { amountCents }` as "Gesamtpot" (every stake — but
+                // the pot is only what dropouts left behind, so with nobody failed it is €0, not
+                // the sum) and the raw buy-in as "Dein Gewinn" (the user's own stake coming back,
+                // which is a refund, not winnings). Both restated the stake and read as upside.
+                val activeCount = gc.participants.count { it.status == ParticipantStatus.ACTIVE }
+                val myStake = gc.participants.find { it.userId == currentUserId }
+                    ?.amountCents?.takeIf { it > 0 } ?: gc.buyInCents
+                val failedPotCents = gc.participants
+                    .filter { it.status == ParticipantStatus.FAILED }
+                    .sumOf { it.amountCents }
+                val distributableCents = failedPotCents - floor(failedPotCents * 0.10).toInt()
+                // Settlement order: out first, then the nobody-failed branch, then the split.
+                val myShareCents = when {
+                    isCurrentUserFailed -> 0
+                    failedPotCents == 0 -> myStake
+                    activeCount > 0 ->
+                        floor(myStake * 0.80).toInt() + distributableCents / activeCount
+                    else -> 0
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    GroupStatColumn(
+                        label = stringResource(R.string.group_detail_to_split_label),
+                        value = formatEuroCents(distributableCents),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(0.5.dp)
+                            .height(48.dp)
+                            .background(detoxColors.divider)
+                    )
+                    GroupStatColumn(
+                        label = stringResource(R.string.group_detail_teilnehmer_label),
+                        value = stringResource(
+                            R.string.group_detail_participants_val,
+                            activeCount, gc.maxParticipants
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(0.5.dp)
+                            .height(48.dp)
+                            .background(detoxColors.divider)
+                    )
+                    GroupStatColumn(
+                        label = stringResource(R.string.group_detail_my_share_label),
+                        value = formatEuroCents(myShareCents),
+                        // €0 in the green accent still reads as a win — an eliminated
+                        // participant's figure must not be dressed as one.
+                        valueColor = if (isCurrentUserFailed) detoxColors.subtext
+                            else detoxColors.accent,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // Names the base the figures are relative to, the way the wizard's "Bis zu"
+                // names its ceiling — without it "Zu verteilen €0,00" invites the wrong question.
+                Text(
+                    text = stringResource(
+                        if (isCurrentUserFailed) R.string.group_detail_stats_basis_failed
+                        else R.string.group_detail_stats_basis
+                    ),
+                    fontSize = 12.sp,
+                    color = detoxColors.subtext,
+                )
+            }
+
+            // WAITING: join code + share + player count + start button
+            if (gc.status == GroupChallengeStatus.WAITING) {
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+
+                Text(
+                    text = stringResource(R.string.group_detail_join_code_label),
+                    fontSize = 12.sp,
+                    color = detoxColors.subtext
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = gc.code,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        letterSpacing = 6.sp
+                    )
+                    IconButton(onClick = onShare) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = stringResource(R.string.group_detail_share_code)
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.group_detail_join_code_hint),
+                    fontSize = 12.sp,
+                    color = detoxColors.subtext
+                )
+
+                // The "N/M Spieler beigetreten" line used to sit here. The roster below the card
+                // shows the same thing structurally — filled rows plus free slots — and carries the
+                // count in its section header, so repeating it here is noise.
+
+                // Two dates, and they are NOT the same thing. Only the second one used to be
+                // shown, under the label "Noch N Tage zum Starten" — which reads as a countdown to
+                // the start while actually counting down the card hold, so a challenge starting on
+                // the 27th advertised "4 days" from a deadline on the 31st.
+                //   • startDate              — when the challenge begins (0 = creator starts it manually)
+                //   • authorizationExpiresAt — when the Stripe hold lapses if it has NOT started by then
+                // A participant cares about both, and the join preview already separates them.
+                WaitingInfoLine(
+                    icon = Icons.Outlined.Event,
+                    text = if (gc.startDate > 0L)
+                        stringResource(R.string.group_starts_on, dateFmt.format(Date(gc.startDate)))
+                    else
+                        stringResource(R.string.join_group_starts_manual),
+                    color = detoxColors.subtext,
+                )
+
+                // Authorization window countdown
+                if (gc.authorizationExpiresAt > 0L) {
+                    val now = System.currentTimeMillis()
+                    val daysLeft = (gc.authorizationExpiresAt - now) / (24L * 60 * 60 * 1000)
+                    val (countdownText, countdownColor) = when {
+                        now >= gc.authorizationExpiresAt ->
+                            Pair(stringResource(R.string.group_auth_expired), detoxColors.danger)
+                        daysLeft <= 1L ->
+                            Pair(stringResource(R.string.group_auth_expires_tomorrow), detoxColors.warningStrong)
+                        else ->
+                            Pair(stringResource(R.string.group_auth_days_remaining, daysLeft), detoxColors.subtext)
+                    }
+                    // Icon, not the ⏳/🔴 the strings used to carry — emoji are not our
+                    // icon system, and the string is now shared with the join screen.
+                    WaitingInfoLine(
+                        icon = Icons.Outlined.HourglassTop,
+                        text = countdownText,
+                        color = countdownColor,
+                    )
+                }
+
+                // Start / Delete used to live here, inside the card and ABOVE the roster — which
+                // asked the creator to start before they could see who was in. Both now render as
+                // their own items below the roster; see WaitingCreatorActions.
+            }
+        }
+    }
+}
+
+/**
+ * Creator-only WAITING actions, rendered BELOW the roster so the decision to start comes after
+ * seeing who is in. Non-creators get the "leave" link further down instead.
+ */
+@Composable
+private fun WaitingCreatorActions(
+    canStart: Boolean,
+    isStarting: Boolean,
+    isDeleting: Boolean,
+    onStartChallenge: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = onStartChallenge,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = canStart && !isStarting,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary
+            )
+        ) {
+            if (isStarting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.group_detail_start_button),
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+        }
+        if (!canStart) {
+            Text(
+                text = stringResource(R.string.group_detail_need_players),
+                fontSize = 12.sp,
+                color = detoxColors.subtext,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = !isDeleting) { onDelete() }
+                .padding(top = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isDeleting) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Text(
+                    text = stringResource(R.string.group_delete_button),
+                    fontSize = 14.sp,
+                    color = detoxColors.danger,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupStatColumn(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = detoxColors.label
+) {
+    Column(
+        modifier = modifier.padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(text = label, fontSize = 11.sp, color = detoxColors.subtext, textAlign = TextAlign.Center)
+        Text(
+            text = value,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun LeaderboardRow(
+    rank: Int,
+    participant: Participant,
+    gc: GroupChallenge,
+    isCurrentUser: Boolean
+) {
+    val isFailed = participant.status == ParticipantStatus.FAILED
+    val rankColor = when (rank) {
+        1 -> DetoxPodiumColors.Gold
+        2 -> DetoxPodiumColors.Silver
+        3 -> DetoxPodiumColors.Bronze
+        else -> detoxColors.subtext // grey
+    }
+    val displayName = participant.displayName
+        .takeIf { it.isNotBlank() }
+        ?: participant.userId.substringBefore('@').ifBlank { participant.userId }
+
+    val stat = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            stringResource(
+                R.string.group_detail_opens_stat,
+                participant.opensToday, gc.limitValueSessions ?: 0
+            )
+        else ->
+            stringResource(
+                R.string.group_detail_time_stat,
+                participant.timeUsedMinutes, gc.limitValueMinutes
+            )
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Rank — failed participants show "—", active show shared rank "#N"
+        Text(
+            text = if (isFailed) "—" else "#$rank",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isFailed) detoxColors.hint else rankColor,
+            modifier = Modifier.width(32.dp)
+        )
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Avatar circle with initials
+        AvatarCircle(name = displayName, size = 32.dp)
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        // Name + Du badge + status sub-label
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "@$displayName",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.W500,
+                    color = if (isFailed) detoxColors.hint else detoxColors.label,
+                    textDecoration = if (isFailed) TextDecoration.LineThrough else TextDecoration.None
+                )
+                if (isCurrentUser) DuBadge()
+            }
+            val statusLabel = when (participant.status) {
+                ParticipantStatus.ACTIVE -> stringResource(R.string.group_detail_row_aktiv)
+                ParticipantStatus.FAILED -> stringResource(R.string.group_detail_row_failed)
+                // SUCCESS (legacy docs) and COMPLETED (what the settlement CF writes)
+                // are the same outcome — see ParticipantStatus.hasWon.
+                ParticipantStatus.SUCCESS,
+                ParticipantStatus.COMPLETED -> stringResource(R.string.group_detail_row_won)
+            }
+            val statusColor = when (participant.status) {
+                ParticipantStatus.ACTIVE -> detoxColors.accent
+                else -> detoxColors.subtext
+            }
+            Text(text = statusLabel, fontSize = 11.sp, color = statusColor)
+        }
+
+        // Stat — today's usage against the limit, with the whole-challenge metric the
+        // rank is actually computed from underneath it. The rank column used to be
+        // explained by nothing on screen, so a rank that disagreed with today's number
+        // (the normal case, now that ranking spans the whole challenge) looked like a bug.
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = stat,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isFailed) detoxColors.hint else detoxColors.label
+            )
+            Text(
+                text = stringResource(
+                    R.string.group_detail_clean_days,
+                    participant.cleanDays(gc),
+                    gc.elapsedDays(),
+                ),
+                fontSize = 11.sp,
+                color = if (isFailed) detoxColors.hint else detoxColors.subtext
+            )
+        }
+    }
+}
+
+// AvatarCircle and DuBadge moved to presentation/components/GroupParticipantRow.kt so the
+// waiting-room roster can share them. LeaderboardRow below calls the shared versions unchanged.
+
+// ── Session card ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun SessionCard(
+    gc: GroupChallenge,
+    myOpensToday: Int,
+    myTimeUsedMinutes: Int
+) {
+    val limit = gc.limitValueSessions ?: 0
+    val limitMin = gc.limitValueMinutes
+
+    val verbrauchtVal = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            stringResource(R.string.group_detail_verbraucht_val_opens, myOpensToday, limit)
+        else ->
+            stringResource(R.string.group_detail_verbraucht_val_time, myTimeUsedMinutes, limitMin)
+    }
+    val stillAvailable = when (gc.limitType) {
+        LimitType.SESSIONS -> maxOf(0, limit - myOpensToday)
+        else -> maxOf(0, limitMin - myTimeUsedMinutes)
+    }
+    val verfuegbarVal = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            stringResource(R.string.group_detail_noch_verfuegbar_opens, stillAvailable)
+        else ->
+            stringResource(R.string.group_detail_noch_verfuegbar_min, stillAvailable)
+    }
+    val progressRaw = when (gc.limitType) {
+        LimitType.SESSIONS ->
+            if (limit > 0) myOpensToday.toFloat() / limit else 0f
+        else ->
+            if (limitMin > 0) myTimeUsedMinutes.toFloat() / limitMin else 0f
+    }.coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = progressRaw,
+        animationSpec = tween(600, delayMillis = 300, easing = FastOutSlowInEasing),
+        label = "groupProgressAnim"
+    )
+
+    GroupDetoxCard {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Info rows
+            SessionInfoRow(
+                label = stringResource(R.string.group_detail_verbraucht_label),
+                value = verbrauchtVal
+            )
+            HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+            SessionInfoRow(
+                label = stringResource(R.string.group_detail_noch_verfuegbar_label),
+                value = verfuegbarVal,
+                valueColor = detoxColors.accent
+            )
+
+            // How long ONE open lasts before the overlay comes back — the rule the countdown
+            // actually enforces, and until now the only limit the joiner saw on the join preview
+            // but nowhere afterwards. Static config, so it sits below the two live-state rows.
+            // Reads sessionDurationMinutes; limitValueMinutes is NOT the session length (see the
+            // note at the group wizard's write site).
+            if (gc.limitType == LimitType.SESSIONS) {
+                HorizontalDivider(color = detoxColors.divider, thickness = 0.5.dp)
+                SessionInfoRow(
+                    label = stringResource(R.string.group_detail_session_dur_label),
+                    value = stringResource(
+                        R.string.group_detail_session_dur_val,
+                        gc.sessionDurationMinutes
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // EXISTING PROGRESS BAR — animated fill on screen open
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(10.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+
+/** One icon + text line in the WAITING block (scheduled start, authorization deadline). */
+@Composable
+private fun WaitingInfoLine(icon: ImageVector, text: String, color: Color) {
+    Row(
+        modifier = Modifier.padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = color,
+        )
+        Text(text = text, fontSize = 13.sp, color = color)
+    }
+}
+
+@Composable
+private fun SessionInfoRow(label: String, value: String, valueColor: Color = detoxColors.label) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, fontSize = 14.sp, color = detoxColors.subtext)
+        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.W500, color = valueColor)
+    }
+}
+
+// ── Status badge ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun GroupStatusBadge(status: GroupChallengeStatus) {
+    val (label, bgColor, textColor) = when (status) {
+        GroupChallengeStatus.ACTIVE ->
+            Triple(stringResource(R.string.group_detail_live_badge), detoxColors.softGreenBg, detoxColors.softGreenText)
+        GroupChallengeStatus.WAITING ->
+            Triple(stringResource(R.string.group_detail_waiting_badge), detoxColors.insetSurface, detoxColors.subtext)
+        GroupChallengeStatus.COMPLETED ->
+            Triple(stringResource(R.string.group_status_completed), detoxColors.softGreenBg, detoxColors.softGreenText)
+        GroupChallengeStatus.CANCELLED ->
+            Triple(stringResource(R.string.group_status_cancelled), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.error)
+    }
+    Surface(shape = RoundedCornerShape(50), color = bgColor) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Icon in place of the ⏳ the WAITING string used to carry. The ACTIVE badge keeps
+            // its "●" — that is typography, not an emoji.
+            if (status == GroupChallengeStatus.WAITING) {
+                Icon(
+                    imageVector = Icons.Outlined.HourglassTop,
+                    contentDescription = null,
+                    modifier = Modifier.size(11.dp),
+                    tint = textColor
+                )
+            }
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = textColor
+            )
+        }
+    }
+}
+
+// ── Failed user banner (existing, adapted to new card style) ──────────────────
+
+@Composable
+private fun FailedUserBanner(gc: GroupChallenge) {
+    val dateFmt = SimpleDateFormat("dd. MMM yyyy", Locale.getDefault())
+    val endDateValid = gc.endDate > System.currentTimeMillis()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.group_detail_failed_banner),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            if (endDateValid) {
+                Text(
+                    text = stringResource(
+                        R.string.group_detail_challenge_ends_on,
+                        dateFmt.format(Date(gc.endDate))
+                    ),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                )
+            }
+            if (gc.status == GroupChallengeStatus.COMPLETED) {
+                val winner = gc.participants
+                    .filter { it.status.hasWon }
+                    .minByOrNull { it.timeUsedMinutes }
+                if (winner != null) {
+                    val name = "@" + (winner.displayName.takeIf { it.isNotBlank() }
+                        ?: winner.userId.substringBefore('@'))
+                    val pot = gc.participants.count { it.status == ParticipantStatus.FAILED } *
+                            gc.buyInCents / 100
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Icon in place of the 🏆 the string used to carry.
+                        Icon(
+                            imageVector = Icons.Outlined.EmojiEvents,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = stringResource(R.string.group_detail_winner, name),
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    if (pot > 0) {
+                        Text(
+                            text = stringResource(R.string.group_detail_total_prize, pot),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── ResultSummaryCard + PayoutResultCard (existing, unchanged) ────────────────
+
+@Composable
+private fun ResultSummaryCard(
+    gc: GroupChallenge,
+    currentUserId: String?,
+    onConnectBank: () -> Unit,
+) {
+    val failedCount = gc.participants.count { it.status == ParticipantStatus.FAILED }
+    val succeededCount = gc.participants.count { it.status.hasWon }
+    val myParticipant = gc.participants.find { it.userId == currentUserId }
+    val iWon = myParticipant?.status?.hasWon == true
+    val iLost = myParticipant?.status == ParticipantStatus.FAILED
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                gc.status == GroupChallengeStatus.CANCELLED -> MaterialTheme.colorScheme.errorContainer
+                iLost -> MaterialTheme.colorScheme.errorContainer
+                failedCount == 0 -> MaterialTheme.colorScheme.tertiaryContainer
+                succeededCount == 0 -> MaterialTheme.colorScheme.errorContainer
+                else -> MaterialTheme.colorScheme.secondaryContainer
+            }
+        ),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = when {
+                    gc.status == GroupChallengeStatus.CANCELLED -> stringResource(R.string.group_result_cancelled_title)
+                    iLost -> stringResource(R.string.group_result_lost_title)
+                    iWon -> stringResource(R.string.group_result_won_title)
+                    failedCount == 0 -> stringResource(R.string.group_result_all_won_title)
+                    succeededCount == 0 -> stringResource(R.string.group_result_all_lost_title)
+                    else -> stringResource(R.string.group_result_finished_title)
+                },
+                fontWeight = FontWeight.Bold
+            )
+            when {
+                gc.status == GroupChallengeStatus.CANCELLED ->
+                    Text(stringResource(R.string.group_result_too_few))
+                iLost -> {
+                    val lostCents = myParticipant?.amountCents ?: gc.buyInCents
+                    Text(stringResource(R.string.group_result_lost_stake, lostCents / 100))
+                }
+                failedCount == 0 ->
+                    Text(stringResource(R.string.group_result_all_succeeded, succeededCount))
+                succeededCount == 0 ->
+                    Text(stringResource(R.string.group_result_all_failed, failedCount))
+                else -> {
+                    Text(stringResource(R.string.group_result_summary, succeededCount, failedCount))
+                    if (gc.perWinnerBonus > 0) {
+                        Text(stringResource(R.string.group_bonus_per_winner, gc.perWinnerBonus / 100), fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PayoutResultCard(
+    participant: Participant,
+    gc: GroupChallenge,
+    onConnectBank: () -> Unit,
+) {
+    val bonus = gc.perWinnerBonus
+    val buyIn = participant.amountCents
+    val isPending = participant.payoutStatus == "pending_payout"
+    // A settlement refund/transfer failed: the user WON but the money didn't reach them and
+    // is still owed. Render this as its own state — never the happy "refunded" path below.
+    val isRefundFailed = participant.payoutStatus == "refund_failed"
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isRefundFailed) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.tertiaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (isRefundFailed) {
+                // Owed = the server-recorded amount that failed to send; fall back to the winner's
+                // stake if an older doc has no owed figure.
+                val owedCents = participant.payoutOwedCents.takeIf { it > 0 } ?: buyIn
+                Text(
+                    text = stringResource(R.string.group_payout_failed_title),
+                    fontWeight = FontWeight.Bold,
+                    color = detoxColors.danger
+                )
+                Text(stringResource(R.string.group_payout_failed_body, formatEuroCents(owedCents)))
+                Text(
+                    text = stringResource(R.string.group_payout_failed_support, stringResource(R.string.support_email)),
+                    fontWeight = FontWeight.SemiBold,
+                    color = detoxColors.warningStrong
+                )
+                return@Column
+            }
+            if (bonus > 0) {
+                Text(
+                    text = stringResource(R.string.group_result_bonus, bonus / 100),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(stringResource(R.string.group_stake_refunded, buyIn / 100))
+            if (bonus > 0) {
+                if (isPending) {
+                    Text(
+                        stringResource(R.string.group_connect_bank_warning, bonus / 100),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Button(onClick = onConnectBank, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.connect_bank_account))
+                    }
+                } else {
+                    Text(stringResource(R.string.group_bonus_transfer, bonus / 100))
+                }
+            }
+        }
+    }
+}
+
+// ── Abrechnung card ───────────────────────────────────────────────────────────
+
+@Composable
+private fun AbrechnungGroupCard(
+    gc: GroupChallenge,
+    currentUserId: String?,
+) {
+    val myParticipant = gc.participants.find { it.userId == currentUserId }
+    val myStatus = myParticipant?.status
+    val showAbrechnung = gc.status == GroupChallengeStatus.COMPLETED ||
+        (gc.status == GroupChallengeStatus.ACTIVE && myStatus == ParticipantStatus.FAILED)
+    if (!showAbrechnung || myParticipant == null) return
+
+    val buyInCents = myParticipant.amountCents.takeIf { it > 0 } ?: gc.buyInCents
+    val nobodyFailed = gc.perWinnerBonus == 0
+    val prizePerWinner = gc.perWinnerBonus
+    val payoutStatus = myParticipant.payoutStatus ?: "captured"
+    val isWinner = myStatus?.hasWon == true
+
+    val formatCents: (Int) -> String = { cents ->
+        "€%,.2f".format(cents / 100.0)
+            .replace(",", "X").replace(".", ",").replace("X", ".")
+    }
+
+    val stakeRefund = if (nobodyFailed) buyInCents else (buyInCents * 0.80).toInt()
+    val appFee = buyInCents - stakeRefund
+
+    GroupDetoxCard {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.abrechnung_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight(600),
+                color = detoxColors.subtext,
+                letterSpacing = 0.5.sp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (isWinner) {
+                // ── WIN ─────────────────────────────────────────────────────
+                AbrechnungRow(
+                    label = stringResource(R.string.abrechnung_stake_back, formatCents(stakeRefund)),
+                    trailing = "✅"
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                if (nobodyFailed) {
+                    AbrechnungRow(
+                        label = stringResource(R.string.abrechnung_app_fee_zero),
+                        trailing = null
+                    )
+                } else {
+                    AbrechnungRow(
+                        label = stringResource(R.string.abrechnung_app_fee_20, formatCents(appFee)),
+                        trailing = null
+                    )
+                }
+
+                if (!nobodyFailed && prizePerWinner > 0) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (payoutStatus == "pending_payout") {
+                        AbrechnungRow(
+                            label = stringResource(
+                                R.string.abrechnung_prize_pending,
+                                formatCents(prizePerWinner)
+                            ),
+                            trailing = null
+                        )
+                    } else {
+                        AbrechnungRow(
+                            label = stringResource(
+                                R.string.abrechnung_prize_transferred,
+                                formatCents(prizePerWinner)
+                            ),
+                            trailing = "💰"
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val total = stakeRefund + (if (!nobodyFailed) prizePerWinner else 0)
+                Text(
+                    text = stringResource(R.string.abrechnung_total, formatCents(total)),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = detoxColors.label
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                if (payoutStatus == "refund_failed") {
+                    // Won, but the payout failed to send — money still owed. Show it as its own
+                    // state with the owed amount and a support route, never as "refunded".
+                    val owedCents = myParticipant.payoutOwedCents.takeIf { it > 0 } ?: total
+                    Text(
+                        text = stringResource(R.string.group_payout_failed_title),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = detoxColors.danger
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.group_payout_failed_body, formatCents(owedCents)),
+                        fontSize = 13.sp,
+                        color = detoxColors.label
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.group_payout_failed_support,
+                            stringResource(R.string.support_email)
+                        ),
+                        fontSize = 13.sp,
+                        color = detoxColors.warningStrong
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.abrechnung_refunded),
+                        fontSize = 13.sp,
+                        color = detoxColors.accent
+                    )
+                    if (!nobodyFailed && prizePerWinner > 0 && payoutStatus == "pending_payout") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.abrechnung_prize_pending_note),
+                            fontSize = 13.sp,
+                            color = detoxColors.warningStrong
+                        )
+                    }
+                }
+            } else {
+                // ── FAIL ────────────────────────────────────────────────────
+                AbrechnungRow(
+                    label = stringResource(R.string.abrechnung_stake_captured, formatCents(buyInCents)),
+                    trailing = "❌"
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(thickness = 0.5.dp, color = detoxColors.divider)
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.abrechnung_not_passed),
+                    fontSize = 13.sp,
+                    color = detoxColors.subtext
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AbrechnungRow(label: String, trailing: String?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = detoxColors.subtext,
+            modifier = Modifier.weight(1f)
+        )
+        if (trailing != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = trailing, fontSize = 13.sp)
+        }
+    }
+}
+
+// ── Shared white card for group screens ───────────────────────────────────────
+
+@Composable
+private fun GroupDetoxCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = detoxColors.cardBackground),
+        elevation = CardDefaults.cardElevation(0.dp),
+        border = BorderStroke(0.5.dp, detoxColors.cardBorder),
+        content = content
+    )
+}
+
+private fun isToday(timestampMs: Long): Boolean {
+    if (timestampMs <= 0L) return false
+    val cal = Calendar.getInstance()
+    val today = cal.clone() as Calendar
+    cal.timeInMillis = timestampMs
+    return cal.get(Calendar.YEAR) == today.get(Calendar.YEAR)
+            && cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
+}

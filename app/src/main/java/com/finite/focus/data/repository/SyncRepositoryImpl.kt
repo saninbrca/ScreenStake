@@ -1,0 +1,440 @@
+package com.finite.focus.data.repository
+
+import android.content.Context
+import com.finite.focus.data.local.db.dao.ChallengeDao
+import com.finite.focus.data.local.db.dao.DailyLogDao
+import com.finite.focus.data.local.db.dao.PendingHardChallengeDao
+import com.finite.focus.data.local.db.entity.ChallengeEntity
+import com.finite.focus.data.local.db.entity.DailyLogEntity
+import com.finite.focus.data.local.db.entity.toChallenge
+import com.finite.focus.data.local.db.entity.toEntity
+import com.finite.focus.data.remote.firebase.FirebaseAuthService
+import com.finite.focus.data.remote.firebase.FirestoreService
+import com.finite.focus.domain.model.Challenge
+import com.finite.focus.domain.model.GroupChallengeStatus
+import com.finite.focus.domain.model.LimitType
+import com.finite.focus.domain.repository.ChallengeRepository
+import com.finite.focus.domain.repository.GroupChallengeRepository
+import com.finite.focus.domain.repository.SyncRepository
+import com.finite.focus.service.OverlayManager
+import com.finite.focus.service.TrackedAppEventBus
+import com.finite.focus.util.DateUtils
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
+import timber.log.Timber
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class SyncRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val firestoreService: FirestoreService,
+    private val firebaseAuthService: FirebaseAuthService,
+    private val challengeDao: ChallengeDao,
+    private val dailyLogDao: DailyLogDao,
+    private val groupChallengeRepository: GroupChallengeRepository,
+    private val pendingHardChallengeDao: PendingHardChallengeDao,
+    private val challengeRepository: ChallengeRepository,
+) : SyncRepository {
+
+    private companion object {
+        /** Stripe manual-capture pre-auth window. Manual PIs not captured within this expire. */
+        const val MANUAL_AUTH_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
+    }
+
+    override suspend fun syncUserData(): Result<Unit> {
+        return try {
+            val userId = firebaseAuthService.currentUserId()
+                ?: return Result.failure(IllegalStateException("User not signed in"))
+
+            Timber.d("SyncRepository: starting sync for uid=$userId")
+
+            // 1. Fetch and upsert active challenges (challenges must be inserted before
+            //    daily logs due to the Room foreign-key constraint on daily_logs.challengeId).
+            // Guard: skip overwriting a locally-failed challenge with Firestore "active" data.
+            // Firestore rules block client status updates, so a failed challenge may temporarily
+            // still be "active" in Firestore if the async delete hasn't completed yet.
+            val challenges = firestoreService.fetchActiveChallenges(userId)
+            Timber.d("SyncRepository: fetched ${challenges.size} active challenges")
+            challenges.forEach { challenge ->
+                val existing = challengeDao.getChallengeById(challenge.id)
+                when {
+                    // Brand-new challenge: no row to delete → INSERT can't trigger an FK cascade.
+                    existing == null -> challengeDao.insertChallenge(challenge.toEntity())
+                    // Ghost guard (unchanged): a locally-failed row may still read "active" in Firestore.
+                    existing.status != "active" -> Timber.w(
+                        "SyncRepository: skipping ghost challenge %s — local status=%s, Firestore=active",
+                        challenge.id, existing.status
+                    )
+                    // Existing active row: UPDATE in place (by PK). NEVER insertChallenge here — its
+                    // INSERT-OR-REPLACE deletes-then-inserts, and the DELETE CASCADE-wipes this
+                    // challenge's daily_logs, blanking all Dashboard cards for the rest of the sync.
+                    else -> challengeDao.updateChallenge(challenge.toEntity())
+                }
+            }
+
+            // 2. Fetch and upsert daily logs for each challenge
+            challenges.forEach { challenge ->
+                val logs = firestoreService.fetchDailyLogs(userId, challenge.id)
+                Timber.d(
+                    "SyncRepository: fetched ${logs.size} daily logs for " +
+                            "challenge=${challenge.id}"
+                )
+                logs.forEach { log ->
+                    val entity = log.toEntity()
+                    // insertDailyLog is a full-row REPLACE, so a blind write clobbers EVERY
+                    // live-tracking column the nested doc doesn't carry. The nested doc is only
+                    // rewritten by the 23:59 DailyEvaluationWorker (plus the two idempotent
+                    // intra-day OverlayManager writes), so mid-day it is a stale snapshot of
+                    // today's row. Merge against the existing row — two different rules, by field:
+                    //
+                    //  • consciousOpens / overlayPausedMs / totalMinutes → maxOf(). All three are
+                    //    monotonic-up within a (challengeId, date) (midnight = new date key = fresh
+                    //    row), so the higher value is always the truer one and max() can never
+                    //    lower a correct local count. overlayPausedMs matters most: it is
+                    //    accumulated Room-ONLY (addOverlayPausedMs, pushed to no collection) and
+                    //    has no step-4 restore, so a REPLACE here loses it permanently — and it is
+                    //    subtracted from raw usage in CheckDailyLimitUseCase/DailyEvaluationWorker,
+                    //    i.e. losing it inflates the user's counted screen time against them.
+                    //
+                    //  • the four budget fields → carry `existing` forward UNCONDITIONALLY. Never
+                    //    maxOf(). Two independent reasons, both load-bearing: (1) fetchDailyLogs
+                    //    does not parse these fields at all, so `entity` ALWAYS carries 0 and there
+                    //    is nothing to compare against; (2) budgetRemainingMs counts DOWN, so a
+                    //    max() would resurrect a stale LARGER remaining and hand the user free
+                    //    budget. Do not "improve" this into a max. Today's real values are restored
+                    //    from the FLAT collection in step 4 (group: step 3a).
+                    val existing = dailyLogDao.getLogForDate(entity.challengeId, entity.date)
+                    val merged = if (existing != null) entity.copy(
+                        consciousOpens = maxOf(entity.consciousOpens, existing.consciousOpens),
+                        overlayPausedMs = maxOf(entity.overlayPausedMs, existing.overlayPausedMs),
+                        totalMinutes = maxOf(entity.totalMinutes, existing.totalMinutes),
+                        budgetUsedMinutes = existing.budgetUsedMinutes,
+                        budgetRemainingMinutes = existing.budgetRemainingMinutes,
+                        budgetUsedMs = existing.budgetUsedMs,
+                        budgetRemainingMs = existing.budgetRemainingMs,
+                    ) else entity
+                    dailyLogDao.insertDailyLog(merged)
+                }
+            }
+
+            // 2b. Restore FINISHED (completed/failed) challenges + their daily logs.
+            //     ADDITIVE history-restore path — fully isolated from the active-challenge sync
+            //     above (steps 1–2 are untouched). syncUserData otherwise resyncs only ACTIVE
+            //     challenges, and the History screen reads finished challenges from Room only, so
+            //     without this they are lost whenever Room is cleared (logout, or the SQLCipher
+            //     plaintext-DB drop). Wrapped in its own try/catch so a failure here can never
+            //     break the rest of the sync.
+            //     Per-challenge guard: only insert when ABSENT — finished challenges are immutable,
+            //     so we never REPLACE an existing row (which would CASCADE-delete its daily logs).
+            try {
+                val finished = firestoreService.fetchFinishedChallenges(userId)
+                Timber.d("SyncRepository: fetched ${finished.size} finished challenges")
+                finished.forEach { challenge ->
+                    val existing = challengeDao.getChallengeById(challenge.id)
+                    when {
+                        existing == null -> {
+                            // Absent locally → restore the finished challenge + its logs.
+                            // Insert the challenge BEFORE its logs (Room FK on daily_logs.challengeId).
+                            // completionShown=1: this is a historical re-hydration (Room was cleared),
+                            // NOT a fresh loss — it must never pop the loss/win dialog. A fresh device
+                            // loss keeps its existing local row (terminal) and hits the else branch.
+                            challengeDao.insertChallenge(challenge.toEntity().copy(completionShown = 1))
+                            val logs = firestoreService.fetchDailyLogs(userId, challenge.id)
+                            logs.forEach { log -> dailyLogDao.insertDailyLog(log.toEntity()) }
+                            Timber.d(
+                                "SyncRepository: restored finished challenge %s with %d logs",
+                                challenge.id, logs.size
+                            )
+                        }
+                        existing.status == "active" -> {
+                            // Local row still ACTIVE but the server has settled it (terminal status).
+                            // Downgrade Room to the server's terminal status — STATUS COLUMN ONLY,
+                            // via the DAO directly (NEVER the repo wrapper, which would delete the
+                            // server doc and destroy its payoutStatus/payout record). Never REPLACE
+                            // the row and never touch DailyLogEntity / live-tracking fields.
+                            // This is a server-detected loss the device never classified locally, so
+                            // also pull the server failReason (separate column — status still via
+                            // updateStatus()) so the loss dialog can show the cause. The loss pops
+                            // once (completionShown is left at its synced value, 0).
+                            val serverStatus = challenge.status.name.lowercase()
+                            challengeDao.updateStatus(challenge.id, serverStatus)
+                            challenge.failReason?.let { challengeDao.updateFailReason(challenge.id, it) }
+                            Timber.i(
+                                "SyncRepository: reconciled active→%s for challenge %s from server settlement",
+                                serverStatus, challenge.id
+                            )
+                        }
+                        else -> {
+                            // Already terminal locally — immutable, leave untouched.
+                            return@forEach
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "SyncRepository: finished-challenge restore failed (non-fatal)")
+            }
+
+            // 2c. MONEY-CRITICAL recovery net: a Hard Mode payment may have succeeded (stake captured
+            //     for >7-day challenges) while the challenge doc was never written — e.g. the
+            //     ViewModel/Activity was recreated during the Stripe round trip and onPaymentConfirmed
+            //     aborted. PendingHardChallenge holds the full payload; re-create any doc still missing
+            //     using the SAME challengeId + PaymentIntent (idempotent merge-set — NEVER a new PI).
+            //     Runs AFTER the active/finished restore above so the Room check below is authoritative.
+            recoverPendingHardChallenges()
+
+            // 3. Sync group challenge statuses from Firestore → Room so stale 'active' records
+            //    (from cancelled/completed group challenges) don't block app selection.
+            groupChallengeRepository.refreshFromFirestore(userId)
+                .onFailure { e -> Timber.w(e, "SyncRepository: group challenge status sync failed") }
+
+            // 3a. Restore Group Challenge DAILY_BUDGET budgets from Firestore → Room.
+            //     Group challenges have no entries in the nested Solo dailyLogs sub-collection
+            //     (step 2), so their budgetUsedMs must be restored explicitly here.
+            //     Runs AFTER refreshFromFirestore so ChallengeEntity rows exist in Room.
+            val todayKey = DateUtils.todayKey()
+            val budgetPrefs = context.getSharedPreferences(
+                OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+            )
+            // Run the day-rollover sweep BEFORE any restore write, ONCE for the whole loop.
+            // Stamping today's reset day key first means a later polling-tick guard call no-ops
+            // instead of clearing the accumulators this restore is about to write. Placed after a
+            // write (or inside the loop) it would sweep away the value just restored.
+            OverlayManager.ensureCommittedBudgetFresh(budgetPrefs)
+            val groupChallenges = groupChallengeRepository.getGroupChallenges().first()
+            for (gc in groupChallenges) {
+                if (gc.status != GroupChallengeStatus.ACTIVE) continue
+                if (gc.limitType != LimitType.TIME_BUDGET) continue
+                val localChallengeId = "group_${gc.groupId}"
+                Timber.d("Group restore: reading Firestore path = users/$userId/dailyLogs/${localChallengeId}_${todayKey}")
+                val data = firestoreService.fetchDailyLogDocument(userId, localChallengeId, todayKey)
+                val budgetUsedMs = data?.get("budgetUsedMs") as? Long ?: 0L
+                val totalBudgetMs = gc.limitValueMinutes * 60_000L
+                val budgetRemainingMs = (data?.get("budgetRemainingMs") as? Long)
+                    ?: (totalBudgetMs - budgetUsedMs).coerceAtLeast(0L)
+                Timber.d("Group restore: Firestore budgetUsedMs=$budgetUsedMs budgetRemainingMs=$budgetRemainingMs")
+                val existing = dailyLogDao.getLogForDate(localChallengeId, todayKey)
+                if (existing != null) {
+                    dailyLogDao.insertDailyLog(
+                        existing.copy(budgetUsedMs = budgetUsedMs, budgetRemainingMs = budgetRemainingMs)
+                    )
+                } else {
+                    dailyLogDao.insertDailyLog(
+                        DailyLogEntity(
+                            id = "${localChallengeId}_${todayKey}",
+                            challengeId = localChallengeId,
+                            date = todayKey,
+                            totalMinutes = 0,
+                            openCount = 0,
+                            pointsEarned = 0,
+                            limitExceeded = false,
+                            moneyLostCents = 0,
+                            budgetUsedMs = budgetUsedMs,
+                            budgetRemainingMs = budgetRemainingMs
+                        )
+                    )
+                }
+                val roomCheck = dailyLogDao.getLogForDate(localChallengeId, todayKey)
+                Timber.d("Group restore: Room after write = ${roomCheck?.budgetUsedMs} used, ${roomCheck?.budgetRemainingMs} remaining")
+                // Set per-challenge SharedPreferences key so UsageTrackingService.onStartCommand()
+                // restart-recovery reads the correct committed value for THIS challenge specifically.
+                // Guard: skip when a session is already active — COMMITTED is already correct then.
+                val activeSessionEnd = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+                if (activeSessionEnd <= 0L) {
+                    val prefsKey = "budget_committed_ms_${localChallengeId}"
+                    budgetPrefs.edit().putLong(prefsKey, budgetUsedMs).apply()
+                    Timber.d("Group restore: SharedPreferences[$prefsKey] set to $budgetUsedMs")
+                }
+                Timber.d("Group budget restore: groupId=${gc.groupId} usedMs=$budgetUsedMs remainingMs=$budgetRemainingMs")
+            }
+
+            // 4. Fetch today's dailyLog entries from the flat Firestore collection and upsert
+            //    consciousOpens + overlayPausedMs + budgetUsedMs/budgetRemainingMs into Room —
+            //    restores session-limit, overlay-pause credit and daily-budget state after
+            //    reinstalls / service kills.
+            val startOfToday = DateUtils.todayKey()
+            val todayLogs = firestoreService.fetchTodayDailyLogs(userId, startOfToday)
+            Timber.d("Sync: about to write ${todayLogs.size} DailyLogs to Room")
+            Timber.d("Sync: DailyLog keys being written: ${todayLogs.mapNotNull { it["challengeId"] as? String }}")
+            todayLogs.forEach { data ->
+                val challengeId = data["challengeId"] as? String ?: return@forEach
+                val date = data["date"] as? Long ?: return@forEach
+                // consciousOpens is absent for TIME_BUDGET entries — use null, not return@forEach
+                val opens = (data["consciousOpens"] as? Long)?.toInt()
+                val budgetUsedMs = data["budgetUsedMs"] as? Long
+                val budgetRemainingMs = data["budgetRemainingMs"] as? Long
+                // Absent on entries written before the overlay-pause mirror existed, and on
+                // challenges that have shown no overlay yet today — null, not 0, so the existing
+                // local value is preserved rather than zeroed.
+                val overlayPausedMs = data["overlayPausedMs"] as? Long
+
+                val existing = dailyLogDao.getLogForDate(challengeId, date)
+                if (existing != null) {
+                    dailyLogDao.insertDailyLog(
+                        existing.copy(
+                            // Never let a stale/lower Firestore value lower a correct local count
+                            // (opens are monotonic-up within a date). opens==null (TIME_BUDGET
+                            // entries) → maxOf(0, existing) preserves existing, as before.
+                            consciousOpens = maxOf(opens ?: 0, existing.consciousOpens),
+                            // Same monotonic-up reasoning: the flat doc is written on every overlay
+                            // dismissal, so it can lag Room but never legitimately lead it downward.
+                            overlayPausedMs = maxOf(overlayPausedMs ?: 0L, existing.overlayPausedMs),
+                            budgetUsedMs = budgetUsedMs ?: existing.budgetUsedMs,
+                            budgetRemainingMs = budgetRemainingMs ?: existing.budgetRemainingMs
+                        )
+                    )
+                } else {
+                    dailyLogDao.insertDailyLog(
+                        DailyLogEntity(
+                            id = "${challengeId}_${date}",
+                            challengeId = challengeId,
+                            date = date,
+                            totalMinutes = 0,
+                            openCount = 0,
+                            consciousOpens = opens ?: 0,
+                            overlayPausedMs = overlayPausedMs ?: 0L,
+                            budgetUsedMs = budgetUsedMs ?: 0L,
+                            budgetRemainingMs = budgetRemainingMs ?: 0L,
+                            pointsEarned = 0,
+                            limitExceeded = false,
+                            moneyLostCents = 0
+                        )
+                    )
+                }
+                if (opens != null) Timber.d("DailyLog synced from Firestore: opens=$opens for $challengeId")
+                if (budgetUsedMs != null) Timber.d("Budget restored from Firestore: ${budgetUsedMs}ms used for $challengeId")
+                if (overlayPausedMs != null) Timber.d("Overlay pause restored from Firestore: ${overlayPausedMs}ms for $challengeId")
+            }
+
+            // Part B: after Room is fully populated, push correct data to TrackedAppEventBus.
+            // The UsageTrackingService Flow re-emission may arrive late (or be suppressed by
+            // the race-condition guard) if Room was empty when the service first subscribed.
+            // This explicit push guarantees the bus reflects current Room state immediately
+            // after sync — critical for Huawei where service and sync race on every restart.
+            try {
+                val synced = challengeDao.getActiveChallengesList()
+                if (synced.isNotEmpty()) {
+                    val pkgs = synced
+                        .filter { it.isPartialBlockOnly == 0 }
+                        .flatMap { e ->
+                            e.appPackageNames
+                                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                                ?: if (e.appPackageName.isNotBlank()) listOf(e.appPackageName) else emptyList()
+                        }
+                        .toSet()
+                    val doms = synced
+                        .flatMap { e ->
+                            e.blockedDomains
+                                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                                ?: emptyList()
+                        }
+                        .toSet()
+                    TrackedAppEventBus.updateTrackedPackages(pkgs)
+                    TrackedAppEventBus.updateBlockedDomains(doms)
+                    Timber.d(
+                        "SyncRepository: post-sync bus update — " +
+                            "packages=${pkgs.size} domains=${doms.size} from ${synced.size} challenges"
+                    )
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "SyncRepository: post-sync bus update failed (non-fatal)")
+            }
+
+            Timber.d("SyncRepository: sync completed")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "SyncRepository: sync failed")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * MONEY-CRITICAL recovery net (Part B). For every durable [PendingHardChallengeEntity]:
+     *  - If the challenge doc now exists in Room → creation already succeeded → drop the record.
+     *  - Else, re-create the challenge under the SAME challengeId + PaymentIntent. This is fully
+     *    idempotent (`saveChallenge` is a merge-set under the unified cid) and NEVER creates a new
+     *    PaymentIntent — so it can never double-charge.
+     *  - Manual-capture pre-auths (`isImmediateCapture == 0`) past the [MANUAL_AUTH_WINDOW_MS] auth
+     *    window are treated as expired/canceled → dropped without re-creating (no stake to honor).
+     *
+     * Re-creating is money-safe even in the residual "PaymentSheet was canceled but the record
+     * lingered" case: it only writes a doc; every downstream money move (capture on loss, refund on
+     * win) remains gated and would no-op/leave the challenge ACTIVE on a canceled PI. Wrapped so a
+     * failure never breaks the rest of sync; a record that fails to re-create is kept for next time.
+     */
+    private suspend fun recoverPendingHardChallenges() {
+        try {
+            val pendings = pendingHardChallengeDao.getAll()
+            if (pendings.isEmpty()) return
+            val now = System.currentTimeMillis()
+            for (p in pendings) {
+                // Already created? (active/finished restore above populated Room.)
+                if (challengeDao.getChallengeById(p.challengeId) != null) {
+                    pendingHardChallengeDao.deleteByChallengeId(p.challengeId)
+                    Timber.d("SyncRepository: pending hard challenge %s already persisted — cleared record", p.challengeId)
+                    continue
+                }
+                // Manual-capture pre-auth past its window → expired/canceled, no captured stake to honor.
+                if (p.isImmediateCapture == 0 && now - p.paymentIntentCreatedAt > MANUAL_AUTH_WINDOW_MS) {
+                    pendingHardChallengeDao.deleteByChallengeId(p.challengeId)
+                    Timber.w("SyncRepository: pending hard challenge %s pre-auth expired — dropped (no doc created)", p.challengeId)
+                    continue
+                }
+                Timber.w("SyncRepository: recovering orphaned paid challenge %s (PI=%s) — re-creating doc", p.challengeId, p.paymentIntentId)
+                challengeRepository.createChallenge(p.toChallenge(now))
+                    .onSuccess {
+                        pendingHardChallengeDao.deleteByChallengeId(p.challengeId)
+                        Timber.i("SyncRepository: recovered challenge %s and cleared pending record", p.challengeId)
+                    }
+                    .onFailure { e ->
+                        Timber.e(e, "SyncRepository: recovery createChallenge failed for %s — record kept for next sync", p.challengeId)
+                    }
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "SyncRepository: pending-hard-challenge recovery failed (non-fatal)")
+        }
+    }
+
+    // ── Entity mappers ─────────────────────────────────────────────────────────
+
+    private fun Challenge.toEntity() = ChallengeEntity(
+        id = id,
+        appPackageName = appPackageNames.firstOrNull() ?: "",
+        appDisplayName = appDisplayName,
+        mode = mode.name.lowercase(),
+        limitType = limitType.name.lowercase(),
+        limitValueMinutes = limitValueMinutes,
+        limitValueSessions = limitValueSessions,
+        startDate = startDate,
+        endDate = endDate,
+        amountCents = amountCents,
+        stripePaymentIntentId = stripePaymentIntentId,
+        customMotivation = customMotivation,
+        status = status.name.lowercase(),
+        createdAt = createdAt,
+        dailyBudgetMinutes = dailyBudgetMinutes,
+        appPackageNames = appPackageNames.joinToString(",").ifEmpty { null },
+        blockedDomains = blockedDomains.joinToString(",").ifEmpty { null },
+        partialBlockDomains = partialBlockDomains.joinToString(",").ifEmpty { null },
+        blockingType = blockingType.name.lowercase(),
+        blockAdultContent = if (blockAdultContent) 1 else 0,
+        scheduleStartTime = scheduleStartTime,
+        scheduleEndTime = scheduleEndTime,
+        activeDays = activeDays.joinToString(",").ifEmpty { null },
+        partialBlockSections = partialBlockSections.joinToString(",") { it.id },
+        isPartialBlockOnly = if (isPartialBlockOnly) 1 else 0,
+        // SESSIONS per-session countdown length. Now round-trips through Firestore (toMap write +
+        // fetchActiveChallenges/fetchFinishedChallenges read), so sync no longer flattens it to 5.
+        sessionDurationMinutes = sessionDurationMinutes,
+        // Scheduled limit reduction — Firestore round-trip is complete (written via toMap/
+        // updateChallengePendingLimit, read in fetchActiveChallenges); the mapper just dropped them,
+        // so every sync wiped a pending reduction from Room before DailyEvaluationWorker could apply
+        // it at midnight. Map them through so the user's scheduled reduction survives sync.
+        pendingLimitValue = pendingLimitValue,
+        pendingLimitAppliesAt = pendingLimitAppliesAt,
+    )
+
+    // DailyLog → DailyLogEntity now lives in DailyLogEntity.kt (shared with DailyLogRepositoryImpl).
+    // The private copy that used to sit here omitted budgetUsedMs/budgetRemainingMs, which is how
+    // the sync-down REPLACE came to zero the live budget columns.
+}

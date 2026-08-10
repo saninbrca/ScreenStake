@@ -1,4 +1,4 @@
-appId: com.detox.app
+appId: com.finite.focus
 ---
 - launchApp:
     clearState: false
@@ -35,7 +35,7 @@ appId: com.detox.app
 
 # Zurück zu Detox → Counter prüfen
 - launchApp:
-    appId: com.detox.app
+    appId: com.finite.focus
 - waitForAnimationToEnd
 - takeScreenshot: C:\Users\sanin\Desktop\detox-tests\sm_07_dashboard_counter
 - assertVisible: "1 of 3"

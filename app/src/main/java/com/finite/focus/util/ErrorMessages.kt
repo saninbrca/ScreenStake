@@ -1,0 +1,57 @@
+package com.finite.focus.util
+
+import android.content.Context
+import com.finite.focus.R
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.firestore.FirebaseFirestoreException
+import java.io.IOException
+import java.net.SocketTimeoutException
+import timber.log.Timber
+
+/**
+ * Converts backend failures into safe, localized UI copy.
+ *
+ * Keep the original Throwable in Timber/Sentry at the call site. In particular, never expose
+ * Firebase, Firestore, Stripe, or HTTP error details to the user: those messages are not
+ * localized and may contain implementation details.
+ */
+/**
+ * An exception whose [message] is already localized, user-facing copy (built from a string
+ * resource at the throw site). [ErrorMessages.from] shows it verbatim instead of mapping it
+ * to a generic message. Use for deliberate validation errors, never for backend failures.
+ */
+class UserFacingException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * A non-2xx Cloud Function response. [message] is the server's English `error` text
+ * (log/diagnostic only — NOT for display); [code] is the optional machine-readable
+ * token (e.g. "join_rejected_full") callers map to a localized string.
+ */
+class CloudFunctionException(message: String, val code: String? = null) : Exception(message)
+
+object ErrorMessages {
+    fun from(context: Context, error: Throwable, fallback: Int = R.string.error_generic): String {
+        Timber.e(error, "User-facing error mapped to a localized message")
+        if (error is UserFacingException) {
+            return error.message ?: context.getString(fallback)
+        }
+        val resource = when (error) {
+            is FirebaseNetworkException, is IOException, is SocketTimeoutException -> R.string.error_network
+            is FirebaseAuthException -> R.string.error_authentication
+            is FirebaseFirestoreException -> when (error.code) {
+                FirebaseFirestoreException.Code.PERMISSION_DENIED -> R.string.error_permission_denied
+                FirebaseFirestoreException.Code.NOT_FOUND -> R.string.error_not_found
+                FirebaseFirestoreException.Code.UNAVAILABLE,
+                FirebaseFirestoreException.Code.DEADLINE_EXCEEDED -> R.string.error_network
+                else -> fallback
+            }
+            else -> when {
+                error.message.orEmpty().contains("stripe", ignoreCase = true) ||
+                    error.message.orEmpty().contains("payment", ignoreCase = true) -> R.string.error_payment
+                else -> fallback
+            }
+        }
+        return context.getString(resource)
+    }
+}

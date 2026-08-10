@@ -100,7 +100,7 @@ Both gate **new creation only** — active challenges are never affected.
 - **Where:** `app/build.gradle.kts` `buildConfigField("boolean", "MONEY_FEATURES_ENABLED", …)` — split by
   build type: **debug = `true`** (Hard Mode stays testable with Stripe test keys), **release = `false`**
   (the soft-only legal floor).
-- **Helper:** `com.detox.app.util.FeatureFlags` —
+- **Helper:** `com.finite.focus.util.FeatureFlags` —
   `moneyEnabled = BuildConfig.MONEY_FEATURES_ENABLED`, plus
   `hardModeEnabled(serverFlag) = moneyEnabled && serverFlag` and
   `groupChallengeEnabled(serverFlag) = moneyEnabled && serverFlag`.

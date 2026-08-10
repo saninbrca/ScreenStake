@@ -17,7 +17,7 @@ val keystoreProperties = Properties().also { props ->
 }
 
 android {
-    namespace = "com.detox.app"
+    namespace = "com.finite.focus"
     compileSdk {
         version = release(36)
     }
@@ -35,11 +35,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.detox.app"
+        applicationId = "com.finite.focus"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

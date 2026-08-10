@@ -1,0 +1,141 @@
+package com.finite.focus.domain.usecase
+
+import android.content.Context
+import com.finite.focus.domain.model.Challenge
+import com.finite.focus.domain.model.ChallengeMode
+import com.finite.focus.domain.model.ChallengeStatus
+import com.finite.focus.domain.model.LimitType
+import com.finite.focus.domain.repository.ChallengeRepository
+import com.finite.focus.domain.repository.GroupChallengeRepository
+import com.finite.focus.util.UserFacingException
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+class CreateChallengeUseCaseTest {
+
+    private lateinit var challengeRepository: ChallengeRepository
+    private lateinit var groupChallengeRepository: GroupChallengeRepository
+    private lateinit var context: Context
+    private lateinit var useCase: CreateChallengeUseCase
+
+    @Before
+    fun setUp() {
+        challengeRepository = mockk()
+        groupChallengeRepository = mockk()
+        // Relaxed: prod reads SharedPreferences under BuildConfig.DEBUG; default getBoolean=false
+        // keeps the standard (days, not minutes) duration path.
+        context = mockk(relaxed = true)
+        // No conflicting group challenge by default.
+        coEvery { groupChallengeRepository.getActiveGroupChallengeForApp(any()) } returns null
+        useCase = CreateChallengeUseCase(challengeRepository, groupChallengeRepository, context)
+    }
+
+    @Test
+    fun `successful challenge creation returns challenge id`() = runTest {
+        coEvery { challengeRepository.getActiveChallengeForApp(any()) } returns Result.success(null)
+        coEvery { challengeRepository.createChallenge(any()) } returns Result.success(Unit)
+
+        val result = useCase(
+            appPackageName = "com.tiktok",
+            appDisplayName = "TikTok",
+            limitType = LimitType.TIME,
+            limitValueMinutes = 60,
+            limitValueSessions = null,
+            durationDays = 7,
+            customMotivation = "Stay focused!"
+        )
+
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrNull()!!.challengeId.isNotEmpty())
+        coVerify { challengeRepository.createChallenge(any()) }
+    }
+
+    @Test
+    fun `fails when limit minutes is zero`() = runTest {
+        val result = useCase(
+            appPackageName = "com.tiktok",
+            appDisplayName = "TikTok",
+            limitType = LimitType.TIME,
+            limitValueMinutes = 0,
+            limitValueSessions = null,
+            durationDays = 7,
+            customMotivation = null
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun `fails when sessions type has null sessions count`() = runTest {
+        val result = useCase(
+            appPackageName = "com.tiktok",
+            appDisplayName = "TikTok",
+            limitType = LimitType.SESSIONS,
+            limitValueMinutes = 5,
+            limitValueSessions = null,
+            durationDays = 7,
+            customMotivation = null
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun `fails when duplicate active challenge exists for same app`() = runTest {
+        val existingChallenge = Challenge(
+            id = "existing",
+            appPackageName = "com.tiktok",
+            appPackageNames = listOf("com.tiktok"),
+            appDisplayName = "TikTok",
+            mode = ChallengeMode.SOFT,
+            limitType = LimitType.TIME,
+            limitValueMinutes = 60,
+            limitValueSessions = null,
+            startDate = 0L,
+            endDate = 0L,
+            amountCents = null,
+            stripePaymentIntentId = null,
+            customMotivation = null,
+            status = ChallengeStatus.ACTIVE,
+            createdAt = 0L
+        )
+        coEvery { challengeRepository.getActiveChallengeForApp("com.tiktok") } returns Result.success(existingChallenge)
+
+        val result = useCase(
+            appPackageName = "com.tiktok",
+            appDisplayName = "TikTok",
+            limitType = LimitType.TIME,
+            limitValueMinutes = 60,
+            limitValueSessions = null,
+            durationDays = 7,
+            customMotivation = null
+        )
+
+        assertTrue(result.isFailure)
+        // UserFacingException, not IllegalStateException: the conflict message is already-localized
+        // copy built from a string resource, so ErrorMessages shows it verbatim to the user.
+        assertTrue(result.exceptionOrNull() is UserFacingException)
+    }
+
+    @Test
+    fun `fails when duration is out of range`() = runTest {
+        val result = useCase(
+            appPackageName = "com.tiktok",
+            appDisplayName = "TikTok",
+            limitType = LimitType.TIME,
+            limitValueMinutes = 60,
+            limitValueSessions = null,
+            durationDays = 0,
+            customMotivation = null
+        )
+
+        assertTrue(result.isFailure)
+    }
+}

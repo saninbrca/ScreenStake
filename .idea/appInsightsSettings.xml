@@ -8,8 +8,8 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="com.detox.app" />
-                  <option name="mobileSdkAppId" value="1:71504894920:android:d70502183abc004347befd" />
+                  <option name="appId" value="com.finite.focus" />
+                  <option name="mobileSdkAppId" value="1:71504894920:android:4e2b2220c12ecf2447befd" />
                   <option name="projectId" value="detox-33208" />
                   <option name="projectNumber" value="71504894920" />
                 </ConnectionSetting>

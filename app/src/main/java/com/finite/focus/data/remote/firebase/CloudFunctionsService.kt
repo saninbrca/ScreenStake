@@ -1,0 +1,392 @@
+package com.finite.focus.data.remote.firebase
+
+import com.finite.focus.domain.model.PaymentIntentData
+import com.finite.focus.domain.model.StakeCapture
+import com.finite.focus.util.CloudFunctionException
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import timber.log.Timber
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class CloudFunctionsService @Inject constructor(
+    private val okHttpClient: OkHttpClient,
+    private val firebaseAuth: FirebaseAuth
+) {
+    companion object {
+        private const val BASE_URL = "https://us-central1-detox-33208.cloudfunctions.net/"
+        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+    }
+
+    // ── Core HTTP helper ───────────────────────────────────────────────────────
+
+    private suspend fun callFunction(name: String, body: Map<String, Any?>): Map<String, Any?> {
+        val user = firebaseAuth.currentUser
+            ?: throw IllegalStateException("User not logged in")
+        val token = user.getIdToken(true).await().token
+            ?: throw IllegalStateException("Failed to obtain Firebase ID token")
+
+        Timber.d("callFunction: %s uid=%s", name, user.uid)
+
+        val requestBody = body.toJsonObject().toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url("$BASE_URL$name")
+            .addHeader("Authorization", "Bearer $token")
+            .post(requestBody)
+            .build()
+
+        val responseText = withContext(Dispatchers.IO) {
+            okHttpClient.newCall(request).execute().use { response ->
+                val text = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    val errorMsg = runCatching { JSONObject(text).optString("error", text) }
+                        .getOrDefault(text)
+                    val errorCode = runCatching {
+                        JSONObject(text).optString("code").takeIf { it.isNotEmpty() }
+                    }.getOrNull()
+                    Timber.e("callFunction: HTTP %d from %s: %s (code=%s)", response.code, name, errorMsg, errorCode)
+                    throw CloudFunctionException(errorMsg, errorCode)
+                }
+                text
+            }
+        }
+
+        return JSONObject(responseText).toMap()
+    }
+
+    // ── JSON helpers ───────────────────────────────────────────────────────────
+
+    private fun Map<String, Any?>.toJsonObject(): JSONObject {
+        val obj = JSONObject()
+        forEach { (k, v) -> obj.put(k, v.toJsonValue()) }
+        return obj
+    }
+
+    private fun Any?.toJsonValue(): Any = when (this) {
+        null -> JSONObject.NULL
+        is Map<*, *> -> @Suppress("UNCHECKED_CAST") (this as Map<String, Any?>).toJsonObject()
+        is List<*> -> JSONArray().also { arr -> forEach { arr.put(it.toJsonValue()) } }
+        is Boolean, is Int, is Long, is Double, is Float, is String -> this
+        else -> toString()
+    }
+
+    private fun JSONObject.toMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        keys().forEach { key ->
+            map[key] = when (val v = get(key)) {
+                JSONObject.NULL -> null
+                is JSONObject -> v.toMap()
+                is JSONArray -> (0 until v.length()).map { v.get(it) }
+                else -> v
+            }
+        }
+        return map
+    }
+
+    // ── Stripe / Hard Mode ─────────────────────────────────────────────────────
+
+    suspend fun createPaymentIntent(
+        amountCents: Int,
+        durationDays: Int,
+        challengeId: String,
+        isGroupChallenge: Boolean = false,
+    ): Result<PaymentIntentData> = try {
+        val params = buildMap<String, Any?> {
+            put("amountCents", amountCents)
+            put("durationDays", durationDays)
+            put("challengeId", challengeId)
+            if (isGroupChallenge) put("isGroupChallenge", true)
+        }
+        val response = callFunction("createPaymentIntent", params)
+        val paymentIntentId = response["paymentIntentId"] as String
+        val clientSecret = response["clientSecret"] as String
+        // Fallback only — the CF always returns the flag. Same predicate as the server's
+        // capture_method branch, via the shared mirror (StakeCapture).
+        val isImmediate = response["isImmediateCapture"] as? Boolean
+            ?: StakeCapture.isImmediateCapture(durationDays)
+        Timber.d("createPaymentIntent: %s immediate=%s", paymentIntentId, isImmediate)
+        Result.success(PaymentIntentData(paymentIntentId, clientSecret, isImmediate))
+    } catch (e: Exception) {
+        Timber.e(e, "createPaymentIntent failed")
+        Result.failure(e)
+    }
+
+    suspend fun capturePayment(paymentIntentId: String): Result<Unit> = try {
+        callFunction("capturePayment", mapOf("paymentIntentId" to paymentIntentId))
+        Timber.d("capturePayment: %s", paymentIntentId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "capturePayment failed — %s", paymentIntentId)
+        Result.failure(e)
+    }
+
+    /**
+     * Marks a challenge FAILED server-side (in-place Admin-SDK status write — the doc and its
+     * dailyLogs are PRESERVED, never deleted). Replaces the old client doc-delete on a loss so the
+     * audit trail + Redemption refund path survive. The CF derives the uid from the auth token and
+     * is idempotent (already failed/completed → no second write). NEVER touches Stripe — the stake
+     * is always captured before this is called.
+     */
+    suspend fun markChallengeFailed(challengeId: String, failReason: String): Result<Unit> = try {
+        callFunction("markChallengeFailed", mapOf(
+            "challengeId" to challengeId,
+            "failReason" to failReason
+        ))
+        Timber.d("markChallengeFailed: %s reason=%s", challengeId, failReason)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "markChallengeFailed failed — %s", challengeId)
+        Result.failure(e)
+    }
+
+    suspend fun cancelOrRefundPayment(
+        paymentIntentId: String,
+        challengeId: String? = null,
+        userId: String? = null,
+        amountCents: Int? = null,
+        partialRefundCents: Int? = null
+    ): Result<Unit> = try {
+        val params = buildMap<String, Any?> {
+            put("paymentIntentId", paymentIntentId)
+            if (challengeId != null) put("challengeId", challengeId)
+            if (userId != null) put("userId", userId)
+            if (amountCents != null) put("amountCents", amountCents)
+            if (partialRefundCents != null) put("partialRefundCents", partialRefundCents)
+        }
+        callFunction("cancelOrRefundPayment", params)
+        Timber.d("cancelOrRefundPayment: %s challengeId=%s partialRefund=%s", paymentIntentId, challengeId, partialRefundCents)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "cancelOrRefundPayment failed — %s", paymentIntentId)
+        Result.failure(e)
+    }
+
+    // ── Group Challenge ────────────────────────────────────────────────────────
+
+    /** Step 2 of creator join: called only after PaymentSheetResult.Completed. Creates Firestore doc. */
+    suspend fun createGroupChallenge(
+        groupId: String,
+        code: String,
+        groupData: Map<String, Any?>,
+        paymentIntentId: String,
+    ): Result<GroupChallengeCreationData> = try {
+        val response = callFunction(
+            "createGroupChallenge",
+            mapOf("groupId" to groupId, "code" to code, "groupData" to groupData, "paymentIntentId" to paymentIntentId)
+        )
+        val returnedCode = response["code"] as String
+        Timber.d("createGroupChallenge: groupId=%s code=%s", groupId, returnedCode)
+        Result.success(GroupChallengeCreationData(returnedCode, paymentIntentId))
+    } catch (e: Exception) {
+        Timber.e(e, "createGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    data class GroupChallengeCreationData(
+        val code: String,
+        val paymentIntentId: String,
+    )
+
+    suspend fun joinGroupChallenge(
+        groupId: String,
+        userId: String,
+        displayName: String
+    ): Result<PaymentIntentData> = try {
+        val response = callFunction(
+            "joinGroupChallenge",
+            mapOf("groupId" to groupId, "userId" to userId, "displayName" to displayName)
+        )
+        val paymentIntentId = response["paymentIntentId"] as String
+        val clientSecret = response["clientSecret"] as String
+        Timber.d("joinGroupChallenge: groupId=%s userId=%s", groupId, userId)
+        Result.success(PaymentIntentData(paymentIntentId, clientSecret, isImmediateCapture = false))
+    } catch (e: Exception) {
+        Timber.e(e, "joinGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun confirmGroupJoin(
+        groupId: String,
+        userId: String,
+        paymentIntentId: String,
+        deviceId: String?
+    ): Result<Unit> = try {
+        callFunction(
+            "confirmGroupJoin",
+            mapOf(
+                "groupId" to groupId,
+                "userId" to userId,
+                "paymentIntentId" to paymentIntentId,
+                // Anti-cheat: deviceId stored on the participant for multi-account detection.
+                "deviceId" to (deviceId ?: "")
+            )
+        )
+        Timber.d("confirmGroupJoin: groupId=%s userId=%s", groupId, userId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "confirmGroupJoin failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun startGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("startGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("startGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "startGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun failGroupParticipant(groupId: String, userId: String): Result<Unit> = try {
+        callFunction("failParticipant", mapOf("groupId" to groupId, "userId" to userId))
+        Timber.d("failGroupParticipant: groupId=%s userId=%s", groupId, userId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "failGroupParticipant failed — groupId=%s userId=%s", groupId, userId)
+        Result.failure(e)
+    }
+
+    suspend fun completeGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("completeGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("completeGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "completeGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun cancelGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("cancelGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("cancelGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "cancelGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun expireGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("expireGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("expireGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "expireGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    data class LeaveGroupChallengeResult(val amountCents: Int)
+
+    suspend fun leaveGroupChallenge(groupId: String): Result<LeaveGroupChallengeResult> = try {
+        val response = callFunction("leaveGroupChallenge", mapOf("groupId" to groupId))
+        val amountCents = (response["amountCents"] as? Number)?.toInt() ?: 0
+        Timber.d("leaveGroupChallenge: groupId=%s amountCents=%d", groupId, amountCents)
+        Result.success(LeaveGroupChallengeResult(amountCents))
+    } catch (e: Exception) {
+        Timber.e(e, "leaveGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    suspend fun deleteGroupChallenge(groupId: String): Result<Unit> = try {
+        callFunction("deleteGroupChallenge", mapOf("groupId" to groupId))
+        Timber.d("deleteGroupChallenge: groupId=%s", groupId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "deleteGroupChallenge failed — groupId=%s", groupId)
+        Result.failure(e)
+    }
+
+    // ── Stripe Connect ─────────────────────────────────────────────────────────
+
+    data class ConnectedAccountStatus(
+        val hasAccount: Boolean,
+        val chargesEnabled: Boolean,
+        val payoutsEnabled: Boolean
+    )
+
+    data class PendingPayoutResult(val transferred: Int, val skipped: Int)
+
+    suspend fun claimPendingPayouts(): Result<PendingPayoutResult> = try {
+        val response = callFunction("claimPendingPayouts", emptyMap())
+        val transferred = (response["transferred"] as? Number)?.toInt() ?: 0
+        val skipped = (response["skipped"] as? Number)?.toInt() ?: 0
+        Timber.d("claimPendingPayouts: transferred=%d skipped=%d", transferred, skipped)
+        Result.success(PendingPayoutResult(transferred, skipped))
+    } catch (e: Exception) {
+        Timber.e(e, "claimPendingPayouts failed")
+        Result.failure(e)
+    }
+
+    data class PayoutRequestResult(val requested: Int, val amountCents: Int)
+
+    /**
+     * Files manual SEPA payout request(s) for the caller's owed group winnings. The server derives
+     * the amount from the pendingPayouts ledger — nothing here supplies it. Pass [groupId] to request
+     * a single group, or null to request all eligible pending winnings.
+     */
+    suspend fun requestGroupPayout(groupId: String? = null): Result<PayoutRequestResult> = try {
+        val body = if (groupId != null) mapOf("groupId" to groupId) else emptyMap()
+        val response = callFunction("requestGroupPayout", body)
+        val requested = (response["requested"] as? Number)?.toInt() ?: 0
+        val amountCents = (response["amountCents"] as? Number)?.toInt() ?: 0
+        Timber.d("requestGroupPayout: requested=%d amountCents=%d", requested, amountCents)
+        Result.success(PayoutRequestResult(requested, amountCents))
+    } catch (e: Exception) {
+        Timber.e(e, "requestGroupPayout failed")
+        Result.failure(e)
+    }
+
+    suspend fun setupPayoutAccount(iban: String, accountHolderName: String, userId: String): Result<Unit> = try {
+        callFunction(
+            "createConnectedAccount",
+            mapOf("iban" to iban, "accountHolderName" to accountHolderName, "userId" to userId)
+        )
+        Timber.d("setupPayoutAccount: connected account created for user %s", userId)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "setupPayoutAccount failed")
+        Result.failure(e)
+    }
+
+    suspend fun getConnectedAccountStatus(): Result<ConnectedAccountStatus> = try {
+        val response = callFunction("getConnectedAccountStatus", emptyMap())
+        val hasAccount = response["hasAccount"] as? Boolean ?: false
+        val chargesEnabled = response["chargesEnabled"] as? Boolean ?: false
+        val payoutsEnabled = response["payoutsEnabled"] as? Boolean ?: false
+        Result.success(ConnectedAccountStatus(hasAccount, chargesEnabled, payoutsEnabled))
+    } catch (e: Exception) {
+        Timber.e(e, "getConnectedAccountStatus failed")
+        Result.failure(e)
+    }
+
+    // ── Permission Violation Check ─────────────────────────────────────────────
+
+    suspend fun checkPermissionViolations(): Result<Unit> = try {
+        callFunction("checkPermissionViolations", mapOf("source" to "DailyEvaluationWorker"))
+        Timber.d("checkPermissionViolations: triggered")
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "checkPermissionViolations failed")
+        Result.failure(e)
+    }
+
+    // ── Reconciliation safety net (debug manual trigger) ───────────────────────
+    // Calls the reconcileDueChallenges onRequest twin (Bearer auth). The CF itself is a
+    // no-op unless config/app.reconciliationEnabled === true; dry-run is its own flag.
+    // Returns the CF tally string for the debug Toast.
+    suspend fun runReconciliation(): Result<String> = try {
+        val response = callFunction("reconcileDueChallenges", mapOf("source" to "DebugPanel"))
+        Timber.d("runReconciliation: %s", response)
+        Result.success(response.toString())
+    } catch (e: Exception) {
+        Timber.e(e, "runReconciliation failed")
+        Result.failure(e)
+    }
+}

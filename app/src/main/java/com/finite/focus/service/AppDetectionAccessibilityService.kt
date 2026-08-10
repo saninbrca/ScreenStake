@@ -1,0 +1,666 @@
+package com.finite.focus.service
+
+import android.accessibilityservice.AccessibilityService
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
+import com.finite.focus.R
+import com.finite.focus.data.system.CriticalPackageResolver
+import com.finite.focus.domain.model.AdultDomains
+import com.finite.focus.domain.model.LimitType
+import dagger.hilt.android.AndroidEntryPoint
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import io.sentry.SentryLevel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.util.Calendar
+import javax.inject.Inject
+
+@AndroidEntryPoint
+class AppDetectionAccessibilityService : AccessibilityService() {
+
+    /**
+     * Enforcement-time guard against blocking critical apps. The picker's deny-list is only a
+     * snapshot taken when the picker loaded — a package that has since become the user's default
+     * dialer, SMS app, keyboard, launcher or clock would otherwise still be enforced against.
+     * Consulted here so that never happens regardless of how a package entered the tracked set.
+     */
+    @Inject
+    lateinit var criticalPackageResolver: CriticalPackageResolver
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var lastDetectedPackage: String? = null
+
+    /** Tracks the last foreground package across ALL event types (including CONTENT_CHANGED).
+     *  Used to detect Recents-based foreground transitions where STATE_CHANGED may not fire. */
+    private var lastForegroundPackage: String? = null
+
+    /** Launcher/home packages — used to detect Home button press. Resolved once and cached. */
+    private val launcherPackages: Set<String> by lazy {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            .map { it.activityInfo.packageName }
+            .toSet()
+    }
+
+    // ── Custom-domain URL blocking throttle ──────────────────────────────────
+    private var lastBlockedDomain: String? = null
+    private var lastBlockedTimeMs: Long = 0L
+
+    // ── Adult-domain URL blocking throttle ───────────────────────────────────
+    /** Prevents sending the user home on every single content-changed event. */
+    private var lastAdultBlockTimeMs: Long = 0L
+    private val adultBlockCooldownMs = 2_000L
+
+    companion object {
+        private val BROWSER_PACKAGES = setOf(
+            "com.android.chrome",
+            "org.mozilla.firefox",
+            "com.sec.android.app.sbrowser",
+            "com.huawei.browser",
+            "com.opera.browser",
+            "com.brave.browser",
+            "com.microsoft.emmx",        // Edge
+        )
+
+        /**
+         * Ordered list of address-bar view-ID suffixes to try per browser.
+         * We iterate all candidates and use the first non-empty text found.
+         * Using suffixes (not full IDs) so we can call [findAccessibilityNodeInfosByViewId]
+         * with the correctly-prefixed full ID.
+         */
+        private val URL_BAR_IDS = mapOf(
+            "com.android.chrome" to listOf(
+                "com.android.chrome:id/url_bar",
+                "com.android.chrome:id/omnibox_text"
+            ),
+            "org.mozilla.firefox" to listOf(
+                "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
+                "org.mozilla.firefox:id/url_bar_title",
+                "org.mozilla.firefox:id/url_edit_text"
+            ),
+            "com.sec.android.app.sbrowser" to listOf(
+                "com.sec.android.app.sbrowser:id/location_bar_edit_text",
+                "com.sec.android.app.sbrowser:id/url_bar"
+            ),
+            "com.huawei.browser" to listOf(
+                "com.huawei.browser:id/url",
+                "com.huawei.browser:id/address_bar"
+            ),
+            "com.opera.browser" to listOf(
+                "com.opera.browser:id/url_field",
+                "com.opera.browser:id/address_bar"
+            ),
+            "com.brave.browser" to listOf(
+                "com.brave.browser:id/url_bar",
+                "com.brave.browser:id/omnibox_text"
+            ),
+            "com.microsoft.emmx" to listOf(
+                "com.microsoft.emmx:id/address_bar",
+                "com.microsoft.emmx:id/url_bar",
+                "com.microsoft.emmx:id/location_bar"
+            ),
+        )
+
+        // Temporary allow-list: package -> elapsedRealtime expiry (ms).
+        // Populated by OverlayManager when the user explicitly confirms an open
+        // ("Ja, öffnen", "Continue", etc.). While entry is live, the
+        // accessibility service skips ALL blocking logic for that package so
+        // the app can actually launch without being slammed back home.
+        private val allowedPackages = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private const val ALLOW_DURATION_MS = 5_000L
+
+        /** Min gap between two "critical package suppressed" reports for the same package. */
+        private const val CRITICAL_LOG_THROTTLE_MS = 60_000L
+
+        fun allowTemporarily(packageName: String) {
+            allowedPackages[packageName] =
+                android.os.SystemClock.elapsedRealtime() + ALLOW_DURATION_MS
+            Timber.d("AccessibilityService: allowTemporarily $packageName for ${ALLOW_DURATION_MS}ms")
+        }
+
+        private fun isCurrentlyAllowed(packageName: String): Boolean {
+            val expiry = allowedPackages[packageName] ?: return false
+            if (android.os.SystemClock.elapsedRealtime() > expiry) {
+                allowedPackages.remove(packageName)
+                return false
+            }
+            return true
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        AdultDomains.loadDomains(this)
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        // Pre-warm the critical-package cache off the main thread so the enforcement guard is a
+        // plain set lookup by the time the first accessibility event arrives.
+        serviceScope.launch { criticalPackageResolver.warmCache() }
+        Timber.d("AppDetectionAccessibilityService connected")
+        Sentry.addBreadcrumb(Breadcrumb().apply {
+            category = "AccessibilityService"
+            message = "Service connected"
+            level = SentryLevel.INFO
+        })
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val eventType  = event?.eventType  ?: return
+        val packageName = event.packageName?.toString() ?: return
+
+        // Ignore self and system UI
+        if (packageName == applicationContext.packageName) return
+        if (packageName == "com.android.systemui") return
+
+        // Temporary allow-list: skip ALL blocking logic for this package while
+        // the user-granted window is live. Populated by OverlayManager whenever
+        // the user explicitly confirms an "open" action (Ja, öffnen / Continue).
+        if (isCurrentlyAllowed(packageName)) return
+
+        // ── Browser URL monitoring ────────────────────────────────────────────
+        // URL-based only: adult and custom domains are matched against the address
+        // bar text (works in incognito too — Chrome exposes the url_bar there).
+        // There is deliberately NO blanket incognito block: it locked users out of
+        // the whole browser while a private tab existed. Window-state events still
+        // fall through to the normal app-open detection below.
+        if (BROWSER_PACKAGES.contains(packageName) &&
+            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            checkBrowserUrl(packageName)
+            return
+        }
+
+        // Secondary trigger: CONTENT_CHANGED from a tracked non-browser package whose foreground
+        // identity changed. Handles Recents-based re-entry where STATE_CHANGED doesn't always fire
+        // (the user was last in the blocked app, so STATE_CHANGED is deduplicated).
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            val trackedPackages = TrackedAppEventBus.trackedPackages.value
+            if (trackedPackages.contains(packageName) &&
+                !isCriticalNow(packageName) &&
+                packageName != lastForegroundPackage &&
+                !TrackedAppEventBus.overlayVisible.value &&
+                !isCurrentlyAllowed(packageName) &&
+                !TrackedAppEventBus.freedPackagesToday.value.contains(packageName) &&
+                !TrackedAppEventBus.failedPackagesToday.value.contains(packageName)) {
+
+                // Allow re-entry if an active DAILY_BUDGET session is running for this package
+                val budgetPrefs = applicationContext.getSharedPreferences(
+                    OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+                )
+                val budgetEndTime = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+                val budgetPkg = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_PACKAGE_KEY, null)
+                if (budgetEndTime > System.currentTimeMillis() && budgetPkg == packageName) {
+                    val budgetRemaining = budgetEndTime - System.currentTimeMillis()
+                    val budgetChallengeId = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY, null)
+                    val challengeType = if (budgetChallengeId?.startsWith("group_") == true) "GROUP" else "SOLO"
+                    Timber.d("Group challenge check: pkg=$packageName challengeType=$challengeType limitType=DAILY_BUDGET — active session (${budgetRemaining}ms remaining)")
+                    allowTemporarily(packageName)
+                    return
+                }
+
+                // Allow re-entry if a TIME_LIMIT or SESSION_LIMIT session timer is still active
+                val sessionPrefs = applicationContext.getSharedPreferences(
+                    OverlayManager.SESSION_PREFS_NAME, Context.MODE_PRIVATE
+                )
+                val sessionEndTime = sessionPrefs.getLong(
+                    "${OverlayManager.SESSION_END_KEY_PREFIX}$packageName", 0L
+                )
+                val nowMs = System.currentTimeMillis()
+                if (sessionEndTime > 0L && nowMs < sessionEndTime) {
+                    val remaining = sessionEndTime - nowMs
+                    Timber.d("CONTENT_CHANGED: session active for $packageName, ${remaining}ms remaining — skip overlay")
+                    return
+                } else if (sessionEndTime > 0L) {
+                    Timber.d("CONTENT_CHANGED: session expired for $packageName — clearing and showing overlay")
+                    sessionPrefs.edit().remove("${OverlayManager.SESSION_END_KEY_PREFIX}$packageName").apply()
+                }
+
+                lastForegroundPackage = packageName
+                lastDetectedPackage = packageName
+                TrackedAppEventBus.updateForegroundPackage(packageName)
+                if (isAnyScheduleActive(packageName)) {
+                    Timber.d("AppDetectionService: CONTENT_CHANGED foreground transition to $packageName — triggering overlay")
+                    TrackedAppEventBus.emitAppOpen(packageName)
+                }
+            }
+            return
+        }
+
+        // We register for VIEW_FOCUSED / WINDOWS_CHANGED / CONTENT_CHANGED in
+        // accessibility_service_config.xml for fast detection latency, but the
+        // main app-open detection runs only on the canonical STATE_CHANGED.
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+
+        // Avoid duplicate events for the same app
+        if (packageName == lastDetectedPackage) return
+        lastDetectedPackage = packageName
+        lastForegroundPackage = packageName
+
+        // Always track foreground package so OverlayManager knows which app is visible
+        TrackedAppEventBus.updateForegroundPackage(packageName)
+
+        // Home screen detected while overlay is visible — signal OverlayManager to dismiss
+        if (TrackedAppEventBus.overlayVisible.value && launcherPackages.contains(packageName)) {
+            Timber.d("AppDetectionService: launcher $packageName detected while overlay visible — emitting home detected")
+            TrackedAppEventBus.emitHomeDetected()
+            return
+        }
+
+        // Skip packages freed for today
+        if (TrackedAppEventBus.freedPackagesToday.value.contains(packageName)) {
+            Timber.d("AppDetectionService: $packageName is freed for today — skipping overlay")
+            return
+        }
+
+        // Skip packages whose group challenge the user already failed today
+        if (TrackedAppEventBus.failedPackagesToday.value.contains(packageName)) {
+            Timber.d("AppDetectionService: $packageName — user failed group challenge, skipping overlay")
+            return
+        }
+
+        val trackedPackages = TrackedAppEventBus.trackedPackages.value
+        if (trackedPackages.contains(packageName)) {
+            // Runtime guard — deliberately placed HERE, not at the top of the method: launcher
+            // packages are part of the critical set and the home-detection branch above must still
+            // see them to dismiss a visible overlay.
+            if (isCriticalNow(packageName)) return
+
+            Timber.d("Package matched: $packageName")
+            Timber.d("isOverlayVisible=${TrackedAppEventBus.overlayVisible.value}")
+            Timber.d("failedPackagesToday=${TrackedAppEventBus.failedPackagesToday.value}")
+            Timber.d("Checking package=$packageName against challenge packages=${trackedPackages.toList()}")
+
+            // Overlay already visible — do not emit a second app-open event
+            if (TrackedAppEventBus.overlayVisible.value) {
+                Timber.d("AppDetectionService: overlay already visible, skipping emitAppOpen for $packageName")
+                return
+            }
+
+            // Gate on challenge schedule — skip overlay if outside the active window
+            if (!isAnyScheduleActive(packageName)) {
+                Timber.d("AppDetectionService: $packageName — outside schedule window, skipping overlay")
+                return
+            }
+
+            // If a session timer is still active for this package, let the user back in
+            // without showing any overlay. The timer continues running in UsageTrackingService.
+            // Only "No, go back" taps or natural timer expiry end a session early.
+            val sessionPrefs = applicationContext.getSharedPreferences(
+                OverlayManager.SESSION_PREFS_NAME, Context.MODE_PRIVATE
+            )
+            val sessionEndTime = sessionPrefs.getLong(
+                "${OverlayManager.SESSION_END_KEY_PREFIX}$packageName", 0L
+            )
+            if (sessionEndTime > System.currentTimeMillis()) {
+                val remaining = sessionEndTime - System.currentTimeMillis()
+                Timber.d("User returned to $packageName, session remaining: ${remaining}ms")
+                return
+            }
+
+            // Allow re-entry if an active DAILY_BUDGET session is running for this package
+            val budgetPrefs = applicationContext.getSharedPreferences(
+                OverlayManager.BUDGET_SESSION_PREFS_NAME, Context.MODE_PRIVATE
+            )
+            val budgetEndTime = budgetPrefs.getLong(OverlayManager.BUDGET_SESSION_END_TIME_KEY, 0L)
+            val budgetPkg = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_PACKAGE_KEY, null)
+            if (budgetEndTime > System.currentTimeMillis() && budgetPkg == packageName) {
+                val budgetRemaining = budgetEndTime - System.currentTimeMillis()
+                val budgetChallengeId = budgetPrefs.getString(OverlayManager.BUDGET_SESSION_CHALLENGE_KEY, null)
+                val challengeType = if (budgetChallengeId?.startsWith("group_") == true) "GROUP" else "SOLO"
+                Timber.d("Group challenge check: pkg=$packageName challengeType=$challengeType limitType=DAILY_BUDGET — active session (${budgetRemaining}ms remaining)")
+                allowTemporarily(packageName)
+                return
+            }
+
+            // Synchronous group-challenge session-limit check — no DB query, no coroutine
+            val sessionInfo = TrackedAppEventBus.groupSessionInfos.value[packageName]
+            if (sessionInfo != null) {
+                val exceeded = sessionInfo.opensToday >= sessionInfo.limitValueSessions
+                Timber.d(
+                    "Group challenge limit check: opens=${sessionInfo.opensToday} " +
+                            "limit=${sessionInfo.limitValueSessions} exceeded=$exceeded"
+                )
+                if (exceeded) {
+                    Timber.d("Overlay shown directly over $packageName (no home action)")
+                    TrackedAppEventBus.emitAppOpen(packageName)
+                    return
+                }
+            }
+
+            Timber.d("Overlay shown directly over $packageName (no home action)")
+            TrackedAppEventBus.emitAppOpen(packageName)
+        }
+    }
+
+    // ── Runtime critical-package guard ───────────────────────────────────────
+
+    /** Last time each package was reported as critical, to keep logging out of the hot path. */
+    private val criticalReportedAt = mutableMapOf<String, Long>()
+
+    /**
+     * True if [packageName] currently holds a critical role and must NOT be blocked, even though it
+     * is in the tracked set. The tracked set is deliberately left untouched: it feeds limit
+     * evaluation, which in Hard Mode and Group challenges decides success/failure and therefore
+     * gates money. This guard does exactly one thing — suppress the block — so that if the user
+     * later changes their default back, blocking correctly resumes.
+     *
+     * Fails safe: [CriticalPackageResolver.isNeverBlockable] returns true when role resolution has
+     * never succeeded, so a broken lookup suppresses blocking rather than falling through to it.
+     */
+    private fun isCriticalNow(packageName: String): Boolean {
+        if (!criticalPackageResolver.isNeverBlockable(packageName)) return false
+
+        val now = System.currentTimeMillis()
+        val lastReported = criticalReportedAt[packageName] ?: 0L
+        if (now - lastReported > CRITICAL_LOG_THROTTLE_MS) {
+            criticalReportedAt[packageName] = now
+            Timber.w(
+                "Runtime guard: $packageName is tracked but currently holds a critical role " +
+                    "(dialer/SMS/IME/launcher/settings/alarm) — suppressing block"
+            )
+            Sentry.addBreadcrumb(Breadcrumb().apply {
+                category = "CriticalPackageGuard"
+                message = "Suppressed block for critical package $packageName"
+                level = SentryLevel.WARNING
+            })
+        }
+        return true
+    }
+
+    // ── URL extraction & domain matching ─────────────────────────────────────
+
+    /**
+     * Extracts the current URL from the browser's address bar and checks it against:
+     *  1. Adult domains ([AdultDomains.isBlocked]) — only when adult blocking is active.
+     *     On match: toast + send user home immediately, then emit
+     *     [TrackedAppEventBus.emitAdultBlocked] so OverlayManager explains the block.
+     *  2. Custom blocked domains ([TrackedAppEventBus.blockedDomains]) — always checked.
+     *     On match: emit [TrackedAppEventBus.emitUrlBlocked] to show the challenge overlay,
+     *     then [redirectToNeutralPage] — same enforcement as the adult path, so the blocked
+     *     page does not stay resumed beneath the overlay. Freed domains skip both.
+     */
+    private fun checkBrowserUrl(packageName: String) {
+        val url = extractUrl(packageName) ?: return
+
+        val adultBlockingActive = TrackedAppEventBus.adultBlockingActive.value
+
+        // Address bars usually show scheme-less text ("example.com/path"), for which
+        // Uri.parse() returns a null host. Prepend a scheme so host parsing works.
+        val normalizedUrl = if (url.contains("://")) url else "https://$url"
+
+        // ── Adult domain check (O(1) HashSet lookup) ─────────────────────────
+        if (adultBlockingActive && AdultDomains.isBlocked(normalizedUrl)) {
+            val host = android.net.Uri.parse(normalizedUrl).host ?: url
+            // Dismissal-anchored suppression: the user just closed this host's block
+            // overlay and the page is only foregrounded until the about:blank redirect
+            // lands — re-firing now would re-show the overlay that was just dismissed.
+            if (TrackedAppEventBus.isBlockRedetectSuppressed(host)) {
+                Timber.d("Adult block: overlay for $host just dismissed — suppressing re-trigger")
+                return
+            }
+            val now = System.currentTimeMillis()
+            if (now - lastAdultBlockTimeMs >= adultBlockCooldownMs) {
+                lastAdultBlockTimeMs = now
+                Timber.d("URL detected: $url in $packageName → adult domain blocked")
+                showBlockedToast()
+                TrackedAppEventBus.emitAdultBlocked(host)
+                redirectToNeutralPage(packageName)
+            }
+            return  // Don't also fire the custom-domain overlay for the same URL
+        }
+
+        Timber.d(
+            "URL detected: $url in $packageName → blocked=false " +
+                "(host=${android.net.Uri.parse(normalizedUrl).host}, " +
+                "adultDomains=${AdultDomains.domainsCount}, source=${AdultDomains.domainSource})"
+        )
+
+        // ── Custom blocked-domain check (full domain) ─────────────────────────
+        val customBlockedDomains = TrackedAppEventBus.blockedDomains.value
+        if (customBlockedDomains.isNotEmpty()) {
+            val matchedCustom = customBlockedDomains.firstOrNull { domain ->
+                url.contains(domain, ignoreCase = true)
+            }
+            if (matchedCustom != null) {
+                if (!TrackedAppEventBus.freedDomainsToday.value.contains(matchedCustom)) {
+                    // Dismissal-anchored suppression: the user just closed this domain's
+                    // block overlay; the page is only foregrounded until the about:blank
+                    // redirect lands. The 2s cooldown below can't cover this — it anchors
+                    // to the ORIGINAL detection, which is >2s old whenever the overlay was read.
+                    if (TrackedAppEventBus.isBlockRedetectSuppressed(matchedCustom)) {
+                        Timber.d("Custom block: overlay for $matchedCustom just dismissed — suppressing re-trigger")
+                        return
+                    }
+                    val now = System.currentTimeMillis()
+                    if (matchedCustom != lastBlockedDomain || now - lastBlockedTimeMs >= 2_000L) {
+                        lastBlockedDomain = matchedCustom
+                        lastBlockedTimeMs = now
+                        Timber.d("Custom blocked domain=$matchedCustom detected in browser=$packageName url=$url")
+                        TrackedAppEventBus.emitUrlBlocked(matchedCustom)
+                        // Same enforcement as the adult path: without this the blocked tab
+                        // stays RESUMED under the overlay and is revealed again on dismiss.
+                        redirectToNeutralPage(packageName)
+                    }
+                }
+                // Full domain takes priority — don't also fire partial block for same URL
+                return
+            }
+        }
+
+    }
+
+    /**
+     * Tries every known URL-bar view ID for [packageName] in order.
+     * Returns the first non-blank URL found, or null if none can be extracted.
+     *
+     * Address-bar view IDs ONLY — never scan page text for URL-shaped strings:
+     * an adult domain merely displayed in page content must not be mistaken for
+     * the current URL. If the address bar can't be read, we fail OPEN (no block).
+     */
+    private fun extractUrl(packageName: String): String? {
+        val root = rootInActiveWindow ?: return null
+        try {
+            // Primary: try each known view ID for this browser
+            val viewIds = URL_BAR_IDS[packageName] ?: emptyList()
+            for (viewId in viewIds) {
+                val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+                val text = nodes.firstOrNull()?.text?.toString()?.trim()
+                if (!text.isNullOrBlank()) return text
+            }
+
+            // Fallback: generic address-bar IDs that some browsers use
+            val genericIds = listOf("url_bar", "address_bar", "omnibox", "url_field", "location_bar")
+            for (id in genericIds) {
+                val nodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/$id")
+                val text = nodes.firstOrNull()?.text?.toString()?.trim()
+                if (!text.isNullOrBlank()) return text
+            }
+
+            return null
+        } finally {
+            root.recycle()
+        }
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    /**
+     * Primary block action for BOTH the adult and the custom-domain path: fronts
+     * [browserPackage] on about:blank in a new
+     * tab, demoting the adult tab to background (Chrome pauses its media). The user
+     * stays in the browser and the re-block loop is broken by construction — no
+     * adult URL remains in the foreground to re-trigger detection. about:blank
+     * itself parses to host "about" → never matches → no self-loop.
+     *
+     * A single GLOBAL_ACTION_BACK first pops the adult page out of visible history
+     * in the common search-referral case. Deliberately never iterated — porn
+     * redirect chains would loop; the redirect is the correctness mechanism.
+     *
+     * Falls back to [goHome]: background-activity-launch restrictions (API 29+)
+     * SILENTLY drop startActivity from services unless the app holds
+     * SYSTEM_ALERT_WINDOW (documented BAL exemption). The pre-flight gate requires
+     * overlay for adult challenges too, so this is a DEFENSIVE fallback (the user
+     * can revoke the permission after starting) — without it we must not rely on
+     * the intent, as a dropped launch would leave the adult page visible.
+     */
+    private fun redirectToNeutralPage(browserPackage: String) {
+        performGlobalAction(GLOBAL_ACTION_BACK)
+
+        if (!android.provider.Settings.canDrawOverlays(applicationContext)) {
+            Timber.d("Adult block: no overlay permission (no BAL exemption) — goHome fallback")
+            goHome()
+            return
+        }
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("about:blank")).apply {
+                setPackage(browserPackage)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            applicationContext.startActivity(intent)
+            Timber.d("Adult block: redirected $browserPackage to about:blank")
+        } catch (e: Exception) {
+            Timber.w(e, "Adult block: redirect failed — goHome fallback")
+            goHome()
+        }
+    }
+
+    /**
+     * Fallback only (see [redirectToNeutralPage]): sends the user to the launcher
+     * via the sanctioned accessibility API, which is immune to background-activity-
+     * launch restrictions, unlike a startActivity(HOME) intent.
+     */
+    private fun goHome() {
+        performGlobalAction(GLOBAL_ACTION_HOME)
+    }
+
+    /** Shows a brief toast so the user understands why they were redirected. */
+    private fun showBlockedToast() {
+        Toast.makeText(
+            applicationContext,
+            getString(R.string.adult_block_toast),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    // ── Schedule gate ─────────────────────────────────────────────────────────
+
+    /**
+     * True if ANY challenge tracking [packageName] enforces right now — i.e. whether this package
+     * should be blocked at this moment.
+     *
+     * Evaluates every schedule rather than one: several challenges may track the same app, and
+     * each one's window entitles it to enforce independently. A package with no schedules at all
+     * (nothing registered yet) enforces, preserving the previous null-means-always behaviour.
+     *
+     * The OR is deliberate and must stay an OR over PER-ENTRY decisions: because TIME_WINDOW's
+     * window points the opposite way to TIME/SESSIONS' (see [scheduleEnforcesNow]), one app carrying
+     * both kinds of challenge holds opposite polarities at the same instant, and only a per-entry
+     * fold can honour both. Never invert this result as a whole, and never decide the polarity from
+     * one representative entry.
+     */
+    private fun isAnyScheduleActive(packageName: String): Boolean {
+        val schedules = TrackedAppEventBus.packageSchedules.value[packageName] ?: return true
+        return schedules.isEmpty() || schedules.any { scheduleEnforcesNow(it) }
+    }
+
+    /**
+     * Whether THIS ONE challenge's schedule demands enforcement at this instant.
+     *
+     * The window carries two opposite meanings depending on the limit type:
+     *  - TIME / SESSIONS / TIME_BUDGET — "enforce INSIDE these hours" ⇒ enforce when inside.
+     *  - TIME_WINDOW — "only ALLOW inside these hours" ⇒ enforce when OUTSIDE.
+     *
+     * Only the second was ever implemented as the first, which is what left TIME_WINDOW inverted:
+     * blocked inside its own allowed window, free outside it.
+     *
+     * The inversion is gated on the entry actually having bounds. A boundless entry (no times AND
+     * no days) is the canonical "always active" shape — including the 24/7 website block, which is
+     * persisted as TIME_WINDOW with null/null/empty. [isWithinActiveSchedule] returns true for it,
+     * so an ungated `!` would turn a permanent block into a permanent allow. Boundless entries
+     * therefore enforce unconditionally, for EVERY type.
+     */
+    private fun scheduleEnforcesNow(info: TrackedAppEventBus.ScheduleInfo): Boolean {
+        val inside = isWithinActiveSchedule(info)
+        val hasBounds = (info.scheduleStartTime != null && info.scheduleEndTime != null) ||
+                info.activeDays.isNotEmpty()
+        return if (info.limitType == LimitType.TIME_WINDOW && hasBounds) !inside else inside
+    }
+
+    /**
+     * Returns true if the current time/day falls within the challenge's active schedule.
+     * If no schedule is configured (null times and empty days), always returns true.
+     *
+     * Pure "is it inside the window" primitive — it says nothing about blocking. Whether being
+     * inside means enforce or allow is decided by [scheduleEnforcesNow]; keep that polarity out
+     * of here.
+     */
+    private fun isWithinActiveSchedule(info: TrackedAppEventBus.ScheduleInfo): Boolean {
+        val hasTimeBounds = info.scheduleStartTime != null && info.scheduleEndTime != null
+        val hasDayBounds = info.activeDays.isNotEmpty()
+        if (!hasTimeBounds && !hasDayBounds) return true
+
+        val now = Calendar.getInstance()
+
+        if (hasDayBounds) {
+            val dayName = when (now.get(Calendar.DAY_OF_WEEK)) {
+                Calendar.MONDAY    -> "MON"
+                Calendar.TUESDAY   -> "TUE"
+                Calendar.WEDNESDAY -> "WED"
+                Calendar.THURSDAY  -> "THU"
+                Calendar.FRIDAY    -> "FRI"
+                Calendar.SATURDAY  -> "SAT"
+                Calendar.SUNDAY    -> "SUN"
+                else               -> return false
+            }
+            if (!info.activeDays.contains(dayName)) return false
+        }
+
+        if (hasTimeBounds) {
+            val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+
+            fun parseMinutes(time: String): Int {
+                val parts = time.split(":")
+                return parts[0].toInt() * 60 + parts[1].toInt()
+            }
+
+            val startMinutes = parseMinutes(info.scheduleStartTime!!)
+            val endMinutes   = parseMinutes(info.scheduleEndTime!!)
+
+            return if (startMinutes <= endMinutes) {
+                currentMinutes in startMinutes..endMinutes
+            } else {
+                // Wraps midnight, e.g. 22:00 – 07:00
+                currentMinutes >= startMinutes || currentMinutes <= endMinutes
+            }
+        }
+
+        return true
+    }
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
+    }
+
+    override fun onInterrupt() {
+        Timber.d("AppDetectionAccessibilityService interrupted")
+        Sentry.addBreadcrumb(Breadcrumb().apply {
+            category = "AccessibilityService"
+            message = "Service disconnected"
+            level = SentryLevel.WARNING
+        })
+    }
+}

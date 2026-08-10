@@ -6,7 +6,7 @@
 ---
 
 ## App Identity
-- **Package:** `com.detox.app`
+- **Package:** `com.finite.focus`
 - **Platform:** Android (minSdk 26)
 - **Language:** Kotlin
 - **Firebase Project:** `detox-33208`
@@ -49,7 +49,7 @@
 ## File Structure
 
 ```
-com.detox.app/
+com.finite.focus/
 ├── data/
 │   ├── local/db/
 │   │   ├── dao/

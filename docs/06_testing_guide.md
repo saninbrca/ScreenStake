@@ -86,7 +86,7 @@ curl -X POST https://us-central1-detox-33208.cloudfunctions.net/checkPermissionV
 ```
 1. Write prompt here → copy to Claude Code /plan mode
 2. Test on real Huawei device after EVERY change
-3. Logcat filter: package:com.detox.app level:error
+3. Logcat filter: package:com.finite.focus level:error
 4. git add . && git commit -m "feat/fix: description" after each working feature
 5. /compact in Claude Code after long sessions
 6. /clear in Claude Code when switching topics

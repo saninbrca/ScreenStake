@@ -1,4 +1,4 @@
-appId: com.detox.app
+appId: com.finite.focus
 ---
 - launchApp:
     clearState: false

@@ -21,6 +21,86 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-08-10 — Soft challenges now fail on prolonged permission loss (gated on usage evidence)
+
+**FEATURE + DECISION.** Turning the required permission off used to be a free win in Soft Mode:
+`failAllHardChallenges` only ever touched solo Hard rows, so a Soft challenge stayed `active`,
+enforcement silently stopped, and SESSIONS / TIME_BUDGET challenges settled COMPLETED because
+nothing could record a breach. Prolonged permission loss now ends a Soft challenge as
+`FAILED / permission_violation`.
+
+**The write path** is the abandon primitive —
+`updateChallengeStatus(FAILED, "permission_violation")` — the same call the Hard permission path and
+the Soft abandon path already make. Offline-safe by construction: Room is written synchronously (and
+only `status='active'` enforces, so enforcement stops immediately with no network), the
+`markChallengeFailed` CF lands whenever connectivity returns, and sync Guard B treats an
+already-terminal local row as immutable. The dead `OverlayManager.markSoftChallengeFailed` (0
+callers, hardcoded `"limit_exceeded"` while accepting a `reason` parameter, launched an Activity from
+a worker, and marked `completionShown` — which would have SUPPRESSED the fail screen) was deleted
+rather than reused. `SoftFailResultScreen` needed no changes: `failReasonStringRes` already mapped
+`permission_violation`, and the day-count already had a no-breach-log branch.
+
+**Two guards stand between an eligible challenge and a FAILED write:**
+
+1. **Already past its end date ⇒ skipped.** A Soft challenge whose end date passed while the app was
+   closed is still `active` in Room; failing it here would stamp a fabricated loss on a challenge the
+   user had already WON. It is handed to `SettleEndedSoftChallengesUseCase` to settle on its real
+   verdict. `DateUtils.hasPassedEnd` behind an `isOpenEnded` check, matching the enforcement-stop path.
+2. **No usage evidence ⇒ the challenge SURVIVES.** See below.
+
+**DECISION — the fail is gated on usage evidence, not on elapsed time alone.** The exploit being
+closed ("turn the permission off, use the blocked app freely, still win") *requires usage*. Failing
+on time alone would also punish the honest EMUI/Huawei case, where the OS kills the accessibility
+service on its own — and Soft is the free tier, whose users tick no forfeit consent. So a Soft
+challenge fails only if `ACTIVITY_RESUMED` events for its OWN packages appear in the unprotected
+window. `queryEvents` is used rather than `queryUsageStats` because event streams are clipped to the
+requested range, whereas daily buckets would spill pre-loss usage into the window and manufacture
+evidence. Fail-safe throughout: a thrown query, a revoked `PACKAGE_USAGE_STATS` grant, or an unusable
+window all read as "no evidence" and the challenge survives.
+
+The `USAGE_VIOLATION_PREFS` latch written by `checkAndReportUsageViolation` is deliberately NOT the
+gate. It is the right signal in the wrong shape: global rather than per-challenge (it would fail an
+innocent challenge because a *different* challenge's app was used — the exact unfairness the gate
+exists to remove), only written when ACCESSIBILITY is off (an overlay-only revocation records
+nothing), latched once, and cleared on every cycle where accessibility is on.
+
+**Website / adult-block Soft challenges** persist no packages (`BlockingType.WEBSITE` ⇒
+`appPackageNames` empty), so there is nothing to observe and the gate cannot protect them: they fall
+back to the **time-only rule** and fail on the deadline alone. This is disclosed up front — the Soft
+info step shows those users a different permission row saying exactly that.
+
+**DECISION — the dismissal-halving is now Hard-only.** `calculateEffectiveDeadlineMs` could cut the
+grace to ~12h, triggered by `MainActivity.trackPermissionIgnore`, which counts *"opened the app while
+the permission was off"* — NOT *"saw the warning and refused"*. A Huawei user whose service the OS
+killed, opening the app to find out why, was having their grace halved for something they did not do.
+Hard keeps it (real money, consent given at creation). When both types are in play there is still
+exactly ONE deadline and it is the Hard one — two deadlines would mean two `permissionLostAt` clocks.
+
+**Copy, all in the "will fail" direction, EN + DE.** The 6h/12h/23h escalations and the Track-A
+level-2 warning were unconditionally stake-worded; a Soft-only user got three "your stake will be
+charged" warnings followed by "it has not failed." Escalations are now addressed via
+`permissionAudience`, built on the same two selection predicates the deadline pass uses, so a warning
+can never describe a population the deadline does not act on. New money-free Soft variants; Hard copy
+unchanged; both posted (separate notification ids) when the user holds both. At the deadline there
+are now two Soft notices, because the evidence gate creates two genuinely different outcomes:
+`sendPermissionSoftFailed` ("your challenge has ended") and the retained
+`sendPermissionEnforcementPaused` ("still running — you didn't open your blocked apps"). The 18h
+full-screen block needed no change: it already said "your challenge will end automatically", which
+this makes true. `wizard_soft_info_sessions` and `wizard_soft_info_no_usage_limit` both claimed the
+challenge could "only" be lost by giving up — corrected.
+
+**Money-safety:** no `capturePayment` on the Soft path, the selector requires
+`stripePaymentIntentId == null`, `ChallengeSettlementGuard` is deliberately absent (it exists to
+defer to a SERVER settlement before a CLIENT capture; there is none for Soft, and it would break the
+offline fail), `failAllHardChallenges` is untouched, and the server keeps skipping `mode !== "hard"`.
+Note this makes the permission-deadline branch actually *do* something in a release (soft-only)
+build, where it was previously a guaranteed no-op.
+
+**Tests:** 24 unit tests (selector both directions incl. the PaymentIntent fence, halving exemption,
+audience selection, evidence gate incl. the EMUI no-evidence case and the fail-safe query failure)
+and 19 instrumented tests green on the P30, incl. the new wizard row on every Soft branch in light
+and dark.
+
 ### 2026-08-06 — The GDPR data export handed over a fraction of what it claimed
 
 **FIXED — active challenges only, and no daily logs at all.** `SettingsViewModel.buildExportJson`
@@ -1064,7 +1144,7 @@ intact and re-enableable via a later update. Gating, not deleting.
 
 - **New build-level kill switch** `BuildConfig.MONEY_FEATURES_ENABLED` (`app/build.gradle.kts`), split by
   build type: **debug = `true`**, **release = `false`**. Layered **on top of** the fail-open server flags
-  (`hardModeEnabled` / `groupChallengeEnabled`) via `com.detox.app.util.FeatureFlags`. The gate is ALWAYS
+  (`hardModeEnabled` / `groupChallengeEnabled`) via `com.finite.focus.util.FeatureFlags`. The gate is ALWAYS
   `MONEY_FEATURES_ENABLED && <serverFlag>`, so flipping the constant to `true` restores prior behavior
   with zero other edits. Rationale: server flags alone are fail-open (config-read error → `true` → money
   reappears) — unacceptable for a legal/Play-policy guarantee. See `docs/13`.
@@ -2362,7 +2442,7 @@ re-deployed (`firebase deploy --only functions`).
 
 **Fix 1 — Inline day-in-millis replaced with the shared constant.**
 - `ChallengeSuccessDialog.kt` `Challenge.durationDays`: both inline `86_400_000L` →
-  `DateUtils.MILLIS_PER_DAY` (added `import com.detox.app.util.DateUtils`).
+  `DateUtils.MILLIS_PER_DAY` (added `import com.finite.focus.util.DateUtils`).
 - `functions/src/index.ts:1169`: `const twentyFourHours = 24 * 60 * 60 * 1000` → reuse existing
   `MILLIS_PER_DAY` constant (`index.ts:8`). **Deployed** to production.
 

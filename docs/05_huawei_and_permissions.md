@@ -64,24 +64,52 @@ WorkManager.getInstance(context).enqueueUniquePeriodicWork(
 
 ## 24-Hour Permission Monitoring System
 
-Triggered when: overlay permission OR AccessibilityService permission is lost while a Hard Mode challenge is active.
+Triggered when: overlay permission OR AccessibilityService permission is lost while a challenge is active. Both Hard AND Soft challenges are now acted on at the deadline — see "Soft Mode" below.
 
 ### Escalation Timeline (current)
 
-**Acceleration rule (implemented):** If the user opens the app and ignores the warning within the first 12 hours, the effective deadline accelerates (`ACCELERATE_THRESHOLD_MS = 12h`). After hour 12 the timer runs at a fixed pace regardless of user action.
+**Acceleration rule (implemented) — HARD ONLY:** If the user opens the app and ignores the warning within the first 12 hours, the effective deadline accelerates (`PERMISSION_ACCELERATE_THRESHOLD_MS = 12h`). After hour 12 the timer runs at a fixed pace regardless of user action.
+
+A **soft-only** audience is exempt and always gets the full 24h (`effectiveDeadlineMs(..., hardInPlay = false)`). `MainActivity.trackPermissionIgnore` counts *"opened the app while the permission was off"*, not *"saw the warning and refused"* — on EMUI, where the OS kills the accessibility service by itself, that would halve an honest Soft user's grace for something they did not do, with no stake to justify it. A Hard user accepted that trade at creation and has real money at risk. When both types are in play there is exactly ONE deadline and it is the Hard (halved) one.
 
 **Visual indicator:** Red pulsing banner shown on ALL screens while any required permission is missing.
 
-**Notification stages (actual — `PermissionCheckWorker.handleEscalation` / `NotificationHelper.sendPermissionEscalation`):** exactly three staged notifications fire at **6h, 12h, 23h** elapsed (highest passed threshold wins). There is no hour-0 or hour-2 notification.
+**Notification stages (actual — `PermissionCheckWorker` / `NotificationHelper.sendPermissionEscalation`):** exactly three staged notifications fire at **6h, 12h, 23h** elapsed (highest passed threshold wins). There is no hour-0 or hour-2 notification.
 
-| Time since loss | Action |
-|----------------|--------|
-| Hour 6  | `sendPermissionEscalation("6h")` — escalating-urgency notification |
-| Hour 12 | `sendPermissionEscalation("12h")` — "Letzte Warnung" (also acceleration cutoff) |
-| Hour 23 | `sendPermissionEscalation("23h")` — explicit "In 1 Stunde wird der Einsatz eingezogen" |
-| Hour 24 | **Server-side Stripe capture via Cloud Function** (`DEADLINE_MS = 24h`) |
+Each stage is addressed **per challenge type**, resolved through `permissionAudience` — which is built on the same two selection predicates the deadline pass acts on, so a warning can never describe a population the deadline does not touch. A user holding both types gets both messages (separate notification ids); a user holding no active challenge now gets none.
 
-### Soft Mode: No money capture — only notification escalation, challenge marked FAILED at hour 24.
+| Time since loss | Hard (stake wording) | Soft (money-free) |
+|----------------|----------------------|-------------------|
+| Hour 6  | `sendPermissionEscalation("6h")` | `sendPermissionEscalationSoft("6h")` |
+| Hour 12 | `sendPermissionEscalation("12h")` — also the acceleration cutoff | `sendPermissionEscalationSoft("12h")` |
+| Hour 23 | `sendPermissionEscalation("23h")` — "In 1 Stunde wird der Einsatz eingezogen" | `sendPermissionEscalationSoft("23h")` — "In 1 Stunde schlägt deine Challenge fehl" |
+| Hour 24 | capture-gated FAILED (client) + **server-side Stripe capture via CF** (`PERMISSION_DEADLINE_MS = 24h`) | `failAllSoftChallenges` — FAILED **iff** there is usage evidence |
+
+### Soft Mode at the deadline — `failAllSoftChallenges`
+
+No money capture, no `ChallengeSettlementGuard`, no server call: the write is
+`updateChallengeStatus(FAILED, "permission_violation")` (the abandon primitive), which is
+offline-safe — Room is written synchronously and only `status='active'` enforces.
+
+Selection is `isSoloSoftPermissionFailEligible` (SOFT + no `groupChallengeId` + **no
+`stripePaymentIntentId`** — the money fence). Two guards then apply:
+
+1. **Past its end date ⇒ skipped**, and left to `SettleEndedSoftChallengesUseCase` to settle on its
+   real verdict. Failing it here would stamp a fabricated loss on a challenge already won.
+2. **Usage evidence required.** The challenge fails only if `ACTIVITY_RESUMED` events for its OWN
+   packages appear in the unprotected window (`queryEvents`, which is clipped to the range — daily
+   `queryUsageStats` buckets would spill pre-loss usage in). No evidence ⇒ the challenge SURVIVES and
+   the user gets `sendPermissionEnforcementPaused` instead. This is what keeps an OS-killed service
+   on EMUI from costing an honest user their challenge. Fail-safe: a thrown query, a revoked
+   `PACKAGE_USAGE_STATS` grant, or an unusable window all read as "no evidence".
+
+**Website / adult-block Soft challenges persist no packages**, so guard 2 has nothing to observe:
+they fall back to the **time-only rule** and fail on the deadline alone. The Soft info step discloses
+this with its own copy variant (`wizard_soft_info_permission_block`).
+
+The `USAGE_VIOLATION_PREFS` latch (`checkAndReportUsageViolation`) is NOT the gate — it is global
+rather than per-challenge, only written when accessibility is off, latches once, and is cleared
+whenever accessibility is on. It remains what it was: the server-side reporting signal.
 
 ### Implementation
 

@@ -508,6 +508,7 @@ Challenge outcomes trigger dedicated result surfaces:
 | Soft Mode COMPLETED | `ChallengeSuccessDialog` (dismissible Dialog on Dashboard) | `DailyEvaluationWorker` OR the on-app-open `SettleEndedSoftChallengesUseCase` backstop (see below) |
 | Hard Mode COMPLETED | `ChallengeSuccessDialog` (money-refund variant) | `DailyEvaluationWorker` after Stripe refund succeeds |
 | Soft Mode FAILED (intra-day limit breach) | `SoftFailResultScreen` | `OverlayManager` soft-fail / `DailyEvaluationWorker` |
+| Soft Mode FAILED (permission off past the 24h deadline **and** blocked apps used) | `SoftFailResultScreen` (`failReason = permission_violation`) | `PermissionCheckWorker.failAllSoftChallenges` marks FAILED but deliberately does NOT mark `completionShown`, so the Dashboard poll surfaces the screen on next app open. See `docs/05`. |
 | ANY FAILED (worker / permission loss / abandon) | unified RED `ChallengeFailedDialog` on Dashboard (names the challenge + human-readable `failReason`) | `DashboardViewModel` detects an unshown FAILED row |
 
 *(The old fullscreen `HardModeFailOverlay`, `HardModeFailScreen`, and `SoftModeSuccessOverlay`

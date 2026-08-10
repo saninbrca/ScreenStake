@@ -180,11 +180,14 @@ dependencies {
     // Konfetti (confetti particle effect)
     implementation("nl.dionsegijn:konfetti-compose:2.0.4")
 
-    // Root detection
-    implementation("com.scottyab:rootbeer-lib:0.1.0")
+    // Root detection (anti-cheat, invariant #12 — isRooted on every Hard Mode create).
+    // 0.1.1 is the first release whose libtoolChecker.so is 16 KB-page-aligned (Play requirement
+    // for targetSdk 35+). Never drop below it.
+    implementation("com.scottyab:rootbeer-lib:0.1.1")
 
-    // Sentry — crash + error tracking (Huawei-safe, no Google Play Services)
-    implementation(libs.sentry.android)
+    // Sentry — crash + error tracking (Huawei-safe, no Google Play Services).
+    // -core, never the `sentry-android` umbrella: see the note in libs.versions.toml (16 KB pages).
+    implementation(libs.sentry.android.core)
 
     // Logging
     implementation(libs.timber)

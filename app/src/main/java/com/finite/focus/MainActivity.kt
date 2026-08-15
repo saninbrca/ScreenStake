@@ -43,6 +43,7 @@ import com.finite.focus.presentation.navigation.DetoxNavGraph
 import com.finite.focus.presentation.navigation.Screen
 import com.finite.focus.service.TrackedAppEventBus
 import com.finite.focus.service.UsageTrackingService
+import com.finite.focus.ui.theme.DetoxDialogShape
 import com.finite.focus.ui.theme.DetoxTheme
 import com.finite.focus.ui.theme.LocalDetoxDarkTheme
 import com.finite.focus.ui.theme.ThemeMode
@@ -208,6 +209,7 @@ class MainActivity : ComponentActivity() {
                     BackHandler(enabled = true) { /* block back — user must fix permission */ }
                     AlertDialog(
                         onDismissRequest = {},
+                        shape = DetoxDialogShape,
             title = { Text(stringResource(R.string.notification_permission_urgent_title)) },
                         text = {
                             Text(

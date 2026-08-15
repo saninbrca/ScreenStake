@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PLACEHOLDER screenshot slot. Replace this file with the real screenshot by dropping
+  help_<permission>_step_<n>.webp into res/drawable/ and deleting this .xml — the
+  resource name stays identical, so NO code change is needed.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="112dp"
+    android:height="199dp"
+    android:viewportWidth="160"
+    android:viewportHeight="284">
+    <path
+        android:fillColor="#1F000000"
+        android:pathData="M8,4h144a4,4 0,0 1,4 4v268a4,4 0,0 1,-4 4h-144a4,4 0,0 1,-4 -4v-268a4,4 0,0 1,4 -4z" />
+    <path
+        android:fillColor="#33000000"
+        android:pathData="M56,126h48v8h-48z M48,146h64v6h-64z M60,162h40v6h-40z" />
+</vector>

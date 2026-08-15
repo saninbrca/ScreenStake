@@ -1128,7 +1128,7 @@
     <!-- Rotating stats (Screen 1) -->
     <string name="welcome_p0_stat1_value">96 Mal</string>
     <string name="welcome_p0_stat1_desc">So oft entsperrst du dein Handy täglich</string>
-    <string name="welcome_p0_stat2_value">4,2 Stunden</string>
+    <string name="welcome_p0_stat2_value">4,2 Std.</string>
     <string name="welcome_p0_stat2_desc">Durchschnittliche tägliche Bildschirmzeit</string>
     <string name="welcome_p0_stat3_value">63 Tage</string>
     <string name="welcome_p0_stat3_desc">Lebenszeit pro Jahr am Handy verschwendet</string>
@@ -1178,9 +1178,6 @@
     <string name="welcome_p3_usage_desc">Misst deine Bildschirmzeit</string>
     <string name="welcome_p3_privacy_text">Deine Daten bleiben auf deinem Gerät. Finite verkauft keine Nutzerdaten.</string>
     <string name="welcome_p3_btn_activate">Berechtigungen aktivieren</string>
-    <string name="welcome_p3_huawei_title">Wichtig für Huawei</string>
-    <string name="welcome_p3_huawei_message">Bitte deaktiviere die Akku-Optimierung für Finite damit die App im Hintergrund läuft: Einstellungen → Apps → Finite → Akku → Keine Einschränkungen</string>
-    <string name="welcome_p3_huawei_btn">Zu den Einstellungen</string>
 
     <!-- Welcome Onboarding — Page 4: Los geht's -->
     <string name="welcome_p4_title_pre">Bereit</string>
@@ -1836,5 +1833,21 @@
 
     <!-- Broadcast message (admin → all users) -->
     <string name="broadcast_acknowledge">Verstanden</string>
+
+
+    <!-- Permission help sheet (step-by-step screenshots) -->
+    <string name="permission_help_link">Wie aktiviere ich das?</string>
+    <string name="permission_help_title">Berechtigungen aktivieren</string>
+    <string name="permission_help_subtitle">Android öffnet für jede dieser Berechtigungen eine eigene Einstellungsseite. Das musst du antippen.</string>
+    <string name="permission_help_step_image_cd">Screenshot für Schritt %1$d</string>
+    <string name="permission_help_overlay_step_1">Öffne "Über anderen Apps anzeigen" auf der Einstellungsseite, die sich öffnet.</string>
+    <string name="permission_help_overlay_step_2">Suche Finite in der App-Liste.</string>
+    <string name="permission_help_overlay_step_3">Schalte den Schalter ein und geh zurück.</string>
+    <string name="permission_help_accessibility_step_1">Öffne unter Bedienungshilfen "Installierte Apps" (oder "Heruntergeladene Apps").</string>
+    <string name="permission_help_accessibility_step_2">Wähle Finite aus der Liste.</string>
+    <string name="permission_help_accessibility_step_3">Schalte den Dienst ein, bestätige und geh zurück.</string>
+    <string name="permission_help_usage_step_1">Suche Finite in der Liste "Nutzungsdaten".</string>
+    <string name="permission_help_usage_step_2">Tippe darauf, um die Einstellungen zu öffnen.</string>
+    <string name="permission_help_usage_step_3">Erlaube den Zugriff und geh zurück.</string>
 
 </resources>

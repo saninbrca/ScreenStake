@@ -5,7 +5,6 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -28,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
@@ -45,14 +45,12 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Whatshot
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,13 +64,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -82,6 +84,8 @@ import com.finite.focus.R
 import com.finite.focus.ui.theme.detoxColors
 import androidx.compose.material3.MaterialTheme
 import com.finite.focus.presentation.components.AccessibilityDisclosureDialog
+import com.finite.focus.presentation.components.PermissionHelpSheet
+import com.finite.focus.presentation.components.PermissionHelpTopics
 import com.finite.focus.ui.theme.PoppinsFamily
 import com.finite.focus.util.FeatureFlags
 import kotlinx.coroutines.delay
@@ -93,6 +97,44 @@ import kotlinx.coroutines.launch
 
 private val CardShape = RoundedCornerShape(16.dp)
 private val ButtonShape = RoundedCornerShape(14.dp)
+
+// ── Rotating-fact block (see RotatingStatCard) ────────────────────────────────
+// Every fact is capped at one value line + at most two description lines, and the block
+// reserves exactly that. Since the reservation is derived from the styles' lineHeight (sp),
+// it grows with the user's font scale instead of clipping the way a magic dp would.
+
+private val StatValueStyle = TextStyle(
+    fontFamily = PoppinsFamily,
+    fontWeight = FontWeight.Bold,
+    fontSize = 48.sp,
+    lineHeight = 52.sp
+)
+
+private val StatDescStyle = TextStyle(
+    fontFamily = PoppinsFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = 14.sp,
+    lineHeight = 20.sp
+)
+
+private const val StatValueMaxLines = 1
+private const val StatDescMaxLines = 2
+private val StatBlockSpacing = 8.dp
+
+/** Small buffer so font metrics that overshoot the declared lineHeight cannot clip. */
+private val StatBlockHeadroom = 4.dp
+
+/**
+ * Height reserved for the rotating fact block: identical for all three facts (so nothing
+ * shifts on rotation) and expressed in sp-derived dp (so nothing clips at a large font scale).
+ */
+@Composable
+private fun statBlockHeight(): Dp = with(LocalDensity.current) {
+    StatValueStyle.lineHeight.toDp() * StatValueMaxLines +
+        StatBlockSpacing +
+        StatDescStyle.lineHeight.toDp() * StatDescMaxLines +
+        StatBlockHeadroom
+}
 
 // ── Root composable ────────────────────────────────────────────────────────────
 
@@ -110,7 +152,6 @@ fun WelcomeOnboardingScreen(
     var overlayGranted by remember { mutableStateOf(false) }
     var accessibilityGranted by remember { mutableStateOf(false) }
     var usageStatsGranted by remember { mutableStateOf(false) }
-    var showHuaweiDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -136,9 +177,13 @@ fun WelcomeOnboardingScreen(
             .fillMaxSize()
             .background(detoxColors.screenBackground)
     ) {
+        // The Box above stays full-bleed so the background paints under the bars; the pager
+        // itself is inset so no page content hides behind the status or gesture bar.
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
         ) { page ->
             Box(
                 modifier = Modifier
@@ -164,7 +209,6 @@ fun WelcomeOnboardingScreen(
                         accessibilityGranted = accessibilityGranted,
                         usageStatsGranted = usageStatsGranted,
                         onNext = { coroutineScope.launch { pagerState.animateScrollToPage(4) } },
-                        onShowHuawei = { showHuaweiDialog = true },
                         currentPage = 3
                     )
                     4 -> StartPage(
@@ -183,31 +227,8 @@ fun WelcomeOnboardingScreen(
         }
     }
 
-    if (showHuaweiDialog) {
-        AlertDialog(
-            onDismissRequest = { showHuaweiDialog = false },
-            title = { Text(stringResource(R.string.welcome_p3_huawei_title)) },
-            text = { Text(stringResource(R.string.welcome_p3_huawei_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showHuaweiDialog = false
-                    try {
-                        val intent = Intent("com.huawei.systemmanager.optimize.process.ProtectActivity")
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                    }
-                }) {
-                    Text(stringResource(R.string.welcome_p3_huawei_btn))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showHuaweiDialog = false }) {
-                    Text(stringResource(R.string.dialog_cancel))
-                }
-            }
-        )
-    }
+    // The Huawei battery reminder that used to fire here was removed: OnboardingScreen's
+    // dedicated HuaweiBatteryStep already covers battery optimisation and protected apps.
 }
 
 // ── Page 0: Willkommen ─────────────────────────────────────────────────────────
@@ -618,7 +639,6 @@ private fun PermissionsPage(
     accessibilityGranted: Boolean,
     usageStatsGranted: Boolean,
     onNext: () -> Unit,
-    onShowHuawei: () -> Unit,
     currentPage: Int,
 ) {
     val context = LocalContext.current
@@ -636,19 +656,17 @@ private fun PermissionsPage(
         )
     }
 
-    val allPermissionsGranted = overlayGranted && accessibilityGranted && usageStatsGranted
-
-    // Huawei battery-optimization reminder: surfaced once, the moment all three special
-    // permissions are granted (before the user leaves this page). Kept separate from the
-    // per-permission flow so it never collides with the accessibility disclosure dialog.
-    val isHuawei = Build.MANUFACTURER.lowercase() == "huawei"
-    var huaweiReminderShown by remember { mutableStateOf(false) }
-    LaunchedEffect(allPermissionsGranted) {
-        if (allPermissionsGranted && isHuawei && !huaweiReminderShown) {
-            huaweiReminderShown = true
-            onShowHuawei()
-        }
+    // Purely explanatory help sheet. Never requests anything and never launches a settings
+    // intent, so it sits completely outside the permission gate.
+    var showPermissionHelp by remember { mutableStateOf(false) }
+    if (showPermissionHelp) {
+        PermissionHelpSheet(
+            steps = PermissionHelpTopics.AllPermissions,
+            onDismiss = { showPermissionHelp = false },
+        )
     }
+
+    val allPermissionsGranted = overlayGranted && accessibilityGranted && usageStatsGranted
 
     Column(
         modifier = Modifier
@@ -727,6 +745,19 @@ private fun PermissionsPage(
                 )
             }
         }
+
+        // Subtle grey help link — opens the step-by-step sheet, changes no permission state.
+        Text(
+            text = stringResource(R.string.permission_help_link),
+            style = TextStyle(
+                fontFamily = PoppinsFamily,
+                fontWeight = FontWeight.Normal,
+                fontSize = 13.sp,
+                color = detoxColors.subtext,
+                textDecoration = TextDecoration.Underline
+            ),
+            modifier = Modifier.clickable { showPermissionHelp = true }
+        )
 
         // Privacy note card
         Box(
@@ -994,37 +1025,46 @@ private fun RotatingStatCard() {
             verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
+            // One reserved height for all three facts, so the card, its dots and everything
+            // below stay put across rotations. Every fact value is short enough to hold a
+            // single line at 48sp on a 360dp-wide screen, so only one value line is reserved.
             AnimatedContent(
                 targetState = currentStatIndex,
                 transitionSpec = {
+                    // Pure cross-fade: nothing here affects layout, so no horizontal travel.
                     fadeIn(tween(300)) togetherWith fadeOut(tween(300))
                 },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(statBlockHeight()),
+                contentAlignment = Alignment.Center,
                 label = "stat_rotation"
             ) { index ->
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    verticalArrangement = Arrangement.spacedBy(
+                        StatBlockSpacing,
+                        Alignment.CenterVertically
+                    ),
+                    modifier = Modifier.fillMaxSize()
                 ) {
+                    // Identical typography for all three facts — explicit lineHeight so the
+                    // measured height is deterministic rather than font-metric dependent. The
+                    // maxLines caps are what make the reserved height above exact: no fact can
+                    // grow past what is reserved, so nothing is ever clipped or shifted.
                     Text(
                         text = stats[index].first,
-                        style = TextStyle(
-                            fontFamily = PoppinsFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 48.sp,
-                            color = detoxColors.accent
-                        ),
-                        textAlign = TextAlign.Center
+                        style = StatValueStyle.copy(color = detoxColors.accent),
+                        textAlign = TextAlign.Center,
+                        maxLines = StatValueMaxLines,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = stats[index].second,
-                        style = TextStyle(
-                            fontFamily = PoppinsFamily,
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 14.sp,
-                            color = detoxColors.subtext
-                        ),
-                        textAlign = TextAlign.Center
+                        style = StatDescStyle.copy(color = detoxColors.subtext),
+                        textAlign = TextAlign.Center,
+                        maxLines = StatDescMaxLines,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

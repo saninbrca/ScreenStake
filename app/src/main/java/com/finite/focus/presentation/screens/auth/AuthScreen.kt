@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -146,6 +147,9 @@ fun AuthScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                // systemBarsPadding (not safeDrawingPadding) because safeDrawing already
+                // includes the IME and would double-pad against the imePadding below.
+                .systemBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .imePadding()
                 .padding(horizontal = 24.dp, vertical = 48.dp),

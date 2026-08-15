@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.finite.focus.R
+import com.finite.focus.ui.theme.DetoxDialogShape
 
 /**
  * Prominent-disclosure dialog for the AccessibilityService (Play policy requirement).
@@ -33,6 +34,7 @@ fun AccessibilityDisclosureDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = DetoxDialogShape,
         title = { Text(stringResource(R.string.accessibility_disclosure_title)) },
         text = {
             Column(

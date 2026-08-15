@@ -1213,9 +1213,6 @@
     <string name="welcome_p3_usage_desc">Measures your screen time</string>
     <string name="welcome_p3_privacy_text">Your data stays on your device. Finite doesn\'t sell user data.</string>
     <string name="welcome_p3_btn_activate">Enable permissions</string>
-    <string name="welcome_p3_huawei_title">Important for Huawei</string>
-    <string name="welcome_p3_huawei_message">Please disable battery optimization for Finite so the app can run in the background: Settings → Apps → Finite → Battery → No restrictions</string>
-    <string name="welcome_p3_huawei_btn">Go to settings</string>
 
     <!-- Welcome Onboarding — Page 4: Los geht's -->
     <string name="welcome_p4_title_pre">Ready</string>
@@ -1901,5 +1898,21 @@
 
     <!-- Broadcast message (admin → all users) -->
     <string name="broadcast_acknowledge">Got it</string>
+
+
+    <!-- Permission help sheet (step-by-step screenshots) -->
+    <string name="permission_help_link">How do I enable this?</string>
+    <string name="permission_help_title">Enabling the permissions</string>
+    <string name="permission_help_subtitle">Android opens its own settings screen for each of these. Here is what to tap.</string>
+    <string name="permission_help_step_image_cd">Screenshot for step %1$d</string>
+    <string name="permission_help_overlay_step_1">Open "Display over other apps" in the settings screen that opens.</string>
+    <string name="permission_help_overlay_step_2">Find Finite in the list of apps.</string>
+    <string name="permission_help_overlay_step_3">Turn the switch on, then go back.</string>
+    <string name="permission_help_accessibility_step_1">Open "Installed apps" (or "Downloaded apps") under Accessibility.</string>
+    <string name="permission_help_accessibility_step_2">Pick Finite from the list.</string>
+    <string name="permission_help_accessibility_step_3">Turn the service on and confirm, then go back.</string>
+    <string name="permission_help_usage_step_1">Find Finite in the "Usage access" list.</string>
+    <string name="permission_help_usage_step_2">Tap it to open its usage access settings.</string>
+    <string name="permission_help_usage_step_3">Allow usage access, then go back.</string>
 
 </resources>

@@ -1,6 +1,7 @@
 package com.finite.focus.util
 
 import java.util.Calendar
+import kotlin.math.roundToLong
 
 object DateUtils {
     const val MILLIS_PER_DAY = 86_400_000L
@@ -78,6 +79,29 @@ object DateUtils {
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
+
+    /**
+     * A challenge's length in CALENDAR days, counting the start day — the ONLY day-count that may be
+     * shown to a user, and the exact inverse of [endOfDayMillis]: a challenge created for 7 days
+     * reads back as 7.
+     *
+     * The single definition. Every user-facing "X Tage" routes here (result dialogs, History,
+     * Profile payouts) precisely because the obvious raw-span form truncates: a 7-day challenge
+     * created at 10:00 ends on day 7 at 23:59, a span of 6.58 days, which naive `(end - start) /
+     * MILLIS_PER_DAY` renders as "6 Tage".
+     *
+     * DISPLAY ONLY. Settlement timing is decided by [hasReachedEnd] / [hasPassedEnd] and capture
+     * mode by `StakeCapture.durationDaysOf` — none of them read this, and none of them may.
+     *
+     * Day keys, not raw millis, and the elapsed span is ROUNDED for the same reason day keys are
+     * used at all: a DST shift inside the challenge makes the span 23 h or 25 h short/long of a
+     * whole number of days, and truncating that drops a day off a spring-forward challenge.
+     */
+    fun calendarDurationDays(startMs: Long, endMs: Long): Int {
+        val spanMs = (dayKey(endMs) - dayKey(startMs)).toDouble()
+        val elapsedDays = (spanMs / MILLIS_PER_DAY).roundToLong()
+        return (elapsedDays + 1).coerceAtLeast(1L).toInt()
+    }
 
     /**
      * Returns 23:59:59.999 of the day that is [durationDays] days after [startMs].

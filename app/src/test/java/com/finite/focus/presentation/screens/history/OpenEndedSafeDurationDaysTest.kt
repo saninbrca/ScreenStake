@@ -44,11 +44,24 @@ class OpenEndedSafeDurationDaysTest {
     }
 
     @Test
-    fun `fixed-end challenge returns its true span and ignores logs`() {
-        val end = start + 7 * day
-        // Logs are irrelevant for a fixed-end challenge — span comes straight from start→end.
+    fun `fixed-end challenge returns its calendar duration and ignores logs`() {
+        // endDate built the way production builds it (DateUtils.endOfDayMillis, invariant #18) —
+        // NOT `start + 7 * day`, which is a day too far and only ever existed in test fixtures.
+        val end = DateUtils.endOfDayMillis(start, 7)
+        // Logs are irrelevant for a fixed-end challenge — the count comes straight from start→end.
         val result = openEndedSafeDurationDays(start, end, listOf(log(start + 2 * day)))
         assertEquals(7, result)
+    }
+
+    @Test
+    fun `a 7-day challenge created mid-day still reads as 7, not 6`() {
+        // The off-by-one this helper used to have: created at 10:00, a 7-day challenge ends on day 7
+        // at 23:59 — a 6.58-day raw span that truncated to "6 Tage" in the History detail header and
+        // handed computeStats a budget one day short.
+        val startAtTen = DateUtils.dayKey(start) + 10 * 60 * 60 * 1000L
+        val end = DateUtils.endOfDayMillis(startAtTen, 7)
+
+        assertEquals(7, openEndedSafeDurationDays(startAtTen, end, emptyList()))
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.finite.focus.util
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,6 +13,9 @@ import org.junit.Test
  *    day N+1. The former `|| durationDays == 1` escape hatch is gone: it fired on a 2-day challenge
  *    (raw span ≈ 1.x days → 1) at its very first evaluation.
  *  - [DateUtils.isOpenEnded] — the ~100-year sentinel guard used across the display surfaces.
+ *  - [DateUtils.calendarDurationDays] — the ONE day count shown to users, and the exact inverse of
+ *    [DateUtils.endOfDayMillis]. Deliberately separate from the settlement predicates above: it
+ *    decides what a screen SAYS, never when a challenge ends.
  */
 class DateUtilsTest {
 
@@ -68,6 +72,44 @@ class DateUtilsTest {
         val workerRun = end - 59_999L        // ~23:59:00 of the final day
         assertFalse(workerRun >= end)        // sanity: the old millisecond test would miss it…
         assertTrue(DateUtils.hasReachedEnd(start, end, workerRun)) // …the day-key test catches it
+    }
+
+    // ── calendarDurationDays ─────────────────────────────────────────────────────
+
+    @Test
+    fun `calendarDurationDays is the exact inverse of endOfDayMillis`() {
+        // The contract that makes this the ONLY day count a user may be shown: whatever duration the
+        // wizard sent into endOfDayMillis must read back unchanged, whatever time of day it started.
+        for (startOffsetHours in listOf(0, 10, 23)) {
+            val startAt = DateUtils.dayKey(start) + startOffsetHours * 60 * 60 * 1000L
+            for (days in 1..60) {
+                assertEquals(
+                    "round-trip broke at $days days from +${startOffsetHours}h",
+                    days,
+                    DateUtils.calendarDurationDays(startAt, DateUtils.endOfDayMillis(startAt, days)),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `calendarDurationDays does not truncate a challenge created mid-day`() {
+        // The display off-by-one this helper exists to kill: a 7-day challenge created at 10:00 ends
+        // on day 7 at 23:59 — a raw span of 6.58 days, which the old `(end - start) / MILLIS_PER_DAY`
+        // rendered as "6 Tage".
+        val startAtTen = DateUtils.dayKey(start) + 10 * 60 * 60 * 1000L
+        val end = DateUtils.endOfDayMillis(startAtTen, 7)
+
+        assertEquals(6, ((end - startAtTen) / day).toInt())          // the old, wrong figure
+        assertEquals(7, DateUtils.calendarDurationDays(startAtTen, end))
+    }
+
+    @Test
+    fun `calendarDurationDays counts the start day and never returns less than 1`() {
+        assertEquals(1, DateUtils.calendarDurationDays(start, start))
+        assertEquals(1, DateUtils.calendarDurationDays(start, DateUtils.endOfDayMillis(start, 1)))
+        // Defensive: an end before the start (corrupt row) must not render as 0 or negative days.
+        assertEquals(1, DateUtils.calendarDurationDays(start, start - 5 * day))
     }
 
     // ── isOpenEnded ──────────────────────────────────────────────────────────────

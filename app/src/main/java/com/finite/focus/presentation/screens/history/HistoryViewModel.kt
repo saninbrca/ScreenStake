@@ -56,20 +56,24 @@ internal fun effectiveEndDate(
 }
 
 /**
- * Duration in days for a finished solo challenge, safe for open-ended ("Kein Enddatum") challenges.
- * Fixed-end challenges use their real [startMs]→[endMs] span. Open-ended challenges carry a
- * ~100-year sentinel end date ([DateUtils.isOpenEnded]) that must NEVER be rendered as a day count —
- * for those we return the actual days survived, derived from the last tracked DailyLog date.
+ * Duration in CALENDAR days for a finished solo challenge, safe for open-ended ("Kein Enddatum")
+ * challenges. Fixed-end challenges count start→[endMs]. Open-ended challenges carry a ~100-year
+ * sentinel end date ([DateUtils.isOpenEnded]) that must NEVER be rendered as a day count — for those
+ * we count up to the last tracked DailyLog date instead, i.e. the days actually survived.
+ *
+ * Both branches defer to [DateUtils.calendarDurationDays], the one day-count definition, so a 7-day
+ * challenge reads back as 7 here exactly as it does on the result dialogs. The former raw-span form
+ * truncated: created at 10:00, a 7-day challenge ends day 7 at 23:59 — a 6.58-day span that showed
+ * as "6 Tage" in the detail header and gave `computeStats` a budget one day short.
  */
 internal fun openEndedSafeDurationDays(
     startMs: Long,
     endMs: Long,
     logs: List<DailyLogEntity>
 ): Int = if (DateUtils.isOpenEnded(startMs, endMs)) {
-    val lastActive = logs.maxOfOrNull { it.date } ?: startMs
-    (((lastActive - startMs) / DateUtils.MILLIS_PER_DAY).toInt() + 1).coerceAtLeast(1)
+    DateUtils.calendarDurationDays(startMs, logs.maxOfOrNull { it.date } ?: startMs)
 } else {
-    ((endMs - startMs) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(1)
+    DateUtils.calendarDurationDays(startMs, endMs)
 }
 
 @HiltViewModel

@@ -370,9 +370,11 @@ class ProfileViewModel @Inject constructor(
             database.challengeDao().getFinishedSoloChallenges()
                 .filter { it.status == "completed" && it.mode == "hard" && it.amountCents != null && it.amountCents > 0 && it.isRedemption == 0 }
                 .forEach { entity ->
+                    // 0 = "no trustworthy duration" and hides the row (ProfileScreen checks > 0).
+                    // Otherwise the shared CALENDAR count, so a 7-day challenge reads back as 7.
                     val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate
                         && !DateUtils.isOpenEnded(entity.startDate, entity.endDate)) {
-                        ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
+                        DateUtils.calendarDurationDays(entity.startDate, entity.endDate)
                     } else 0
                     val originalAmount = entity.amountCents ?: 0
                     val stakeRefund = (originalAmount * 0.80).toInt()
@@ -405,7 +407,7 @@ class ProfileViewModel @Inject constructor(
                     val appFee = if (originalAmount > 0) originalAmount - refundCents else 0
                     val durationDays = if (entity.startDate > 0L && entity.endDate > entity.startDate
                         && !DateUtils.isOpenEnded(entity.startDate, entity.endDate)) {
-                        ((entity.endDate - entity.startDate) / DateUtils.MILLIS_PER_DAY).toInt()
+                        DateUtils.calendarDurationDays(entity.startDate, entity.endDate)
                     } else 0
                     payouts += PayoutChallengeInfo(
                         challengeTitle = entity.appDisplayName ?: entity.appPackageName ?: "App",

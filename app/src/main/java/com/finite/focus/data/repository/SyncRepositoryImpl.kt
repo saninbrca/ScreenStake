@@ -60,6 +60,14 @@ class SyncRepositoryImpl @Inject constructor(
                 val existing = challengeDao.getChallengeById(challenge.id)
                 when {
                     // Brand-new challenge: no row to delete → INSERT can't trigger an FK cascade.
+                    //
+                    // NOTE: a challenge that already ended before this install existed is NOT
+                    // special-cased here, deliberately. Deciding its outcome at this point would
+                    // decide it BEFORE step 2 restores the nested dailyLogs, so a challenge whose
+                    // surviving logs positively prove a breach would never get the chance to settle
+                    // FAILED. The unobserved-install verdict lives in
+                    // [SettleEndedSoftChallengesUseCase], which runs after the whole sync and reads
+                    // the restored history.
                     existing == null -> challengeDao.insertChallenge(challenge.toEntity())
                     // Ghost guard (unchanged): a locally-failed row may still read "active" in Firestore.
                     existing.status != "active" -> Timber.w(

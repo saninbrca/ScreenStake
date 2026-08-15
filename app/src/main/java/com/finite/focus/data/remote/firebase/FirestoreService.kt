@@ -258,6 +258,21 @@ class FirestoreService @Inject constructor(
             .onFailure { e -> Timber.e(e, "FirestoreService: markChallengeFailed failed for $challengeId") }
     }
 
+    /**
+     * Persists a money-free SOFT SOLO terminal status ("completed" | "ended_unverified") via the
+     * `markChallengeSettled` Cloud Function — the non-loss counterpart to [markChallengeFailed].
+     *
+     * [updateChallengeStatus] cannot do this: Firestore rules list `status` among the keys a client
+     * may not write, so that direct update is rejected and the doc stays `active` indefinitely.
+     * Since no scheduled function settles Soft challenges either, the stale-active doc is what made
+     * every reinstall re-pull and re-celebrate an already-finished challenge. The CF is idempotent
+     * and refuses any Hard/group/stake-carrying doc. Fire-and-forget: failures are logged.
+     */
+    suspend fun markChallengeSettled(challengeId: String, status: String) {
+        cloudFunctionsService.markChallengeSettled(challengeId, status)
+            .onFailure { e -> Timber.e(e, "FirestoreService: markChallengeSettled failed for $challengeId") }
+    }
+
     suspend fun updateChallengePayoutStatus(userId: String, challengeId: String, amountCents: Int) {
         try {
             firestore
@@ -417,7 +432,7 @@ class FirestoreService @Inject constructor(
     }
 
     /**
-     * Fetches the user's FINISHED (completed + failed) challenges.
+     * Fetches the user's FINISHED (completed + failed + ended_unverified) challenges.
      *
      * ADDITIVE history-restore path — intentionally a separate method from [fetchActiveChallenges]
      * (its money-critical sibling) so it can NEVER affect the active-sync path. syncUserData()
@@ -425,13 +440,19 @@ class FirestoreService @Inject constructor(
      * only, so without this they are lost whenever Room is cleared (logout, or the SQLCipher
      * plaintext-DB drop). The parser is duplicated (not shared) deliberately to avoid touching the
      * working active path.
+     *
+     * `ended_unverified` is load-bearing here, not cosmetic. Once `markChallengeSettled` stamps that
+     * status the doc stops matching [fetchActiveChallenges] (`status == "active"`), so if it were
+     * missing from this list too the challenge would be invisible to BOTH fetch paths and would
+     * disappear from History on the next reinstall — the exact "challenge vanished" failure that
+     * [com.finite.focus.data.local.db.dao.ChallengeDao.getFinishedSoloChallenges] documents.
      */
     suspend fun fetchFinishedChallenges(userId: String): List<Challenge> {
         return try {
             val snapshot = firestore
                 .collection("users").document(userId)
                 .collection("challenges")
-                .whereIn("status", listOf("completed", "failed"))
+                .whereIn("status", listOf("completed", "failed", "ended_unverified"))
                 .get()
                 .await()
             snapshot.documents.mapNotNull { doc ->

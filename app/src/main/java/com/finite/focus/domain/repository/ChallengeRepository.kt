@@ -14,6 +14,14 @@ interface ChallengeRepository {
      * Updates the challenge status. For [ChallengeStatus.FAILED], [failReason] records the loss cause
      * (UX only): "limit_exceeded" | "abandon" | "permission_violation". It is written to the Room
      * `failReason` column and passed to the `markChallengeFailed` CF. Ignored for non-FAILED statuses.
+     *
+     * Firestore mirroring depends on the transition, because the client can never write `status`
+     * itself (rules block it) — a Cloud Function does it with Admin rights:
+     *  - FAILED → `markChallengeFailed` CF (all modes; unchanged).
+     *  - COMPLETED / [ChallengeStatus.ENDED_UNVERIFIED] on a money-free SOFT SOLO row →
+     *    `markChallengeSettled` CF. Without this the doc stays `active` forever and every reinstall
+     *    re-pulls and re-celebrates it.
+     *  - Everything else (notably HARD) → the pre-existing best-effort direct write, untouched.
      */
     suspend fun updateChallengeStatus(
         id: String,
@@ -35,14 +43,13 @@ interface ChallengeRepository {
     fun getAllChallenges(): Flow<List<Challenge>>
     /** Marks the congratulations overlay as shown so it won't appear again. */
     suspend fun markCompletionShown(id: String): Result<Unit>
-    /** Returns the first completed Hard Mode challenge whose overlay has not yet been shown, or null. */
-    suspend fun getUnshownCompletedHardChallenge(): Result<Challenge?>
-    /** Returns the first completed Soft Mode challenge whose overlay has not yet been shown, or null. */
-    suspend fun getUnshownCompletedSoftChallenge(): Result<Challenge?>
-    /** Returns the first failed Soft Mode challenge whose result screen has not yet been shown, or null. */
-    suspend fun getUnshownFailedSoftChallenge(): Result<Challenge?>
-    /** Returns the first failed Hard Mode challenge whose overlay has not yet been shown, or null. */
-    suspend fun getUnshownFailedHardChallenge(): Result<Challenge?>
+    /**
+     * ALL solo challenges in a terminal state whose result surface has not been shown yet, ordered
+     * oldest-first. Backs the Dashboard's result queue — see
+     * [com.finite.focus.data.local.db.dao.ChallengeDao.getUnshownTerminalChallenges] for the
+     * selection and ordering rules.
+     */
+    suspend fun getUnshownTerminalChallenges(): Result<List<Challenge>>
     /** Writes pendingLimitValue + pendingLimitAppliesAt to Firestore first, then Room. */
     suspend fun updatePendingLimit(challengeId: String, pendingValue: Int, appliesAt: Long): Result<Unit>
 }

@@ -23,5 +23,30 @@ enum class ChallengeStatus {
      * Never written to Firestore (group shadow rows are local-only) and never set on a solo
      * challenge.
      */
-    ENDED
+    ENDED,
+
+    /**
+     * MONEY-FREE terminal state for a **SOFT SOLO** challenge whose active window this install
+     * could never have observed: it was synced down for the first time with an end date that had
+     * already passed *before the app was installed* (see `isUnobservedSoftChallenge`).
+     *
+     * Why it is NOT [COMPLETED]: the win/loss verdict is derived from `DailyLog.limitExceeded`
+     * rows, and an uninstall destroys Room. A reinstall therefore re-pulls the still-`active`
+     * Firestore doc onto an empty log set, and the settlement verdict fail-opens to "clean" —
+     * celebrating a win the app never actually observed, on a challenge that may well have been
+     * breached. This status is the honest answer: the challenge is over, and we do not know how
+     * it went.
+     *
+     * Deliberately NOT keyed on log emptiness. A disciplined user legitimately produces few or no
+     * log rows (a zero-usage day writes no row on EMUI), so "no logs" would punish exactly the
+     * users who did best. The trigger is install provenance, never evidence volume.
+     *
+     * Money-free by construction: only ever set on `mode == SOFT` rows with no PaymentIntent and
+     * no group id, so it can never stand in for a Hard Mode settlement or strand a stake.
+     *
+     * Unlike [ENDED] this IS persisted to Firestore — via the `markChallengeSettled` CF, since the
+     * client cannot write `status` itself. That write is what stops the next reinstall from
+     * re-pulling the doc as `active` and re-running this whole cycle.
+     */
+    ENDED_UNVERIFIED
 }

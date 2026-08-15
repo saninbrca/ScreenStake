@@ -57,34 +57,38 @@ interface ChallengeDao {
     suspend fun markCompletionShown(id: String)
 
     /**
-     * Returns the first SOLO Hard Mode challenge that completed successfully but whose overlay has
-     * not yet been shown.
+     * EVERY terminal challenge whose result surface has not been shown yet, oldest first — the
+     * backing query for the Dashboard's result QUEUE.
      *
-     * The `groupChallengeId IS NULL` half is load-bearing: a group shadow row carries
-     * `mode = 'hard'`, and since group rows now PERSIST as terminal instead of being deleted (so
-     * they show up in History), a mode-only filter would pop the SOLO Hard Mode win dialog — with
-     * solo refund copy — for a group settlement. The group outcome has its own surfaces
-     * (`NotificationHelper.sendGroupChallengePayoutReceived` + the group detail screen).
+     * Replaces five separate `LIMIT 1` queries (completed-hard / completed-soft / failed-hard /
+     * failed-soft / ended-unverified). Those made the Dashboard structurally incapable of showing
+     * more than one result per visit: it read one row, and the only way to reach the next was a tab
+     * round-trip that recreated the ViewModel. When several challenges settled at once — the normal
+     * case after a reinstall or a permission-deadline sweep — the rest silently queued up behind
+     * navigation. The caller now takes the whole list and drains it on dismiss.
+     *
+     * `ORDER BY endDate, id` makes the drain order deterministic and chronological. The old queries
+     * had no ORDER BY at all, so the single row SQLite happened to return was arbitrary; `id` is the
+     * tiebreaker for a mass settlement where several rows share an `endDate`.
+     *
+     * `groupChallengeId IS NULL OR = ''` excludes group shadow rows, and is load-bearing: a shadow
+     * row carries `mode = 'hard'`, and since group rows now PERSIST as terminal instead of being
+     * deleted (so they appear in History), including them would pop the SOLO Hard Mode win dialog —
+     * with solo refund copy — for a group settlement. The group outcome has its own surfaces
+     * (`NotificationHelper.sendGroupChallengePayoutReceived` + the group detail screen). Soft rows
+     * never carry a group id, so this is exactly the old per-query behaviour, unified.
+     *
+     * `'ended'` is deliberately NOT included: that is the group-local "awaiting settlement" state,
+     * which has no result surface at all. Only `completed`, `failed` and `ended_unverified` do.
      */
-    @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'hard' AND completionShown = 0 AND (groupChallengeId IS NULL OR groupChallengeId = '') LIMIT 1")
-    suspend fun getUnshownCompletedHardChallenge(): ChallengeEntity?
-
-    /** Returns the first Soft Mode challenge that completed successfully but whose overlay has not yet been shown. */
-    @Query("SELECT * FROM challenges WHERE status = 'completed' AND mode = 'soft' AND completionShown = 0 LIMIT 1")
-    suspend fun getUnshownCompletedSoftChallenge(): ChallengeEntity?
-
-    /** Returns the first Soft Mode challenge that failed but whose result screen has not yet been shown. */
-    @Query("SELECT * FROM challenges WHERE status = 'failed' AND mode = 'soft' AND completionShown = 0 LIMIT 1")
-    suspend fun getUnshownFailedSoftChallenge(): ChallengeEntity?
-
-    /**
-     * Returns the first SOLO Hard Mode challenge that failed but whose overlay has not yet been
-     * shown. `groupChallengeId IS NULL` for the same reason as
-     * [getUnshownCompletedHardChallenge] — a persisted group shadow row must not raise the solo
-     * loss dialog.
-     */
-    @Query("SELECT * FROM challenges WHERE status = 'failed' AND mode = 'hard' AND completionShown = 0 AND (groupChallengeId IS NULL OR groupChallengeId = '') LIMIT 1")
-    suspend fun getUnshownFailedHardChallenge(): ChallengeEntity?
+    @Query("""
+        SELECT * FROM challenges
+        WHERE completionShown = 0
+          AND status IN ('completed', 'failed', 'ended_unverified')
+          AND (groupChallengeId IS NULL OR groupChallengeId = '')
+        ORDER BY endDate ASC, id ASC
+    """)
+    suspend fun getUnshownTerminalChallenges(): List<ChallengeEntity>
 
     @Query("SELECT COUNT(*) FROM challenges WHERE status = 'completed'")
     suspend fun getCompletedCount(): Int
@@ -104,7 +108,7 @@ interface ChallengeDao {
     @Query("DELETE FROM challenges WHERE id = :id")
     suspend fun deleteById(id: String)
 
-    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed', 'ended') ORDER BY endDate DESC LIMIT 3")
+    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed', 'ended', 'ended_unverified') ORDER BY endDate DESC LIMIT 3")
     suspend fun getRecentFinishedChallenges(): List<ChallengeEntity>
 
     /**
@@ -112,8 +116,10 @@ interface ChallengeDao {
      * date passed on-device is RECORDED and visible while its server settlement is still pending
      * (see [com.finite.focus.domain.model.ChallengeStatus.ENDED]) — the alternative, dropping it until
      * settlement lands, is exactly the "challenge vanished" bug.
+     * `'ended_unverified'` is included for the same reason: the challenge really happened and must
+     * stay in the user's record, even though its outcome could not be established.
      */
-    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed', 'ended') ORDER BY endDate DESC")
+    @Query("SELECT * FROM challenges WHERE status IN ('completed', 'failed', 'ended', 'ended_unverified') ORDER BY endDate DESC")
     suspend fun getFinishedSoloChallenges(): List<ChallengeEntity>
 
     @Query("UPDATE challenges SET endDate = :endDate WHERE id = :id")

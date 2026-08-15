@@ -86,8 +86,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val successDialogState by viewModel.successDialogState.collectAsStateWithLifecycle()
-    val failedHardChallenge by viewModel.failedHardChallenge.collectAsStateWithLifecycle()
+    val currentResult by viewModel.currentResult.collectAsStateWithLifecycle()
     val redemptionChallenges by viewModel.redemptionChallenges.collectAsStateWithLifecycle()
     val showUpdateBanner by viewModel.showUpdateBanner.collectAsStateWithLifecycle()
     val updateUrl by viewModel.updateUrl.collectAsStateWithLifecycle()
@@ -246,30 +245,41 @@ fun DashboardScreen(
             }
         }
 
-        successDialogState?.let { state ->
-            ChallengeSuccessDialog(
-                challenge = state.challenge,
-                allLogs = state.allLogs,
-                streak = state.streak,
-                onDismiss = { viewModel.dismissSuccessDialog() },
+        // One result surface at a time, drained from the ViewModel's queue: dismissing shows the
+        // next queued result immediately, without needing a tab round-trip.
+        when (val result = currentResult) {
+            is PendingResult.Win -> ChallengeSuccessDialog(
+                challenge = result.challenge,
+                allLogs = result.allLogs,
+                streak = result.streak,
+                onDismiss = { viewModel.dismissCurrentResult() },
                 onStartNewChallenge = {
-                    viewModel.dismissSuccessDialog()
+                    viewModel.dismissCurrentResult()
                     onAddChallenge()
                 },
                 onViewHistory = { viewModel.openSuccessChallengeHistory() }
             )
-        }
 
-        failedHardChallenge?.let { state ->
-            ChallengeFailedDialog(
-                challenge = state.challenge,
-                allLogs = state.allLogs,
-                onDismiss = { viewModel.dismissHardFailOverlay() },
+            is PendingResult.HardLoss -> ChallengeFailedDialog(
+                challenge = result.challenge,
+                allLogs = result.allLogs,
+                onDismiss = { viewModel.dismissCurrentResult() },
                 onStartNewChallenge = {
-                    viewModel.dismissHardFailOverlay()
+                    viewModel.dismissCurrentResult()
                     onAddChallenge()
                 }
             )
+
+            is PendingResult.Unverified -> ChallengeUnverifiedDialog(
+                challenge = result.challenge,
+                onDismiss = { viewModel.dismissCurrentResult() },
+                onStartNewChallenge = {
+                    viewModel.dismissCurrentResult()
+                    onAddChallenge()
+                }
+            )
+
+            null -> Unit
         }
 
         broadcast?.let { msg ->

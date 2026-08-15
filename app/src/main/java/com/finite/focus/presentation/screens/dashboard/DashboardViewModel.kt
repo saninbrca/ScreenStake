@@ -8,6 +8,8 @@ import com.finite.focus.data.local.db.DetoxDatabase
 import com.finite.focus.data.local.db.entity.ChallengeEntity
 import com.finite.focus.data.repository.AppConfigRepository
 import com.finite.focus.domain.model.Challenge
+import com.finite.focus.domain.model.ChallengeMode
+import com.finite.focus.domain.model.ChallengeStatus
 import com.finite.focus.domain.model.DailyLog
 import com.finite.focus.domain.model.DailyStats
 import com.finite.focus.domain.repository.ChallengeRepository
@@ -22,13 +24,17 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import com.finite.focus.util.DateUtils
@@ -51,17 +57,72 @@ private const val KEY_BROADCAST_LAST_SEEN = "last_seen_broadcast_id"
  */
 private const val DASHBOARD_REFRESH_DEBOUNCE_MS = 250L
 
-data class SuccessDialogState(
-    val challenge: Challenge,
-    val allLogs: List<DailyLog>,
-    val streak: Int
-)
+/**
+ * One result surface waiting to be shown, fully resolved and ready to render.
+ *
+ * The Dashboard drains a QUEUE of these on dismiss (see [DashboardViewModel.resultQueue]). Before
+ * this existed the Dashboard could show at most ONE result per visit — it read a single row with
+ * `LIMIT 1`, dismissing rendered nothing new, and the only way to reach the next result was a tab
+ * round-trip that recreated the whole ViewModel. A user whose challenges all settled at once (the
+ * normal case after a reinstall, or after a permission-deadline sweep) had to leave and re-enter
+ * the Dashboard once per challenge to see them.
+ *
+ * The Soft Mode loss is NOT represented here on purpose: it is a full screen reached by navigation,
+ * not a dialog, so it is dispatched directly in [DashboardViewModel.presentNextResult].
+ */
+/**
+ * Which result surface a terminal challenge belongs on. Split out as a pure function so the mapping
+ * that decides whether a user is shown green, red, neutral, or a full-screen loss can be tested
+ * without standing up a ViewModel.
+ */
+internal enum class ResultSurface {
+    /** Green [ChallengeSuccessDialog]. */
+    WIN,
+    /** Red [ChallengeFailedDialog] — solo Hard Mode. */
+    HARD_LOSS,
+    /** Full-screen `SoftFailResultScreen`, reached by navigation rather than a dialog. */
+    SOFT_LOSS_SCREEN,
+    /** Neutral [ChallengeUnverifiedDialog]. */
+    UNVERIFIED,
+    /** Not a result-bearing state — nothing to show. */
+    NONE,
+}
 
-/** State backing the unified RED loss dialog ([ChallengeFailedDialog]). */
-data class FailedDialogState(
-    val challenge: Challenge,
-    val allLogs: List<DailyLog>
-)
+/**
+ * Maps a challenge's terminal state to its result surface.
+ *
+ * `ACTIVE` and `ENDED` map to [ResultSurface.NONE] deliberately: `ENDED` is the group-local
+ * "awaiting settlement" state, whose outcome is not known yet and which has its own surfaces.
+ */
+internal fun resultSurfaceFor(status: ChallengeStatus, mode: ChallengeMode): ResultSurface = when {
+    status == ChallengeStatus.COMPLETED -> ResultSurface.WIN
+    status == ChallengeStatus.ENDED_UNVERIFIED -> ResultSurface.UNVERIFIED
+    status == ChallengeStatus.FAILED && mode == ChallengeMode.SOFT -> ResultSurface.SOFT_LOSS_SCREEN
+    status == ChallengeStatus.FAILED -> ResultSurface.HARD_LOSS
+    else -> ResultSurface.NONE
+}
+
+sealed interface PendingResult {
+    val challenge: Challenge
+
+    /** Green win dialog ([ChallengeSuccessDialog]) — Soft or Hard. */
+    data class Win(
+        override val challenge: Challenge,
+        val allLogs: List<DailyLog>,
+        val streak: Int,
+    ) : PendingResult
+
+    /** Unified RED loss dialog ([ChallengeFailedDialog]) — solo Hard Mode. */
+    data class HardLoss(
+        override val challenge: Challenge,
+        val allLogs: List<DailyLog>,
+    ) : PendingResult
+
+    /** Neutral acknowledgement ([ChallengeUnverifiedDialog]) — outcome could not be established. */
+    data class Unverified(
+        override val challenge: Challenge,
+    ) : PendingResult
+}
 
 /** A remote admin broadcast shown once on the Dashboard. */
 data class BroadcastMessage(
@@ -127,16 +188,36 @@ class DashboardViewModel @Inject constructor(
     // Only touched from viewModelScope (Main dispatcher), so no synchronization is needed.
     private var initialLoadComplete = false
 
-    /** Non-null while the success dialog should be shown (Soft or Hard Mode). Null = hidden. */
-    private val _successDialogChallengeId = MutableStateFlow<String?>(null)
-    val successDialogChallengeId: StateFlow<String?> = _successDialogChallengeId.asStateFlow()
+    /**
+     * The result surface currently on screen, or null when none is showing.
+     * Dismissing it pops the next one off [resultQueue] — see [dismissCurrentResult].
+     */
+    private val _currentResult = MutableStateFlow<PendingResult?>(null)
+    val currentResult: StateFlow<PendingResult?> = _currentResult.asStateFlow()
 
-    private val _successDialogState = MutableStateFlow<SuccessDialogState?>(null)
-    val successDialogState: StateFlow<SuccessDialogState?> = _successDialogState.asStateFlow()
+    /**
+     * Terminal challenges still waiting for their result surface, oldest first.
+     *
+     * Rebuilt from Room by [refreshResultQueue] and drained by [presentNextResult]. Only ever
+     * touched from `viewModelScope` (Main dispatcher), so no synchronisation is needed — same
+     * stance as [initialLoadComplete].
+     */
+    private var resultQueue: ArrayDeque<Challenge> = ArrayDeque()
 
-    /** Non-null while the Hard Mode loss dialog should be shown. Null = dialog hidden. */
-    private val _failedHardChallenge = MutableStateFlow<FailedDialogState?>(null)
-    val failedHardChallenge: StateFlow<FailedDialogState?> = _failedHardChallenge.asStateFlow()
+    /**
+     * The day the DailyLog observer is currently subscribed to.
+     *
+     * A StateFlow rather than a value captured once at construction, and that is the entire point:
+     * the observer used to pin `todayKey()` at ViewModel-construction time and keep it forever, so
+     * an app left open across midnight stayed subscribed to YESTERDAY's key — new-day writes emitted
+     * nothing, `refreshStats()` never ran, and the cards showed stale data until the ViewModel
+     * happened to be recreated. Re-keying this flow re-subscribes the observer to the new day.
+     *
+     * Updated from two independent places, deliberately: [observeDayRollover] (a timer for the app
+     * sitting open through midnight) and [loadStats] (a RESUMED backstop, because coroutine `delay`
+     * is not guaranteed to fire while the device is dozing).
+     */
+    private val currentDayKey = MutableStateFlow(DateUtils.todayKey())
 
     /** Failed Hard Mode challenges with an active redemption window. Empty = banner hidden. */
     private val _redemptionChallenges = MutableStateFlow<List<ChallengeEntity>>(emptyList())
@@ -157,6 +238,7 @@ class DashboardViewModel @Inject constructor(
 
     init {
         observeDailyLogChanges()
+        observeDayRollover()
         observeUpdateBanner()
         loadLatestBroadcast()
     }
@@ -232,9 +314,17 @@ class DashboardViewModel @Inject constructor(
             if (_uiState.value !is DashboardUiState.Success) {
                 _uiState.value = DashboardUiState.Loading
             }
-            // DELAY FIX: surface a device-detected Hard Mode loss immediately from Room — the worker
-            // already wrote status=failed locally, so we don't block this dialog on the sync round-trip.
-            checkUnshownFailedHard()
+            // RESUMED day backstop: the app may have been in the background across midnight, and a
+            // dozing device is not guaranteed to have run observeDayRollover's timer. Re-keying here
+            // costs nothing when the day is unchanged (StateFlow drops equal values).
+            currentDayKey.value = DateUtils.todayKey()
+            // DELAY FIX (generalised): surface everything ALREADY terminal in Room without waiting
+            // on the network. This used to cover only a device-detected Hard Mode loss; the queue
+            // makes it apply to every result kind for free. The settle below can only ADD results,
+            // never retract one, so showing these early is safe — and it deliberately does NOT
+            // change the settle-needs-sync dependency, which stays exactly where it was.
+            refreshResultQueue()
+            presentNextResult()
             // Wait for the one-shot sync to finish before reading Room.
             // If it already completed this is a no-op.
             syncJob.join()
@@ -251,45 +341,13 @@ class DashboardViewModel @Inject constructor(
             refreshStats()
             // First authoritative state is now set: the Room observer may update it from here on.
             initialLoadComplete = true
-            // Check if there is a completed challenge (Hard or Soft) to show the success dialog
-            if (_successDialogState.value == null) {
-                val sp = appContext.getSharedPreferences("detox_win_popup", Context.MODE_PRIVATE)
-                val completedHard = challengeRepository.getUnshownCompletedHardChallenge()
-                    .getOrNull()
-                val completedSoft = if (completedHard == null) {
-                    challengeRepository.getUnshownCompletedSoftChallenge().getOrNull()
-                } else null
-                val completedChallenge = completedHard ?: completedSoft
-                if (completedChallenge != null && !sp.getBoolean("win_shown_${completedChallenge.id}", false)) {
-                    Timber.d("Dashboard: unseen completed challenge — ${completedChallenge.id} mode=${completedChallenge.mode}")
-                    val logs = dailyLogRepository.getLogsForChallengeOnce(completedChallenge.id)
-                    val streak = getChallengeStreakUseCase(completedChallenge)
-                    _successDialogState.value = SuccessDialogState(completedChallenge, logs, streak)
-                    _successDialogChallengeId.value = completedChallenge.id
-                    // Mark ON SHOW (mirrors checkUnshownFailedHard): a process kill / EMUI swipe-kill
-                    // before dismissal must never re-pop the dialog on the next launch. The dismiss-time
-                    // write below stays as an idempotent no-op.
-                    sp.edit().putBoolean("win_shown_${completedChallenge.id}", true).apply()
-                    challengeRepository.markCompletionShown(completedChallenge.id)
-                        .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown on-show for ${completedChallenge.id}") }
-                }
-            }
 
-            // Check if there is a Soft Mode challenge that failed while the app was closed
-            challengeRepository.getUnshownFailedSoftChallenge()
-                .onSuccess { challenge ->
-                    if (challenge != null) {
-                        Timber.d("Dashboard: unseen failed Soft Mode challenge found — ${challenge.id}")
-                        challengeRepository.markCompletionShown(challenge.id)
-                        val streak = getChallengeStreakUseCase(challenge)
-                        TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
-                    }
-                }
-                .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Soft Mode challenge") }
-
-            // Re-check after sync so a SERVER-detected loss (reconciled active→failed during sync) is
-            // also caught this session. No-op if the early Room-first check already surfaced it.
-            checkUnshownFailedHard()
+            // Re-read after the sync + settle: this picks up challenges the settle just finalised
+            // AND server-detected losses reconciled active→failed during the sync. Anything already
+            // surfaced above is excluded automatically — presenting marks `completionShown`, which
+            // is what the query filters on.
+            refreshResultQueue()
+            presentNextResult()
 
             if (!redemptionBannerDismissed) {
                 val now = System.currentTimeMillis()
@@ -301,38 +359,149 @@ class DashboardViewModel @Inject constructor(
     }
 
     /**
-     * Surfaces the unified RED loss dialog for the first unshown failed Hard Mode challenge, read
-     * from Room. Marks `completionShown` ON SHOW (not on dismiss) so the dialog can never re-pop on a
-     * later RESUME / sync and the dismiss-race is closed. No-op if a dialog is already showing or none
-     * is found. (`completionShown` is shared with the WIN dialog, but the two gate on mutually
-     * exclusive statuses — completed vs failed — so marking it here can never suppress a win.)
+     * Rebuilds [resultQueue] from Room, oldest first.
+     *
+     * A full rebuild rather than an append, and it is safe precisely because presenting a result
+     * marks `completionShown`: the query therefore never returns anything already shown or on
+     * screen, so the rebuild is exactly "everything still owed, in chronological order". That also
+     * means calling it repeatedly (early, then again after the settle) can never duplicate an entry.
+     *
+     * A read failure leaves the existing queue untouched — a transient Room error must not silently
+     * discard results the user is still owed.
      */
-    private suspend fun checkUnshownFailedHard() {
-        if (_failedHardChallenge.value != null) return
-        challengeRepository.getUnshownFailedHardChallenge()
-            .onSuccess { challenge ->
-                if (challenge != null) {
-                    Timber.d("Dashboard: unseen failed Hard Mode challenge found — ${challenge.id} reason=${challenge.failReason}")
-                    val logs = dailyLogRepository.getLogsForChallengeOnce(challenge.id)
-                    _failedHardChallenge.value = FailedDialogState(challenge, logs)
-                    challengeRepository.markCompletionShown(challenge.id)
-                        .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown on-show for ${challenge.id}") }
+    private suspend fun refreshResultQueue() {
+        challengeRepository.getUnshownTerminalChallenges()
+            .onSuccess { pending ->
+                resultQueue = ArrayDeque(pending)
+                if (pending.isNotEmpty()) {
+                    Timber.d("Dashboard: ${pending.size} unshown result(s) queued — ${pending.map { it.id }}")
                 }
             }
-            .onFailure { e -> Timber.w(e, "Dashboard: failed to check failed Hard Mode challenge") }
+            .onFailure { e -> Timber.w(e, "Dashboard: failed to read unshown results — keeping current queue") }
     }
 
     /**
-     * Observes today's DailyLog rows in Room.  Whenever a conscious open is persisted
+     * Pops the next result off [resultQueue] and presents it. No-op while one is already on screen.
+     *
+     * `completionShown` is written ON SHOW, never on dismiss — a process kill or EMUI swipe-kill
+     * between showing and dismissing must not re-pop the same result on the next launch. The
+     * dismiss-time write in [dismissCurrentResult] stays as an idempotent backstop.
+     *
+     * The Soft Mode loss is dispatched by NAVIGATION (it is a full screen, not a dialog) and stops
+     * the drain: the user is leaving the Dashboard, so anything still queued would be rendering
+     * behind a screen they can't see. The remaining results resume on the next RESUMED pass, which
+     * rebuilds the queue from Room — nothing is lost, because unshown results are still unshown.
+     */
+    private suspend fun presentNextResult() {
+        if (_currentResult.value != null) return
+        val winPrefs = appContext.getSharedPreferences("detox_win_popup", Context.MODE_PRIVATE)
+
+        while (resultQueue.isNotEmpty()) {
+            val challenge = resultQueue.removeFirst()
+
+            val presentation = when (resultSurfaceFor(challenge.status, challenge.mode)) {
+                // Soft Mode loss → its own full screen. Mark shown, navigate, and stop draining.
+                ResultSurface.SOFT_LOSS_SCREEN -> {
+                    Timber.d("Dashboard: unseen failed Soft Mode challenge — ${challenge.id}")
+                    markResultShown(challenge.id)
+                    TrackedAppEventBus.emitNavigateToSoftFailResult(
+                        challenge.id, getChallengeStreakUseCase(challenge)
+                    )
+                    return
+                }
+
+                ResultSurface.WIN -> {
+                    // Legacy belt-and-braces gate kept from the pre-queue code. A row flagged here
+                    // but not in Room is stale state from an older build: mark it shown so it drops
+                    // out of the query for good instead of being re-queued on every pass.
+                    if (winPrefs.getBoolean("win_shown_${challenge.id}", false)) {
+                        markResultShown(challenge.id)
+                        continue
+                    }
+                    winPrefs.edit().putBoolean("win_shown_${challenge.id}", true).apply()
+                    PendingResult.Win(
+                        challenge = challenge,
+                        allLogs = dailyLogRepository.getLogsForChallengeOnce(challenge.id),
+                        streak = getChallengeStreakUseCase(challenge),
+                    )
+                }
+
+                ResultSurface.UNVERIFIED -> PendingResult.Unverified(challenge)
+
+                ResultSurface.HARD_LOSS -> PendingResult.HardLoss(
+                    challenge = challenge,
+                    allLogs = dailyLogRepository.getLogsForChallengeOnce(challenge.id),
+                )
+
+                // The query only returns result-bearing statuses; anything else is a data
+                // inconsistency. Skip it rather than render an empty dialog.
+                ResultSurface.NONE -> {
+                    Timber.w("Dashboard: unexpected status ${challenge.status} queued for ${challenge.id} — skipping")
+                    continue
+                }
+            }
+
+            Timber.d("Dashboard: presenting ${presentation::class.simpleName} for ${challenge.id} (reason=${challenge.failReason})")
+            _currentResult.value = presentation
+            markResultShown(challenge.id)
+            return
+        }
+    }
+
+    private suspend fun markResultShown(challengeId: String) {
+        challengeRepository.markCompletionShown(challengeId)
+            .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for $challengeId") }
+    }
+
+    /**
+     * Re-subscribes the DailyLog observer when the calendar day changes while the app sits open.
+     *
+     * Without this the Dashboard silently stops updating at midnight: the observer stays bound to
+     * yesterday's day key, so today's writes emit nothing. It used to be masked by an accident —
+     * the bottom nav recreated the ViewModel on every tab return, re-pinning the day — but that
+     * mask disappears the moment results stop depending on ViewModel recreation, and the bug was
+     * always real for anyone who simply left the app on the Dashboard overnight.
+     *
+     * Timer-based so it fires WITHOUT any user interaction; [loadStats] re-keys as well to cover a
+     * dozing device, where `delay` may not fire on time.
+     */
+    private fun observeDayRollover() {
+        viewModelScope.launch {
+            while (isActive) {
+                // Never busy-spin: a clock landing a hair before midnight re-arms for ~1s.
+                val waitMs = (DateUtils.nextMidnightTimestamp() - System.currentTimeMillis())
+                    .coerceAtLeast(1_000L)
+                delay(waitMs)
+                val newDay = DateUtils.todayKey()
+                if (currentDayKey.value != newDay) {
+                    Timber.i("Dashboard: day rollover — re-keying DailyLog observer to $newDay")
+                    currentDayKey.value = newDay
+                }
+            }
+        }
+    }
+
+    /**
+     * Observes the CURRENT day's DailyLog rows in Room. Whenever a conscious open is persisted
      * (or any other intra-day write happens), Room emits a new list and we re-query stats
      * without showing a Loading spinner — the existing data stays visible while it updates.
-     * [drop(1)] skips the initial emission because [loadStats] already handles the first load.
+     *
+     * Keyed off [currentDayKey] via `flatMapLatest` rather than a day captured once at construction:
+     * when the day rolls over, the old day's subscription is cancelled and a new one starts, so the
+     * Dashboard follows the user into the new day instead of freezing on yesterday's rows.
+     *
+     * `drop(1)` skips only the very FIRST emission of the merged stream, which [loadStats] already
+     * owns. It does not swallow day-change emissions: those arrive later, and refreshing on them is
+     * exactly the point — that emission is what repaints the cards at midnight.
      */
-    @OptIn(FlowPreview::class) // debounce(Long) is still @FlowPreview in coroutines 1.7.3
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class) // debounce(Long)/flatMapLatest in coroutines 1.7.3
     private fun observeDailyLogChanges() {
-        val today = DateUtils.todayKey()
         viewModelScope.launch {
-            dailyLogRepository.observeLogsForDate(today)
+            currentDayKey
+                .flatMapLatest { day ->
+                    Timber.d("Dashboard: observing DailyLogs for day=$day")
+                    dailyLogRepository.observeLogsForDate(day)
+                }
                 .drop(1)
                 // Collapse a sync write-burst into ONE trailing recompute (after 250ms of quiet)
                 // so the cards don't flicker through intermediate zeroed frames. Trailing-edge:
@@ -345,10 +514,7 @@ class DashboardViewModel @Inject constructor(
                         Timber.d("Dashboard: DailyLog changed before initial load — skipping (loadStats owns first state)")
                         return@collect
                     }
-                    Timber.d("Dashboard: DailyLog changed (${logs.size} rows for today) — refreshing stats")
-                    logs.forEach { log ->
-                        Timber.d("Reading DailyLog for ${log.challengeId} date=$today: opens=${log.consciousOpens}")
-                    }
+                    Timber.d("Dashboard: DailyLog changed (${logs.size} rows) — refreshing stats")
                     refreshStats()
                 }
         }
@@ -379,36 +545,31 @@ class DashboardViewModel @Inject constructor(
         _redemptionChallenges.value = emptyList()
     }
 
-    /** "Im Verlauf ansehen" CTA: dismisses the dialog and deep-links to the challenge's history detail. */
+    /** "Im Verlauf ansehen" CTA: dismisses the win dialog and deep-links to its history detail. */
     fun openSuccessChallengeHistory() {
-        val challengeId = _successDialogChallengeId.value ?: return
-        dismissSuccessDialog()
+        val challengeId = (_currentResult.value as? PendingResult.Win)?.challenge?.id ?: return
+        dismissCurrentResult()
         TrackedAppEventBus.emitNavigateToHistoryDetail(challengeId)
     }
 
     /**
-     * Called when the user dismisses the success dialog (X button or "Zurück zum Dashboard").
-     * The shown-markers are already written on SHOW (see loadStats); this write is a defensive no-op.
+     * Dismisses the result on screen and immediately presents the next queued one — the drain step
+     * that lets several results be seen in a single Dashboard visit instead of one per tab
+     * round-trip.
+     *
+     * The shown-markers were already written ON SHOW ([presentNextResult]); the writes here are
+     * idempotent backstops, kept so a marker can still land if the on-show write failed.
      */
-    fun dismissSuccessDialog() {
-        val challengeId = _successDialogChallengeId.value ?: return
-        _successDialogState.value = null
-        _successDialogChallengeId.value = null
+    fun dismissCurrentResult() {
+        val dismissed = _currentResult.value ?: return
+        _currentResult.value = null
         viewModelScope.launch {
-            appContext.getSharedPreferences("detox_win_popup", Context.MODE_PRIVATE)
-                .edit().putBoolean("win_shown_$challengeId", true).apply()
-            challengeRepository.markCompletionShown(challengeId)
-                .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for $challengeId") }
-        }
-    }
-
-    /** Called when the user dismisses or acts on the Hard Mode loss dialog (X, back link, or CTA). */
-    fun dismissHardFailOverlay() {
-        val state = _failedHardChallenge.value ?: return
-        _failedHardChallenge.value = null
-        viewModelScope.launch {
-            challengeRepository.markCompletionShown(state.challenge.id)
-                .onFailure { e -> Timber.e(e, "Dashboard: failed to mark completionShown for ${state.challenge.id}") }
+            if (dismissed is PendingResult.Win) {
+                appContext.getSharedPreferences("detox_win_popup", Context.MODE_PRIVATE)
+                    .edit().putBoolean("win_shown_${dismissed.challenge.id}", true).apply()
+            }
+            markResultShown(dismissed.challenge.id)
+            presentNextResult()
         }
     }
 }

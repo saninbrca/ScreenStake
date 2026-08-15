@@ -8,8 +8,10 @@ import com.finite.focus.domain.model.LimitType
 import com.finite.focus.domain.repository.ChallengeRepository
 import com.finite.focus.domain.repository.DailyLogRepository
 import com.finite.focus.util.DateUtils
+import com.finite.focus.util.InstallInfoProvider
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -32,6 +34,7 @@ class SettleEndedSoftChallengesUseCaseTest {
 
     private lateinit var challengeRepository: ChallengeRepository
     private lateinit var dailyLogRepository: DailyLogRepository
+    private lateinit var installInfoProvider: InstallInfoProvider
     private lateinit var useCase: SettleEndedSoftChallengesUseCase
 
     private val day = DateUtils.MILLIS_PER_DAY
@@ -41,13 +44,20 @@ class SettleEndedSoftChallengesUseCaseTest {
     fun setUp() {
         challengeRepository = mockk()
         dailyLogRepository = mockk()
+        // Default: installed long before any test challenge started, i.e. "observed live", so the
+        // pre-existing FAILED/COMPLETED assertions below exercise the ordinary verdict. The
+        // reinstall cases override this.
+        installInfoProvider = mockk()
+        every { installInfoProvider.installedAt } returns now - 365 * day
         // Default: clean history → not exceeded. Individual tests override as needed.
         // Must be stubbed, not left to the fail-open: an unstubbed call throws a MockKException
         // that the use case swallows into an empty history, which would make every COMPLETED
         // assertion below pass through the error path instead of the settlement verdict.
         coEvery { dailyLogRepository.getLogsForChallengeOnce(any()) } returns emptyList()
         coEvery { challengeRepository.updateChallengeStatus(any(), any(), any()) } returns Result.success(Unit)
-        useCase = SettleEndedSoftChallengesUseCase(challengeRepository, dailyLogRepository)
+        useCase = SettleEndedSoftChallengesUseCase(
+            challengeRepository, dailyLogRepository, installInfoProvider
+        )
     }
 
     private fun challenge(
@@ -301,5 +311,122 @@ class SettleEndedSoftChallengesUseCaseTest {
         useCase(SettleEndedSoftChallengesUseCase.Trigger.ENFORCEMENT_STOP)
 
         coVerify(exactly = 0) { challengeRepository.updateChallengeStatus(any(), any(), any()) }
+    }
+
+    // ── Unobserved-install verdict (ENDED_UNVERIFIED) ────────────────────────────
+    // The install is stamped AFTER the challenge ended, i.e. the reinstall case: nothing on this
+    // device could have watched the window.
+
+    private fun installedAfterTheChallengeEnded() {
+        every { installInfoProvider.installedAt } returns now - day
+    }
+
+    @Test
+    fun `POSITIVE PROOF outranks provenance — a surviving breach log still settles FAILED`() = runTest {
+        // The rule this commit exists for. The challenge was never observed by this install, but a
+        // restored log positively proves a breach, so it must lose through the ordinary path —
+        // NOT be excused as "unverifiable". Presence of evidence is evidence.
+        installedAfterTheChallengeEnded()
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns
+            listOf(dailyLog(limitExceeded = true))
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.FAILED, "limit_exceeded")
+        }
+        coVerify(exactly = 0) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.ENDED_UNVERIFIED, any())
+        }
+    }
+
+    @Test
+    fun `no breach log on an unobserved install settles ENDED_UNVERIFIED, never COMPLETED`() = runTest {
+        // Absence of evidence is NOT evidence of absence: Room died with the old install, and a
+        // clean day writes no row anyway. Celebrating here is the original bug.
+        installedAfterTheChallengeEnded()
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns emptyList()
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.ENDED_UNVERIFIED, null)
+        }
+        coVerify(exactly = 0) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.COMPLETED, any())
+        }
+    }
+
+    @Test
+    fun `clean restored logs on an unobserved install are still ENDED_UNVERIFIED`() = runTest {
+        // Partial evidence is not proof of a clean run — some days' logs may simply never have
+        // reached Firestore. Only a BREACH row is conclusive; clean rows are not.
+        installedAfterTheChallengeEnded()
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns listOf(
+            dailyLog(limitExceeded = false, id = "log1", date = DateUtils.dayKey(now - 4 * day)),
+            dailyLog(limitExceeded = false, id = "log2", date = DateUtils.dayKey(now - 3 * day)),
+        )
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.ENDED_UNVERIFIED, null)
+        }
+    }
+
+    @Test
+    fun `unreadable history on an unobserved install settles ENDED_UNVERIFIED, not COMPLETED`() = runTest {
+        // The fail-open still refuses to manufacture a loss, but it no longer manufactures a WIN
+        // either when the install could not have observed the challenge.
+        installedAfterTheChallengeEnded()
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } throws
+            RuntimeException("Room unavailable")
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.ENDED_UNVERIFIED, null)
+        }
+    }
+
+    @Test
+    fun `observed install with a clean history still settles COMPLETED`() = runTest {
+        // Regression fence: the downgrade must apply ONLY to unobserved installs. A user who kept
+        // the app installed through the whole challenge keeps their win.
+        every { installInfoProvider.installedAt } returns now - 60 * day
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns
+            listOf(dailyLog(limitExceeded = false))
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.COMPLETED, null)
+        }
+    }
+
+    @Test
+    fun `unknown install time falls back to the normal verdict`() = runTest {
+        // PackageManager failure ⇒ installedAt = 0 ⇒ fail-safe: behave exactly as before this
+        // feature existed rather than marking everything unverifiable.
+        every { installInfoProvider.installedAt } returns 0L
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } returns emptyList()
+
+        useCase()
+
+        coVerify(exactly = 1) {
+            challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.COMPLETED, null)
+        }
     }
 }

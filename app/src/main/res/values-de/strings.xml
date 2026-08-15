@@ -96,6 +96,7 @@
     <string name="challenge_status_completed">Abgeschlossen</string>
     <string name="challenge_status_failed">Fehlgeschlagen</string>
     <string name="challenge_status_ended">Beendet</string>
+    <string name="challenge_status_ended_unverified">Nicht nachweisbar</string>
     <string name="detail_limit_window_val">Zeitfenster</string>
     <string name="motivational_quote_1">Jeder Tag zählt.</string>
     <string name="motivational_quote_2">Du bist stärker als dein Handy.</string>
@@ -1787,6 +1788,11 @@
     <string name="verlauf_status_completed">✓ Geschafft</string>
     <string name="verlauf_status_failed">✗ Aufgegeben</string>
     <string name="verlauf_status_awaiting_settlement">Wird abgerechnet</string>
+    <string name="verlauf_status_unverified">Nicht nachweisbar</string>
+
+    <!-- Neutrale Ergebnis-Bestätigung: Challenge endete ohne installierte App, keine Ergebnisdaten -->
+    <string name="unverified_dialog_title">Challenge beendet</string>
+    <string name="unverified_dialog_body">Lief ab, während die App nicht installiert war — nicht gewertet.</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d Tage</string>
     <string name="verlauf_no_end_date">Kein Enddatum</string>
     <string name="verlauf_stats_time_label">ZEIT ZURÜCKGEWONNEN</string>

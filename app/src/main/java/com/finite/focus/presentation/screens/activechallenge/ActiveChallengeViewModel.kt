@@ -291,7 +291,7 @@ class ActiveChallengeViewModel @Inject constructor(
 
     /**
      * Flips the challenge to FAILED and signals navigation back to the Dashboard, where the unified RED
-     * loss dialog surfaces via getUnshownFailedHardChallenge(). For Hard Mode this runs ONLY after the
+     * loss dialog surfaces via the Dashboard result queue. For Hard Mode this runs ONLY after the
      * stake is confirmed captured. If the status write itself fails after a Hard Mode capture, the money
      * is already gone but the row stays ACTIVE — surfaced as an error; a retry/worker cycle reconciles
      * it (capturePayment is idempotent, so re-running abandon is safe).

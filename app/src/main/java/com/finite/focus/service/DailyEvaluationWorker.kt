@@ -303,7 +303,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         } else {
                             if (challenge.mode == ChallengeMode.SOFT) {
                                 val streak = getChallengeStreakUseCase(challenge)
-                                // Mark shown so the Dashboard's getUnshownFailedSoftChallenge poll
+                                // Mark shown so the Dashboard result queue
                                 // doesn't emit a second navigation for the same loss.
                                 challengeRepository.markCompletionShown(challenge.id)
                                 TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
@@ -495,7 +495,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                             }
                             if (challenge.mode == ChallengeMode.SOFT) {
                                 val streak = getChallengeStreakUseCase(challenge)
-                                // Mark shown so the Dashboard's getUnshownFailedSoftChallenge poll
+                                // Mark shown so the Dashboard result queue
                                 // doesn't emit a second navigation for the same loss.
                                 challengeRepository.markCompletionShown(challenge.id)
                                 TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)
@@ -759,7 +759,7 @@ class DailyEvaluationWorker @AssistedInject constructor(
                         }
                         if (challenge.mode == ChallengeMode.SOFT) {
                             val streak = getChallengeStreakUseCase(challenge)
-                            // Mark shown so the Dashboard's getUnshownFailedSoftChallenge poll
+                            // Mark shown so the Dashboard result queue
                             // doesn't emit a second navigation for the same loss.
                             challengeRepository.markCompletionShown(challenge.id)
                             TrackedAppEventBus.emitNavigateToSoftFailResult(challenge.id, streak)

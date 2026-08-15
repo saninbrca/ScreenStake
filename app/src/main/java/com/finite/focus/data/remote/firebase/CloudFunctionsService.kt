@@ -148,6 +148,25 @@ class CloudFunctionsService @Inject constructor(
         Result.failure(e)
     }
 
+    /**
+     * Persists a money-free SOFT SOLO terminal status ("completed" | "ended_unverified") via the
+     * `markChallengeSettled` CF. The client cannot write `status` itself (Firestore rules block it),
+     * and no server pass settles Soft challenges — without this the doc stays "active" and is
+     * re-pulled and re-celebrated on every reinstall. The CF is idempotent, re-derives the soft/
+     * money-free fence from the stored doc, and never rewrites an already-terminal challenge.
+     */
+    suspend fun markChallengeSettled(challengeId: String, status: String): Result<Unit> = try {
+        callFunction("markChallengeSettled", mapOf(
+            "challengeId" to challengeId,
+            "status" to status
+        ))
+        Timber.d("markChallengeSettled: %s status=%s", challengeId, status)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Timber.e(e, "markChallengeSettled failed — %s", challengeId)
+        Result.failure(e)
+    }
+
     suspend fun cancelOrRefundPayment(
         paymentIntentId: String,
         challengeId: String? = null,

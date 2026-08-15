@@ -322,6 +322,87 @@ export const markChallengeFailed = functions.runWith({ maxInstances: 10 }).regio
   } catch (e) { handleError("markChallengeFailed", e, res); }
 });
 
+// ── markChallengeSettled ────────────────────────────────────────────────────────
+// Server-side terminal-status write for a CLIENT-decided **SOFT SOLO** settlement — the
+// non-loss counterpart to markChallengeFailed, which was the only terminal writer that existed.
+//
+// The gap this closes: the client can never write `status` (firestore.rules puts it in the
+// forbidden-key set), and there was no CF for a win. So `updateChallengeStatus(COMPLETED)` issued
+// a direct update that Firestore rejected with PERMISSION_DENIED, the error was swallowed, and the
+// doc stayed `status: "active"` forever. Nothing server-side settles Soft either
+// (runDueChallengeReconciliation queries mode == "hard"), so every reinstall re-pulled the doc as
+// active, found an empty log set on the fresh Room DB, and celebrated a win the app never observed.
+// Persisting the terminal status here is what breaks that loop.
+//
+// MONEY FENCE — this CF must never participate in a Hard Mode settlement:
+//  • rejects `mode !== "soft"`.
+//  • rejects any doc carrying a PaymentIntent or a groupChallengeId.
+//  • touches ONLY `status` / `settledAt` / `settlementSource`. Never Stripe, never payoutStatus,
+//    payoutAmount, finalPayout, amountCents, or any other money field.
+//  • never flips an already-terminal doc — in particular a FAILED challenge can never become
+//    completed, which is the one transition that would erase a real loss.
+//
+// Idempotent: a doc already terminal returns success with NO second write, so retries, duplicate
+// syncs and repeated settle passes all converge.
+export const markChallengeSettled = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {
+  try {
+    const userId = await requireAuth(req);
+    const { challengeId, status } = req.body as { challengeId: string; status: string };
+    if (!challengeId) throw new HttpError(400, "challengeId is required.");
+
+    // Whitelist, not a passthrough: only these two non-loss terminal states may be written here.
+    // "failed" is deliberately absent — losses keep going through markChallengeFailed, which owns
+    // the failReason/failedAt contract.
+    const ALLOWED = ["completed", "ended_unverified"];
+    if (!ALLOWED.includes(status)) {
+      throw new HttpError(400, `status must be one of ${ALLOWED.join(", ")}.`);
+    }
+
+    // Read under the AUTHENTICATED uid's own sub-collection — another user's challenge simply
+    // resolves to a non-existent path → 400 (no IDOR). Same pattern as markChallengeFailed.
+    const ref = admin.firestore()
+      .collection("users").doc(userId)
+      .collection("challenges").doc(challengeId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpError(400, "Challenge not found for caller.");
+
+    const data = snap.data()!;
+
+    // ── Money fence, re-derived from the STORED doc (never from the request) ──────
+    if (data["mode"] !== "soft") {
+      throw new HttpError(400, "markChallengeSettled handles soft challenges only.");
+    }
+    if (data["stripePaymentIntentId"] || data["paymentIntentId"]) {
+      throw new HttpError(400, "Challenge carries a PaymentIntent — refusing money-free settlement.");
+    }
+    if (data["groupChallengeId"]) {
+      throw new HttpError(400, "Group challenges settle through their own settlement functions.");
+    }
+
+    // Idempotency + no-downgrade: never rewrite a doc that already reached a terminal state.
+    // Critically this is what stops a COMPLETED write from erasing a recorded loss.
+    const current: string | undefined = data["status"];
+    if (current && current !== "active") {
+      functions.logger.info(
+        `markChallengeSettled: ${challengeId} already terminal (${current}) — no write`
+      );
+      res.json({ success: true, alreadySettled: true, status: current });
+      return;
+    }
+
+    await ref.update({
+      status,
+      settledAt: Date.now(),
+      // Provenance for support/debugging: distinguishes a client-observed settlement from an
+      // unverifiable one restored after a reinstall.
+      settlementSource: status === "ended_unverified" ? "client_unobserved" : "client_settled",
+    });
+
+    functions.logger.info(`markChallengeSettled: ${challengeId} active→${status} for user ${userId}`);
+    res.json({ success: true, status });
+  } catch (e) { handleError("markChallengeSettled", e, res); }
+});
+
 // ── cancelOrRefundPayment ──────────────────────────────────────────────────────
 
 export const cancelOrRefundPayment = functions.runWith({ maxInstances: 10 }).region(REGION).https.onRequest(async (req, res) => {

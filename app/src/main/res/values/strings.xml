@@ -114,6 +114,7 @@
     <string name="challenge_status_completed">Completed</string>
     <string name="challenge_status_failed">Failed</string>
     <string name="challenge_status_ended">Ended</string>
+    <string name="challenge_status_ended_unverified">Not verifiable</string>
     <string name="detail_limit_window_val">Time window</string>
     <string name="motivational_quote_1">Every day counts.</string>
     <string name="motivational_quote_2">You are stronger than your phone.</string>
@@ -1850,6 +1851,11 @@
     <string name="verlauf_status_completed">✓ Completed</string>
     <string name="verlauf_status_failed">✗ Given up</string>
     <string name="verlauf_status_awaiting_settlement">Being settled</string>
+    <string name="verlauf_status_unverified">Not verifiable</string>
+
+    <!-- Neutral result acknowledgement: challenge ended while the app was gone, no outcome data -->
+    <string name="unverified_dialog_title">Challenge ended</string>
+    <string name="unverified_dialog_body">It ran out while Finite wasn\'t installed — so it counts as neither a win nor a loss.</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d days</string>
     <string name="verlauf_no_end_date">No end date</string>
     <string name="verlauf_stats_time_label">TIME RECLAIMED</string>

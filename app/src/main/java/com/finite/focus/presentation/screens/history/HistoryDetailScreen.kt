@@ -153,6 +153,9 @@ private fun DetailContent(
     val isCompleted = entity.status == "completed"
     // Group challenge ended on-device, server settlement not in yet (typically: was offline).
     val isAwaitingSettlement = entity.status == "ended"
+    // Soft challenge restored after a reinstall that had already ended — no log history survived,
+    // so neither a win nor a loss can be claimed. Neutral, never green, never red.
+    val isUnverified = entity.status == "ended_unverified"
     val isHard      = entity.mode == "hard"
     val isGroup     = !entity.groupChallengeId.isNullOrBlank()
     val dateFormat  = remember { SimpleDateFormat("d. MMM yyyy", Locale("de")) }
@@ -181,7 +184,8 @@ private fun DetailContent(
                 ModeBadge(isHard = isHard, isGroup = isGroup)
                 StatusLabel(
                     isCompleted = isCompleted,
-                    isAwaitingSettlement = isAwaitingSettlement
+                    isAwaitingSettlement = isAwaitingSettlement,
+                    isUnverified = isUnverified
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -356,13 +360,18 @@ private fun ModeBadge(isHard: Boolean, isGroup: Boolean) {
 // ── Status label ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun StatusLabel(isCompleted: Boolean, isAwaitingSettlement: Boolean) {
+private fun StatusLabel(
+    isCompleted: Boolean,
+    isAwaitingSettlement: Boolean,
+    isUnverified: Boolean = false,
+) {
     val color = when {
-        isAwaitingSettlement -> detoxColors.subtext
+        isAwaitingSettlement || isUnverified -> detoxColors.subtext
         isCompleted -> detoxColors.success
         else -> detoxColors.danger
     }
     val label = when {
+        isUnverified -> stringResource(R.string.verlauf_status_unverified)
         isAwaitingSettlement -> stringResource(R.string.verlauf_status_awaiting_settlement)
         isCompleted -> stringResource(R.string.verlauf_status_completed)
         else -> stringResource(R.string.verlauf_status_failed)

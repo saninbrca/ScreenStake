@@ -143,33 +143,9 @@ class ChallengeRepositoryImpl @Inject constructor(
         Timber.d("updatePendingLimit: challengeId=$challengeId pendingValue=$pendingValue")
     }
 
-    override suspend fun getUnshownCompletedHardChallenge(): Result<Challenge?> {
+    override suspend fun getUnshownTerminalChallenges(): Result<List<Challenge>> {
         return try {
-            Result.success(challengeDao.getUnshownCompletedHardChallenge()?.toDomain())
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun getUnshownCompletedSoftChallenge(): Result<Challenge?> {
-        return try {
-            Result.success(challengeDao.getUnshownCompletedSoftChallenge()?.toDomain())
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun getUnshownFailedSoftChallenge(): Result<Challenge?> {
-        return try {
-            Result.success(challengeDao.getUnshownFailedSoftChallenge()?.toDomain())
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun getUnshownFailedHardChallenge(): Result<Challenge?> {
-        return try {
-            Result.success(challengeDao.getUnshownFailedHardChallenge()?.toDomain())
+            Result.success(challengeDao.getUnshownTerminalChallenges().map { it.toDomain() })
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -207,6 +183,13 @@ class ChallengeRepositoryImpl @Inject constructor(
                 } else if (status == ChallengeStatus.FAILED) {
                     Timber.d("updateChallengeStatus: marking Firestore doc FAILED for %s (status=%s reason=%s)", id, statusStr, effectiveReason)
                     firestoreService.markChallengeFailed(id, effectiveReason ?: "client_loss")
+                } else if (isMoneyFreeSoftSettlement(id, status)) {
+                    // SOFT SOLO terminal outcome. The direct write below is silently rejected by the
+                    // Firestore rules (`status` is in the forbidden-key set), which is why these docs
+                    // stayed "active" forever and were re-celebrated on every reinstall. Route through
+                    // the Admin-SDK CF instead. Soft-only and money-free — Hard keeps the old path.
+                    Timber.d("updateChallengeStatus: marking Firestore doc SETTLED for %s (status=%s)", id, statusStr)
+                    firestoreService.markChallengeSettled(id, statusStr)
                 } else {
                     Timber.d("updateChallengeStatus: challenge=%s status=%s uid=%s", id, statusStr, uid)
                     firestoreService.updateChallengeStatus(uid, id, statusStr)
@@ -216,6 +199,26 @@ class ChallengeRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * True when [status] is a terminal outcome the `markChallengeSettled` CF is allowed to persist
+     * for [id]: COMPLETED or ENDED_UNVERIFIED on a SOFT SOLO row carrying no stake.
+     *
+     * Re-reads the row from Room rather than trusting the caller, and every uncertainty answers
+     * `false` (fall through to the pre-existing direct write): an unreadable row, a missing row, a
+     * Hard row, a group shadow row, or a row with a PaymentIntent. The CF re-derives the same fence
+     * server-side, so this is the first of two independent checks, not the only one.
+     *
+     * Hard Mode is deliberately excluded: its terminal status is owned by the refund/capture paths
+     * and the server reconciliation, and nothing here may pre-empt them.
+     */
+    private suspend fun isMoneyFreeSoftSettlement(id: String, status: ChallengeStatus): Boolean {
+        if (status != ChallengeStatus.COMPLETED && status != ChallengeStatus.ENDED_UNVERIFIED) return false
+        val entity = runCatching { challengeDao.getChallengeById(id) }.getOrNull() ?: return false
+        return entity.mode.equals("soft", ignoreCase = true) &&
+                entity.stripePaymentIntentId == null &&
+                entity.groupChallengeId.isNullOrBlank()
     }
 
     override suspend fun endGroupChallengeLocally(id: String): Result<Unit> {

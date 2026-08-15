@@ -4,20 +4,24 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.finite.focus.domain.model.Challenge
+import com.finite.focus.domain.model.DailyLog
 import com.finite.focus.domain.repository.ChallengeRepository
 import com.finite.focus.domain.repository.DailyLogRepository
-import com.finite.focus.util.DateUtils
+import com.finite.focus.presentation.screens.dashboard.daysHeldCalendar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.Calendar
 import javax.inject.Inject
 
 /** Identity + cause + calendar days survived for the Soft Mode fail result screen. */
 data class SoftFailResultUiState(
+    /** The failed challenge, so the screen can state its limit type in the user's own terms. */
+    val challenge: Challenge? = null,
+    /** Its DailyLogs, used ONLY to name the first breached day — never to count days survived. */
+    val logs: List<DailyLog> = emptyList(),
     val appDisplayName: String? = null,
     val failReason: String? = null,
     /** Full CALENDAR days survived before the fail. Null until the lookup resolves. */
@@ -25,17 +29,15 @@ data class SoftFailResultUiState(
 )
 
 /**
- * Loads the failed challenge's display name, [Challenge.failReason] and the CALENDAR days survived
- * from Room so [SoftFailResultScreen] can show WHICH challenge failed, WHY, and for how long the
- * user actually held out. The `challengeId` is read from the navigation route arg via
- * [SavedStateHandle] (route: `soft_fail_result/{challengeId}/{streak}`).
+ * Loads the failed challenge, its [DailyLog]s, [Challenge.failReason] and the CALENDAR days survived
+ * from Room so [SoftFailResultScreen] can show WHICH challenge failed, WHY (down to the first
+ * breached day where the logs support it), and for how long the user actually held out. The
+ * `challengeId` is read from the navigation route arg via [SavedStateHandle]
+ * (route: `soft_fail_result/{challengeId}/{streak}`).
  *
  * Days survived is calendar-derived, never a log-row count (zero-usage days often have no DailyLog
- * row on EMUI, so `logs.size`-style figures undercount):
- *  - Limit breach: anchored on the breach day — the newest DailyLog with `limitExceeded=true`
- *    (written on every breach path: overlay intra-day, worker at 23:59, on-open backstop).
- *  - No breach log (abandon / permission loss / server fail): days from start until now, clamped
- *    to the challenge's resolved end date; open-ended sentinel guarded via [DateUtils.isOpenEnded].
+ * row on EMUI, so `logs.size`-style figures undercount) — the derivation itself lives in
+ * `daysHeldCalendar`, shared with the Hard loss dialog so the two can't drift.
  */
 @HiltViewModel
 class SoftFailResultViewModel @Inject constructor(
@@ -56,10 +58,13 @@ class SoftFailResultViewModel @Inject constructor(
                 challengeRepository.getChallengeById(id)
                     .onSuccess { challenge ->
                         if (challenge != null) {
+                            val logs = dailyLogRepository.getLogsForChallengeOnce(challenge.id)
                             _uiState.value = SoftFailResultUiState(
+                                challenge = challenge,
+                                logs = logs,
                                 appDisplayName = challenge.appDisplayName,
                                 failReason = challenge.failReason,
-                                daysSurvived = computeDaysSurvived(challenge),
+                                daysSurvived = daysHeldCalendar(challenge, logs),
                             )
                         }
                     }
@@ -67,30 +72,4 @@ class SoftFailResultViewModel @Inject constructor(
             }
         }
     }
-
-    private suspend fun computeDaysSurvived(challenge: Challenge): Int {
-        val startKey = dayKeyOf(challenge.startDate)
-        val breachDay = dailyLogRepository.getLogsForChallengeOnce(challenge.id)
-            .filter { it.limitExceeded }
-            .maxOfOrNull { it.date }
-
-        val resolvedEnd = if (challenge.endDate > 1_700_000_000_000L) challenge.endDate
-        else challenge.startDate + (challenge.endDate * DateUtils.MILLIS_PER_DAY)
-
-        val failMoment = when {
-            breachDay != null -> breachDay
-            DateUtils.isOpenEnded(challenge.startDate, resolvedEnd) -> System.currentTimeMillis()
-            else -> minOf(System.currentTimeMillis(), resolvedEnd)
-        }
-        return ((failMoment - startKey) / DateUtils.MILLIS_PER_DAY).toInt().coerceAtLeast(0)
-    }
-
-    /** Midnight (local) of the day containing [timestampMs] — same day-key scheme as DailyLog.date. */
-    private fun dayKeyOf(timestampMs: Long): Long = Calendar.getInstance().apply {
-        timeInMillis = timestampMs
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
 }

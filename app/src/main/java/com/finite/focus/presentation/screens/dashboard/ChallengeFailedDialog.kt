@@ -5,8 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,11 +18,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,11 +60,17 @@ fun failReasonStringRes(failReason: String?): Int = when (failReason) {
 /**
  * RED loss result dialog — the unified screen shown on every Hard Mode loss path (worker capture,
  * abandon, permission violation). Mirrors [ChallengeSuccessDialog]'s layout via the shared
- * [ResultDialogScaffold] / [ResultCard] / [StatColumn], but with a red ✗ icon, "Challenge verloren.",
- * an "EINSATZ EINGEZOGEN" card, no confetti, and an optional comeback hint.
+ * [ResultDialogScaffold] / [ResultCard] / [ResultStatLine], but with a red ✗ icon, "Challenge
+ * verloren.", an "EINSATZ EINGEZOGEN" card, no confetti, and an optional comeback hint.
  *
  * Surfaced from the Dashboard whenever a Hard Mode challenge has `status='failed'` and
- * `completionShown=0` (see `DashboardViewModel.getUnshownFailedHardChallenge`).
+ * `completionShown=0`, via the result queue ([PendingResult.HardLoss]).
+ *
+ * Content rules this surface keeps (see [ResultCopy.kt]):
+ *  - the stake is stated ONCE — it used to appear as both the card hero and a "€8 verloren" stat,
+ *    which read as two separate charges;
+ *  - the reason is prominent and as concrete as the data honestly allows ([lossReasonLine]);
+ *  - days held are CALENDAR days ([daysHeldCalendar]), not a count of DailyLog rows.
  */
 @Composable
 fun ChallengeFailedDialog(
@@ -77,11 +79,11 @@ fun ChallengeFailedDialog(
     onDismiss: () -> Unit,
     onStartNewChallenge: () -> Unit
 ) {
-    val daysHeld = allLogs.count { !it.limitExceeded }
-    val totalConsciousOpens = allLogs.sumOf { it.consciousOpens }
     val lostCents = challenge.amountCents ?: 0
     val lostEurosCard = "€%.2f".format(lostCents / 100.0).replace('.', ',')
-    val lostEurosStat = "€${lostCents / 100}"
+    val totalDays = challenge.calendarDurationDays
+    val daysHeld = daysHeldCalendar(challenge, allLogs).coerceAtMost(totalDays)
+    val reasonLine = lossReasonLine(challenge, allLogs)
 
     var phase1Visible by remember { mutableStateOf(false) }
     var phase2Visible by remember { mutableStateOf(false) }
@@ -148,12 +150,23 @@ fun ChallengeFailedDialog(
                     color = detoxColors.label,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                // Subtitle — the reason this challenge failed
+                Spacer(modifier = Modifier.height(8.dp))
+                // WHY it was lost — the concrete first breach when the logs support one, else the
+                // honest generic cause. Carried at label weight, not as a whispered subtitle: this
+                // is the single thing the user came to this dialog to find out.
                 Text(
-                    text = stringResource(failReasonStringRes(challenge.failReason)),
+                    text = reasonLine,
                     fontFamily = PoppinsFamily,
-                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = detoxColors.danger,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = goalLine(challenge),
+                    fontFamily = PoppinsFamily,
+                    fontSize = 13.sp,
                     color = detoxColors.subtext,
                     textAlign = TextAlign.Center
                 )
@@ -177,6 +190,7 @@ fun ChallengeFailedDialog(
                     letterSpacing = 0.8.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                // The stake, stated exactly once.
                 Text(
                     text = lostEurosCard,
                     fontFamily = PoppinsFamily,
@@ -191,31 +205,25 @@ fun ChallengeFailedDialog(
                     color = detoxColors.divider
                 )
 
-                // Phase 3: 3-column stats
+                // Phase 3: one centered line, no 3-column row (its 80dp captions clipped
+                // "Tage durchgehalten" to "Tage durchgehalt" and its third column restated the
+                // stake the card already shows).
                 AnimatedVisibility(
                     visible = phase3Visible,
                     enter = fadeIn(tween(300))
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        StatColumn(
-                            value = daysHeld.toString(),
-                            label = stringResource(R.string.success_dialog_stat_days),
-                            valueColor = detoxColors.label
-                        )
-                        StatColumn(
-                            value = totalConsciousOpens.toString(),
-                            label = stringResource(R.string.success_dialog_stat_opens),
-                            valueColor = detoxColors.label
-                        )
-                        StatColumn(
-                            value = lostEurosStat,
-                            label = stringResource(R.string.failed_dialog_stat_lost),
-                            valueColor = detoxColors.danger
+                        ResultStatLine(
+                            value = stringResource(
+                                R.string.result_days_held_of_total, daysHeld, totalDays
+                            ),
+                            valueColor = detoxColors.label,
+                            valueSize = 18.sp
                         )
                     }
                 }
@@ -250,36 +258,19 @@ fun ChallengeFailedDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Ripple derives from LocalContentColor — resolve it to the button's
-                // own content color, not the frame's.
-                CompositionLocalProvider(
-                    LocalContentColor provides MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.primary)
-                            .clickable { onStartNewChallenge() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.success_dialog_cta_new),
-                            fontFamily = PoppinsFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
+                // Tone follows the outcome: the calm way out is the primary, and staking again is
+                // demoted to the outline. A green "start a new challenge" moments after a capture
+                // reads as the app pushing the user back to the table.
+                ResultPrimaryButton(
                     text = stringResource(R.string.success_dialog_cta_back),
-                    fontFamily = PoppinsFamily,
-                    fontSize = 14.sp,
-                    color = detoxColors.subtext,
-                    modifier = Modifier.clickable { onDismiss() }
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    onClick = onDismiss
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                ResultOutlineButton(
+                    text = stringResource(R.string.success_dialog_cta_new),
+                    onClick = onStartNewChallenge
                 )
             }
         }

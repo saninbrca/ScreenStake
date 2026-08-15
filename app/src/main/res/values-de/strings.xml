@@ -591,9 +591,6 @@
         <item quantity="other">Du hast %1$d Tage durchgehalten! 💪</item>
     </plurals>
     <string name="soft_fail_result_title_zero">Schon am ersten Tag vorbei – das passiert. Der nächste Versuch zählt.</string>
-    <string name="soft_fail_result_subtitle">Möchtest du eine neue Challenge starten?</string>
-    <string name="soft_fail_result_new_challenge">Neue Challenge 🚀</string>
-    <string name="soft_fail_result_home">Zur Startseite</string>
 
     <!-- Streak chip / row formats -->
     <string name="streak_overlay_format">🔥 %1$d Tage Streak</string>
@@ -792,21 +789,14 @@
         <item quantity="one">%1$d Tag</item>
         <item quantity="other">%1$d Tage</item>
     </plurals>
-    <string name="success_dialog_avg_minutes">Ø %1$d von %2$d Min. pro Tag</string>
-    <string name="success_dialog_avg_sessions">Ø %1$s von %2$d Sessions pro Tag</string>
-    <string name="success_dialog_block_subtext">komplett blockiert – ohne Ausnahme</string>
     <string name="success_dialog_money_label">EINSATZ ZURÜCKGEBUCHT</string>
     <string name="success_dialog_money_fee">App-Gebühr (20%%): -%1$s</string>
-    <string name="success_dialog_stat_days">Tage\ndurchgehalten</string>
-    <string name="success_dialog_stat_opens">Bewusst\ngeöffnet</string>
-    <string name="success_dialog_stat_reduction">weniger\nBildschirmzeit</string>
     <string name="success_dialog_cta_new">Neue Challenge starten</string>
     <string name="success_dialog_cta_history">Im Verlauf ansehen</string>
     <string name="success_dialog_cta_back">Zurück zum Dashboard</string>
 
     <!-- Loss result dialog (ChallengeFailedDialog) -->
     <string name="failed_dialog_money_label">EINSATZ EINGEZOGEN</string>
-    <string name="failed_dialog_stat_lost">verloren</string>
     <string name="failed_dialog_comeback">💪 In 24 Std. kannst du eine Comeback-Challenge starten und einen Teil zurückholen.</string>
     <!-- Challenge identity shown on the loss result UI (%1$s = app/challenge display name) -->
     <string name="failed_dialog_challenge_label">Challenge: %1$s</string>
@@ -818,6 +808,34 @@
     <string name="fail_reason_usage">Du hast die blockierte App trotz Sperre genutzt.</string>
     <string name="fail_reason_reconciliation">Die Challenge wurde serverseitig abgeschlossen.</string>
     <string name="fail_reason_unknown">Challenge nicht geschafft.</string>
+
+    <!-- Ergebnis-Screens: die EINE typ-spezifische Kennzahl beim Gewinn, aus den Limit-Feldern der
+         Challenge selbst abgeleitet (nie aus Nutzungsdaten, die bei sauberem Lauf "Ø 0,0" ergeben). -->
+    <string name="result_metric_sessions">Höchstens %1$d Öffnungen/Tag — durchgehend eingehalten</string>
+    <string name="result_metric_time">Immer unter %1$s geblieben</string>
+    <string name="result_metric_budget">Budget von %1$d Min/Tag nie überzogen</string>
+    <string name="result_metric_window">Zeitfenster durchgehend eingehalten</string>
+    <string name="result_metric_block">Komplett blockiert – ohne Ausnahme</string>
+    <string name="result_metric_generic">Limit durchgehend eingehalten</string>
+
+    <!-- Dasselbe Limit als Ziel formuliert — auf den Verlust-Screens. -->
+    <string name="result_goal_sessions">Ziel: höchstens %1$d Öffnungen/Tag</string>
+    <string name="result_goal_time">Ziel: unter %1$s pro Tag</string>
+    <string name="result_goal_budget">Ziel: %1$d Min/Tag Budget</string>
+    <string name="result_goal_window">Ziel: Zeitfenster einhalten</string>
+    <string name="result_goal_block">Ziel: komplett blockiert</string>
+    <string name="result_goal_generic">Ziel: Tageslimit einhalten</string>
+
+    <!-- Verlustgrund, konkret: der erste Tag über dem Limit. -->
+    <string name="result_breach_time">An Tag %1$d: %2$d statt max. %3$d Min.</string>
+    <string name="result_breach_sessions">An Tag %1$d: %2$d statt max. %3$d Öffnungen</string>
+    <string name="result_breach_budget">An Tag %1$d: %2$d statt max. %3$d Min. Budget</string>
+
+    <!-- Kalendertage durchgehalten, eine zentrierte Zeile (ersetzt die abgeschnittene 3-Spalten-Zeile). -->
+    <string name="result_days_held_of_total">%1$d von %2$d Tagen durchgehalten</string>
+    <string name="result_duration_minutes">%1$d Min.</string>
+    <string name="result_duration_hours">%1$d Std.</string>
+    <string name="result_duration_hours_minutes">%1$d Std. %2$d Min.</string>
 
     <!-- Legacy overlay strings (kept for any remaining references) -->
     <string name="success_overlay_title">Herzlichen Glückwunsch!</string>

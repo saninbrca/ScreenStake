@@ -616,9 +616,6 @@
         <item quantity="other">You held out for %1$d days! 💪</item>
     </plurals>
     <string name="soft_fail_result_title_zero">Over on day one — that happens. The next attempt counts.</string>
-    <string name="soft_fail_result_subtitle">Want to start a new challenge?</string>
-    <string name="soft_fail_result_new_challenge">New challenge 🚀</string>
-    <string name="soft_fail_result_home">Go home</string>
 
     <!-- Streak chip / row formats -->
     <string name="streak_overlay_format">🔥 %1$d day streak</string>
@@ -823,21 +820,14 @@
         <item quantity="one">%1$d day</item>
         <item quantity="other">%1$d days</item>
     </plurals>
-    <string name="success_dialog_avg_minutes">Ø %1$d of %2$d min per day</string>
-    <string name="success_dialog_avg_sessions">Ø %1$s of %2$d sessions per day</string>
-    <string name="success_dialog_block_subtext">fully blocked – no exceptions</string>
     <string name="success_dialog_money_label">STAKE REFUNDED</string>
     <string name="success_dialog_money_fee">App fee (20%%): -%1$s</string>
-    <string name="success_dialog_stat_days">days\nheld out</string>
-    <string name="success_dialog_stat_opens">conscious\nopens</string>
-    <string name="success_dialog_stat_reduction">less\nscreen time</string>
     <string name="success_dialog_cta_new">Start a new challenge</string>
     <string name="success_dialog_cta_history">View in History</string>
     <string name="success_dialog_cta_back">Back to Dashboard</string>
 
     <!-- Loss result dialog (ChallengeFailedDialog) -->
     <string name="failed_dialog_money_label">STAKE CHARGED</string>
-    <string name="failed_dialog_stat_lost">lost</string>
     <string name="failed_dialog_comeback">💪 In 24 hrs you can start a comeback challenge and win part of it back.</string>
     <!-- Challenge identity shown on the loss result UI (%1$s = app/challenge display name) -->
     <string name="failed_dialog_challenge_label">Challenge: %1$s</string>
@@ -849,6 +839,34 @@
     <string name="fail_reason_usage">You used the blocked app despite the block.</string>
     <string name="fail_reason_reconciliation">The challenge was settled server-side.</string>
     <string name="fail_reason_unknown">Challenge not completed.</string>
+
+    <!-- Result surfaces: the ONE type-specific metric line on a win, derived from the challenge's
+         own limit fields (never from usage aggregation, which renders "Ø 0.0" on a clean run). -->
+    <string name="result_metric_sessions">At most %1$d opens/day — kept every day</string>
+    <string name="result_metric_time">Stayed under %1$s every day</string>
+    <string name="result_metric_budget">Never went over the %1$d min/day budget</string>
+    <string name="result_metric_window">Time window kept from start to finish</string>
+    <string name="result_metric_block">Fully blocked – no exceptions</string>
+    <string name="result_metric_generic">Limit kept from start to finish</string>
+
+    <!-- The same limit stated as the goal it was — shown on the loss surfaces. -->
+    <string name="result_goal_sessions">Goal: at most %1$d opens/day</string>
+    <string name="result_goal_time">Goal: under %1$s per day</string>
+    <string name="result_goal_budget">Goal: %1$d min/day budget</string>
+    <string name="result_goal_window">Goal: stay inside the time window</string>
+    <string name="result_goal_block">Goal: fully blocked</string>
+    <string name="result_goal_generic">Goal: keep the daily limit</string>
+
+    <!-- Loss reason, concrete: the first day that went over the limit. -->
+    <string name="result_breach_time">On day %1$d: %2$d instead of max %3$d min</string>
+    <string name="result_breach_sessions">On day %1$d: %2$d instead of max %3$d opens</string>
+    <string name="result_breach_budget">On day %1$d: %2$d instead of max %3$d min of budget</string>
+
+    <!-- Calendar days held, one centered line (replaces the clipping 3-column stat row). -->
+    <string name="result_days_held_of_total">%1$d of %2$d days held</string>
+    <string name="result_duration_minutes">%1$d min</string>
+    <string name="result_duration_hours">%1$d h</string>
+    <string name="result_duration_hours_minutes">%1$d h %2$d min</string>
 
     <!-- Legacy overlay strings (kept for any remaining references) -->
     <string name="success_overlay_title">Congratulations!</string>

@@ -15,6 +15,7 @@ import com.finite.focus.service.DailyEvaluationWorker
 import com.finite.focus.service.GroupChallengeAutoStartWorker
 import com.finite.focus.service.PermissionCheckWorker
 import com.finite.focus.service.NotificationHelper
+import com.finite.focus.util.SentryEventFilter
 import com.finite.focus.BuildConfig
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
@@ -62,6 +63,15 @@ class DetoxApplication : Application(), Configuration.Provider {
             options.sampleRate = 1.0 // 100% error capture
             options.tracesSampleRate = if (BuildConfig.DEBUG) 1.0 else 0.1 // 10% traces in production
             options.beforeSend = SentryOptions.BeforeSendCallback { event, _ ->
+                // Coroutine cancellation is control flow, not an error — drop it before any
+                // other rule so it can never reach Sentry, not even via the test_crash escape
+                // hatch below (that is what makes the Debug Panel's "Report Cancelled Job"
+                // button a real proof of this filter). Full rationale, and why 7.14.0's
+                // addIgnoredExceptionForType cannot do this: [SentryEventFilter].
+                // `event.throwable` already unwraps Sentry's ExceptionMechanismException.
+                if (SentryEventFilter.isCancellation(event.throwable)) {
+                    return@BeforeSendCallback null
+                }
                 // Drop debug events to avoid polluting Sentry, EXCEPT the manual
                 // test crash from the Debug Panel (tagged test_crash) used to
                 // verify the reporting pipeline.

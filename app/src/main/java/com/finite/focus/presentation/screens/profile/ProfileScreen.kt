@@ -85,7 +85,11 @@ import com.finite.focus.ui.theme.detoxColors
 import com.finite.focus.util.DateUtils
 import com.finite.focus.util.FeatureFlags
 import io.sentry.Sentry
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -826,6 +830,9 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
     var adultDomainTestInput by remember { mutableStateOf("") }
     var adultDomainTestResult by remember { mutableStateOf<String?>(null) }
 
+    // Section 11 state — which exception type the cancellation-filter proof actually reported.
+    var cancellationProofResult by remember { mutableStateOf<String?>(null) }
+
     val activeGroupChallenges by viewModel.debugActiveGroupChallenges.collectAsStateWithLifecycle()
     val debugDailyLogs by viewModel.debugDailyLogs.collectAsStateWithLifecycle()
     val debugActiveChallenges by viewModel.debugActiveChallenges.collectAsStateWithLifecycle()
@@ -1385,6 +1392,34 @@ Usage Stats: ${if (usageStats) "✅" else "❌"}""".trimIndent()
                     // Tag so beforeSend lets this through even in debug builds.
                     Sentry.setTag("test_crash", "true")
                     throw RuntimeException("Sentry test crash")
+                }
+                DebugButton("Report Cancelled Job (filter proof)") {
+                    // Proof for SentryEventFilter, run as a matched pair with the button above:
+                    // both set the same test_crash tag, both go through Sentry.captureException,
+                    // and the ONLY difference is the exception type. The crash must appear in
+                    // Sentry; this one must not. Reports the real JobCancellationException that
+                    // kotlinx throws — never a hand-built one — so it tests the actual type.
+                    Sentry.setTag("test_crash", "true")
+                    scope.launch {
+                        val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                            try {
+                                delay(10_000)
+                            } catch (e: Exception) {
+                                Timber.d(e, "Debug: reporting a cancelled job — expect it to be filtered")
+                                Sentry.captureException(e)
+                                cancellationProofResult = e::class.java.simpleName
+                            }
+                        }
+                        job.cancelAndJoin()
+                    }
+                }
+                cancellationProofResult?.let { thrown ->
+                    Text(
+                        "reported $thrown → expect NOTHING in Sentry",
+                        fontSize = 12.sp,
+                        color = DebugOrange,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

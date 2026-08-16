@@ -21,6 +21,72 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-08-16 — Enforcement recovers after a process kill: the accessibility rebind restarts the tracking service
+
+**FIXED.** After a process kill (Huawei/EMUI memory pressure, `kill -9`, a crash), enforcement stayed
+dead until the user next opened Finite. `TrackedAppEventBus` is process-memory with no writer at rest,
+and `OverlayManager`'s collectors live on `UsageTrackingService`'s scope — so a killed, never-restarted
+service means a blocked app opens freely, silently.
+
+**The fix is one gated call.** `AppDetectionAccessibilityService.onServiceConnected` now calls
+`UsageTrackingService.startIfActiveChallenge`. The system rebinds the accessibility service on its own
+after a kill, so this is the only hook that fires with no user action. The restarted service
+repopulates the bus from Room and re-arms the overlay collectors through the existing `onCreate` path —
+nothing was moved, no second collector or scope was introduced.
+
+**Why the start is legal from a backgrounded app with no visible overlay (MEASURED, not assumed).** The
+system binds an accessibility service with a background-FGS-launch capability. On a stock AOSP Android
+15 emulator, with the process created SOLELY by this binding (app force-stopped first, no activity, no
+prior FGS) and `SYSTEM_ALERT_WINDOW` **denied**, ActivityManager logged:
+
+```
+Background started FGS: Allowed [callingPackage: com.finite.focus; uidState: BFGS; uidBFSL: [BFSL];
+  intent: .../.service.UsageTrackingService; tempAllowListReason:<null>; targetSdkVersion:36]
+```
+
+and the service reached `isForeground=true types=0x40000000`. Background-FGS enforcement was live on
+that build (`default_background_fgs_starts_restriction_enabled=true`), so this is a real allowance, not
+a disabled check. **Denying SAW is what proves the mechanism:** this path never goes through
+`REASON_SYSTEM_ALERT_WINDOW_PERMISSION`, so the Android 15 narrowing of that exemption behind
+`ProcessRecord.mState.hasOverlayUi()` (recorded in the entry below) does not apply here at all. It
+still applies to `PermissionCheckWorker.retryBlockedForegroundStart`, which has no binding and stays
+12-14 only.
+
+**LIMITS — do not overstate this fix.**
+
+1. **Verified on an AOSP Android 15 emulator only. NOT verified on EMUI.** Huawei is the target store,
+   and our own notes record that after a force-stop EMUI drops Finite from the accessibility services
+   and does not rebind it. If that also holds for EMUI's memory-pressure kills, this fix never fires
+   there. Open investigation — see below.
+2. **The launch-during-kill window is unchanged.** `startIfActiveChallenge` reads Room, and the
+   SQLCipher open costs a few hundred ms. An app opened inside that window is still missed, and
+   `lastDetectedPackage` deduplication means the next event for the same package will not retrigger
+   it either. A plaintext SharedPreferences mirror of the tracked set would close it; **DECISION —
+   not taken**, because it widens what sits outside SQLCipher and that privacy call was deliberately
+   deferred.
+3. Applies to Android 12-16. Below 12 there is no background-FGS restriction to begin with.
+
+**Reviewed side effect: `onStartCommand` now runs again on an already-running service.** Verified
+across all three entry states, since the budget session feeds `limitExceeded`:
+- *No active session* (`sessionEndTime <= 0`) — the restart-recovery branch writes
+  `budget_committed_ms_<id> = Room.budgetUsedMs`. With no session the 10 s loop early-returns without
+  writing, so Room cannot have moved between two calls: same value, idempotent.
+- *Active, unexpired session* — **neither** branch runs. Both guards exclude it, so an in-flight
+  session is never extended, truncated or re-accounted.
+- *Active, expired session* — `checkBudgetSession()` runs a final tick, which may now race a polling
+  tick. Harmless by construction: `effectiveNow` is capped at `sessionEndTime`, so `totalUsedMs` is
+  deterministic regardless of when the tick fires; `updateBudgetStateMs` is an absolute
+  `UPDATE … SET`, never an increment; `clearBudgetSession` is a one-way transition both callers
+  compute identically; `onBudgetSessionExpired` is gated by `isOverlayVisible`; and the 80 % warning
+  posts under a stable notification id, so a duplicate replaces rather than stacks.
+
+No new guard was added — the existing ones hold.
+
+**DECISION — the `OverlayManager` scope rewrite stays parked.** It was designed to survive an FGS that
+never comes back; this makes it come back. It is reconsidered only if the Android 15 tester shows the
+rebind path failing. The overlay-visibility FGS retry ladder that was also on the table is **cancelled**
+outright: `onServiceConnected` is a strictly better hook.
+
 ### 2026-08-16 — `UsageTrackingService` no longer crashes when Android refuses the foreground promotion
 
 **FIXED + DECISION.** Production crash (`1.0.1` build 3, 8 events / 2 users, Samsung A82 / Android

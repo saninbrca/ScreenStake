@@ -149,6 +149,37 @@ class AppDetectionAccessibilityService : AccessibilityService() {
         // Pre-warm the critical-package cache off the main thread so the enforcement guard is a
         // plain set lookup by the time the first accessibility event arrives.
         serviceScope.launch { criticalPackageResolver.warmCache() }
+        // Enforcement recovery after a process kill, and the ONLY hook that fires without the user
+        // opening Finite: the system rebinds this service, and the tracking service started here is
+        // what repopulates [TrackedAppEventBus] and re-arms [OverlayManager]'s collectors. Neither
+        // has any other writer at rest, so without this the next blocked app opens freely.
+        //
+        // The start is legal from here even though the app is backgrounded with no visible overlay:
+        // the system binds an accessibility service with a background-FGS-launch capability.
+        // Measured on a stock AOSP Android 15 emulator, with the process created SOLELY by this
+        // binding (app force-stopped first, no activity, no prior FGS) and SYSTEM_ALERT_WINDOW
+        // DENIED:
+        //   ActivityManager: Background started FGS: Allowed [uidState: BFGS; uidBFSL: [BFSL]]
+        // Denying SAW is what proves the mechanism: this path never goes through the SAW exemption
+        // that Android 15 narrowed behind `ProcessRecord.mState.hasOverlayUi()`, so FGS_SAW_
+        // RESTRICTIONS simply does not apply to it. Contrast [PermissionCheckWorker
+        // .retryBlockedForegroundStart], which DOES ride that exemption and is 12-14 only.
+        //
+        // Gated, not unconditional: `startIfActiveChallenge` keeps the invariant that the service
+        // only runs when there is something to enforce, so an idle install never puts a
+        // START_STICKY service under the system's recreation loop.
+        //
+        // On the EXISTING IO scope, never the accessibility main thread — `startIfActiveChallenge`
+        // opens the SQLCipher database, and blocking that thread would ANR this service and drop
+        // the very events it exists to see. `runCatching` for the same reason [BootReceiver] has
+        // it: opening that database can fail outright (Keystore not ready), and an unhandled throw
+        // in this scope would take down the process that is doing the enforcing.
+        serviceScope.launch {
+            runCatching { UsageTrackingService.startIfActiveChallenge(applicationContext) }
+                .onFailure { e ->
+                    Timber.e(e, "AppDetectionAccessibilityService: gated service start failed")
+                }
+        }
         Timber.d("AppDetectionAccessibilityService connected")
         Sentry.addBreadcrumb(Breadcrumb().apply {
             category = "AccessibilityService"

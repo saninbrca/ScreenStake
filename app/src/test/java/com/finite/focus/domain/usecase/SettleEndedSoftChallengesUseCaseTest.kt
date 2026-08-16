@@ -13,7 +13,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 
@@ -26,9 +28,13 @@ import org.junit.Test
  *
  * The verdict reads the WHOLE history via `getLogsForChallengeOnce` — never just today's row, which
  * let a challenge that broke its limit on an earlier day settle as a win. That call is stubbed
- * explicitly in [setUp]: the use case fail-opens on a read error (`runCatching { … }.getOrElse
- * { emptyList() }`), so an unstubbed mock would throw, be swallowed, and silently settle every
- * challenge as COMPLETED — making the COMPLETED cases pass without ever exercising the verdict.
+ * explicitly in [setUp]: the use case fail-opens on an ordinary read error
+ * ([com.finite.focus.util.readHistoryForVerdict]), so an unstubbed mock would throw, be swallowed,
+ * and silently settle every challenge as COMPLETED — making the COMPLETED cases pass without ever
+ * exercising the verdict.
+ *
+ * That fail-open covers ordinary errors ONLY. A cancelled read abstains instead — see the
+ * "Abstain" block near the end of this class.
  */
 class SettleEndedSoftChallengesUseCaseTest {
 
@@ -412,6 +418,72 @@ class SettleEndedSoftChallengesUseCaseTest {
         coVerify(exactly = 1) {
             challengeRepository.updateChallengeStatus("soft1", ChallengeStatus.COMPLETED, null)
         }
+    }
+
+    // ── Abstain (cancelled read) ─────────────────────────────────────────────────
+    // A cancelled read is not an unreadable history: no read happened, so there is no evidence of
+    // any kind. The use case must settle NOTHING and leave the row active for the next pass. These
+    // sit outside the FAILED > ENDED_UNVERIFIED > COMPLETED ladder — none of the three may appear.
+
+    @Test
+    fun `a cancelled history read settles nothing — the challenge stays ACTIVE`() = runTest {
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } throws
+            CancellationException("ViewModel cleared mid-read")
+
+        var propagated: Throwable? = null
+        try {
+            useCase()
+        } catch (e: CancellationException) {
+            propagated = e
+        }
+
+        assertNotNull("cancellation must propagate, not be swallowed into an empty history", propagated)
+        // The whole point: no status write of ANY kind. Before this fix the same input produced
+        // COMPLETED — a fabricated win for a challenge whose history was never read.
+        coVerify(exactly = 0) { challengeRepository.updateChallengeStatus(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a cancelled read on an unobserved install does NOT settle ENDED_UNVERIFIED`() = runTest {
+        // The abstain sits ABOVE the ladder, not inside it. ENDED_UNVERIFIED answers a different
+        // question — could this install ever have observed the window — and is just as fabricated
+        // as COMPLETED when the answer came from a read that never happened.
+        installedAfterTheChallengeEnded()
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } throws
+            CancellationException("scope torn down")
+
+        try {
+            useCase()
+        } catch (e: CancellationException) {
+            // expected
+        }
+
+        coVerify(exactly = 0) { challengeRepository.updateChallengeStatus(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a cancelled read stops the pass — later challenges are not settled on a dead scope`() = runTest {
+        // Unwinding out of invoke() IS the abstain, and it is deliberately not a `continue`: the
+        // scope is already gone, so every following challenge would read on a dead coroutine too.
+        // Neither the cancelled challenge nor the one behind it may be settled.
+        coEvery { challengeRepository.getActiveChallengesList() } returns
+            Result.success(listOf(challenge("soft1"), challenge("soft2")))
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft1") } throws
+            CancellationException("scope torn down")
+        coEvery { dailyLogRepository.getLogsForChallengeOnce("soft2") } returns
+            listOf(dailyLog(limitExceeded = false))
+
+        try {
+            useCase()
+        } catch (e: CancellationException) {
+            // expected
+        }
+
+        coVerify(exactly = 0) { challengeRepository.updateChallengeStatus(any(), any(), any()) }
     }
 
     @Test

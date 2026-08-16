@@ -7,6 +7,7 @@ import com.finite.focus.domain.repository.DailyLogRepository
 import com.finite.focus.util.DateUtils
 import com.finite.focus.util.InstallInfoProvider
 import com.finite.focus.util.isUnobservedSoftChallenge
+import com.finite.focus.util.readHistoryForVerdict
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -54,6 +55,21 @@ import javax.inject.Inject
  * a destroyed history), whereas presence of evidence IS evidence. That is also why the trigger for 2
  * is install provenance and never log emptiness — keying on emptiness would deny the neutral outcome
  * to nobody and the win to exactly the users who behaved best.
+ *
+ * ## Not a verdict at all: abstaining
+ *
+ * The three outcomes above all assume the history was actually read. When the read is CANCELLED —
+ * the ViewModel is cleared, the service is torn down, the process is going away mid-read — no read
+ * happened, so there is no evidence of any kind and the honest answer is "not now". The history
+ * read ([com.finite.focus.util.readHistoryForVerdict]) rethrows the cancellation, this function
+ * unwinds, and every challenge still `active` stays `active` for the next pass.
+ *
+ * That abstain sits deliberately ABOVE the ladder, never inside it: it is the absence of a verdict,
+ * not a fourth one, so FAILED > ENDED_UNVERIFIED > COMPLETED is untouched. In particular a
+ * cancelled read must NOT settle ENDED_UNVERIFIED — that outcome answers a different question
+ * (could this install ever have observed the window?) and `isUnobservedSoftChallenge` says "no"
+ * for a perfectly healthy live install, so using it here would fabricate a verdict just as surely
+ * as COMPLETED did. An ordinary unreadable history is unchanged and still fails open to "clean".
  *
  * Placement note: this runs AFTER the whole sync (the Dashboard awaits `syncJob.join()` first), so
  * step 2's restored nested `dailyLogs` are already in Room when rule 1 is evaluated. Deciding this
@@ -115,11 +131,23 @@ class SettleEndedSoftChallengesUseCase @Inject constructor(
             // Whole-challenge verdict, matching DailyEvaluationWorker.challengeViolated and the
             // server's `logsSnap.docs.some(d => d.limitExceeded === true)`. Fail-open on a read
             // error — an unreadable history must never manufacture a loss.
-            val violated = runCatching { dailyLogRepository.getLogsForChallengeOnce(challenge.id) }
-                .getOrElse { e ->
-                    Timber.e(e, "SettleEndedSoftChallenges: log history unreadable for %s — treating as clean", challenge.id)
-                    emptyList()
-                }
+            //
+            // ── ABSTAIN POINT ────────────────────────────────────────────────────────
+            // This line, not the ladder below, is where a cancelled read leaves.
+            // [readHistoryForVerdict] rethrows a cancellation rather than handing back an empty
+            // history, so nothing after it runs — no verdict is computed and no
+            // updateChallengeStatus is reached, for this challenge or any still in the loop.
+            // Every one of them keeps `status = 'active'` and the next pass (23:59 worker, next
+            // Dashboard open, next enforcement stop) decides on a history it could actually read.
+            //
+            // Unwinding out of `invoke()` IS the abstain, and is preferred to `continue`: the
+            // scope is already gone, so continuing would only re-throw on the next challenge's
+            // read. Callers launch this in a coroutine, where a cancellation is ordinary
+            // completion — see the class doc.
+            val violated = readHistoryForVerdict(
+                challengeId = challenge.id,
+                caller = "SettleEndedSoftChallenges",
+            ) { dailyLogRepository.getLogsForChallengeOnce(challenge.id) }
                 .any { it.limitExceeded }
 
             // ── Verdict, in strict precedence order ──────────────────────────────────

@@ -8,6 +8,7 @@ import com.finite.focus.domain.model.DailyLog
 import com.finite.focus.domain.model.LimitType
 import com.finite.focus.domain.model.PartialBlockSection
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
@@ -554,6 +555,18 @@ class FirestoreService @Inject constructor(
                     null
                 }
             }
+        } catch (e: CancellationException) {
+            // A cancelled fetch is NOT an empty history — no read happened at all, so there is
+            // nothing to fail open on. This is the evidence feed for the settlement verdict:
+            // SyncRepository restores these rows into Room, and the Soft verdict
+            // (SettleEndedSoftChallengesUseCase / DailyEvaluationWorker) then reads Room. Returning
+            // emptyList() here drops this challenge's breach rows out of the restore and leaves the
+            // gap behind in Room, where a LATER settlement pass — one that is not cancelled and so
+            // cannot tell — reads it as a clean run and settles a breached challenge as COMPLETED.
+            // Rethrow so the sync fails on a hole instead of reporting success over one. Ordinary
+            // read errors keep the fail-open below. See [readHistoryForVerdict] for the full
+            // cancelled-vs-unreadable rationale.
+            throw e
         } catch (e: Exception) {
             Timber.e(e, "Failed to fetch daily logs for challengeId=$challengeId")
             emptyList()

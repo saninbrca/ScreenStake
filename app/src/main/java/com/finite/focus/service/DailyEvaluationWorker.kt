@@ -29,6 +29,7 @@ import com.finite.focus.domain.usecase.GetChallengeStreakUseCase
 import com.finite.focus.domain.repository.PaymentRepository
 import com.finite.focus.domain.repository.UsageStatsRepository
 import com.finite.focus.util.DateUtils
+import com.finite.focus.util.readHistoryForVerdict
 import io.sentry.Sentry
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.assisted.Assisted
@@ -827,23 +828,18 @@ class DailyEvaluationWorker @AssistedInject constructor(
      *
      * Fail-open on a read error — same stance as the server, which refunds when it finds zero logs
      * and only flags `reconciliationLowEvidence` for review. Never capture on data we couldn't read.
+     *
+     * ── ABSTAIN ──────────────────────────────────────────────────────────────────
+     * A CANCELLED history read is not an unreadable one and does not fail open; it throws (see
+     * [evaluateChallengeViolated]). All three call sites of this function sit ABOVE their money
+     * branch, and the whole per-challenge loop in [doWork] is one `try` with no inner catch, so the
+     * throw unwinds past every `updateChallengeStatus`, `capturePayment` and `cancelOrRefundPayment`
+     * to the top-level handler, which returns `Result.retry()`. Nothing is settled, no Stripe call
+     * is made, the challenges keep `status = 'active'` — which is exactly how this worker finds its
+     * capture/refund work — and WorkManager reruns the pass.
      */
-    private suspend fun challengeViolated(challengeId: String, todayExceeded: Boolean): Boolean {
-        if (todayExceeded) return true
-        val logs = runCatching { dailyLogRepository.getLogsForChallengeOnce(challengeId) }
-            .getOrElse { e ->
-                Timber.e(e, "DailyEvaluationWorker: log history unreadable for $challengeId — treating as clean")
-                return false
-            }
-        val violated = logs.any { it.limitExceeded }
-        if (violated) {
-            Timber.d(
-                "DailyEvaluationWorker: $challengeId — prior breach found in history " +
-                        "(${logs.count { it.limitExceeded }}/${logs.size} day(s)) → whole challenge is a LOSS"
-            )
-        }
-        return violated
-    }
+    private suspend fun challengeViolated(challengeId: String, todayExceeded: Boolean): Boolean =
+        evaluateChallengeViolated(challengeId, todayExceeded, dailyLogRepository)
 
     private fun computeLimitExceeded(
         limitType: LimitType,
@@ -1096,4 +1092,34 @@ class DailyEvaluationWorker @AssistedInject constructor(
 
         Timber.d("RedemptionNotificationWorker scheduled 24h from now for ${challenge.id}")
     }
+}
+
+/**
+ * The whole-challenge breach verdict, lifted out of [DailyEvaluationWorker] as a test seam — same
+ * pattern, and same reason, as `isSoloHardPermissionFailEligible` in `PermissionCheckWorker.kt`:
+ * the worker itself takes fourteen injected collaborators and a `WorkerParameters`, so the decision
+ * that actually gates money is not reachable from a unit test while it lives inside the class.
+ * Behaviour is byte-for-byte what the private member did; the member is now a one-line delegate.
+ *
+ * See [DailyEvaluationWorker.challengeViolated] for the rule itself and for where a cancelled read
+ * abstains.
+ */
+internal suspend fun evaluateChallengeViolated(
+    challengeId: String,
+    todayExceeded: Boolean,
+    dailyLogRepository: DailyLogRepository,
+): Boolean {
+    if (todayExceeded) return true
+    // Cancelled ⇒ throws (abstain); unreadable ⇒ empty history ⇒ "clean", exactly as before.
+    val logs = readHistoryForVerdict(challengeId, "DailyEvaluationWorker") {
+        dailyLogRepository.getLogsForChallengeOnce(challengeId)
+    }
+    val violated = logs.any { it.limitExceeded }
+    if (violated) {
+        Timber.d(
+            "DailyEvaluationWorker: $challengeId — prior breach found in history " +
+                    "(${logs.count { it.limitExceeded }}/${logs.size} day(s)) → whole challenge is a LOSS"
+        )
+    }
+    return violated
 }

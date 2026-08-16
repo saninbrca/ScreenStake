@@ -264,9 +264,31 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         trackPermissionIgnore()
         checkPermissionState()
+        retryBlockedForegroundStart()
         if (firebaseAuth.currentUser != null) {
             lifecycleScope.launch { checkExpiredGroupChallenges() }
             maybeResumeSync()
+        }
+    }
+
+    /**
+     * Re-promotes enforcement after Android refused a background foreground-service start.
+     *
+     * This is the primary retry hook by design: a resumed activity is the one context where the
+     * start is unconditionally legal, it needs no new alarm, worker or wakeup, and it fires on
+     * exactly the event that makes the start legal again. The latch is persisted, so it also
+     * survives the process death that caused the refusal in the first place.
+     * [PermissionCheckWorker] carries the same retry as an unattended second chance for users who
+     * do not open the app; between them a blocked promotion never becomes permanent.
+     *
+     * Costs nothing on the normal path: one boolean prefs read, and no Room query unless a refusal
+     * is actually outstanding.
+     */
+    private fun retryBlockedForegroundStart() {
+        if (!UsageTrackingService.isForegroundStartPending(this)) return
+        Timber.d("MainActivity: foreground start pending — retrying from resumed activity")
+        lifecycleScope.launch {
+            UsageTrackingService.startIfActiveChallenge(this@MainActivity, challengeRepository)
         }
     }
 
@@ -408,7 +430,11 @@ class MainActivity : ComponentActivity() {
             overlayMissing = false
             showPermissionBlock = false
                     snackbarMessage = getString(R.string.notification_permission_restored)
-            UsageTrackingService.start(this)
+            // Guarded: overlay permission can be restored with no challenge left to enforce, and
+            // an idle START_STICKY service is what the system later recreates in the background.
+            lifecycleScope.launch {
+                UsageTrackingService.startIfActiveChallenge(this@MainActivity, challengeRepository)
+            }
         } else if (lostAt > 0L && !Settings.canDrawOverlays(this)) {
             overlayMissing = true
             val elapsed = System.currentTimeMillis() - lostAt

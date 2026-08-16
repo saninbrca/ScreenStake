@@ -1,5 +1,6 @@
 package com.finite.focus.service
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,8 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -27,7 +30,14 @@ import com.finite.focus.domain.repository.GroupChallengeRepository
 import com.finite.focus.domain.repository.UsageStatsRepository
 import com.finite.focus.domain.usecase.EndExpiredGroupChallengesUseCase
 import com.finite.focus.domain.usecase.SettleEndedSoftChallengesUseCase
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import io.sentry.SentryLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,6 +50,17 @@ import com.finite.focus.util.resolveAppsDisplayName
 import timber.log.Timber
 import javax.inject.Inject
 
+/**
+ * Lets the context-only [UsageTrackingService.startIfActiveChallenge] resolve its own repository,
+ * so a caller with no Hilt injection point of its own (notably [BootReceiver]) still goes through
+ * the same gate instead of starting the service blind.
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+internal interface StarterEntryPoint {
+    fun challengeRepository(): ChallengeRepository
+}
+
 @AndroidEntryPoint
 class UsageTrackingService : Service() {
 
@@ -47,14 +68,102 @@ class UsageTrackingService : Service() {
         private const val CHANNEL_ID = "detox_tracking"
         private const val NOTIFICATION_ID = 1
 
+        /**
+         * Latch remembering that a foreground promotion was refused by the platform, so the next
+         * moment a start is legal can retry it. Its own prefs file: the permission prefs are
+         * `clear()`ed wholesale on restore, which would silently drop a pending retry.
+         */
+        private const val RETRY_PREFS = "detox_fgs_retry"
+        private const val KEY_PENDING_START = "pendingForegroundStart"
+
+        /**
+         * Unconditional start. Only for call sites where an active challenge exists BY
+         * CONSTRUCTION (the user just created one) — everywhere else use [startIfActiveChallenge].
+         *
+         * Since Android 12 the platform refuses a background foreground-service start unless an
+         * exemption applies, and it can refuse on EITHER side: here at the caller, or inside the
+         * service at `Service.startForeground()` (see [promoteToForeground]). Both are caught; a
+         * refusal here means the service was never created, so the retry latch is all that is
+         * needed.
+         */
         fun start(context: Context) {
             val intent = Intent(context, UsageTrackingService::class.java)
-            ContextCompat.startForegroundService(context, intent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                startGuarded(context, intent)
+            } else {
+                ContextCompat.startForegroundService(context, intent)
+            }
+        }
+
+        @RequiresApi(Build.VERSION_CODES.S)
+        private fun startGuarded(context: Context, intent: Intent) {
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: ForegroundServiceStartNotAllowedException) {
+                Timber.w(e, "UsageTrackingService: start refused while backgrounded — retry pending")
+                markForegroundStartPending(context)
+            }
+        }
+
+        /**
+         * The guarded start: enforcement infrastructure only runs when there is something to
+         * enforce. No active challenge ⇒ no tracked packages, no overlays, no group polling — the
+         * service would idle in the foreground until the system killed it and then be recreated
+         * (START_STICKY) into a background context where the promotion is illegal. That recreation
+         * loop is the crash this gate removes at the source.
+         *
+         * Deliberately NOT gated on usage access: blocking is driven by the accessibility service
+         * reading [TrackedAppEventBus], which only THIS service populates, and by [OverlayManager]
+         * listening on this service's scope. `UsageStatsManager` feeds group leaderboard stats
+         * alone. Refusing to start without `PACKAGE_USAGE_STATS` would leave a user with a live
+         * challenge unblocked — enforcement must never get weaker.
+         *
+         * FAIL-OPEN on a Room read failure: an unreadable database means "unknown", never "nothing
+         * to enforce". Only a definitively empty active list suppresses the start.
+         */
+        suspend fun startIfActiveChallenge(context: Context) {
+            val repository = EntryPointAccessors
+                .fromApplication(context.applicationContext, StarterEntryPoint::class.java)
+                .challengeRepository()
+            startIfActiveChallenge(context, repository)
+        }
+
+        suspend fun startIfActiveChallenge(
+            context: Context,
+            challengeRepository: ChallengeRepository,
+        ) {
+            val active = challengeRepository.getActiveChallengesList().getOrElse { e ->
+                Timber.w(e, "UsageTrackingService: active-challenge read failed — starting anyway")
+                start(context)
+                return
+            }
+            if (active.isEmpty()) {
+                Timber.d("UsageTrackingService: no active challenge — not starting")
+                return
+            }
+            start(context)
         }
 
         fun stop(context: Context) {
             context.stopService(Intent(context, UsageTrackingService::class.java))
         }
+
+        /** True when a promotion was refused and has not succeeded since. */
+        fun isForegroundStartPending(context: Context): Boolean =
+            retryPrefs(context).getBoolean(KEY_PENDING_START, false)
+
+        private fun markForegroundStartPending(context: Context) {
+            retryPrefs(context).edit().putBoolean(KEY_PENDING_START, true).apply()
+        }
+
+        private fun clearForegroundStartPending(context: Context) {
+            if (isForegroundStartPending(context)) {
+                retryPrefs(context).edit().putBoolean(KEY_PENDING_START, false).apply()
+            }
+        }
+
+        private fun retryPrefs(context: Context): SharedPreferences =
+            context.applicationContext.getSharedPreferences(RETRY_PREFS, Context.MODE_PRIVATE)
     }
 
     @Inject
@@ -86,16 +195,17 @@ class UsageTrackingService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    /** Set once the foreground notification is actually held — see [promoteToForeground]. */
+    private var isPromoted = false
+
     override fun onCreate() {
         super.onCreate()
         Timber.d("UsageTrackingService created")
         createNotificationChannel()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            createNotification(),
-            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-        )
+        // The foreground promotion deliberately does NOT live here: onCreate cannot tell an
+        // explicit start from a system-initiated START_STICKY recreation, and the latter always
+        // runs in a background context where the promotion is illegal on Android 12+. It moved to
+        // onStartCommand, which knows the start reason. See [promoteToForeground].
 
         serviceScope.launch {
             challengeRepository.getActiveChallenges().collect { challenges ->
@@ -209,6 +319,13 @@ class UsageTrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A null intent means the SYSTEM recreated us after the process was killed (START_STICKY),
+        // not an explicit start. The app is backgrounded by definition on that path, so the
+        // promotion below is the one the platform is most likely to refuse — it must never be able
+        // to take the process down with it.
+        val systemRestart = intent == null
+        promoteToForeground(systemRestart)
+
         // Recovery: handle sessions that expired while the service was dead (Huawei kills onDestroy)
         serviceScope.launch(Dispatchers.IO) {
             val prefs = getSharedPreferences(OverlayManager.BUDGET_SESSION_PREFS_NAME, MODE_PRIVATE)
@@ -245,7 +362,70 @@ class UsageTrackingService : Service() {
             }
             // If sessionEndTime > now → session still active → polling loop handles periodic writes
         }
+        // START_STICKY stays. Enforcement lives entirely in this process: the tracked-package and
+        // blocked-domain sets in [TrackedAppEventBus] have no other writer at rest, and
+        // [OverlayManager] listens on this service's scope — so a killed, never-restarted service
+        // means a blocked app opens freely until the user next opens Finite. START_NOT_STICKY would
+        // trade this crash for silently absent enforcement, which is the one trade this fix may not
+        // make. The recreation path is now safe rather than avoided: the promotion is guarded, and
+        // the call-site gate means a user with nothing to enforce never starts the service in the
+        // first place, so the system has nothing to recreate.
         return START_STICKY
+    }
+
+    /**
+     * Promotes to the foreground, absorbing the platform's refusal.
+     *
+     * Since Android 12 a background foreground-service start throws unless an exemption applies.
+     * When it does, the platform has already cleared the service's pending "must call
+     * startForeground within 5s" obligation, so catching leaves a plain background service running
+     * — degraded, but still enforcing — rather than a dead process. It is NOT stopped here:
+     * everything the collectors set up in [onCreate] keeps working for as long as the system lets
+     * the service live, and giving up would be the enforcement regression this fix exists to avoid.
+     *
+     * On refusal the retry latch is set instead, and enforcement is re-promoted from the first
+     * context where a start is legal again — see [MainActivity.onResume] and
+     * [PermissionCheckWorker].
+     */
+    private fun promoteToForeground(systemRestart: Boolean) {
+        if (isPromoted) return
+        isPromoted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            startForegroundGuarded(systemRestart)
+        } else {
+            startForegroundNow()
+            true
+        }
+        if (isPromoted) clearForegroundStartPending(applicationContext)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun startForegroundGuarded(systemRestart: Boolean): Boolean = try {
+        startForegroundNow()
+        true
+    } catch (e: ForegroundServiceStartNotAllowedException) {
+        Timber.w(
+            e,
+            "UsageTrackingService: foreground promotion refused (systemRestart=%b) — " +
+                "continuing unpromoted, retry latched",
+            systemRestart
+        )
+        Sentry.addBreadcrumb(Breadcrumb().apply {
+            category = "UsageTrackingService"
+            message = "Foreground promotion refused"
+            level = SentryLevel.WARNING
+            setData("systemRestart", systemRestart)
+        })
+        markForegroundStartPending(applicationContext)
+        false
+    }
+
+    private fun startForegroundNow() {
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            createNotification(),
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

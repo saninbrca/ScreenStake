@@ -90,6 +90,14 @@ class PermissionCheckWorker @AssistedInject constructor(
         // went-dark forfeit (uninstall/disable), so this write is what keeps honest users safe.
         writeHeartbeatIfHardActive()
 
+        // Unattended half of the blocked-promotion retry (the primary hook is
+        // MainActivity.onResume). Runs BEFORE the early `return Result.success()` below so a
+        // healthy device still recovers enforcement. Best-effort by nature: on Android 12+ this
+        // start is only legal when the app holds an FGS-start exemption — which the enforcement
+        // population does, since blocking overlays require SYSTEM_ALERT_WINDOW. When it is not
+        // legal the attempt is absorbed and re-latched, never a crash.
+        retryBlockedForegroundStart()
+
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         checkAccessibilityPermission()
         checkAndReportUsageViolation()
@@ -262,6 +270,16 @@ class PermissionCheckWorker @AssistedInject constructor(
             .collection("permissionStatus").document("current")
             .set(mapOf("lastSeenAt" to now), SetOptions.merge())
         Timber.d("writeHeartbeatIfHardActive: lastSeenAt=$now written")
+    }
+
+    /**
+     * Retries a foreground promotion the platform refused, gated on there still being something to
+     * enforce. No-ops on the normal path — one boolean prefs read, no Room query.
+     */
+    private suspend fun retryBlockedForegroundStart() {
+        if (!UsageTrackingService.isForegroundStartPending(applicationContext)) return
+        Timber.d("PermissionCheckWorker: foreground start pending — retrying")
+        UsageTrackingService.startIfActiveChallenge(applicationContext, challengeRepository)
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean =

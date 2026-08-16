@@ -21,6 +21,49 @@
 
 ## [Unreleased] — July 2026
 
+### 2026-08-16 — `UsageTrackingService` no longer crashes when Android refuses the foreground promotion
+
+**FIXED + DECISION.** Production crash (`1.0.1` build 3, 8 events / 2 users, Samsung A82 / Android
+14): `ForegroundServiceStartNotAllowedException` → `Unable to create service`, fatal, uncaught. Both
+users had never finished onboarding.
+
+**The chain, start to finish.** `BootReceiver` started the service **unconditionally** at
+`BOOT_COMPLETED` — legal there, since that broadcast is an FGS-start exemption — on a phone with no
+challenge, no usage access and no overlay permission. The service then sat idle under `START_STICKY`,
+was killed with the process, and the system recreated it ~3h45 later in a background context, where
+`startForeground()` in `onCreate` is illegal on Android 12+. `onCreate` cannot tell an explicit start
+from a system recreation, so every creation path attempted the promotion.
+
+**Three changes.** (1) The promotion moved from `onCreate` to `onStartCommand`, which knows the start
+reason — `intent == null` is the system recreation. (2) It is wrapped in a narrow
+`catch (ForegroundServiceStartNotAllowedException)` on **both** sides (the caller's
+`startForegroundService` and the service's `startForeground`; the platform can refuse at either). The
+service is deliberately **not** stopped on refusal: the platform has already cleared the 5-second
+"must call startForeground" obligation by the time it throws, so the collectors keep enforcing as an
+unpromoted background service instead of the process dying. (3) `UsageTrackingService
+.startIfActiveChallenge` gates the start on there being something to enforce, and `BootReceiver`,
+`MainActivity.checkPermissionState` and both retry hooks go through it.
+
+**Retry, not surrender.** A refused promotion sets a persisted latch (`detox_fgs_retry`, its own
+prefs file — the permission prefs are `clear()`ed wholesale on restore). `MainActivity.onResume` is
+the primary hook: a resumed activity is the one context where the start is unconditionally legal, it
+needs no new alarm or worker, and it fires on exactly the event that makes the start legal again. The
+existing 15-minute `PermissionCheckWorker` carries the same retry as an unattended second chance.
+
+**DECISION — `START_STICKY` stays.** Enforcement lives entirely in this process: `TrackedAppEventBus`
+has no other writer at rest and `OverlayManager` listens on this service's scope, so a killed,
+never-restarted service means blocked apps open freely until the user next opens Finite.
+`START_NOT_STICKY` would trade the crash for silently absent enforcement. The recreation path is now
+*safe* rather than avoided, and the call-site gate means a user with nothing to enforce never starts
+the service, so the system has nothing to recreate.
+
+**DECISION — the start is NOT gated on usage access**, despite that being the obvious second
+prerequisite. Blocking is driven by `AppDetectionAccessibilityService` reading `TrackedAppEventBus`
+(populated only by this service) and by `OverlayManager`; `UsageStatsManager` feeds group leaderboard
+stats alone. Refusing to start without `PACKAGE_USAGE_STATS` would leave a user who revoked it
+mid-challenge unblocked. The binding condition is "at least one active challenge", fail-open on a
+Room read error — an unreadable database means "unknown", never "nothing to enforce".
+
 ### 2026-08-10 — Soft challenges now fail on prolonged permission loss (gated on usage evidence)
 
 **FEATURE + DECISION.** Turning the required permission off used to be a free win in Soft Mode:

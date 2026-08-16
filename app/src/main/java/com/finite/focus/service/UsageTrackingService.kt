@@ -377,15 +377,21 @@ class UsageTrackingService : Service() {
      * Promotes to the foreground, absorbing the platform's refusal.
      *
      * Since Android 12 a background foreground-service start throws unless an exemption applies.
-     * When it does, the platform has already cleared the service's pending "must call
-     * startForeground within 5s" obligation, so catching leaves a plain background service running
-     * — degraded, but still enforcing — rather than a dead process. It is NOT stopped here:
-     * everything the collectors set up in [onCreate] keeps working for as long as the system lets
-     * the service live, and giving up would be the enforcement regression this fix exists to avoid.
+     * Catching is safe: `ActiveServices.setServiceForegroundInnerLocked` clears `fgRequired` and
+     * cancels the "must call startForeground within 5s" timer BEFORE every throw in that method
+     * (`removeMessages(SERVICE_FOREGROUND_TIMEOUT_MSG)` on API 31-34, `mServiceFGAnrTimer.cancel`
+     * on 35-36), so no `RemoteServiceException` can follow. Verified against AOSP for API 31-36.
      *
-     * On refusal the retry latch is set instead, and enforcement is re-promoted from the first
-     * context where a start is legal again — see [MainActivity.onResume] and
-     * [PermissionCheckWorker].
+     * What survives a refusal is NARROW, and must not be mistaken for working enforcement: the
+     * service continues as a plain BACKGROUND service, which `ActiveServices.stopInBackgroundLocked`
+     * ("Stopping service due to app idle") reclaims once the uid goes background-idle — roughly
+     * 60s, per `ActivityManagerConstants.DEFAULT_BACKGROUND_SETTLE_TIME` — and the process is an
+     * LMK candidate before that. So this buys about a minute, not durable enforcement.
+     *
+     * It is still not stopped here, because that minute is free and the alternative was a dead
+     * process. But the RETRY is what actually restores enforcement, not this survival window — see
+     * [MainActivity.onResume] (always legal) and [PermissionCheckWorker] (API 31-34 only; see its
+     * retry comment for why 35+ is refused).
      */
     private fun promoteToForeground(systemRestart: Boolean) {
         if (isPromoted) return

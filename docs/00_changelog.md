@@ -50,6 +50,39 @@ the primary hook: a resumed activity is the one context where the start is uncon
 needs no new alarm or worker, and it fires on exactly the event that makes the start legal again. The
 existing 15-minute `PermissionCheckWorker` carries the same retry as an unattended second chance.
 
+**What the catch actually buys (verified against AOSP, API 31-36 — do not overstate this).** Two
+claims in the first version of this entry were too strong and are corrected here:
+
+1. *Catching is safe, but survival is ~60s, not durable.* `ActiveServices
+.setServiceForegroundInnerLocked` clears `fgRequired` and cancels the 5-second timer before every
+throw in that method (`removeMessages(SERVICE_FOREGROUND_TIMEOUT_MSG)` on 31-34,
+`mServiceFGAnrTimer.cancel` on 35-36), so no `RemoteServiceException` follows the catch. But the
+unpromoted service is then a plain background service, and `ActiveServices.stopInBackgroundLocked`
+("Stopping service due to app idle") reclaims it once the uid goes background-idle — roughly 60s per
+`ActivityManagerConstants.DEFAULT_BACKGROUND_SETTLE_TIME`. The catch buys about a minute; the RETRY
+is what restores enforcement.
+
+2. *The worker retry is Android 12-14 only.* It was justified as "the enforcement population holds
+SYSTEM_ALERT_WINDOW, which is an exemption". True through Android 14. From Android 15 the exemption
+also requires an overlay to be VISIBLE at that instant (`ActiveServices` gates
+`REASON_SYSTEM_ALERT_WINDOW_PERMISSION` behind `ProcessRecord.mState.hasOverlayUi()` under
+FGS_SAW_RESTRICTIONS), which is never true on a background worker tick. `MainActivity.onResume` is
+unaffected.
+
+**DECISION — no exemption permission is added to buy back the 15/16 window.**
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` and `USE_EXACT_ALARM` are both Play-policy permissions with
+narrow declared use cases, and adding either during the running 14-day closed test is a store risk
+not worth a degradation window. Accepted: on Android 15/16, recovery happens when the user next opens
+Finite.
+
+**Also confirmed, no change needed:** `specialUse` is on the BOOT_COMPLETED foreground-service
+allowlist (`ActivityManagerConstants.DEFAULT_FGS_BOOT_COMPLETED_ALLOWLIST` =
+CONNECTED_DEVICE | HEALTH | REMOTE_MESSAGING | SYSTEM_EXEMPTED | SPECIAL_USE | LOCATION), so
+`BootReceiver` starting this service is permitted on Android 15/16 — where that check lives; Android
+14 has no such check. The list is DeviceConfig-tunable, and if it were ever narrowed the failure
+arrives as `ForegroundServiceStartNotAllowedException` at `startForeground()`, which the new catch
+already absorbs.
+
 **DECISION — `START_STICKY` stays.** Enforcement lives entirely in this process: `TrackedAppEventBus`
 has no other writer at rest and `OverlayManager` listens on this service's scope, so a killed,
 never-restarted service means blocked apps open freely until the user next opens Finite.

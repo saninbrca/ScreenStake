@@ -92,10 +92,16 @@ class PermissionCheckWorker @AssistedInject constructor(
 
         // Unattended half of the blocked-promotion retry (the primary hook is
         // MainActivity.onResume). Runs BEFORE the early `return Result.success()` below so a
-        // healthy device still recovers enforcement. Best-effort by nature: on Android 12+ this
-        // start is only legal when the app holds an FGS-start exemption — which the enforcement
-        // population does, since blocking overlays require SYSTEM_ALERT_WINDOW. When it is not
-        // legal the attempt is absorbed and re-latched, never a crash.
+        // healthy device still recovers enforcement.
+        //
+        // EFFECTIVE ON ANDROID 12-14 ONLY. There it rides the plain SYSTEM_ALERT_WINDOW exemption,
+        // which the enforcement population holds because blocking overlays require it. From
+        // Android 15 that exemption additionally requires an overlay to be VISIBLE at that instant
+        // (`ActiveServices` checks `hasSystemAlertWindowPermission` and then, under
+        // FGS_SAW_RESTRICTIONS, `ProcessRecord.mState.hasOverlayUi()`), which is never true on a
+        // background worker tick — so on 15/16 this call is refused and simply re-latches. We
+        // knowingly take no other exemption route (battery-optimisation / exact-alarm are
+        // Play-policy permissions), so on 15/16 recovery waits for the user to open the app.
         retryBlockedForegroundStart()
 
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

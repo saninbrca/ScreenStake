@@ -88,4 +88,24 @@ data class ChallengeEntity(
      * on sync; never overwritten by sync once the row is already terminal locally.
      */
     @androidx.room.ColumnInfo(name = "failReason", defaultValue = "NULL") val failReason: String? = null,
+
+    /**
+     * When the challenge ACTUALLY ended, epoch millis. Null while active, and null for historical
+     * rows whose end could not be derived at migration time.
+     *
+     * Distinct from [endDate], which is and stays the PLANNED end: [endDate] is what settlement
+     * gating reads (`DateUtils.hasReachedEnd` / `hasPassedEnd`, `StakeCapture`) and it must never
+     * be rewritten. This column is the answer to "when did this finish?", which [endDate] cannot
+     * give for the two cases that made History unsortable — a challenge abandoned on day 2 of 30
+     * (whose [endDate] is 28 days in the FUTURE) and an open-ended challenge (whose [endDate] is
+     * the ~100-year `NO_END_DATE_DAYS` sentinel).
+     *
+     * DISPLAY AND SORT ONLY. No settlement, capture, refund or eligibility check may read it.
+     *
+     * Written ONCE, at the first terminal transition, and never moved afterwards — a re-settle, a
+     * server reconcile adopting an outcome, or a group `ended` row later resolving to
+     * completed/failed all keep the original date (`COALESCE(endedAt, ...)` in
+     * [com.finite.focus.data.local.db.dao.ChallengeDao.stampTerminalStatus]).
+     */
+    @androidx.room.ColumnInfo(name = "endedAt", defaultValue = "NULL") val endedAt: Long? = null,
 )

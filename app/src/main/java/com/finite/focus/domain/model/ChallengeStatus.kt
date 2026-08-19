@@ -48,5 +48,17 @@ enum class ChallengeStatus {
      * client cannot write `status` itself. That write is what stops the next reinstall from
      * re-pulling the doc as `active` and re-running this whole cycle.
      */
-    ENDED_UNVERIFIED
+    ENDED_UNVERIFIED;
+
+    /**
+     * True for every state in which the challenge is over and no longer enforces — i.e. everything
+     * except [ACTIVE]. This is exactly the set of statuses
+     * [com.finite.focus.data.local.db.dao.ChallengeDao.getFinishedSoloChallenges] returns, and the
+     * set that may stamp `ChallengeEntity.endedAt`.
+     *
+     * Deliberately derived as "not ACTIVE" rather than listed: a future terminal state added to
+     * this enum is then terminal here by default, which fails safe (it gets an ended-at date) in a
+     * way an allow-list would not (it would silently get none).
+     */
+    val isTerminal: Boolean get() = this != ACTIVE
 }

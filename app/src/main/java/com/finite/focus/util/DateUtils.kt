@@ -16,6 +16,17 @@ object DateUtils {
     const val NO_END_DATE_DAYS = 36500
 
     /**
+     * Floor below which a stored "timestamp" cannot be a real epoch-millis value (2023-11-14).
+     * Used to reject the LEGACY endDate shape — early rows stored `endDate` as a day OFFSET
+     * (`7`), not a timestamp, and treating one of those as millis dates a challenge to 1970.
+     *
+     * Not a date definition and not a cutoff for anything user-facing: it only answers "is this
+     * number plausibly a timestamp at all?" before a value is used as one. `ResultCopy` carries
+     * the same threshold inline for `resolvedEndDate`; this is the named copy for new callers.
+     */
+    const val MIN_PLAUSIBLE_TIMESTAMP_MS = 1_700_000_000_000L
+
+    /**
      * True when a challenge's resolved end-date [endMs] is the open-ended sentinel (created from
      * [NO_END_DATE_DAYS]). Real challenges are capped at 1..365 days (CreateChallengeUseCase), so only
      * the ~36500-day sentinel can reach this bound — a genuine long challenge can never be

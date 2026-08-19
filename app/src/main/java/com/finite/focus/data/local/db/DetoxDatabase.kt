@@ -21,7 +21,7 @@ import com.finite.focus.data.local.db.entity.PendingHardChallengeEntity
         GroupChallengeEntity::class,
         PendingHardChallengeEntity::class
     ],
-    version = 28,
+    version = 29,
     exportSchema = false
 )
 abstract class DetoxDatabase : RoomDatabase() {
@@ -470,6 +470,70 @@ abstract class DetoxDatabase : RoomDatabase() {
                     "ALTER TABLE group_challenges ADD COLUMN blockAdultContent INTEGER NOT NULL DEFAULT 0"
                 )
                 Timber.d("DB migration 27→28: added blockAdultContent column to group_challenges")
+            }
+        }
+
+        /**
+         * Adds the `endedAt` column to challenges — WHEN the challenge actually ended, as opposed
+         * to `endDate`, which is and remains the PLANNED end.
+         *
+         * `endDate` is deliberately NOT touched. Settlement gating reads it
+         * (`DateUtils.hasReachedEnd` / `hasPassedEnd`, `StakeCapture.durationDaysOf`), so rewriting
+         * it would move real money decisions; this migration only ADDS a display/sort column.
+         *
+         * ## Backfill (best effort, terminal rows only)
+         * `endedAt = MIN(endDate, MAX(dailyLogs.date))`, with each input dropped when it cannot be
+         * trusted:
+         *  - `endDate` counts only when it is a plausible timestamp (rules out the legacy day-offset
+         *    shape, e.g. `7`) AND already in the past (rules out both the ~100-year open-ended
+         *    sentinel and the future planned end of a challenge that was abandoned early — the two
+         *    cases this whole column exists to fix).
+         *  - the log max counts whenever the challenge has any logs.
+         *
+         * When both are usable the EARLIER wins, because a terminal row cannot have ended after its
+         * planned end, nor after its last recorded day. When neither is usable the row keeps NULL:
+         * a wrong date is worse than a missing one, and consumers already have a fallback
+         * (`effectiveEndDate`). ACTIVE rows are excluded outright — they have not ended.
+         *
+         * Note the log max is a local-midnight day key while `endDate` is 23:59:59.999, so on the
+         * same calendar day the log max wins. Both render identically at day granularity.
+         *
+         * `COALESCE(MIN(a, b), a, b)` is the whole rule: scalar `MIN` returns NULL if EITHER input
+         * is NULL, so it yields the earlier date only when both are usable, and the two fallback
+         * arms then pick whichever single one survived (NULL when neither did). Written with plain
+         * correlated scalar subqueries — repeated rather than factored into a derived table —
+         * because a correlated reference INTO a FROM-clause subquery is not portable SQL, and this
+         * statement runs on every existing install exactly once with no way to retry.
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE challenges ADD COLUMN endedAt INTEGER DEFAULT NULL"
+                )
+
+                val now = System.currentTimeMillis()
+                val minPlausible = 1_700_000_000_000L // DateUtils.MIN_PLAUSIBLE_TIMESTAMP_MS
+                database.execSQL(
+                    """
+                    UPDATE challenges SET endedAt = COALESCE(
+                        MIN(
+                            CASE
+                                WHEN endDate > $minPlausible AND endDate <= $now THEN endDate
+                                ELSE NULL
+                            END,
+                            (SELECT MAX(dl.date) FROM daily_logs dl WHERE dl.challengeId = challenges.id)
+                        ),
+                        CASE
+                            WHEN endDate > $minPlausible AND endDate <= $now THEN endDate
+                            ELSE NULL
+                        END,
+                        (SELECT MAX(dl.date) FROM daily_logs dl WHERE dl.challengeId = challenges.id)
+                    )
+                    WHERE endedAt IS NULL
+                      AND status IN ('completed', 'failed', 'ended', 'ended_unverified')
+                    """.trimIndent()
+                )
+                Timber.d("DB migration 28→29: added endedAt column to challenges + backfilled terminal rows")
             }
         }
 

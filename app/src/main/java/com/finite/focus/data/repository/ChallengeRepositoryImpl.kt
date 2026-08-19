@@ -1,6 +1,7 @@
 package com.finite.focus.data.repository
 
 import com.finite.focus.data.local.db.dao.ChallengeDao
+import com.finite.focus.data.local.db.dao.markTerminal
 import com.finite.focus.data.local.db.entity.ChallengeEntity
 import com.finite.focus.data.remote.firebase.FirebaseAuthService
 import com.finite.focus.data.remote.firebase.FirestoreService
@@ -158,7 +159,14 @@ class ChallengeRepositoryImpl @Inject constructor(
     ): Result<Unit> {
         return try {
             val statusStr = status.name.lowercase()
-            challengeDao.updateStatus(id, statusStr)
+            // Terminal outcomes also stamp endedAt (once — COALESCE in the query keeps the first
+            // date, so a re-settle never moves it). ACTIVE would be a caller bug, but route it
+            // through the plain status write rather than dating a challenge that has not ended.
+            if (status.isTerminal) {
+                challengeDao.markTerminal(id, statusStr)
+            } else {
+                challengeDao.updateStatus(id, statusStr)
+            }
             // For FAILED: persist the loss cause locally (UX only) so the loss dialog can show it
             // immediately, even before the Firestore round-trip. Falls back to "client_loss" for
             // callers that don't classify the cause.
@@ -223,9 +231,16 @@ class ChallengeRepositoryImpl @Inject constructor(
 
     override suspend fun endGroupChallengeLocally(id: String): Result<Unit> {
         return try {
-            // Room status column ONLY — no Firestore write, no CF, no Stripe, no delete. See the
-            // interface doc for why this must never go through updateChallengeStatus.
-            challengeDao.updateStatus(id, ChallengeStatus.ENDED.name.lowercase())
+            // Room status column (+ endedAt) ONLY — no Firestore write, no CF, no Stripe, no
+            // delete. See the interface doc for why this must never go through
+            // updateChallengeStatus.
+            //
+            // This is where a group challenge that ran to term gets its date, and it is the RIGHT
+            // moment for it: the row goes ENDED the day after the last day, and the stamp clamps
+            // back to endDate so it reads as the final day rather than the sweep's day. When
+            // settlement later lands, finishLocalGroupChallenge keeps this date instead of
+            // recording whenever the device happened to come back online.
+            challengeDao.markTerminal(id, ChallengeStatus.ENDED.name.lowercase())
             Timber.i("endGroupChallengeLocally: %s → ended (enforcement stopped, settlement untouched)", id)
             Result.success(Unit)
         } catch (e: Exception) {
@@ -303,6 +318,7 @@ class ChallengeRepositoryImpl @Inject constructor(
             pendingLimitValue = pendingLimitValue,
             pendingLimitAppliesAt = pendingLimitAppliesAt,
             failReason = failReason,
+            endedAt = endedAt,
         )
     }
 

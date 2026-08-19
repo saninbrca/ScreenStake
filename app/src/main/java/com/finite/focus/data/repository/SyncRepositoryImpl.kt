@@ -2,6 +2,7 @@ package com.finite.focus.data.repository
 
 import android.content.Context
 import com.finite.focus.data.local.db.dao.ChallengeDao
+import com.finite.focus.data.local.db.dao.markTerminal
 import com.finite.focus.data.local.db.dao.DailyLogDao
 import com.finite.focus.data.local.db.dao.PendingHardChallengeDao
 import com.finite.focus.data.local.db.entity.ChallengeEntity
@@ -166,7 +167,18 @@ class SyncRepositoryImpl @Inject constructor(
                             // updateStatus()) so the loss dialog can show the cause. The loss pops
                             // once (completionShown is left at its synced value, 0).
                             val serverStatus = challenge.status.name.lowercase()
-                            challengeDao.updateStatus(challenge.id, serverStatus)
+                            // markTerminal (not updateStatus) so a server-detected settlement the
+                            // device never saw locally still records WHEN it ended. Prefers the
+                            // server's own stamp when the doc carried one; falls back to the
+                            // clamped local clock when it did not.
+                            challenge.endedAt
+                                ?.let { challengeDao.stampTerminalStatus(
+                                    id = challenge.id,
+                                    status = serverStatus,
+                                    nowMs = it,
+                                    minPlausibleMs = DateUtils.MIN_PLAUSIBLE_TIMESTAMP_MS,
+                                ) }
+                                ?: challengeDao.markTerminal(challenge.id, serverStatus)
                             challenge.failReason?.let { challengeDao.updateFailReason(challenge.id, it) }
                             Timber.i(
                                 "SyncRepository: reconciled active→%s for challenge %s from server settlement",
@@ -440,6 +452,11 @@ class SyncRepositoryImpl @Inject constructor(
         // it at midnight. Map them through so the user's scheduled reduction survives sync.
         pendingLimitValue = pendingLimitValue,
         pendingLimitAppliesAt = pendingLimitAppliesAt,
+        // Real end date, folded from the server's failedAt/settledAt/payoutDate/completedAt by
+        // fetchFinishedChallenges. This is what makes a reinstall restore History with true end
+        // dates instead of planned ones. Null for active challenges (and for older docs that
+        // predate the server stamps) — consumers fall back via effectiveEndDate.
+        endedAt = endedAt,
     )
 
     // DailyLog → DailyLogEntity now lives in DailyLogEntity.kt (shared with DailyLogRepositoryImpl).

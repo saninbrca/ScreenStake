@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.finite.focus.data.local.db.entity.ChallengeEntity
+import com.finite.focus.util.DateUtils
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -40,6 +41,48 @@ interface ChallengeDao {
 
     @Query("UPDATE challenges SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)
+
+    /**
+     * The ONE terminal-status write. Sets `status` and stamps `endedAt` in a single statement, so
+     * every path that ends a challenge records WHEN it ended without a read-then-write race.
+     *
+     * `COALESCE(endedAt, ...)` is what makes it stamp-once: re-running settlement, a server
+     * reconcile adopting an outcome, or a group row going `ended` → `completed` all leave the
+     * FIRST date in place. Callers may therefore retry freely.
+     *
+     * The `CASE` clamps the stamp to the planned end, which is what keeps the date honest in the
+     * three shapes `endDate` comes in:
+     *  - **ran to term** — `endDate` is in the past when the terminal write lands (the group sweep
+     *    fires the day AFTER the last day, so a raw `now` would read one day late). Takes `endDate`.
+     *  - **ended early** (abandon, breach, permission loss) — `endDate` is still in the FUTURE, so
+     *    it is not the answer. Takes `now`.
+     *  - **open-ended or legacy** — `endDate` is the ~100-year `NO_END_DATE_DAYS` sentinel (fails
+     *    `< :nowMs`) or a legacy day-offset like `7` (fails `> :minPlausibleMs`). Takes `now`.
+     *
+     * `endDate` itself is NEVER written here. It stays the PLANNED end that settlement gating
+     * (`DateUtils.hasReachedEnd` / `hasPassedEnd`, `StakeCapture`) reads — this method adds a
+     * column, it does not move one.
+     */
+    @Query(
+        """
+        UPDATE challenges SET
+            status = :status,
+            endedAt = COALESCE(
+                endedAt,
+                CASE
+                    WHEN endDate > :minPlausibleMs AND endDate < :nowMs THEN endDate
+                    ELSE :nowMs
+                END
+            )
+        WHERE id = :id
+        """
+    )
+    suspend fun stampTerminalStatus(
+        id: String,
+        status: String,
+        nowMs: Long,
+        minPlausibleMs: Long,
+    )
 
     /**
      * Writes the loss-cause column ONLY (never status), so the "sync writes status via updateStatus()
@@ -160,3 +203,20 @@ interface ChallengeDao {
     """)
     suspend fun getChallengesWithRedemptionAvailable(now: Long): List<ChallengeEntity>
 }
+
+/**
+ * The call every terminal path uses. Wraps [ChallengeDao.stampTerminalStatus] so the plausibility
+ * floor is supplied in exactly one place and no call site can forget it or invent its own.
+ *
+ * [nowMs] is a parameter purely so tests can pin the clock; production always takes the default.
+ */
+suspend fun ChallengeDao.markTerminal(
+    id: String,
+    status: String,
+    nowMs: Long = System.currentTimeMillis(),
+) = stampTerminalStatus(
+    id = id,
+    status = status,
+    nowMs = nowMs,
+    minPlausibleMs = DateUtils.MIN_PLAUSIBLE_TIMESTAMP_MS,
+)

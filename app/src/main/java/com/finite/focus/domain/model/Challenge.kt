@@ -77,6 +77,16 @@ data class Challenge(
     /** Timestamp (millis) when pendingLimitValue should be applied (= next midnight). */
     val pendingLimitAppliesAt: Long? = null,
 
+    /**
+     * When the challenge ACTUALLY ended, epoch millis; null while active or when unknown.
+     * Display/sort only — see [com.finite.focus.data.local.db.entity.ChallengeEntity.endedAt].
+     *
+     * Populated on the read path by `FirestoreService.fetchFinishedChallenges`, which folds the
+     * server's four differently-named terminal stamps (`failedAt` / `settledAt` / `payoutDate` /
+     * `completedAt`) into this one field so a reinstall restores real end dates.
+     */
+    val endedAt: Long? = null,
+
     // ── Anti-cheat / fraud-prevention metadata (Hard Mode + Group; Firestore only) ──
     // Stored on the Firestore challenge document for the anti-cheat detection system
     // (collectionGroup query groups by deviceId; isRooted gives full coverage on paid

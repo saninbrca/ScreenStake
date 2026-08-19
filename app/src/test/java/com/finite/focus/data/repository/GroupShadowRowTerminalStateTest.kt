@@ -139,7 +139,10 @@ class GroupShadowRowTerminalStateTest {
 
         repo.finishLocalGroupChallenge(groupId, succeeded = true)
 
-        coVerify(exactly = 1) { challengeDao.updateStatus(localId, "completed") }
+        // Terminal writes go through stampTerminalStatus so the row also records WHEN it ended.
+        coVerify(exactly = 1) {
+            challengeDao.stampTerminalStatus(localId, "completed", any(), any())
+        }
     }
 
     @Test
@@ -149,6 +152,7 @@ class GroupShadowRowTerminalStateTest {
         repo.finishLocalGroupChallenge(groupId, succeeded = false)
 
         coVerify(exactly = 0) { challengeDao.updateStatus(any(), any()) }
+        coVerify(exactly = 0) { challengeDao.stampTerminalStatus(any(), any(), any(), any()) }
     }
 
     @Test
@@ -160,7 +164,9 @@ class GroupShadowRowTerminalStateTest {
 
         repo.syncGroupChallengeToLocalTracking(forfeited, userId)
 
-        coVerify(exactly = 1) { challengeDao.updateStatus(localId, "failed") }
+        coVerify(exactly = 1) {
+            challengeDao.stampTerminalStatus(localId, "failed", any(), any())
+        }
         coVerify(exactly = 0) { challengeDao.deleteById(any()) }
     }
 }

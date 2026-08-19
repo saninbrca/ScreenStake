@@ -50,6 +50,50 @@ class EffectiveEndDateTest {
         assertEquals(start, effectiveEndDate(start, end, emptyList()))
     }
 
+    // ── endedAt takes precedence over every fallback ────────────────────────
+
+    @Test
+    fun `a recorded endedAt wins over the planned endDate`() {
+        // The bug this column exists for: abandoned on day 2 of a 30-day challenge. The planned
+        // end is 28 days in the FUTURE and must not be what the row sorts or reads by.
+        val plannedEnd = start + 30 * day
+        val reallyEnded = start + 2 * day
+
+        val result = effectiveEndDate(start, plannedEnd, emptyList(), endedAtMs = reallyEnded)
+
+        assertEquals(reallyEnded, result)
+        assertTrue("must not fall back to the planned end", result < plannedEnd)
+    }
+
+    @Test
+    fun `a recorded endedAt wins over the open-ended log-max fallback`() {
+        val sentinelEnd = DateUtils.endOfDayMillis(start, DateUtils.NO_END_DATE_DAYS)
+        val reallyEnded = start + 40 * day
+
+        val result = effectiveEndDate(
+            start, sentinelEnd, listOf(log(start + 11 * day)), endedAtMs = reallyEnded
+        )
+
+        assertEquals(reallyEnded, result)
+    }
+
+    @Test
+    fun `an open-ended challenge with no logs but a recorded endedAt no longer collapses to start`() {
+        val sentinelEnd = DateUtils.endOfDayMillis(start, DateUtils.NO_END_DATE_DAYS)
+        val reallyEnded = start + 90 * day
+
+        assertEquals(
+            reallyEnded,
+            effectiveEndDate(start, sentinelEnd, emptyList(), endedAtMs = reallyEnded)
+        )
+    }
+
+    @Test
+    fun `a null endedAt keeps the pre-existing fallback behaviour for un-backfilled rows`() {
+        val end = start + 7 * day
+        assertEquals(end, effectiveEndDate(start, end, emptyList(), endedAtMs = null))
+    }
+
     @Test
     fun `abandoned open-ended challenge sorts below a fixed-end challenge that finished later`() {
         val sentinelEnd = DateUtils.endOfDayMillis(start, DateUtils.NO_END_DATE_DAYS)

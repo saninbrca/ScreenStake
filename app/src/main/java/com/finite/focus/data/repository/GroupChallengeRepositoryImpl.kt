@@ -1,6 +1,7 @@
 package com.finite.focus.data.repository
 
 import com.finite.focus.data.local.db.dao.ChallengeDao
+import com.finite.focus.data.local.db.dao.markTerminal
 import com.finite.focus.data.local.db.dao.GroupChallengeDao
 import com.finite.focus.data.local.db.entity.ChallengeEntity
 import com.finite.focus.data.local.db.entity.GroupChallengeEntity
@@ -307,7 +308,10 @@ class GroupChallengeRepositoryImpl @Inject constructor(
                 )
                 return Result.success(Unit)
             }
-            challengeDao.updateStatus(localChallengeId, finalStatus)
+            // Stamps endedAt too, but COALESCE keeps any date endGroupChallengeLocally already
+            // wrote when the row went ENDED — settlement landing late (offline for days) must not
+            // relabel WHEN the challenge ended.
+            challengeDao.markTerminal(localChallengeId, finalStatus)
             Timber.d(
                 "GroupChallengeRepo: finishLocalGroupChallenge %s → %s (was %s)",
                 groupId, finalStatus, current

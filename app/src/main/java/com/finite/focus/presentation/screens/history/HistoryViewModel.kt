@@ -30,7 +30,14 @@ data class SoloChallengeHistory(
     val entity: ChallengeEntity,
     val stats: HistoryStats?,    // null for FAILED entries
     val durationDays: Int,
-    /** Sort key only — never displayed. See [effectiveEndDate]. */
+    /**
+     * When this challenge actually ended — the real `endedAt` when one was recorded, otherwise the
+     * best available approximation. See [effectiveEndDate].
+     *
+     * Currently the sort key only; the row still displays `entity.endDate` (the PLANNED end). That
+     * split is the known History display bug and is the next task's to close — this field is
+     * already the value it should display.
+     */
     val effectiveEndDate: Long
 )
 
@@ -38,22 +45,36 @@ data class SoloChallengeHistory(
 enum class HistoryFilter { ALL, COMPLETED, FAILED }
 
 /**
- * When a challenge actually finished, safe for open-ended ("Kein Enddatum") challenges. Fixed-end
- * challenges use their real [endMs]. Open-ended challenges carry a ~100-year sentinel end date
- * ([DateUtils.isOpenEnded]) that must NEVER be used as a sort key — abandoning one leaves the
- * sentinel in place, which would pin the entry to the top of a newest-first list forever. For
- * those we return the last tracked DailyLog date (same signal [openEndedSafeDurationDays] uses),
- * falling back to [startMs] when no log exists.
+ * **The single "when did this challenge end" accessor.** Everything that sorts, groups or displays
+ * a finished challenge by its end reads this and nothing else — there is deliberately no second
+ * definition to drift against.
+ *
+ * Resolution order:
+ *  1. **[endedAtMs]** — the real recorded end (`ChallengeEntity.endedAt`), stamped at the terminal
+ *     transition. Correct for every case, including the two the fallback can only approximate.
+ *  2. Open-ended challenge ⇒ last tracked DailyLog date, else [startMs]. The ~100-year sentinel
+ *     ([DateUtils.isOpenEnded]) must NEVER become a sort key: abandoning one leaves the sentinel in
+ *     place, pinning the entry to the top of a newest-first list forever.
+ *  3. Otherwise [endMs] — the PLANNED end.
+ *
+ * Steps 2–3 are the pre-`endedAt` behaviour, kept as the fallback for rows the migration could not
+ * backfill (finished before the column existed, no logs, no usable end date). They carry the known
+ * inaccuracies that motivated the column and cannot be fixed from the data alone: a challenge
+ * abandoned on day 2 of 30 falls through to its PLANNED end, 28 days in the future, and an
+ * open-ended challenge with no logs falls back to its start. Rows with [endedAtMs] have neither
+ * problem.
  */
 internal fun effectiveEndDate(
     startMs: Long,
     endMs: Long,
-    logs: List<DailyLogEntity>
-): Long = if (DateUtils.isOpenEnded(startMs, endMs)) {
-    logs.maxOfOrNull { it.date } ?: startMs
-} else {
-    endMs
-}
+    logs: List<DailyLogEntity>,
+    endedAtMs: Long? = null,
+): Long = endedAtMs
+    ?: if (DateUtils.isOpenEnded(startMs, endMs)) {
+        logs.maxOfOrNull { it.date } ?: startMs
+    } else {
+        endMs
+    }
 
 /**
  * Duration in CALENDAR days for a finished solo challenge, safe for open-ended ("Kein Enddatum")
@@ -117,7 +138,9 @@ class HistoryViewModel @Inject constructor(
                 entity = entity,
                 stats = stats,
                 durationDays = durationDays,
-                effectiveEndDate = effectiveEndDate(entity.startDate, entity.endDate, logs)
+                effectiveEndDate = effectiveEndDate(
+                    entity.startDate, entity.endDate, logs, entity.endedAt
+                )
             )
         }.sortedByDescending { it.effectiveEndDate } // newest-finished first, sentinel-safe
         _allEntries.value = result

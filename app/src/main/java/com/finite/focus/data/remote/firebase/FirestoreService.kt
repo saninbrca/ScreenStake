@@ -7,12 +7,56 @@ import com.finite.focus.domain.model.ChallengeStatus
 import com.finite.focus.domain.model.DailyLog
 import com.finite.focus.domain.model.LimitType
 import com.finite.focus.domain.model.PartialBlockSection
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Reads a Firestore field that is supposed to hold epoch millis, whatever SHAPE it was stored in.
+ *
+ * The same logical instant reaches us three ways and the naive `as? Long` silently loses two of
+ * them (yielding null, or worse a 0 that renders as 1970):
+ *  - **Long** — a JS `Date.now()` written by a Cloud Function, the common case.
+ *  - **Double** — the same number after a round-trip that went through a floating-point
+ *    representation; Firestore hands back whichever numeric type it stored.
+ *  - **Timestamp** — the shape `FieldValue.serverTimestamp()` / `Timestamp.now()` produces, which
+ *    parts of this codebase already use (e.g. `syncedAt`).
+ *
+ * Anything else — a String, a Map, a missing field — is not a date and returns null. Non-positive
+ * values return null too: 0 is the classic "field was absent" artefact and must never be mistaken
+ * for a real instant at the epoch.
+ */
+internal fun parseEpochMillis(value: Any?): Long? = when (value) {
+    is Long -> value.takeIf { it > 0L }
+    is Int -> value.toLong().takeIf { it > 0L }
+    is Double -> value.toLong().takeIf { it > 0L }
+    is Timestamp -> value.toDate().time.takeIf { it > 0L }
+    is java.util.Date -> value.time.takeIf { it > 0L }
+    else -> null
+}
+
+/**
+ * The one real end date for a finished challenge doc, folded out of the FOUR differently-named
+ * stamps the server writes depending on which path settled it:
+ *  - `failedAt`    — every loss (`markChallengeFailed`, plus the Hard reconciliation losses)
+ *  - `settledAt`   — Soft solo win / unverified (`markChallengeSettled`)
+ *  - `payoutDate`  — Hard solo win, written alongside the refund
+ *  - `completedAt` — group settlement (lives on the GROUP doc, so it is effectively never present
+ *                    here; included so the precedence is complete rather than accidentally right)
+ *
+ * Loss before win is deliberate: if a doc somehow carried both, the loss is the one that actually
+ * ended the challenge. Returns null when none of them parse — the caller must leave `endedAt`
+ * null, never 0.
+ */
+internal fun parseEndedAt(d: Map<String, Any?>): Long? =
+    parseEpochMillis(d["failedAt"])
+        ?: parseEpochMillis(d["settledAt"])
+        ?: parseEpochMillis(d["payoutDate"])
+        ?: parseEpochMillis(d["completedAt"])
 
 /**
  * Terminal settlement snapshot of a challenge doc (server source of truth).
@@ -512,6 +556,7 @@ class FirestoreService @Inject constructor(
                         pendingLimitValue = (d["pendingLimitValue"] as? Long)?.toInt(),
                         pendingLimitAppliesAt = d["pendingLimitAppliesAt"] as? Long,
                         failReason = d["failReason"] as? String,
+                        endedAt = parseEndedAt(d),
                     )
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to parse finished challenge document ${doc.id}")

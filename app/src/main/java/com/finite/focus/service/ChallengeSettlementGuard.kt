@@ -1,6 +1,7 @@
 package com.finite.focus.service
 
 import com.finite.focus.data.local.db.dao.ChallengeDao
+import com.finite.focus.data.local.db.dao.markTerminal
 import com.finite.focus.data.remote.firebase.FirebaseAuthService
 import com.finite.focus.data.remote.firebase.FirestoreService
 import timber.log.Timber
@@ -67,7 +68,11 @@ class ChallengeSettlementGuard @Inject constructor(
                 else -> null
             }
             if (terminalStatus != null) {
-                challengeDao.updateStatus(challengeId, terminalStatus)
+                // markTerminal, not updateStatus: adopting the server's outcome is a terminal
+                // transition and must record an end date too, otherwise a challenge settled
+                // server-side lands in History with no date at all. Stamp-once, so if the device
+                // had already settled this row locally the original date stands.
+                challengeDao.markTerminal(challengeId, terminalStatus)
                 Timber.i(
                     "SettlementGuard: server already settled %s (status=%s payout=%s) → Room=%s, skipping local settlement",
                     challengeId, settlement.status, settlement.payoutStatus, terminalStatus

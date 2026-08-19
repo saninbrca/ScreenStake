@@ -72,7 +72,6 @@ import kotlin.math.floor
 @Composable
 fun HistoryDetailScreen(
     onBack: () -> Unit,
-    onStartAgain: (packageNames: String) -> Unit,
     viewModel: HistoryDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

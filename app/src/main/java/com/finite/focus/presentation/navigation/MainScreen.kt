@@ -56,7 +56,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import android.net.Uri
 import androidx.navigation.navArgument
 import com.finite.focus.R
 import com.finite.focus.presentation.screens.activechallenge.ActiveChallengeScreen
@@ -531,12 +530,7 @@ fun MainScreen(
                 arguments = listOf(navArgument("challengeId") { type = NavType.StringType })
             ) {
                 HistoryDetailScreen(
-                    onBack = { navController.popBackStack() },
-                    onStartAgain = { pkgs ->
-                        navController.navigate(
-                            "challenge_creation?prePackage=${Uri.encode(pkgs)}"
-                        )
-                    }
+                    onBack = { navController.popBackStack() }
                 )
             }
         }

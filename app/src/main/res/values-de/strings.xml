@@ -1491,21 +1491,8 @@
     <string name="verlauf_filter_all">Alle</string>
     <string name="verlauf_filter_won">Gewonnen</string>
     <string name="verlauf_filter_eliminated">Ausgeschieden</string>
-    <string name="verlauf_filter_abandoned">Abgebrochen</string>
     <string name="verlauf_filter_completed">Geschafft</string>
-    <string name="verlauf_filter_failed">Fehlgeschlagen</string>
     <string name="verlauf_filter_empty">Keine Challenges für diesen Filter</string>
-
-    <!-- Verlauf Screen — status badges -->
-    <string name="verlauf_badge_won">✓ Gewonnen</string>
-    <string name="verlauf_badge_eliminated">✗ Ausgeschieden</string>
-    <string name="verlauf_badge_abandoned">Abgebrochen</string>
-
-    <!-- Verlauf Screen — card subrow labels -->
-    <string name="verlauf_subrow_group">👥 %1$d von %2$d Spielern gewonnen · %3$s</string>
-    <string name="verlauf_subrow_soft">SOFT MODE · %1$s</string>
-    <string name="verlauf_subrow_hard">HARD MODE · %1$s</string>
-    <string name="verlauf_subrow_comeback">COMEBACK · %1$s</string>
 
     <!-- Verlauf Screen — payout detail section -->
     <string name="verlauf_payout_stake_captured">Einsatz eingezogen: %1$s</string>
@@ -1794,7 +1781,6 @@
     <string name="unverified_dialog_title">Challenge beendet</string>
     <string name="unverified_dialog_body">Lief ab, während die App nicht installiert war — nicht gewertet.</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d Tage</string>
-    <string name="verlauf_no_end_date">Kein Enddatum</string>
     <!-- Verlauf-Liste — echtes Enddatum, Monats-Abschnitte, Ergebnis pro Zeile -->
     <string name="verlauf_ended_on">Beendet am %1$s</string>
     <string name="verlauf_section_undated">Ohne Datum</string>
@@ -1810,22 +1796,14 @@
     <string name="fail_reason_short_usage">Trotz Sperre genutzt</string>
     <string name="fail_reason_short_reconciliation">Serverseitig beendet</string>
     <string name="fail_reason_short_unknown">Nicht geschafft</string>
-    <string name="verlauf_stats_time_label">ZEIT ZURÜCKGEWONNEN</string>
-    <string name="verlauf_stats_subtext_full_day">≈ ein ganzer Arbeitstag</string>
-    <string name="verlauf_stats_subtext_half_day">≈ ein halber Arbeitstag</string>
-    <string name="verlauf_stats_subtext_hours">≈ %d Stunden gewonnen</string>
-    <string name="verlauf_stats_subtext_minutes">≈ %d Minuten gewonnen</string>
     <string name="verlauf_stats_streak_label">Beste Streak</string>
     <string name="verlauf_stats_opens_label">Bewusst geöffnet</string>
-    <string name="verlauf_stats_reduction_label">weniger Zeit</string>
-    <string name="verlauf_failed_ended">Challenge am %1$s beendet</string>
     <string name="verlauf_hard_refund">💰 €%1$.2f zurückgebucht</string>
     <string name="verlauf_hard_refund_fee" formatted="false">App-Gebühr (20%) wurde einbehalten</string>
     <string name="verlauf_hard_captured">💸 €%1$.2f eingezogen</string>
     <string name="verlauf_hard_captured_reason">Challenge nicht bestanden</string>
     <string name="verlauf_hard_pending_settlement">⏳ %1$.2f € Einsatz — wird abgerechnet</string>
     <string name="verlauf_hard_pending_settlement_hint">Die Challenge ist vorbei. Die Abrechnung läuft, sobald du wieder online bist.</string>
-    <string name="verlauf_start_again">Nochmal starten</string>
     <string name="verlauf_empty">Noch keine abgeschlossenen Challenges</string>
 
     <!-- History Detail Screen -->

@@ -1858,6 +1858,21 @@
     <string name="unverified_dialog_body">It ran out while Finite wasn\'t installed — so it counts as neither a win nor a loss.</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d days</string>
     <string name="verlauf_no_end_date">No end date</string>
+    <!-- History list — actual end date, month sections, per-row outcome -->
+    <string name="verlauf_ended_on">Ended %1$s</string>
+    <string name="verlauf_section_undated">No date</string>
+    <string name="verlauf_value_unknown">—</string>
+    <string name="verlauf_context_held_days">%1$d days completed</string>
+    <string name="verlauf_context_after_days">after %1$d of %2$d days</string>
+    <string name="verlauf_context_not_installed">App was not installed</string>
+    <string name="verlauf_filter_not_completed">Not completed</string>
+    <!-- Short row-sized loss reasons. Sentence-length counterparts: fail_reason_* -->
+    <string name="fail_reason_short_limit_exceeded">Limit exceeded</string>
+    <string name="fail_reason_short_abandon">Given up</string>
+    <string name="fail_reason_short_permission">Permission</string>
+    <string name="fail_reason_short_usage">Used despite block</string>
+    <string name="fail_reason_short_reconciliation">Settled server-side</string>
+    <string name="fail_reason_short_unknown">Not completed</string>
     <string name="verlauf_stats_time_label">TIME RECLAIMED</string>
     <string name="verlauf_stats_subtext_full_day">≈ a full workday</string>
     <string name="verlauf_stats_subtext_half_day">≈ half a workday</string>

@@ -1795,6 +1795,21 @@
     <string name="unverified_dialog_body">Lief ab, während die App nicht installiert war — nicht gewertet.</string>
     <string name="verlauf_date_range">%1$s–%2$s · %3$d Tage</string>
     <string name="verlauf_no_end_date">Kein Enddatum</string>
+    <!-- Verlauf-Liste — echtes Enddatum, Monats-Abschnitte, Ergebnis pro Zeile -->
+    <string name="verlauf_ended_on">Beendet am %1$s</string>
+    <string name="verlauf_section_undated">Ohne Datum</string>
+    <string name="verlauf_value_unknown">—</string>
+    <string name="verlauf_context_held_days">%1$d Tage durchgehalten</string>
+    <string name="verlauf_context_after_days">nach %1$d von %2$d Tagen</string>
+    <string name="verlauf_context_not_installed">App war nicht installiert</string>
+    <string name="verlauf_filter_not_completed">Nicht geschafft</string>
+    <!-- Kurze Verlust-Gruende fuer Listenzeilen. Satzlange Gegenstuecke: fail_reason_* -->
+    <string name="fail_reason_short_limit_exceeded">Limit überschritten</string>
+    <string name="fail_reason_short_abandon">Aufgegeben</string>
+    <string name="fail_reason_short_permission">Berechtigung</string>
+    <string name="fail_reason_short_usage">Trotz Sperre genutzt</string>
+    <string name="fail_reason_short_reconciliation">Serverseitig beendet</string>
+    <string name="fail_reason_short_unknown">Nicht geschafft</string>
     <string name="verlauf_stats_time_label">ZEIT ZURÜCKGEWONNEN</string>
     <string name="verlauf_stats_subtext_full_day">≈ ein ganzer Arbeitstag</string>
     <string name="verlauf_stats_subtext_half_day">≈ ein halber Arbeitstag</string>

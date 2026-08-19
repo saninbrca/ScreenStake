@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.finite.focus.data.local.db.DetoxDatabase
 import com.finite.focus.data.local.db.entity.ChallengeEntity
 import com.finite.focus.data.local.db.entity.DailyLogEntity
+import com.finite.focus.util.DateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +30,8 @@ class HistoryDetailViewModel @Inject constructor(
             val entity: ChallengeEntity,
             val stats: HistoryStats?,
             val durationDays: Int,
+            /** When it actually ended, or null when no trustworthy date exists. */
+            val endedAt: Long?,
         ) : UiState
         data object NotFound : UiState
     }
@@ -47,9 +50,18 @@ class HistoryDetailViewModel @Inject constructor(
             return
         }
         val logs = database.dailyLogDao().getLogsForChallengeOnce(challengeId)
-        val durationDays = openEndedSafeDurationDays(entity.startDate, entity.endDate, logs)
+        // Same accessor and same day-count as the list, so "Dauer" here and the row there can never
+        // disagree. Counting to the ACTUAL end is the fix for a 30-day challenge abandoned on day 2
+        // reading "30 Tage": the planned endDate was 28 days in the future and was being counted.
+        val effectiveEnd = effectiveEndDate(
+            startMs = entity.startDate,
+            endMs = entity.endDate,
+            lastLogDateMs = logs.maxOfOrNull { it.date },
+            endedAtMs = entity.endedAt,
+        )
+        val durationDays = DateUtils.calendarDurationDays(entity.startDate, effectiveEnd)
         val stats = if (entity.status == "completed") computeStats(entity, logs, durationDays) else null
-        _uiState.value = UiState.Success(entity, stats, durationDays)
+        _uiState.value = UiState.Success(entity, stats, durationDays, displayableEndDate(effectiveEnd))
         Timber.d("HistoryDetailViewModel: loaded ${entity.appDisplayName}, stats=$stats")
     }
 

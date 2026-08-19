@@ -58,6 +58,28 @@ fun failReasonStringRes(failReason: String?): Int = when (failReason) {
 }
 
 /**
+ * The same classification as [failReasonStringRes], in row-sized words: "Limit überschritten"
+ * rather than "Du hast dein Tageslimit überschritten."
+ *
+ * Kept immediately beside its sentence-length twin and matching it key-for-key ON PURPOSE. The two
+ * are one classification in two registers, not two classifications — a `failReason` added to one
+ * `when` and forgotten in the other is a bug, and putting them adjacent is what makes that
+ * omission obvious. Do not move this elsewhere or let the key sets diverge.
+ *
+ * Used by the History list, where the full sentence would not fit and where every loss previously
+ * collapsed to a single "Aufgegeben" regardless of what actually happened.
+ */
+@StringRes
+fun failReasonShortStringRes(failReason: String?): Int = when (failReason) {
+    "limit_exceeded" -> R.string.fail_reason_short_limit_exceeded
+    "abandon" -> R.string.fail_reason_short_abandon
+    "permission_violation" -> R.string.fail_reason_short_permission
+    "usage_violation" -> R.string.fail_reason_short_usage
+    "reconciliation" -> R.string.fail_reason_short_reconciliation
+    else -> R.string.fail_reason_short_unknown
+}
+
+/**
  * RED loss result dialog — the unified screen shown on every Hard Mode loss path (worker capture,
  * abandon, permission violation). Mirrors [ChallengeSuccessDialog]'s layout via the shared
  * [ResultDialogScaffold] / [ResultCard] / [ResultStatLine], but with a red ✗ icon, "Challenge

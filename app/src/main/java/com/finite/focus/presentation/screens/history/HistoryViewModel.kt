@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.finite.focus.data.local.db.DetoxDatabase
 import com.finite.focus.data.local.db.entity.ChallengeEntity
-import com.finite.focus.data.local.db.entity.DailyLogEntity
 import com.finite.focus.util.DateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -13,10 +12,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.Calendar
 import javax.inject.Inject
 
 data class HistoryStats(
@@ -26,23 +25,78 @@ data class HistoryStats(
     val percentageReduction: Int // 0–99, clamped
 )
 
+/**
+ * One finished challenge, resolved for display. Everything the row renders is decided here — the
+ * Composable formats, it does not derive.
+ */
 data class SoloChallengeHistory(
     val entity: ChallengeEntity,
-    val stats: HistoryStats?,    // null for FAILED entries
+    /**
+     * When this challenge ended, from the single accessor ([effectiveEndDate]). Sort key AND the
+     * date the row displays — the two were different fields before, which is what made the list
+     * jump between dates it never showed.
+     */
+    val effectiveEndDate: Long,
+    /**
+     * The same instant, but only when it is trustworthy enough to put in front of the user; null
+     * otherwise. See [displayableEndDate] — a null here means the row shows no date line at all
+     * rather than a future or 1970 one.
+     */
+    val displayEndDate: Long?,
+    /** CALENDAR days actually held: start → [effectiveEndDate]. */
     val durationDays: Int,
     /**
-     * When this challenge actually ended — the real `endedAt` when one was recorded, otherwise the
-     * best available approximation. See [effectiveEndDate].
-     *
-     * Currently the sort key only; the row still displays `entity.endDate` (the PLANNED end). That
-     * split is the known History display bug and is the next task's to close — this field is
-     * already the value it should display.
+     * CALENDAR days the challenge was PLANNED to run, or null when that is not derivable
+     * (open-ended, legacy day-offset endDate). Only ever used as the denominator of the
+     * "after N of M days" line, which is suppressed when this is null.
      */
-    val effectiveEndDate: Long
+    val plannedDurationDays: Int?,
 )
 
-/** Status filter for the history list. */
-enum class HistoryFilter { ALL, COMPLETED, FAILED }
+/**
+ * Status filter for the history list.
+ *
+ * There are deliberately only three. `ended` (group challenge awaiting server settlement) and
+ * `ended_unverified` (soft challenge restored after a reinstall, outcome unknowable) belong to
+ * NEITHER outcome tab: calling them completed would celebrate a run nobody observed, and calling
+ * them losses would accuse the user of a breach nobody recorded. They appear under [ALL] only, and
+ * that is a decision rather than an oversight.
+ */
+enum class HistoryFilter { ALL, COMPLETED, NOT_COMPLETED }
+
+/** A row in the flattened list: either a month separator or a challenge. */
+sealed interface HistoryRow {
+    /** Stable identity for `LazyColumn`'s `key`. */
+    val key: String
+
+    /**
+     * Start-of-month instant for the section below it, or null for the trailing "no date" group.
+     * Carried as a timestamp, not a formatted string, so the label is built with the DEVICE locale
+     * at render time instead of being frozen into the ViewModel.
+     */
+    data class MonthHeader(val monthStartMs: Long?) : HistoryRow {
+        override val key = "header-${monthStartMs ?: "undated"}"
+    }
+
+    data class Entry(val item: SoloChallengeHistory) : HistoryRow {
+        override val key = "entry-${item.entity.id}"
+    }
+}
+
+sealed interface HistoryUiState {
+    /**
+     * First load. Distinct from [NoHistory] purely so the "no finished challenges yet" copy stops
+     * flashing on every open — the list is read off the disk asynchronously, and an empty list is
+     * indistinguishable from "not loaded yet" without this.
+     */
+    data object Loading : HistoryUiState
+
+    /** Nothing has ever finished — no filter chrome, just the empty message. */
+    data object NoHistory : HistoryUiState
+
+    /** [rows] is empty when the active filter matches nothing; the filter chrome still shows. */
+    data class Content(val rows: List<HistoryRow>) : HistoryUiState
+}
 
 /**
  * **The single "when did this challenge end" accessor.** Everything that sorts, groups or displays
@@ -52,7 +106,7 @@ enum class HistoryFilter { ALL, COMPLETED, FAILED }
  * Resolution order:
  *  1. **[endedAtMs]** — the real recorded end (`ChallengeEntity.endedAt`), stamped at the terminal
  *     transition. Correct for every case, including the two the fallback can only approximate.
- *  2. Open-ended challenge ⇒ last tracked DailyLog date, else [startMs]. The ~100-year sentinel
+ *  2. Open-ended challenge ⇒ [lastLogDateMs], else [startMs]. The ~100-year sentinel
  *     ([DateUtils.isOpenEnded]) must NEVER become a sort key: abandoning one leaves the sentinel in
  *     place, pinning the entry to the top of a newest-first list forever.
  *  3. Otherwise [endMs] — the PLANNED end.
@@ -61,40 +115,93 @@ enum class HistoryFilter { ALL, COMPLETED, FAILED }
  * backfill (finished before the column existed, no logs, no usable end date). They carry the known
  * inaccuracies that motivated the column and cannot be fixed from the data alone: a challenge
  * abandoned on day 2 of 30 falls through to its PLANNED end, 28 days in the future, and an
- * open-ended challenge with no logs falls back to its start. Rows with [endedAtMs] have neither
- * problem.
+ * open-ended challenge with no logs falls back to its start. [displayableEndDate] is what stops
+ * either of those reaching the user as a date.
  */
 internal fun effectiveEndDate(
     startMs: Long,
     endMs: Long,
-    logs: List<DailyLogEntity>,
+    lastLogDateMs: Long?,
     endedAtMs: Long? = null,
 ): Long = endedAtMs
     ?: if (DateUtils.isOpenEnded(startMs, endMs)) {
-        logs.maxOfOrNull { it.date } ?: startMs
+        lastLogDateMs ?: startMs
     } else {
         endMs
     }
 
 /**
- * Duration in CALENDAR days for a finished solo challenge, safe for open-ended ("Kein Enddatum")
- * challenges. Fixed-end challenges count start→[endMs]. Open-ended challenges carry a ~100-year
- * sentinel end date ([DateUtils.isOpenEnded]) that must NEVER be rendered as a day count — for those
- * we count up to the last tracked DailyLog date instead, i.e. the days actually survived.
+ * [effectiveEndDate], but only when it can honestly be shown as "ended on X"; null otherwise.
  *
- * Both branches defer to [DateUtils.calendarDurationDays], the one day-count definition, so a 7-day
- * challenge reads back as 7 here exactly as it does on the result dialogs. The former raw-span form
- * truncated: created at 10:00, a 7-day challenge ends day 7 at 23:59 — a 6.58-day span that showed
- * as "6 Tage" in the detail header and gave `computeStats` a budget one day short.
+ * Two shapes must never reach the user, and both come from the fallback arms above — a recorded
+ * `endedAt` always passes:
+ *  - a **future** date, from a challenge abandoned early whose PLANNED end has not arrived yet;
+ *  - a **1970** date, from a legacy row whose `endDate` is a day offset (`7`) rather than millis.
+ *
+ * Callers render no date line at all when this is null. That is deliberate: a history row without
+ * a date is merely incomplete, whereas a row claiming the user finished something next month is
+ * wrong, and wrong is worse.
  */
-internal fun openEndedSafeDurationDays(
-    startMs: Long,
-    endMs: Long,
-    logs: List<DailyLogEntity>
-): Int = if (DateUtils.isOpenEnded(startMs, endMs)) {
-    DateUtils.calendarDurationDays(startMs, logs.maxOfOrNull { it.date } ?: startMs)
-} else {
-    DateUtils.calendarDurationDays(startMs, endMs)
+internal fun displayableEndDate(
+    effectiveEndMs: Long,
+    nowMs: Long = System.currentTimeMillis(),
+): Long? = effectiveEndMs.takeIf {
+    it > DateUtils.MIN_PLAUSIBLE_TIMESTAMP_MS && it <= nowMs
+}
+
+/**
+ * The days a challenge was PLANNED to run, or null when the plan is not knowable.
+ *
+ * Null for an open-ended challenge (the ~100-year sentinel is not a plan anyone made) and for a
+ * legacy day-offset `endDate`. Both would otherwise produce an absurd denominator in "after 2 of
+ * 36500 days", so the line is dropped instead.
+ *
+ * Defers to [DateUtils.calendarDurationDays], the one day-count definition in the codebase.
+ */
+internal fun plannedDurationDays(startMs: Long, endMs: Long): Int? = when {
+    DateUtils.isOpenEnded(startMs, endMs) -> null
+    endMs <= DateUtils.MIN_PLAUSIBLE_TIMESTAMP_MS -> null
+    else -> DateUtils.calendarDurationDays(startMs, endMs)
+}
+
+/** Midnight on the first day of the month containing [timestampMs] — the grouping key. */
+internal fun monthStart(timestampMs: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = timestampMs
+    set(Calendar.DAY_OF_MONTH, 1)
+    set(Calendar.HOUR_OF_DAY, 0)
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+/**
+ * Flattens sorted entries into month sections.
+ *
+ * Runs AFTER filtering so a filter can never leave an empty month heading behind. Rows with no
+ * displayable date cannot honestly claim a month, so they collect in a single trailing group
+ * (`monthStartMs == null`) instead of being scattered into whichever month their fallback date
+ * happens to land in.
+ */
+internal fun groupByMonth(entries: List<SoloChallengeHistory>): List<HistoryRow> {
+    val rows = mutableListOf<HistoryRow>()
+    var currentMonth: Long? = null
+    var started = false
+    // Dated entries first (already sorted newest-first), undated last.
+    val (dated, undated) = entries.partition { it.displayEndDate != null }
+    dated.forEach { entry ->
+        val month = monthStart(entry.displayEndDate!!)
+        if (!started || month != currentMonth) {
+            rows += HistoryRow.MonthHeader(month)
+            currentMonth = month
+            started = true
+        }
+        rows += HistoryRow.Entry(entry)
+    }
+    if (undated.isNotEmpty()) {
+        rows += HistoryRow.MonthHeader(null)
+        undated.forEach { rows += HistoryRow.Entry(it) }
+    }
+    return rows
 }
 
 @HiltViewModel
@@ -102,23 +209,19 @@ class HistoryViewModel @Inject constructor(
     private val database: DetoxDatabase,
 ) : ViewModel() {
 
-    private val _allEntries = MutableStateFlow<List<SoloChallengeHistory>>(emptyList())
+    private val _allEntries = MutableStateFlow<List<SoloChallengeHistory>?>(null) // null = loading
 
     private val _filter = MutableStateFlow(HistoryFilter.ALL)
     val filter: StateFlow<HistoryFilter> = _filter.asStateFlow()
 
-    /** True once at least one finished challenge exists, regardless of the active filter. */
-    val hasAnyEntries: StateFlow<Boolean> = _allEntries.map { it.isNotEmpty() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
-    val entries: StateFlow<List<SoloChallengeHistory>> =
+    val uiState: StateFlow<HistoryUiState> =
         combine(_allEntries, _filter) { all, filter ->
-            when (filter) {
-                HistoryFilter.ALL -> all
-                HistoryFilter.COMPLETED -> all.filter { it.entity.status == "completed" }
-                HistoryFilter.FAILED -> all.filter { it.entity.status == "failed" }
+            when {
+                all == null -> HistoryUiState.Loading
+                all.isEmpty() -> HistoryUiState.NoHistory
+                else -> HistoryUiState.Content(groupByMonth(all.filter(filter::matches)))
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState.Loading)
 
     init {
         viewModelScope.launch(Dispatchers.IO) { load() }
@@ -130,83 +233,38 @@ class HistoryViewModel @Inject constructor(
 
     private suspend fun load() {
         val solos = database.challengeDao().getFinishedSoloChallenges()
+        // ONE aggregate query for the whole list instead of one log query per row. Only the
+        // pre-`endedAt` fallback needs this at all, and it needs a single number per challenge.
+        val lastLogDates = database.dailyLogDao().getLastLogDatePerChallenge()
+            .associate { it.challengeId to it.lastDate }
+
         val result = solos.map { entity ->
-            val logs = database.dailyLogDao().getLogsForChallengeOnce(entity.id)
-            val durationDays = openEndedSafeDurationDays(entity.startDate, entity.endDate, logs)
-            val stats = if (entity.status == "completed") computeStats(entity, logs, durationDays) else null
+            val effectiveEnd = effectiveEndDate(
+                startMs = entity.startDate,
+                endMs = entity.endDate,
+                lastLogDateMs = lastLogDates[entity.id],
+                endedAtMs = entity.endedAt,
+            )
             SoloChallengeHistory(
                 entity = entity,
-                stats = stats,
-                durationDays = durationDays,
-                effectiveEndDate = effectiveEndDate(
-                    entity.startDate, entity.endDate, logs, entity.endedAt
-                )
+                effectiveEndDate = effectiveEnd,
+                displayEndDate = displayableEndDate(effectiveEnd),
+                // Real days held — start → when it ACTUALLY ended, so a 30-day challenge abandoned
+                // on day 2 reads 2, not 30. Same single day-count definition as every other surface.
+                durationDays = DateUtils.calendarDurationDays(entity.startDate, effectiveEnd),
+                plannedDurationDays = plannedDurationDays(entity.startDate, entity.endDate),
             )
-        }.sortedByDescending { it.effectiveEndDate } // newest-finished first, sentinel-safe
+        }.sortedByDescending { it.effectiveEndDate } // newest-finished first; the date shown IS this
+
         _allEntries.value = result
         Timber.d("HistoryViewModel: loaded ${result.size} entries")
     }
+}
 
-    private fun computeStats(
-        entity: ChallengeEntity,
-        logs: List<DailyLogEntity>,
-        durationDays: Int
-    ): HistoryStats {
-        val totalConsciousOpens = logs.sumOf { it.consciousOpens }
-
-        val savedMinutes: Int = when (entity.limitType) {
-            "time" -> {
-                val budget = durationDays * entity.limitValueMinutes
-                val used = logs.sumOf { it.totalMinutes }
-                (budget - used).coerceAtLeast(0)
-            }
-            "time_budget" -> {
-                val budgetPerDay = entity.dailyBudgetMinutes ?: 0
-                val budget = durationDays * budgetPerDay
-                val used = (logs.sumOf { it.budgetUsedMs } / 60_000).toInt()
-                (budget - used).coerceAtLeast(0)
-            }
-            else -> -1
-        }
-
-        val percentage: Int = when (entity.limitType) {
-            "sessions" -> {
-                val limit = entity.limitValueSessions ?: 1
-                val budget = durationDays * limit
-                if (budget > 0)
-                    ((1.0 - totalConsciousOpens.toDouble() / budget) * 100).toInt().coerceIn(0, 99)
-                else 0
-            }
-            "time" -> {
-                val budget = durationDays * entity.limitValueMinutes
-                val used = logs.sumOf { it.totalMinutes }
-                if (budget > 0)
-                    ((1.0 - used.toDouble() / budget) * 100).toInt().coerceIn(0, 99)
-                else 0
-            }
-            "time_budget" -> {
-                val budgetPerDay = entity.dailyBudgetMinutes ?: 1
-                val budget = durationDays * budgetPerDay
-                val used = (logs.sumOf { it.budgetUsedMs } / 60_000).toInt()
-                if (budget > 0)
-                    ((1.0 - used.toDouble() / budget) * 100).toInt().coerceIn(0, 99)
-                else 0
-            }
-            else -> 0
-        }
-
-        val sorted = logs.sortedBy { it.date }
-        var bestStreak = 0
-        var current = 0
-        for (log in sorted) {
-            if (!log.limitExceeded) {
-                current++
-                bestStreak = maxOf(bestStreak, current)
-            } else {
-                current = 0
-            }
-        }
-
-        return HistoryStats(bestStreak, totalConsciousOpens, savedMinutes, percentage)
-    }
+/** Which rows a tab shows. See [HistoryFilter] for why the two indeterminate states match neither. */
+private fun HistoryFilter.matches(item: SoloChallengeHistory): Boolean = when (this) {
+    HistoryFilter.ALL -> true
+    HistoryFilter.COMPLETED -> item.entity.status == "completed"
+    // Every terminal loss, whatever the fail reason — the reason is shown ON the row, not filtered by.
+    HistoryFilter.NOT_COMPLETED -> item.entity.status == "failed"
 }

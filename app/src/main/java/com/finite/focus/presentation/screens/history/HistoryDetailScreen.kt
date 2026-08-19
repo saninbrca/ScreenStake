@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
@@ -59,10 +60,8 @@ import com.finite.focus.data.local.db.entity.ChallengeEntity
 import com.finite.focus.presentation.components.activeDaysSummary
 import com.finite.focus.presentation.components.timeWindowSummary
 import com.finite.focus.ui.theme.detoxColors
-import com.finite.focus.util.DateUtils
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import kotlin.math.floor
 
 // All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
@@ -133,6 +132,7 @@ fun HistoryDetailScreen(
                     entity = state.entity,
                     stats = state.stats,
                     durationDays = state.durationDays,
+                    endedAt = state.endedAt,
                     modifier = Modifier.padding(innerPadding),
                 )
             }
@@ -147,6 +147,7 @@ private fun DetailContent(
     entity: ChallengeEntity,
     stats: HistoryStats?,
     durationDays: Int,
+    endedAt: Long?,
     modifier: Modifier = Modifier,
 ) {
     val context     = LocalContext.current
@@ -158,14 +159,20 @@ private fun DetailContent(
     val isUnverified = entity.status == "ended_unverified"
     val isHard      = entity.mode == "hard"
     val isGroup     = !entity.groupChallengeId.isNullOrBlank()
-    val dateFormat  = remember { SimpleDateFormat("d. MMM yyyy", Locale("de")) }
-    val startStr    = remember(entity.startDate) { dateFormat.format(Date(entity.startDate)) }
-    // Open-ended sentinel endDate must never render as a far-future date.
-    val isOpenEnded = remember(entity.startDate, entity.endDate) {
-        DateUtils.isOpenEnded(entity.startDate, entity.endDate)
+    // Device locale, not a hardcoded German one, and a locale-ordered pattern rather than the
+    // German-shaped "d. MMM yyyy" literal (§4b).
+    val locale      = LocalConfiguration.current.locales[0]
+    val dateFormat  = remember(locale) {
+        SimpleDateFormat(
+            android.text.format.DateFormat.getBestDateTimePattern(locale, "dMMMy"),
+            locale
+        )
     }
-    val endStr      = if (isOpenEnded) stringResource(R.string.verlauf_no_end_date)
-                      else remember(entity.endDate) { dateFormat.format(Date(entity.endDate)) }
+    val startStr    = remember(entity.startDate, dateFormat) { dateFormat.format(Date(entity.startDate)) }
+    // The ACTUAL end, from the shared accessor — never the open-ended sentinel and never a planned
+    // date that has not arrived. A dash when no trustworthy date exists, so the row still lines up.
+    val endStr      = endedAt?.let { remember(it, dateFormat) { dateFormat.format(Date(it)) } }
+        ?: stringResource(R.string.verlauf_value_unknown)
 
     Column(
         modifier = modifier
@@ -268,6 +275,7 @@ private fun DetailContent(
                 HardMoneySection(
                     isCompleted = isCompleted,
                     isAwaitingSettlement = isAwaitingSettlement,
+                    isUnverified = isUnverified,
                     amountCents = amountCents
                 )
             }
@@ -430,9 +438,15 @@ private fun StatColumn(
 private fun HardMoneySection(
     isCompleted: Boolean,
     isAwaitingSettlement: Boolean,
+    isUnverified: Boolean,
     amountCents: Int,
 ) {
-    if (isAwaitingSettlement) {
+    // An unverified outcome is not a loss. Unreachable today — markChallengeSettled and
+    // SettleEndedSoftChallengesUseCase both fence ENDED_UNVERIFIED to Soft rows with no
+    // PaymentIntent, so a Hard row cannot carry it — but without this branch it would fall to the
+    // `else` below and tell the user their stake was charged when nothing of the sort happened.
+    // Money copy must fail neutral, not accusatory.
+    if (isAwaitingSettlement || isUnverified) {
         // The challenge is over locally but the server has not settled it, so NEITHER the refund
         // nor the "stake captured" copy is true yet. Stating either one here would be telling the
         // user their money is gone (or back) when it is neither. Show the stake and say what

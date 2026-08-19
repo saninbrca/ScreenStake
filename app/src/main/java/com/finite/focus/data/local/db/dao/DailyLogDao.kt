@@ -7,6 +7,12 @@ import androidx.room.Query
 import com.finite.focus.data.local.db.entity.DailyLogEntity
 import kotlinx.coroutines.flow.Flow
 
+/** Projection for [DailyLogDao.getLastLogDatePerChallenge]. */
+data class ChallengeLastLogDate(
+    val challengeId: String,
+    val lastDate: Long,
+)
+
 @Dao
 interface DailyLogDao {
 
@@ -18,6 +24,17 @@ interface DailyLogDao {
 
     @Query("SELECT * FROM daily_logs WHERE challengeId = :challengeId ORDER BY date DESC")
     suspend fun getLogsForChallengeOnce(challengeId: String): List<DailyLogEntity>
+
+    /**
+     * Last tracked day per challenge, in ONE query — the History list's fallback end date for rows
+     * that predate `ChallengeEntity.endedAt` and could not be backfilled.
+     *
+     * Exists to kill an N+1: the list used to run `getLogsForChallengeOnce` per row and then read a
+     * single `max(date)` out of each result, i.e. it loaded every log of every finished challenge
+     * to compute one number apiece. Nothing else on the row needs log rows at all.
+     */
+    @Query("SELECT challengeId, MAX(date) AS lastDate FROM daily_logs GROUP BY challengeId")
+    suspend fun getLastLogDatePerChallenge(): List<ChallengeLastLogDate>
 
     @Query("SELECT * FROM daily_logs WHERE date = :date")
     fun observeLogsForDate(date: Long): Flow<List<DailyLogEntity>>

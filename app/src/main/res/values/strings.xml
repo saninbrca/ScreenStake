@@ -378,6 +378,8 @@
     <string name="auth_google_button">Continue with Google</string>
     <string name="auth_show_password">Show password</string>
     <string name="auth_hide_password">Hide password</string>
+    <string name="auth_show_confirm_password">Show confirm password</string>
+    <string name="auth_hide_confirm_password">Hide confirm password</string>
     <string name="auth_forgot_password">Forgot password?</string>
     <string name="auth_forgot_password_sent">Email sent. Check your spam folder too.</string>
     <string name="auth_forgot_password_google_hint">Signed up with Google? Then there is no password to reset — just use “Continue with Google”.</string>

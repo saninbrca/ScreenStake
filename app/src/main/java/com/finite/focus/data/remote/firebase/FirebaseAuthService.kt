@@ -10,6 +10,23 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Thin wrapper over [FirebaseAuth].
+ *
+ * ## Logging rule for this file: uid only, never email / displayName / token
+ *
+ * Every log line here identifies the user by `uid` and nothing else. This is the same rule
+ * `DetoxApplication` already applies to `Sentry.setUser` ("Only the Firebase UID — never
+ * email/name (DSGVO)"), extended to logs now that a release Timber tree forwards WARN/ERROR to
+ * Sentry — an interpolated address in a log message would otherwise leave the device to a
+ * third-party processor, against what the onboarding copy promises. `uid` is safe because Sentry
+ * already has it as `User.id`, and it is the key you actually search by.
+ *
+ * [com.finite.focus.util.LogRedaction] scrubs these patterns from anything that reaches Sentry
+ * anyway, but that is the safety net for future code — do not rely on it here, and do not
+ * re-introduce an address into a message on the grounds that it will be caught downstream
+ * (the scrubber does not run on Logcat in debug builds).
+ */
 @Singleton
 class FirebaseAuthService @Inject constructor(
     private val firebaseAuth: FirebaseAuth
@@ -24,7 +41,7 @@ class FirebaseAuthService @Inject constructor(
             val credential = GoogleAuthProvider.getCredential(idToken, null)
             val result = firebaseAuth.signInWithCredential(credential).await()
             val user = result.user ?: return Result.failure(Exception("Sign-in succeeded but user is null"))
-            Timber.d("Signed in with Google as ${user.displayName} (${user.uid})")
+            Timber.d("Signed in with Google as uid=${user.uid}")
             Result.success(user)
         } catch (e: Exception) {
             Timber.e(e, "Google sign-in failed")
@@ -40,7 +57,7 @@ class FirebaseAuthService @Inject constructor(
         return try {
             val result = firebaseAuth.signInWithEmailAndPassword(email, password).await()
             val user = result.user ?: return Result.failure(Exception("Sign-in succeeded but user is null"))
-            Timber.d("Signed in with email as ${user.email} (${user.uid})")
+            Timber.d("Signed in with email as uid=${user.uid}")
             Result.success(user)
         } catch (e: Exception) {
             Timber.e(e, "Email sign-in failed")
@@ -56,7 +73,7 @@ class FirebaseAuthService @Inject constructor(
         return try {
             val result = firebaseAuth.createUserWithEmailAndPassword(email, password).await()
             val user = result.user ?: return Result.failure(Exception("Registration succeeded but user is null"))
-            Timber.d("Registered new user ${user.email} (${user.uid})")
+            Timber.d("Registered new user uid=${user.uid}")
             Result.success(user)
         } catch (e: Exception) {
             Timber.e(e, "Email registration failed")
@@ -71,10 +88,10 @@ class FirebaseAuthService @Inject constructor(
     suspend fun sendPasswordReset(email: String): Result<Unit> {
         return try {
             firebaseAuth.sendPasswordResetEmail(email).await()
-            Timber.d("Password reset email sent to $email")
+            Timber.d("Password reset email sent")
             Result.success(Unit)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to send password reset to $email")
+            Timber.e(e, "Failed to send password reset")
             Result.failure(e)
         }
     }
@@ -103,7 +120,7 @@ class FirebaseAuthService @Inject constructor(
             val user = firebaseAuth.currentUser
                 ?: return Result.failure(Exception("No signed-in user"))
             user.sendEmailVerification().await()
-            Timber.d("Verification email sent to ${user.email}")
+            Timber.d("Verification email sent to uid=${user.uid}")
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "Failed to send verification email")
@@ -144,7 +161,7 @@ class FirebaseAuthService @Inject constructor(
                 ?: return Result.failure(Exception("Current user has no email"))
             val credential = EmailAuthProvider.getCredential(email, password)
             user.reauthenticate(credential).await()
-            Timber.d("Re-authenticated user ${user.email}")
+            Timber.d("Re-authenticated user uid=${user.uid}")
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "Re-authentication failed")
@@ -162,7 +179,7 @@ class FirebaseAuthService @Inject constructor(
             val user = firebaseAuth.currentUser
                 ?: return Result.failure(Exception("No signed-in user"))
             user.updateProfile(userProfileChangeRequest { displayName = name }).await()
-            Timber.d("Updated displayName to '$name' for uid=${user.uid}")
+            Timber.d("Updated displayName for uid=${user.uid}")
             Result.success(Unit)
         } catch (e: Exception) {
             Timber.e(e, "Failed to update displayName")
@@ -195,10 +212,7 @@ class FirebaseAuthService @Inject constructor(
         if (user == null) {
             Timber.tag(tag).w("NOT signed in — no Firebase user session")
         } else {
-            Timber.tag(tag).d("Signed in: uid=%s email=%s",
-                user.uid,
-                user.email
-            )
+            Timber.tag(tag).d("Signed in: uid=%s", user.uid)
         }
     }
 }

@@ -37,6 +37,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.annotation.StringRes
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -56,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -81,6 +83,9 @@ import com.finite.focus.ui.theme.detoxColors
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import io.sentry.SentryLevel
 import timber.log.Timber
 
 // All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
@@ -123,8 +128,11 @@ fun AuthScreen(
             val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(ApiException::class.java)
             val idToken = account.idToken
-            Timber.d("Google Sign-In: account=%s idToken=%s",
-                account.email,
+            // Neither the address nor the token itself is logged — only whether a token came
+            // back, plus its length, which is all the diagnosis ever needed. The release Timber
+            // tree forwards WARN/ERROR to Sentry, and an ID token in a breadcrumb would be worse
+            // than an email address.
+            Timber.d("Google Sign-In: account resolved, idToken=%s",
                 if (idToken != null) "present (${idToken.length} chars)" else "NULL")
             if (idToken == null) {
                 viewModel.onGoogleSignInNullToken()
@@ -133,6 +141,18 @@ fun AuthScreen(
             }
         } catch (e: ApiException) {
             Timber.w("Google Sign-In: ApiException statusCode=%d", e.statusCode)
+            // A BREADCRUMB, not a second event. This catch is the only caller of
+            // onGoogleSignInApiError, which captures the tagged event on the line below — and it
+            // is the half that knows 12501 means "user cancelled" and must stay silent. Reporting
+            // the ApiException here as well would duplicate every real failure and turn every
+            // cancelled sign-in into an issue. The status code still travels with the event:
+            // here as the trail leading up to it, there as the searchable tag.
+            Sentry.addBreadcrumb(Breadcrumb().apply {
+                category = "auth"
+                message = "Google Sign-In returned ApiException"
+                level = SentryLevel.WARNING
+                setData("statusCode", e.statusCode)
+            })
             viewModel.onGoogleSignInApiError(e.statusCode)
         }
     }
@@ -192,6 +212,7 @@ fun AuthScreen(
                     isLoading = isLoading,
                     error = errorMessage,
                     infoMessage = infoMessage,
+                    onFieldEdit = { viewModel.clearError() },
                     onLogin = { email, password -> viewModel.login(email, password) },
                     onForgotPassword = { email -> viewModel.sendPasswordReset(email) }
                 )
@@ -199,6 +220,7 @@ fun AuthScreen(
                 RegisterForm(
                     isLoading = isLoading,
                     error = errorMessage,
+                    onFieldEdit = { viewModel.clearError() },
                     onRegister = { email, password, confirm, agb, datenschutz, age18 ->
                         viewModel.register(email, password, confirm, agb, datenschutz, age18)
                     }
@@ -268,6 +290,8 @@ private fun LoginForm(
     isLoading: Boolean,
     error: String?,
     infoMessage: String?,
+    /** Clears the global auth error so a stale failure cannot outlive the edit that follows it. */
+    onFieldEdit: () -> Unit,
     onLogin: (email: String, password: String) -> Unit,
     onForgotPassword: (email: String) -> Unit
 ) {
@@ -302,7 +326,7 @@ private fun LoginForm(
     ) {
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it; emailError = null },
+            onValueChange = { email = it; emailError = null; onFieldEdit() },
             label = { Text(stringResource(R.string.auth_email_label)) },
             placeholder = { Text(stringResource(R.string.auth_email_placeholder)) },
             singleLine = true,
@@ -319,7 +343,7 @@ private fun LoginForm(
 
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it; passwordError = null },
+            onValueChange = { password = it; passwordError = null; onFieldEdit() },
             label = { Text(stringResource(R.string.auth_password_label)) },
             singleLine = true,
             isError = passwordError != null,
@@ -397,6 +421,8 @@ private fun LoginForm(
 private fun RegisterForm(
     isLoading: Boolean,
     error: String?,
+    /** Clears the global auth error so a stale failure cannot outlive the edit that follows it. */
+    onFieldEdit: () -> Unit,
     onRegister: (
         email: String,
         password: String,
@@ -410,7 +436,16 @@ private fun RegisterForm(
     var password by rememberSaveable { mutableStateOf("") }
     var confirmPassword by rememberSaveable { mutableStateOf("") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
-    var emailError by rememberSaveable { mutableStateOf<String?>(null) }
+    // Independent from passwordVisible on purpose: the whole point of the confirm field is to
+    // check the two match, so revealing one must not reveal the other.
+    var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
+    // "Touched" = the user has left the email field once, or has attempted to submit. Gates the
+    // inline error so it never fires while someone is still typing the first characters.
+    var emailTouched by rememberSaveable { mutableStateOf(false) }
+    // Tracks whether the field has ever actually held focus. Needed because onFocusChanged also
+    // reports isFocused = false on the very first composition, which would otherwise read as a
+    // focus LOSS and flag an untouched empty field the moment the screen opens.
+    var emailHadFocus by rememberSaveable { mutableStateOf(false) }
     var consentAGB by rememberSaveable { mutableStateOf(false) }
     var consentDatenschutz by rememberSaveable { mutableStateOf(false) }
     var consentAge18 by rememberSaveable { mutableStateOf(false) }
@@ -424,20 +459,29 @@ private fun RegisterForm(
     val strength = remember(password) { passwordStrength(password) }
     val passwordsMatch = confirmPassword.isEmpty() || password == confirmPassword
 
+    // ONE source of truth for "is this address usable". Both the button's enabled state and the
+    // inline error below read this same value, so the two can never disagree — the bug was that
+    // the button silently consumed this verdict while nothing on screen ever voiced it.
+    val emailValid = isValidEmail(email)
+
     val canSubmit = !isLoading &&
-            isValidEmail(email) &&
+            emailValid &&
             password.length >= 8 &&
             confirmPassword.isNotBlank() &&
             password == confirmPassword &&
             consentAGB && consentDatenschutz && consentAge18
 
+    // Derived, not stored: it clears itself the instant the address becomes valid, with no
+    // second code path that could forget to.
+    val emailError: String? = when {
+        !emailTouched || emailValid -> null
+        email.isBlank() -> emailEmptyMsg
+        else -> emailInvalidMsg
+    }
+
     fun submit() {
-        emailError = when {
-            email.isBlank() -> emailEmptyMsg
-            !isValidEmail(email) -> emailInvalidMsg
-            else -> null
-        }
-        if (emailError == null) {
+        emailTouched = true
+        if (emailValid) {
             keyboard?.hide()
             onRegister(email, password, confirmPassword, consentAGB, consentDatenschutz, consentAge18)
         }
@@ -449,7 +493,7 @@ private fun RegisterForm(
     ) {
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it; emailError = null },
+            onValueChange = { email = it; onFieldEdit() },
             label = { Text(stringResource(R.string.auth_email_label)) },
             placeholder = { Text(stringResource(R.string.auth_email_placeholder)) },
             singleLine = true,
@@ -459,14 +503,23 @@ private fun RegisterForm(
                 imeAction = ImeAction.Next
             ),
             keyboardActions = KeyboardActions(onNext = { passwordFocus.requestFocus() }),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                // Focus loss is the trigger, not keystrokes — that is what keeps the error from
+                // appearing while the first characters are still being typed. Gated on the field
+                // having genuinely held focus first, so leaving it blank only counts once the
+                // user has actually been in it.
+                .onFocusChanged { focusState ->
+                    if (focusState.isFocused) emailHadFocus = true
+                    else if (emailHadFocus) emailTouched = true
+                },
             enabled = !isLoading
         )
         InlineError(emailError)
 
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it },
+            onValueChange = { password = it; onFieldEdit() },
             label = { Text(stringResource(R.string.auth_password_label)) },
             singleLine = true,
             visualTransformation = if (passwordVisible) VisualTransformation.None
@@ -495,11 +548,18 @@ private fun RegisterForm(
 
         OutlinedTextField(
             value = confirmPassword,
-            onValueChange = { confirmPassword = it },
+            onValueChange = { confirmPassword = it; onFieldEdit() },
             label = { Text(stringResource(R.string.auth_confirm_password_label)) },
             singleLine = true,
-            visualTransformation = if (passwordVisible) VisualTransformation.None
+            visualTransformation = if (confirmPasswordVisible) VisualTransformation.None
                 else PasswordVisualTransformation(),
+            trailingIcon = {
+                PasswordToggle(
+                    visible = confirmPasswordVisible,
+                    showDescription = R.string.auth_show_confirm_password,
+                    hideDescription = R.string.auth_hide_confirm_password
+                ) { confirmPasswordVisible = !confirmPasswordVisible }
+            },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
                 imeAction = ImeAction.Done
@@ -517,7 +577,7 @@ private fun RegisterForm(
 
         ConsentRow(
             checked = consentAGB,
-            onCheckedChange = { consentAGB = it },
+            onCheckedChange = { consentAGB = it; onFieldEdit() },
             label = stringResource(R.string.auth_consent_agb),
             enabled = !isLoading,
             linkText = stringResource(R.string.auth_consent_agb_link),
@@ -525,7 +585,7 @@ private fun RegisterForm(
         )
         ConsentRow(
             checked = consentDatenschutz,
-            onCheckedChange = { consentDatenschutz = it },
+            onCheckedChange = { consentDatenschutz = it; onFieldEdit() },
             label = stringResource(R.string.auth_consent_datenschutz),
             enabled = !isLoading,
             linkText = stringResource(R.string.auth_consent_datenschutz_link),
@@ -533,7 +593,7 @@ private fun RegisterForm(
         )
         ConsentRow(
             checked = consentAge18,
-            onCheckedChange = { consentAge18 = it },
+            onCheckedChange = { consentAge18 = it; onFieldEdit() },
             label = stringResource(R.string.auth_consent_age18),
             enabled = !isLoading
         )
@@ -563,14 +623,26 @@ private fun RegisterForm(
 
 // ── Shared composables ───────────────────────────────────────────────────────
 
+/**
+ * Visibility eye for a password field.
+ *
+ * The two description resources are parameters rather than hardcoded so that a screen with more
+ * than one password field gives each toggle a distinct spoken label — "Show password" twice on
+ * one screen leaves a screen-reader user unable to tell which field they are about to reveal.
+ * The icon and tint are identical in every instance, which is what makes the confirm-password
+ * toggle visually indistinguishable from the password one.
+ */
 @Composable
-private fun PasswordToggle(visible: Boolean, onToggle: () -> Unit) {
+private fun PasswordToggle(
+    visible: Boolean,
+    @StringRes showDescription: Int = R.string.auth_show_password,
+    @StringRes hideDescription: Int = R.string.auth_hide_password,
+    onToggle: () -> Unit
+) {
     IconButton(onClick = onToggle) {
         Icon(
             imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-            contentDescription = stringResource(
-                if (visible) R.string.auth_hide_password else R.string.auth_show_password
-            ),
+            contentDescription = stringResource(if (visible) hideDescription else showDescription),
             tint = detoxColors.subtext
         )
     }

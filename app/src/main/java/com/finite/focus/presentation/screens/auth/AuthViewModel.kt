@@ -8,6 +8,8 @@ import com.finite.focus.data.remote.firebase.FirebaseAuthService
 import com.finite.focus.data.remote.firebase.FirestoreService
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.sentry.Sentry
+import io.sentry.SentryLevel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -102,8 +104,8 @@ class AuthViewModel @Inject constructor(
                     val rawUser = FirebaseAuth.getInstance().currentUser
                     Timber.d(
                         "Registration complete. FirebaseAuth.getInstance().currentUser: " +
-                        "isNull=%s uid=%s email=%s",
-                        rawUser == null, rawUser?.uid, rawUser?.email
+                        "isNull=%s uid=%s",
+                        rawUser == null, rawUser?.uid
                     )
 
                     // Create the Firestore user document with the legal consent proof.
@@ -138,8 +140,8 @@ class AuthViewModel @Inject constructor(
                     val rawUser = FirebaseAuth.getInstance().currentUser
                     Timber.d(
                         "Login complete. FirebaseAuth.getInstance().currentUser: " +
-                        "isNull=%s uid=%s email=%s",
-                        rawUser == null, rawUser?.uid, rawUser?.email
+                        "isNull=%s uid=%s",
+                        rawUser == null, rawUser?.uid
                     )
                     // Block unverified accounts from reaching the dashboard.
                     if (firebaseAuthService.isEmailVerified()) {
@@ -171,8 +173,8 @@ class AuthViewModel @Inject constructor(
                     val rawUser = FirebaseAuth.getInstance().currentUser
                     Timber.d(
                         "Google sign-in complete. FirebaseAuth.getInstance().currentUser: " +
-                        "isNull=%s uid=%s email=%s",
-                        rawUser == null, rawUser?.uid, rawUser?.email
+                        "isNull=%s uid=%s",
+                        rawUser == null, rawUser?.uid
                     )
                     // For Google Sign-In we don't know if this is a new user or returning user.
                     // Use RegisterSuccess to always run through onboarding — permissions screen
@@ -196,6 +198,17 @@ class AuthViewModel @Inject constructor(
             "Could not retrieve Google ID token. Check that the Web Client ID in " +
             "build.gradle matches the OAuth 2.0 Web Client ID in Firebase Console."
         )
+        // Same tag key as the ApiException path so ONE Sentry query covers every way Google
+        // sign-in can fail. This branch has no status code — the token simply came back null,
+        // which points at the Web Client ID rather than at the signing fingerprint.
+        Sentry.withScope { scope ->
+            scope.setTag(TAG_GOOGLE_SIGNIN_STATUS, "null_token")
+            Sentry.captureMessage(
+                "Google Sign-In: ID token was null (check GOOGLE_WEB_CLIENT_ID vs Firebase " +
+                "Console OAuth 2.0 Web Client ID)",
+                SentryLevel.ERROR
+            )
+        }
         _uiState.value = AuthUiState.Error(context.getString(R.string.error_google_signin))
     }
 
@@ -208,12 +221,37 @@ class AuthViewModel @Inject constructor(
                 "Google Sign-In failed (code $statusCode). Ensure the SHA-1 fingerprint " +
                 "is registered in Firebase Console."
             )
+            // The status code was previously computed, branched on and then discarded, which is
+            // what turned the 1.0.1 sign-in failure into an investigation instead of a query:
+            // code 10 (DEVELOPER_ERROR) says "the app-signing SHA-1 is missing in Firebase"
+            // outright. Carried as a TAG, not just message text, so it is searchable and
+            // groupable in Sentry. The user-facing message stays generic — no codes in the UI.
+            Sentry.withScope { scope ->
+                scope.setTag(TAG_GOOGLE_SIGNIN_STATUS, statusCode.toString())
+                Sentry.captureMessage(
+                    "Google Sign-In failed with ApiException status $statusCode",
+                    SentryLevel.ERROR
+                )
+            }
             _uiState.value = AuthUiState.Error(context.getString(R.string.error_google_signin))
         }
     }
 
+    /**
+     * Dismisses a displayed auth error — called when the user edits any field, so that a failure
+     * from an earlier attempt (notably a Google sign-in error) cannot survive unrelated edits and
+     * sit there as the only red text on screen while a *different* problem blocks the button.
+     *
+     * Only an [AuthUiState.Error] is cleared. Guarding on the current state matters because this
+     * fires on every keystroke: an unguarded reset to [AuthUiState.Idle] would knock out a
+     * [AuthUiState.Loading] spinner or, worse, a success state whose navigation has been
+     * dispatched but not yet run. Switching tabs is handled separately by [switchTab], which
+     * already resets to Idle.
+     */
     fun clearError() {
-        _uiState.value = AuthUiState.Idle
+        if (_uiState.value is AuthUiState.Error) {
+            _uiState.value = AuthUiState.Idle
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -240,5 +278,15 @@ class AuthViewModel @Inject constructor(
                 context.getString(R.string.auth_error_network)
             else -> generic
         }
+    }
+
+    companion object {
+        /**
+         * Sentry tag key carrying the Google Sign-In failure status.
+         *
+         * Shared with `AuthScreen`'s `ApiException` catch site so every failure mode — a raw
+         * GMS status code, or `null_token` — lands under one searchable key.
+         */
+        const val TAG_GOOGLE_SIGNIN_STATUS = "google_signin_status"
     }
 }

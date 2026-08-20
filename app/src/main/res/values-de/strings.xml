@@ -357,6 +357,8 @@
     <string name="auth_google_button">Mit Google fortfahren</string>
     <string name="auth_show_password">Passwort anzeigen</string>
     <string name="auth_hide_password">Passwort verbergen</string>
+    <string name="auth_show_confirm_password">Passwortbestätigung anzeigen</string>
+    <string name="auth_hide_confirm_password">Passwortbestätigung verbergen</string>
     <string name="auth_forgot_password">Passwort vergessen?</string>
     <string name="auth_forgot_password_sent">E-Mail wurde gesendet. Prüfe auch deinen Spam-Ordner.</string>
     <string name="auth_forgot_password_google_hint">Mit Google registriert? Dann gibt es kein Passwort zum Zurücksetzen — nutze einfach „Mit Google fortfahren“.</string>

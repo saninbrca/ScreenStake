@@ -16,6 +16,7 @@ import com.finite.focus.service.GroupChallengeAutoStartWorker
 import com.finite.focus.service.PermissionCheckWorker
 import com.finite.focus.service.NotificationHelper
 import com.finite.focus.util.SentryEventFilter
+import com.finite.focus.util.SentryTimberTree
 import com.finite.focus.BuildConfig
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
@@ -82,6 +83,14 @@ class DetoxApplication : Application(), Configuration.Provider {
 
         // Must run before any Stripe PaymentSheet is created anywhere in the app.
         PaymentConfiguration.init(applicationContext, BuildConfig.STRIPE_PUBLISHABLE_KEY)
+
+        // Forwards WARN/ERROR to Sentry as breadcrumbs and reports ERROR-level throwables as
+        // events. Planted UNCONDITIONALLY, not just in release: without a tree Timber is a silent
+        // no-op, which is what made the Play build produce no evidence at all, and planting it in
+        // debug too is what makes that path verifiable without a Play build. Debug events are
+        // still dropped by the beforeSend hook above (breadcrumbs only leave the device attached
+        // to an event), except the tagged test_crash the Debug Panel fires deliberately.
+        Timber.plant(SentryTimberTree())
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())

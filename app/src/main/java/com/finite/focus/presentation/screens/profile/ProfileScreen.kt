@@ -831,6 +831,7 @@ private fun DebugPanel(viewModel: ProfileViewModel) {
     var adultDomainTestResult by remember { mutableStateOf<String?>(null) }
 
     // Section 11 state — which exception type the cancellation-filter proof actually reported.
+    var timberTreeProofResult by remember { mutableStateOf<String?>(null) }
     var cancellationProofResult by remember { mutableStateOf<String?>(null) }
 
     val activeGroupChallenges by viewModel.debugActiveGroupChallenges.collectAsStateWithLifecycle()
@@ -1392,6 +1393,29 @@ Usage Stats: ${if (usageStats) "✅" else "❌"}""".trimIndent()
                     // Tag so beforeSend lets this through even in debug builds.
                     Sentry.setTag("test_crash", "true")
                     throw RuntimeException("Sentry test crash")
+                }
+                DebugButton("Timber.e -> Sentry (release tree proof)") {
+                    // Proof that SentryTimberTree is wired: this goes through Timber ONLY —
+                    // no direct Sentry call — so an issue appearing in Sentry means the tree
+                    // forwarded it, which is exactly what the Play build depends on. The
+                    // test_crash tag is what lets a debug-build event past beforeSend; in a
+                    // release build no tag is needed. The message deliberately carries a fake
+                    // address and a fake ID token: the issue that lands must show them as
+                    // <email> and <token>, proving LogRedaction ran on the way out.
+                    Sentry.setTag("test_crash", "true")
+                    Timber.e(
+                        RuntimeException("Sentry Timber tree proof"),
+                        "Release tree proof: someone@example.com idToken=eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.sig"
+                    )
+                    timberTreeProofResult = "sent via Timber.e -> expect ONE issue, redacted"
+                }
+                timberTreeProofResult?.let { note ->
+                    Text(
+                        note,
+                        fontSize = 12.sp,
+                        color = DebugOrange,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                    )
                 }
                 DebugButton("Report Cancelled Job (filter proof)") {
                     // Proof for SentryEventFilter, run as a matched pair with the button above:

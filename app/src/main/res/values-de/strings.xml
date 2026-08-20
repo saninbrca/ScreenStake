@@ -939,6 +939,11 @@
     <string name="settings_delete_reauth_message">Bitte gib dein Passwort ein um fortzufahren.</string>
     <string name="settings_delete_reauth_password_label">Passwort</string>
     <string name="settings_delete_reauth_wrong_password">Falsches Passwort</string>
+    <string name="settings_delete_reauth_wrong_google_account">Das ist ein anderes Google-Konto. Wähle das Konto, mit dem du angemeldet bist.</string>
+    <string name="settings_delete_reauth_cancelled">Anmeldung abgebrochen. Es wurde nichts gelöscht.</string>
+    <string name="settings_delete_reauth_google_failed">Google-Anmeldung ist gerade nicht verfügbar. Es wurde nichts gelöscht.</string>
+    <string name="settings_delete_reauth_google_message">Bestätige mit deinem Google-Konto, um fortzufahren.</string>
+    <string name="settings_delete_reauth_google_continue">Mit Google fortfahren</string>
     <string name="settings_delete_reauth_continue">Konto löschen</string>
 
     <!-- Settings — Notifications section -->

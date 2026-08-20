@@ -105,6 +105,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.finite.focus.R
+import com.finite.focus.presentation.components.rememberGoogleIdTokenLauncher
 import com.finite.focus.presentation.screens.profile.IbanSaveState
 import com.finite.focus.ui.theme.ThemeMode
 import com.finite.focus.ui.theme.detoxColors
@@ -296,6 +297,27 @@ fun SettingsScreen(
     // ── Delete Account Confirmation Dialog (with re-auth) ──────────────────────
     if (state.showDeleteConfirmDialog) {
         var deletePassword by remember { mutableStateOf("") }
+
+        // Re-auth is provider-dependent: Firebase requires a recent credential to delete an
+        // account, and a Google-only account has no password to supply. Branch on the SAME
+        // hasPasswordProvider flag the password-reset row above uses — providerData is read
+        // once, in the ViewModel, and nothing here re-derives it.
+        //
+        // Both providers linked => password path. A Google chooser can hand back a DIFFERENT
+        // account than the one signed in; a password cannot.
+        //
+        // HUAWEI GAP (known, deliberate, do not paper over): the Google branch needs Play
+        // Services, which this app otherwise assumes absent. A Google-only user on a Huawei
+        // device therefore has no in-app delete route. Self-consistent — such an account
+        // cannot be created there either — but it is a real hole for a user who switches
+        // devices, and it needs a server-side deletion path to close, not a client workaround.
+        val launchGoogleReauth = rememberGoogleIdTokenLauncher(
+            onIdToken = { viewModel.deleteAccountWithGoogle(it) },
+            onNullToken = { viewModel.onGoogleReauthFailed() },
+            onCancelled = { viewModel.onGoogleReauthCancelled() },
+            onFailed = { viewModel.onGoogleReauthFailed() },
+        )
+
         AlertDialog(
             onDismissRequest = { viewModel.dismissDeleteConfirmDialog() },
             title = { Text(stringResource(R.string.settings_delete_account_confirm_title)) },
@@ -304,21 +326,26 @@ fun SettingsScreen(
                     Text(stringResource(R.string.settings_delete_account_confirm_message))
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = stringResource(R.string.settings_delete_reauth_message),
+                        text = stringResource(
+                            if (state.hasPasswordProvider) R.string.settings_delete_reauth_message
+                            else R.string.settings_delete_reauth_google_message
+                        ),
                         fontSize = 13.sp,
                         color = detoxColors.subtext
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = deletePassword,
-                        onValueChange = { deletePassword = it },
-                        label = { Text(stringResource(R.string.settings_delete_reauth_password_label)) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        isError = state.deleteReauthError != null,
-                        enabled = !state.deleteReauthLoading,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    if (state.hasPasswordProvider) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = deletePassword,
+                            onValueChange = { deletePassword = it },
+                            label = { Text(stringResource(R.string.settings_delete_reauth_password_label)) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            isError = state.deleteReauthError != null,
+                            enabled = !state.deleteReauthLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     state.deleteReauthError?.let {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(text = it, fontSize = 12.sp, color = detoxColors.danger)
@@ -326,11 +353,19 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = { viewModel.deleteAccount(deletePassword) },
-                    enabled = deletePassword.isNotBlank() && !state.deleteReauthLoading,
-                    colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.danger)
-                ) { Text(stringResource(R.string.settings_delete_reauth_continue)) }
+                if (state.hasPasswordProvider) {
+                    TextButton(
+                        onClick = { viewModel.deleteAccount(deletePassword) },
+                        enabled = deletePassword.isNotBlank() && !state.deleteReauthLoading,
+                        colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.danger)
+                    ) { Text(stringResource(R.string.settings_delete_reauth_continue)) }
+                } else {
+                    TextButton(
+                        onClick = { launchGoogleReauth() },
+                        enabled = !state.deleteReauthLoading,
+                        colors = ButtonDefaults.textButtonColors(contentColor = detoxColors.danger)
+                    ) { Text(stringResource(R.string.settings_delete_reauth_google_continue)) }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissDeleteConfirmDialog() }) {

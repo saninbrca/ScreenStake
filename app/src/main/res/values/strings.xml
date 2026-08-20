@@ -970,6 +970,11 @@
     <string name="settings_delete_reauth_message">Please enter your password to continue.</string>
     <string name="settings_delete_reauth_password_label">Password</string>
     <string name="settings_delete_reauth_wrong_password">Wrong password</string>
+    <string name="settings_delete_reauth_wrong_google_account">That’s a different Google account. Choose the one you signed in with.</string>
+    <string name="settings_delete_reauth_cancelled">Sign-in cancelled. Nothing was deleted.</string>
+    <string name="settings_delete_reauth_google_failed">Google sign-in isn’t available right now. Nothing was deleted.</string>
+    <string name="settings_delete_reauth_google_message">Confirm with your Google account to continue.</string>
+    <string name="settings_delete_reauth_google_continue">Continue with Google</string>
     <string name="settings_delete_reauth_continue">Delete account</string>
 
     <!-- Settings — Notifications section -->

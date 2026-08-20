@@ -170,6 +170,32 @@ class FirebaseAuthService @Inject constructor(
     }
 
     /**
+     * Re-authenticates the signed-in user with a fresh Google ID token.
+     *
+     * The Google twin of [reauthenticateWithPassword]. Firebase requires a recent credential
+     * for account deletion, and a Google-only account has no password — without this there is
+     * no deletion route at all for those users, which Play treats as a compliance failure.
+     *
+     * Fails with [com.google.firebase.auth.FirebaseAuthUserCollisionException] or a generic
+     * credential error if the chooser returned a DIFFERENT Google account than the one signed
+     * in. That is a distinct condition from a wrong password and the caller surfaces its own
+     * message for it.
+     */
+    suspend fun reauthenticateWithGoogle(idToken: String): Result<Unit> {
+        return try {
+            val user = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("No signed-in user"))
+            val credential = GoogleAuthProvider.getCredential(idToken, null)
+            user.reauthenticate(credential).await()
+            Timber.d("Re-authenticated user with Google uid=${user.uid}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.e(e, "Google re-authentication failed")
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Updates the current user's Auth profile displayName. Mirrors the chosen username onto
      * the FirebaseUser so every flow that reads currentUser()?.displayName (group create/join,
      * taunts) automatically carries the username.

@@ -2,9 +2,7 @@ package com.finite.focus.presentation.screens.auth
 
 import android.net.Uri
 import android.util.Patterns
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.browser.customtabs.CustomTabsIntent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -77,16 +75,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.finite.focus.BuildConfig
 import com.finite.focus.R
+import com.finite.focus.presentation.components.GOOGLE_SIGN_IN_CANCELLED
+import com.finite.focus.presentation.components.rememberGoogleIdTokenLauncher
 import com.finite.focus.ui.theme.detoxColors
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
-import io.sentry.Breadcrumb
-import io.sentry.Sentry
-import io.sentry.SentryLevel
-import timber.log.Timber
 
 // All colors come from MaterialTheme.colorScheme / detoxColors — no literals here.
 // AuthScreen uses M3 OutlinedTextField, whose cursor/text/selection are already
@@ -120,42 +112,17 @@ fun AuthScreen(
         }
     }
 
-    // Google Sign-In launcher
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                .getResult(ApiException::class.java)
-            val idToken = account.idToken
-            // Neither the address nor the token itself is logged — only whether a token came
-            // back, plus its length, which is all the diagnosis ever needed. The release Timber
-            // tree forwards WARN/ERROR to Sentry, and an ID token in a breadcrumb would be worse
-            // than an email address.
-            Timber.d("Google Sign-In: account resolved, idToken=%s",
-                if (idToken != null) "present (${idToken.length} chars)" else "NULL")
-            if (idToken == null) {
-                viewModel.onGoogleSignInNullToken()
-            } else {
-                viewModel.signInWithGoogle(idToken)
-            }
-        } catch (e: ApiException) {
-            Timber.w("Google Sign-In: ApiException statusCode=%d", e.statusCode)
-            // A BREADCRUMB, not a second event. This catch is the only caller of
-            // onGoogleSignInApiError, which captures the tagged event on the line below — and it
-            // is the half that knows 12501 means "user cancelled" and must stay silent. Reporting
-            // the ApiException here as well would duplicate every real failure and turn every
-            // cancelled sign-in into an issue. The status code still travels with the event:
-            // here as the trail leading up to it, there as the searchable tag.
-            Sentry.addBreadcrumb(Breadcrumb().apply {
-                category = "auth"
-                message = "Google Sign-In returned ApiException"
-                level = SentryLevel.WARNING
-                setData("statusCode", e.statusCode)
-            })
-            viewModel.onGoogleSignInApiError(e.statusCode)
-        }
-    }
+    // Google Sign-In launcher. The token plumbing, the Sentry breadcrumb and the
+    // ApiException handling live in rememberGoogleIdTokenLauncher, shared with the
+    // Settings delete-account re-auth. Cancellation is forwarded to the SAME
+    // onGoogleSignInApiError entry point as before — that method is the half that knows
+    // 12501 must stay silent, so routing it anywhere else would change behaviour.
+    val launchGoogleSignIn = rememberGoogleIdTokenLauncher(
+        onIdToken = { viewModel.signInWithGoogle(it) },
+        onNullToken = { viewModel.onGoogleSignInNullToken() },
+        onCancelled = { viewModel.onGoogleSignInApiError(GOOGLE_SIGN_IN_CANCELLED) },
+        onFailed = { statusCode -> viewModel.onGoogleSignInApiError(statusCode) },
+    )
 
     val isLoading = uiState is AuthUiState.Loading
     val errorMessage = (uiState as? AuthUiState.Error)?.message
@@ -246,13 +213,7 @@ fun AuthScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedButton(
-                onClick = {
-                    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                        .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                        .requestEmail()
-                        .build()
-                    googleSignInLauncher.launch(GoogleSignIn.getClient(context, gso).signInIntent)
-                },
+                onClick = { launchGoogleSignIn() },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading
             ) {

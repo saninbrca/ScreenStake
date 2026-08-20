@@ -47,9 +47,12 @@ import javax.inject.Inject
 
 // ── SharedPreferences keys ─────────────────────────────────────────────────────
 // Theme mode keys live in ui.theme.ThemeMode (tri-state + legacy Boolean migration).
-private const val PREFS_NAME = "detox_settings"
-private const val KEY_CHALLENGE_UPDATES = "challenge_updates_enabled"
-private const val KEY_FRIEND_ALERTS = "friend_alerts_enabled"
+// Sourced from UserScopedPrefs so the keys this screen WRITES and the keys logout/deletion
+// CLEAR can never drift apart — a rename here that missed the cleaner would resurrect the
+// stale-preference bug silently.
+private const val PREFS_NAME = UserScopedPrefs.PREFS_NAME
+private const val KEY_CHALLENGE_UPDATES = UserScopedPrefs.KEY_CHALLENGE_UPDATES
+private const val KEY_FRIEND_ALERTS = UserScopedPrefs.KEY_FRIEND_ALERTS
 
 // ── Notification toggle prefs (separate file, read by NotificationHelper) ───────
 private const val NOTIF_PREFS_NAME = "detox_notifications"
@@ -301,6 +304,9 @@ class SettingsViewModel @Inject constructor(
     /**
      * Re-authenticates with the supplied password (Firebase requirement for account
      * deletion), then runs the deletion flow. Wrong password → inline dialog error.
+     *
+     * Password path. [deleteAccountWithGoogle] is the Google twin; both converge on
+     * [proceedWithDeletion], so the money gate below is shared and identical for both.
      */
     fun deleteAccount(password: String) {
         viewModelScope.launch {
@@ -316,7 +322,69 @@ class SettingsViewModel @Inject constructor(
                 }
                 return@launch
             }
+            proceedWithDeletion()
+        }
+    }
 
+    /**
+     * Google path — a Google-only account has no password to re-authenticate with, so
+     * without this there is NO deletion route for those users at all (Play compliance).
+     *
+     * Reached only when `hasPasswordProvider` is false: an account with BOTH providers linked
+     * uses the password path, because a Google chooser can hand back a different account than
+     * the one signed in whereas a password cannot.
+     */
+    fun deleteAccountWithGoogle(idToken: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(deleteReauthLoading = true, deleteReauthError = null) }
+
+            val reauthResult = firebaseAuthService.reauthenticateWithGoogle(idToken)
+            if (reauthResult.isFailure) {
+                // Distinct from "wrong password": the usual cause here is picking a different
+                // Google account in the chooser, and a password message would be nonsense.
+                _state.update {
+                    it.copy(
+                        deleteReauthLoading = false,
+                        deleteReauthError = context.getString(R.string.settings_delete_reauth_wrong_google_account)
+                    )
+                }
+                return@launch
+            }
+            proceedWithDeletion()
+        }
+    }
+
+    /**
+     * The user dismissed the Google chooser. NOTHING has been deleted at this point — re-auth
+     * runs before the money gate and before any delete call — so this only resets the dialog.
+     * The next attempt re-evaluates the gate from scratch; no verdict is cached.
+     */
+    fun onGoogleReauthCancelled() {
+        _state.update {
+            it.copy(
+                deleteReauthLoading = false,
+                deleteReauthError = context.getString(R.string.settings_delete_reauth_cancelled)
+            )
+        }
+    }
+
+    /** Google re-auth failed before returning a token (no Play Services, network, config). */
+    fun onGoogleReauthFailed() {
+        _state.update {
+            it.copy(
+                deleteReauthLoading = false,
+                deleteReauthError = context.getString(R.string.settings_delete_reauth_google_failed)
+            )
+        }
+    }
+
+    /**
+     * Everything after a SUCCESSFUL re-authentication, shared by both providers.
+     *
+     * The Hard Mode money gate below is read fresh on every call and is deliberately
+     * fail-closed — a failed lookup aborts rather than proceeding. Do not restructure it.
+     */
+    private suspend fun proceedWithDeletion() {
             _state.update {
                 it.copy(
                     deleteReauthLoading = false,
@@ -331,7 +399,7 @@ class SettingsViewModel @Inject constructor(
             if (activeChallengesResult.isFailure) {
                 _state.update { it.copy(isLoading = false) }
                 _events.send(SettingsEvent.ShowSnackbar(context.getString(R.string.settings_delete_verify_failed)))
-                return@launch
+                return
             }
 
             val activeHardChallenge = activeChallengesResult.getOrNull()?.firstOrNull { challenge ->
@@ -345,7 +413,7 @@ class SettingsViewModel @Inject constructor(
                 _events.send(
                     SettingsEvent.ShowSnackbar(context.getString(R.string.settings_delete_active_hard))
                 )
-                return@launch
+                return
             }
 
             // Delete Firestore data first, then Auth account, then local DB
@@ -365,14 +433,13 @@ class SettingsViewModel @Inject constructor(
                     ?: context.getString(R.string.error_generic)
                 // Firebase requires recent sign-in for sensitive ops — surface a helpful message
                 _events.send(SettingsEvent.ShowSnackbar(context.getString(R.string.settings_delete_failed, msg)))
-                return@launch
+                return
             }
 
             withContext(Dispatchers.IO) { database.clearAllTables() }
             UserScopedPrefs.clear(context)
             _state.update { it.copy(isLoading = false) }
             _events.send(SettingsEvent.NavigateToLogin)
-        }
     }
 
     // ── Notifications ──────────────────────────────────────────────────────────

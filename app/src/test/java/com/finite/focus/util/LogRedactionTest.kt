@@ -113,11 +113,25 @@ class LogRedactionTest {
     }
 
     @Test
-    fun `redacts scheme and credential together when behind an authorization key`() {
-        // Regression guard. The key-value rule used to consume only the word "Bearer" as the
-        // value of `Authorization:` and leave the credential itself in the message.
-        val out = LogRedaction.redact("Authorization: Bearer abc123.def456-ghi")
-        assertFalse(out.contains("abc123"))
+    fun `DO NOT DELETE - scheme branch must stay first in the alternation or Bearer credentials leak`() {
+        // This test is NOT redundant with the standalone-Bearer test above, and the
+        // `(?:Bearer|Basic|Token)` alternative in CREDENTIAL_KEY_VALUE is NOT redundant with the
+        // BEARER regex. Deleting either because they look like duplicates re-opens a real leak.
+        //
+        // What went wrong the first time: `authorization` is a credential KEY, so
+        // `Authorization: Bearer eyJhbG...` matched the key-value rule first. Its value pattern
+        // stopped at the next whitespace, so it consumed the word "Bearer" as the entire value
+        // and emitted `Authorization: <redacted> eyJhbG...` — a message that LOOKS redacted while
+        // the credential is still sitting in it, which is the worst possible failure mode for a
+        // scrubber. The BEARER rule could not save it either: it runs later, and by then the word
+        // "Bearer" it anchors on had already been eaten.
+        //
+        // Regex alternation is first-match, so the fix is positional: the scheme-aware branch has
+        // to be tried BEFORE the bare run-of-characters branch. Reordering those two alternatives
+        // — even with every pattern otherwise intact — silently reintroduces the leak, and only
+        // the assertFalse below will tell you.
+        val out = LogRedaction.redact("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJhIjoxfQ.sig")
+        assertFalse("credential survived redaction", out.contains("eyJ"))
         assertEquals("Authorization: <redacted>", out)
     }
 

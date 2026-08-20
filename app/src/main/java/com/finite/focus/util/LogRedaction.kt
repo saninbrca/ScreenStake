@@ -51,9 +51,14 @@ object LogRedaction {
      *
      * The `Bearer|Basic|Token` alternative must stay FIRST among the unquoted forms and must not
      * be dropped. Without it `Authorization: Bearer eyJhbG...` matched the key, consumed only the
-     * word `Bearer` as its value, and left the credential itself sitting in the message — a leak
-     * the unit test pins down. Alternation is first-match, so the scheme-aware branch has to be
-     * tried before the bare run-of-characters branch.
+     * word `Bearer` as its value, and left the credential itself sitting in the message — a
+     * message that *looks* redacted while still carrying the token. Alternation is first-match,
+     * so the scheme-aware branch has to be tried before the bare run-of-characters branch.
+     *
+     * It is not redundant with [BEARER]: that rule runs later and anchors on the word `Bearer`,
+     * which this rule would already have consumed. Pinned by the deliberately loud
+     * `DO NOT DELETE - scheme branch must stay first in the alternation` test in
+     * `LogRedactionTest` — read it before touching the order of these alternatives.
      */
     private val CREDENTIAL_KEY_VALUE = Regex(
         """\b(idToken|id_token|accessToken|access_token|refreshToken|refresh_token|""" +

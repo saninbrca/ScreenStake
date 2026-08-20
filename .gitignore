@@ -24,5 +24,10 @@ keystore.properties
 /functions/node_modules
 firebase-debug.log
 firebase-debug.*.log
+# Firestore emulator writes this on every `firebase emulators:exec --only firestore`
+# (scripts/test_firestore_rules.js) — different prefix, so the patterns above miss it.
+firestore-debug.log
+firestore-debug.*.log
+ui-debug.log
 .firebase/
 __pycache__/

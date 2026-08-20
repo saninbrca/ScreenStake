@@ -15,6 +15,7 @@ import com.finite.focus.util.ErrorMessages
 import com.finite.focus.util.PermissionUtils
 import com.finite.focus.BuildConfig
 import com.finite.focus.data.local.db.DetoxDatabase
+import com.finite.focus.data.local.prefs.UserScopedPrefs
 import com.finite.focus.data.remote.firebase.FirebaseAuthService
 import com.finite.focus.data.remote.firebase.FirestoreService
 import com.finite.focus.domain.model.ChallengeMode
@@ -271,6 +272,9 @@ class SettingsViewModel @Inject constructor(
         _state.update { it.copy(showLogoutConfirmDialog = false) }
         viewModelScope.launch {
             withContext(Dispatchers.IO) { database.clearAllTables() }
+            // Prefs must follow Room: the cached username otherwise survives into the next
+            // session and makes the next account skip the username picker.
+            UserScopedPrefs.clear(context)
             firebaseAuthService.signOut()
             _events.send(SettingsEvent.NavigateToLogin)
         }
@@ -365,6 +369,7 @@ class SettingsViewModel @Inject constructor(
             }
 
             withContext(Dispatchers.IO) { database.clearAllTables() }
+            UserScopedPrefs.clear(context)
             _state.update { it.copy(isLoading = false) }
             _events.send(SettingsEvent.NavigateToLogin)
         }

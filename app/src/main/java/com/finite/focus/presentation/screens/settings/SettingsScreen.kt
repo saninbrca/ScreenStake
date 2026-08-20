@@ -629,14 +629,6 @@ fun SettingsScreen(
                         }
                     }
                 )
-                IosRowDivider()
-                IosRow(
-                    iconContent = { IosIconBox(Icons.Filled.Delete, detoxColors.danger) },
-                    label = stringResource(R.string.settings_delete_all_data),
-                    labelColor = detoxColors.danger,
-                    subtitle = stringResource(R.string.settings_delete_all_data_subtitle),
-                    onClick = { viewModel.showDeleteConfirmDialog() }
-                )
             }
 
             // ── 8. HILFE & SUPPORT ─────────────────────────────────────────────

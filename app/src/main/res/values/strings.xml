@@ -1007,8 +1007,6 @@
     <string name="url_imprint">https://saninbrca.github.io/finite-legal/imprint.html</string>
     <string name="settings_export_data">Export data</string>
     <string name="settings_export_data_subtitle">Download as JSON</string>
-    <string name="settings_delete_all_data">Delete all data</string>
-    <string name="settings_delete_all_data_subtitle">Permanently delete account and all data</string>
 
     <!-- Settings — Appearance section -->
     <string name="settings_section_appearance">APPEARANCE</string>

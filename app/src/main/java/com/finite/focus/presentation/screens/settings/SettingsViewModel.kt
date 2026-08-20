@@ -12,6 +12,7 @@ import androidx.work.WorkManager
 import com.finite.focus.R
 import com.finite.focus.service.DailyEvaluationWorker
 import com.finite.focus.util.ErrorMessages
+import com.finite.focus.util.PermissionUtils
 import com.finite.focus.BuildConfig
 import com.finite.focus.data.local.db.DetoxDatabase
 import com.finite.focus.data.remote.firebase.FirebaseAuthService
@@ -179,7 +180,7 @@ class SettingsViewModel @Inject constructor(
     fun refreshPermissions() {
         _state.update { s ->
             s.copy(
-                accessibilityGranted = isAccessibilityGranted(),
+                accessibilityGranted = PermissionUtils.isAccessibilityServiceEnabled(context),
                 overlayGranted = Settings.canDrawOverlays(context),
                 usageStatsGranted = isUsageStatsGranted(),
                 notificationsGranted = areNotificationsGranted()
@@ -199,15 +200,6 @@ class SettingsViewModel @Inject constructor(
      */
     private fun areNotificationsGranted(): Boolean =
         NotificationManagerCompat.from(context).areNotificationsEnabled()
-
-    private fun isAccessibilityGranted(): Boolean {
-        val enabledServices = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-        val target = "${context.packageName}/com.finite.focus.service.AppDetectionAccessibilityService"
-        return enabledServices.split(":").any { it.equals(target, ignoreCase = true) }
-    }
 
     private fun isUsageStatsGranted(): Boolean {
         return try {

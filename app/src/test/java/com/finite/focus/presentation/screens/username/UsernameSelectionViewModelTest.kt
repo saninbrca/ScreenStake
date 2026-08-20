@@ -54,9 +54,14 @@ class UsernameSelectionViewModelTest {
         coEvery { auth.currentUserId() } returns "uid-under-test"
         // No username yet — the screen stays put and runs the availability checker.
         coEvery { firestore.getUsername(any()) } returns null
-        // "taken_handle" is the only claimed name in this fixture.
+        // "taken_handle" is the only claimed name in this fixture; "offline_handle"
+        // stands in for a read that could not be completed at all.
         coEvery { firestore.isUsernameAvailable(any()) } answers {
-            firstArg<String>() != "taken_handle"
+            when (firstArg<String>()) {
+                "taken_handle" -> false
+                "offline_handle" -> null
+                else -> true
+            }
         }
     }
 
@@ -152,5 +157,32 @@ class UsernameSelectionViewModelTest {
         advanceUntilIdle()
         assertEquals(UsernameAvailability.Reserved, vm.state.value.availability)
         io.mockk.coVerify(exactly = 0) { firestore.saveUsername(any(), "admin") }
+    }
+
+    @Test
+    fun `a failed availability read reads as CheckFailed, not Taken`() = runTest(dispatcher) {
+        // Bad wifi must not tell the user a free name is gone.
+        val state = type(viewModel(), "offline_handle")
+        assertEquals(UsernameAvailability.CheckFailed, state.availability)
+        assertFalse("Continue must stay disabled when availability is unknown", canSubmit(state))
+    }
+
+    @Test
+    fun `save() is refused while availability is unknown`() = runTest(dispatcher) {
+        val vm = viewModel()
+        type(vm, "offline_handle")
+        vm.save()
+        advanceUntilIdle()
+        io.mockk.coVerify(exactly = 0) { firestore.saveUsername(any(), any()) }
+    }
+
+    @Test
+    fun `recovering from a failed read still reaches Available`() = runTest(dispatcher) {
+        val vm = viewModel()
+        type(vm, "offline_handle")
+        assertEquals(UsernameAvailability.CheckFailed, vm.state.value.availability)
+        val state = type(vm, "sanin_b")
+        assertEquals(UsernameAvailability.Available, state.availability)
+        assertTrue(canSubmit(state))
     }
 }

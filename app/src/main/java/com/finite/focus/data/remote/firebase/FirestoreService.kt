@@ -161,15 +161,24 @@ class FirestoreService @Inject constructor(
         }
     }
 
-    /** Returns true if the (lowercased) username is not yet claimed in usernames/{username}. */
-    suspend fun isUsernameAvailable(username: String): Boolean {
+    /**
+     * Availability of the (lowercased) username in usernames/{username}.
+     *
+     * `true` free, `false` claimed, **`null` could not be determined** (offline, timeout,
+     * permission error). The caller MUST distinguish null from false: reporting a failed
+     * read as "already taken" tells a user on bad wifi that a free name is gone. This is
+     * advisory only either way — the real gate is the `usernames` create rule, which
+     * re-checks existence server-side.
+     */
+    suspend fun isUsernameAvailable(username: String): Boolean? {
         return try {
             val key = username.lowercase()
             !firestore.collection("usernames").document(key).get().await().exists()
         } catch (e: Exception) {
             Timber.e(e, "Failed to check username availability for $username")
-            // On network failure, report unavailable so the user can't proceed blindly.
-            false
+            // Unknown — NOT "taken". Continue stays disabled because only an explicit
+            // `true` reaches the Available state.
+            null
         }
     }
 

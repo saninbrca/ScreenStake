@@ -406,6 +406,7 @@
     <string name="username_available">✓ Verfügbar</string>
     <string name="username_taken">Bereits vergeben</string>
     <string name="username_reserved">Dieser Name ist reserviert</string>
+    <string name="username_check_failed">Konnte gerade nicht geprüft werden</string>
     <string name="username_too_short">Mindestens 3 Zeichen</string>
     <string name="username_continue">Weiter</string>
     <string name="username_hint">nur a–z, 0–9, _</string>

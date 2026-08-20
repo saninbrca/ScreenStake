@@ -23,7 +23,7 @@ private const val KEY_USERNAME = "username"
 private const val MIN_LENGTH = 3
 private const val MAX_LENGTH = 20
 
-enum class UsernameAvailability { Idle, Checking, Available, Taken, Reserved, TooShort }
+enum class UsernameAvailability { Idle, Checking, Available, Taken, Reserved, TooShort, CheckFailed }
 
 data class UsernameUiState(
     val usernameInput: String = "",
@@ -89,8 +89,12 @@ class UsernameSelectionViewModel @Inject constructor(
                 // Guard against a stale result if the input changed meanwhile.
                 if (inputFlow.value != value) return@collect
                 _state.value = _state.value.copy(
-                    availability = if (available) UsernameAvailability.Available
-                    else UsernameAvailability.Taken
+                    availability = when (available) {
+                        true -> UsernameAvailability.Available
+                        false -> UsernameAvailability.Taken
+                        // Read failed — say so instead of claiming the name is taken.
+                        null -> UsernameAvailability.CheckFailed
+                    }
                 )
             }
     }

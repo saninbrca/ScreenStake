@@ -24,12 +24,15 @@ object ReservedUsernames {
         // Roles / authority
         "admin", "administrator", "root", "support", "help", "staff",
         "team", "mod", "moderator", "official", "system",
+        "security", "abuse",
+        // Contact & commercial — a handle a user might mistake for an official channel
+        "info", "contact", "billing", "payment", "stripe",
         // Brand
-        "finite", "finiteapp",
+        "finite", "finiteapp", "finite_app", "finite_official",
         // Technical / parser footguns that read as a real handle in UI
-        "api", "null", "undefined",
+        "api", "null", "undefined", "bot", "test",
         // Pronouns & mentions that would be ambiguous in any future @-mention context
-        "me", "you", "everyone", "here",
+        "me", "you", "everyone", "here", "all",
     )
 
     /** True if [name] is reserved, ignoring case and surrounding whitespace. */

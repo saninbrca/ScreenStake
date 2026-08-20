@@ -428,6 +428,7 @@
     <string name="username_available">✓ Available</string>
     <string name="username_taken">Already taken</string>
     <string name="username_reserved">This name is reserved</string>
+    <string name="username_check_failed">Couldn\'t check right now</string>
     <string name="username_too_short">At least 3 characters</string>
     <string name="username_continue">Continue</string>
     <string name="username_hint">only a–z, 0–9, _</string>

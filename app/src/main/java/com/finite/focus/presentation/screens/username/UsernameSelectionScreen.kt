@@ -141,6 +141,8 @@ fun UsernameSelectionScreen(
                                 stringResource(R.string.username_taken) to detoxColors.danger
                             UsernameAvailability.Reserved ->
                                 stringResource(R.string.username_reserved) to detoxColors.danger
+                            UsernameAvailability.CheckFailed ->
+                                stringResource(R.string.username_check_failed) to detoxColors.subtext
                             UsernameAvailability.TooShort ->
                                 stringResource(R.string.username_too_short) to detoxColors.subtext
                             UsernameAvailability.Idle ->

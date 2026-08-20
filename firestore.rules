@@ -15,11 +15,29 @@ service cloud.firestore {
       // Owner self-update — Stripe + moderation (ban) fields are NOT client-writable.
       // (The ban fields must be CF/admin-only, else a banned user could self-unban
       //  within their token's 1h validity window.)
+      //
+      // `username` is WRITE-ONCE (S-02 bypass path a). The usernames/{username} rule
+      // guards the uniqueness registry, but this mirror field is what the Profile
+      // screen renders — so without this clause a modified client could simply set
+      // users/{uid}.username = 'admin' and never touch the registry at all. Once set,
+      // the value may only be re-sent unchanged; it can never be edited or removed.
+      // Matches the product promise in `username_subtitle` ("can't be changed later").
+      //
+      // `.get(key, default)` rather than `resource.data.username`: reading a key that
+      // is absent ERRORS in rules (it does not evaluate to null), and every account
+      // has a users doc BEFORE it has a username — createUserDocument() writes
+      // email/createdAt at registration and saveUsername() adds the handle later. A
+      // bare field read would therefore deny every update on a pre-username account.
+      //
+      // NOT applied to `displayName`: createUserDocument() re-writes it on every
+      // Google sign-in, so a write-once clause there would lock out returning users.
       allow update: if request.auth != null
         && request.auth.uid == userId
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['stripeConnectedAccountId', 'stripeCustomerId',
-                   'disabled', 'disabledReason', 'disabledAt']);
+                   'disabled', 'disabledReason', 'disabledAt'])
+        && (resource.data.get('username', null) == null
+            || request.resource.data.get('username', null) == resource.data.get('username', null));
       // Admin may flip ONLY the ban flag fields (setUserBanStatus CF also does this
       // via Admin SDK, which bypasses rules — this is the defensive client path).
       allow update: if request.auth.token.email == "sanin.brica@gmail.com"
@@ -301,9 +319,11 @@ service cloud.firestore {
         && !(username in [
              'admin', 'administrator', 'root', 'support', 'help', 'staff',
              'team', 'mod', 'moderator', 'official', 'system',
-             'finite', 'finiteapp',
-             'api', 'null', 'undefined',
-             'me', 'you', 'everyone', 'here'
+             'security', 'abuse',
+             'info', 'contact', 'billing', 'payment', 'stripe',
+             'finite', 'finiteapp', 'finite_app', 'finite_official',
+             'api', 'null', 'undefined', 'bot', 'test',
+             'me', 'you', 'everyone', 'here', 'all'
            ]);
       allow update, delete: if false;
     }

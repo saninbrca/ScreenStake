@@ -65,6 +65,31 @@ curl -X POST https://us-central1-detox-33208.cloudfunctions.net/checkPermissionV
 
 ---
 
+## Firestore Security Rules Tests
+
+`firestore.rules` is enforcement code with no coverage in the Gradle build. Run this
+against the LOCAL EMULATOR after any rules change and BEFORE any rules deploy:
+
+```bash
+firebase emulators:exec --only firestore --project detox-33208 "node scripts/test_firestore_rules.js"
+```
+
+Exits 0 when every check passes, 1 otherwise. No npm install, no service account, no
+production access — it talks to 127.0.0.1 and fakes auth with unsigned emulator JWTs.
+Needs the Firebase CLI and a JDK (the emulator jar self-downloads on first run).
+
+**Deliberately NOT wired into `:app:testDebugUnitTest`** — an emulator dependency in the
+normal unit-test run would be a nuisance. It is a manual pre-deploy gate.
+
+Why it exists: loading a ruleset only proves it PARSES. A `resource.data.username == null`
+clause parses fine but errors at evaluation time on documents where the key is absent,
+which would have denied every profile update on every pre-username account. Only
+exercising the rules catches that class of bug. When adding cases, assert the ALLOW paths
+as carefully as the DENY ones — locking out a legitimate write is the failure mode that
+actually reaches production.
+
+---
+
 ## Developer Setup
 
 ### Claude Code Settings Reference

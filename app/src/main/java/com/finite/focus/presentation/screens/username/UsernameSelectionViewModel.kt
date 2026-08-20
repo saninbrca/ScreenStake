@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.finite.focus.data.remote.firebase.FirebaseAuthService
 import com.finite.focus.data.remote.firebase.FirestoreService
+import com.finite.focus.domain.model.ReservedUsernames
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.FlowPreview
@@ -22,7 +23,7 @@ private const val KEY_USERNAME = "username"
 private const val MIN_LENGTH = 3
 private const val MAX_LENGTH = 20
 
-enum class UsernameAvailability { Idle, Checking, Available, Taken, TooShort }
+enum class UsernameAvailability { Idle, Checking, Available, Taken, Reserved, TooShort }
 
 data class UsernameUiState(
     val usernameInput: String = "",
@@ -76,6 +77,13 @@ class UsernameSelectionViewModel @Inject constructor(
                     )
                     return@collect
                 }
+                // Reserved names are rejected before the availability read: they are never
+                // claimable (firestore.rules blocks the create), and "reserved" must read
+                // differently from "already taken" so the user knows retrying is pointless.
+                if (ReservedUsernames.isReserved(value)) {
+                    _state.value = _state.value.copy(availability = UsernameAvailability.Reserved)
+                    return@collect
+                }
                 _state.value = _state.value.copy(availability = UsernameAvailability.Checking)
                 val available = firestoreService.isUsernameAvailable(value)
                 // Guard against a stale result if the input changed meanwhile.
@@ -103,6 +111,12 @@ class UsernameSelectionViewModel @Inject constructor(
         if (current.isSaving) return
         val name = current.usernameInput.lowercase()
         if (name.length < MIN_LENGTH || current.availability != UsernameAvailability.Available) return
+        // Defensive re-check: the debounced state could still say Available if save() were
+        // reached before the checker caught up with the latest input.
+        if (ReservedUsernames.isReserved(name)) {
+            _state.value = current.copy(availability = UsernameAvailability.Reserved)
+            return
+        }
         _state.value = current.copy(isSaving = true)
         viewModelScope.launch {
             val uid = firebaseAuthService.currentUserId()

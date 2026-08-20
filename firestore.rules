@@ -278,11 +278,33 @@ service cloud.firestore {
     // Any authed user can read (availability check). A user may only claim a
     // free name for themselves (uid must match, doc must not already exist).
     // Names are permanent — no updates or deletes from the client.
+    //
+    // RESERVED NAMES (S-02): system/authority-looking handles must never become
+    // public @usernames — a handle is permanent and is shown to other players in
+    // group challenges, so `@admin` is an impersonation surface that cannot be
+    // undone afterwards. This list is the ENFORCEMENT copy; the Kotlin copy in
+    // `domain/model/ReservedUsernames.kt` is a fast-fail UX layer only and must be
+    // kept in sync with this one.
+    //
+    // The `matches()` guard is what makes the reserved check non-bypassable: the
+    // doc id is lowercased by the CLIENT, so without it a modified client could
+    // simply claim `usernames/Admin` — a different doc id that is not in the list
+    // below and does not collide with `usernames/admin` either. Anchoring the id to
+    // ^[a-z0-9_]{3,20}$ mirrors the picker's own filter (a–z, 0–9, _, 3–20 chars)
+    // and forces every claim through the single canonical lowercase form.
     match /usernames/{username} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
-        && !exists(/databases/$(database)/documents/usernames/$(username));
+        && !exists(/databases/$(database)/documents/usernames/$(username))
+        && username.matches('^[a-z0-9_]{3,20}$')
+        && !(username in [
+             'admin', 'administrator', 'root', 'support', 'help', 'staff',
+             'team', 'mod', 'moderator', 'official', 'system',
+             'finite', 'finiteapp',
+             'api', 'null', 'undefined',
+             'me', 'you', 'everyone', 'here'
+           ]);
       allow update, delete: if false;
     }
 

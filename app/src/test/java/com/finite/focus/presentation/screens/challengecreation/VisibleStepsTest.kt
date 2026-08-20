@@ -6,8 +6,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Verifies the per-path visible-step lists that drive wizard navigation and the
- * "Schritt X von Y" counter (see [visibleSteps]):
+ * Verifies the per-path visible-step lists that drive wizard navigation and the displayed step
+ * number (see [visibleSteps]; the list size feeds the header progress bar, not a displayed total):
  *  - APP: all parameter steps; with TIME_WINDOW the step-4 value picker is skipped.
  *  - Block-only (Website tab — custom domains and/or adult): 24/7 hard block, so the
  *    minute-limit steps (3+4) AND the time-window step (5) are skipped.

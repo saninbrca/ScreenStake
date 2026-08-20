@@ -18,7 +18,7 @@
 
     <!-- Previously hardcoded UI copy (Phase 1 localization extraction) -->
     <string name="wizard_back">Zurück</string>
-    <string name="wizard_step_progress">Schritt %1$d von %2$d</string>
+    <string name="wizard_step_current">Schritt %1$d</string>
     <string name="challenge_schedule_from">Von</string>
     <string name="challenge_schedule_until">Bis</string>
     <string name="challenge_schedule_set_window">Zeitfenster festlegen</string>
@@ -1595,6 +1595,8 @@
     <string name="wizard_mode_soft_badge">Gratis</string>
     <string name="wizard_mode_hard_desc">Echtes Geld auf dem Spiel. Ernsthafte Verpflichtung.</string>
     <string name="wizard_mode_hard_badge">Ab €5</string>
+    <string name="wizard_mode_state_selected">Ausgewählt</string>
+    <string name="wizard_mode_state_not_selected">Nicht ausgewählt</string>
 
     <!-- Wizard Step 3 — Limit Type -->
     <string name="wizard_limit_type_title">Limit-Typ wählen</string>

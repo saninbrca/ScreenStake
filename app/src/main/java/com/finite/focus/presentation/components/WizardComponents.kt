@@ -96,6 +96,20 @@ val WizardTransitionEasing = LinearOutSlowInEasing
 
 // ── Wizard header ─────────────────────────────────────────────────────────────
 
+/**
+ * Wizard chrome: back affordance, the current step NUMBER, and the progress bar.
+ *
+ * Deliberately shows "Step X" and NOT "Step X of Y". Both wizards branch on choices the user has
+ * not made yet — Soft Mode inserts an explainer step, the Websites tab drops the limit steps — so
+ * [totalSteps] legitimately changes AFTER the user has started (7→8 on picking Soft, 8→5 on
+ * switching to the Websites tab). A total that moves mid-flow reads as the counter contradicting
+ * itself, and any FIXED total would simply be wrong. The index and the total have always come from
+ * one list in one composition, so the number itself never skips; only the total was ever unstable,
+ * and dropping it removes the contradiction at the source.
+ *
+ * [totalSteps] is still required — it is the denominator of the progress fraction, which is the
+ * cue that now carries "how much is left".
+ */
 @Composable
 fun WizardHeader(
     currentStep: Int,
@@ -126,7 +140,7 @@ fun WizardHeader(
                 )
             }
             Text(
-                text = stringResource(R.string.wizard_step_progress, currentStep, totalSteps),
+                text = stringResource(R.string.wizard_step_current, currentStep),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Normal,
                 color = detoxColors.subtext,

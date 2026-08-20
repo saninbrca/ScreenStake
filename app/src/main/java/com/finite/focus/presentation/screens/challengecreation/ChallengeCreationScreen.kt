@@ -85,6 +85,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -327,10 +330,11 @@ fun ChallengeCreationScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // The displayed "Schritt X von Y" counter is the position within the path's
-            // visible-step list (Hard — APP: 7, APP+TIME_WINDOW: 6, Website/Adult block path: 4;
-            // Soft adds the STEP_SOFT_INFO explainer, so each is one longer), so skipped internal
-            // steps never surface as a visibly missing number.
+            // The displayed step NUMBER is the position within the path's visible-step list, so
+            // skipped internal steps never surface as a visibly missing number. The list's SIZE is
+            // no longer displayed (see WizardHeader) — it branches on choices the user has not made
+            // yet (Hard — APP: 7, APP+TIME_WINDOW: 6, Website/Adult block path: 4; Soft adds the
+            // STEP_SOFT_INFO explainer, so each is one longer) and now only feeds the progress bar.
             val steps = visibleSteps(state)
             val displayedTotal = steps.size
             val displayedStep = (steps.indexOf(state.currentStep) + 1).coerceAtLeast(1)
@@ -575,6 +579,27 @@ private fun ModeCard(
         targetValue = if (isSelected) detoxColors.selectedSurface else detoxColors.cardBackground,
         animationSpec = tween(150), label = "mode_bg",
     )
+    // The icon circle's hue and the glyph inside it are STATE, not decoration. At rest the circle
+    // falls back to the neutral recessed fill and the glyph to subtext weight; on selection both
+    // bloom to the card's own hue. Without this the resting card impersonates a selected one (a
+    // filled green star in a green circle), which is what made a tester read Soft Mode as already
+    // chosen and reach for the — correctly greyed — Next button instead of the card.
+    val circleBg by animateColorAsState(
+        targetValue = if (isSelected) iconBg else detoxColors.insetSurface,
+        animationSpec = tween(150), label = "mode_icon_bg",
+    )
+    val glyphTint by animateColorAsState(
+        targetValue = if (isSelected) iconTint else detoxColors.subtext,
+        animationSpec = tween(150), label = "mode_icon_tint",
+    )
+    // Announced by TalkBack as ONE button carrying its own selected state. Role.Button, not
+    // Role.RadioButton: tapping the card selects AND advances the wizard (see
+    // ChallengeCreationViewModel.selectMode), and a control that navigates must not announce as a
+    // radio. The selected state is reachable and real — navigating Back to step 1 with a mode
+    // already chosen renders it.
+    val stateDesc = stringResource(
+        if (isSelected) R.string.wizard_mode_state_selected else R.string.wizard_mode_state_not_selected
+    )
 
     Box(
         modifier = Modifier
@@ -583,7 +608,8 @@ private fun ModeCard(
             .clip(CardShape)
             .background(bgColor)
             .border(borderWidth, borderColor, CardShape)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (enabled) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .semantics(mergeDescendants = true) { stateDescription = stateDesc }
             .alpha(if (enabled) 1f else 0.5f)
             .padding(16.dp),
     ) {
@@ -596,7 +622,7 @@ private fun ModeCard(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(iconBg),
+                    .background(circleBg),
                 contentAlignment = Alignment.Center,
             ) {
                 if (euroIcon) {
@@ -604,13 +630,13 @@ private fun ModeCard(
                         text = "€",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = iconTint,
+                        color = glyphTint,
                     )
                 } else if (icon != null) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = iconTint,
+                        tint = glyphTint,
                         modifier = Modifier.size(22.dp),
                     )
                 }
@@ -657,29 +683,39 @@ private fun ModeCard(
                 }
             }
 
-            // Right indicator — hidden when the card is disabled. The check scales + fades in
-            // on selection (~150ms); the empty ring marks the unselected state.
+            // Right indicator — hidden when the card is disabled. Empty ring at rest, an
+            // accent-FILLED disc with a white check when selected (~150ms scale+fade). The fill is
+            // the arm's-length cue: a thin accent glyph drawn straight on the card surface was too
+            // close to the empty ring at a glance, and the surface delta alone (cardBackground →
+            // selectedSurface) is by design a whisper in light mode. Same fill/glyph pairing as
+            // WizardWaiverCheckboxRow, so selection looks the same everywhere in the wizard.
             if (enabled) {
-                Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                    val checkScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1f else 0f,
-                        animationSpec = tween(150), label = "mode_check",
-                    )
-                    if (!isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .background(detoxColors.cardBackground)
-                                .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-                        )
-                    }
+                val indicatorBg by animateColorAsState(
+                    targetValue = if (isSelected) detoxColors.accent else detoxColors.cardBackground,
+                    animationSpec = tween(150), label = "mode_indicator_bg",
+                )
+                val indicatorBorder by animateColorAsState(
+                    targetValue = if (isSelected) detoxColors.accent else MaterialTheme.colorScheme.outlineVariant,
+                    animationSpec = tween(150), label = "mode_indicator_border",
+                )
+                val checkScale by animateFloatAsState(
+                    targetValue = if (isSelected) 1f else 0f,
+                    animationSpec = tween(150), label = "mode_check",
+                )
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(indicatorBg)
+                        .border(1.5.dp, indicatorBorder, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = detoxColors.accent,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(16.dp)
                             .graphicsLayer { scaleX = checkScale; scaleY = checkScale; alpha = checkScale },
                     )
                 }

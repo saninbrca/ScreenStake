@@ -272,8 +272,9 @@ fun GroupChallengeCreateScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             SnackbarHost(snackbarHostState)
 
-            // Block-only (Websites tab) skips step 2, so the displayed "Step X of Y" counter is the
-            // position within the path's visible-step list — never a visibly missing number.
+            // Block-only (Websites tab) skips step 2, so the displayed step NUMBER is the position
+            // within the path's visible-step list — never a visibly missing number. The size feeds
+            // the progress bar only; it is no longer displayed as a total (see WizardHeader).
             val steps = visibleGroupSteps(formState)
             val displayedTotal = steps.size
             val displayedStep = (steps.indexOf(formState.currentStep) + 1).coerceAtLeast(1)

@@ -108,7 +108,9 @@ internal fun step2HasValidBlockingSource(
  *    step and is deliberately left untouched — its paths are byte-identical to before.
  *
  * [ChallengeCreationViewModel.goNext]/[ChallengeCreationViewModel.goBack] walk this list BY INDEX,
- * and the displayed "Schritt X von Y" counter is the position in it — pure so it is unit-testable.
+ * and the displayed step number is the position in it — pure so it is unit-testable. The list SIZE
+ * is no longer displayed as a total (it branches on choices not yet made); it feeds the header
+ * progress bar only — see WizardHeader.
  */
 internal fun visibleSteps(state: ChallengeCreationState): List<Int> {
     val parameterSteps = when {

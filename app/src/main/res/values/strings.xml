@@ -18,7 +18,7 @@
 
     <!-- Previously hardcoded UI copy (Phase 1 localization extraction) -->
     <string name="wizard_back">Back</string>
-    <string name="wizard_step_progress">Step %1$d of %2$d</string>
+    <string name="wizard_step_current">Step %1$d</string>
     <string name="challenge_schedule_from">From</string>
     <string name="challenge_schedule_until">Until</string>
     <string name="challenge_schedule_set_window">Set time window</string>
@@ -1650,6 +1650,9 @@
     <string name="wizard_mode_soft_badge">Free</string>
     <string name="wizard_mode_hard_desc">Real money at stake. Serious commitment.</string>
     <string name="wizard_mode_hard_badge">From €5</string>
+    <!-- Spoken by TalkBack as the mode card's state; the card is one button, announced once. -->
+    <string name="wizard_mode_state_selected">Selected</string>
+    <string name="wizard_mode_state_not_selected">Not selected</string>
 
     <!-- Wizard Step 3 — Limit Type -->
     <string name="wizard_limit_type_title">Pick a limit type</string>
